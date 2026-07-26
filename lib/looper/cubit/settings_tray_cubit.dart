@@ -2,6 +2,7 @@ import 'package:bloc/bloc.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:equatable/equatable.dart';
 import 'package:loopy/appliance/display_brightness_cubit.dart';
+import 'package:loopy/appliance/software_brightness.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'settings_tray_state.dart';
@@ -43,7 +44,7 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
       emit(state.copyWith(brightness: display.state));
       return;
     }
-    final saved = await _settings.loadBrightness();
+    final saved = clampDisplayBrightness(await _settings.loadBrightness());
     _brightnessSupported = await _brightnessClient.isSupported();
     if (isClosed) return;
     emit(state.copyWith(brightness: saved));
@@ -125,10 +126,11 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// Clears the in-flight navigation guard set by [beginNavigating].
   void endNavigating() => emit(state.copyWith(isNavigating: false));
 
-  /// Sets brightness (`0..1`), persists it, and applies (software + optional
-  /// DDC via [DisplayBrightnessCubit], or the legacy client path).
+  /// Sets brightness (`kMinDisplayBrightness..1`), persists it, and applies
+  /// (software + optional DDC via [DisplayBrightnessCubit], or the legacy
+  /// client path).
   Future<void> setBrightness(double value) async {
-    final clamped = value.clamp(0.0, 1.0);
+    final clamped = clampDisplayBrightness(value);
     emit(state.copyWith(brightness: clamped));
     final display = _displayBrightness;
     if (display != null) {

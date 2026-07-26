@@ -39,4 +39,13 @@ void main() {
       expect(filter, isA<ColorFilter>());
     });
   });
+
+  group('clampDisplayBrightness', () {
+    test('floors at kMinDisplayBrightness so 0 is not fully black', () {
+      expect(clampDisplayBrightness(0), kMinDisplayBrightness);
+      expect(clampDisplayBrightness(0.05), kMinDisplayBrightness);
+      expect(clampDisplayBrightness(0.5), 0.5);
+      expect(clampDisplayBrightness(1.2), 1.0);
+    });
+  });
 }

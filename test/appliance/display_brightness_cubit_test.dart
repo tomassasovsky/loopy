@@ -2,6 +2,7 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:loopy/appliance/display_brightness_cubit.dart';
+import 'package:loopy/appliance/software_brightness.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -91,6 +92,22 @@ void main() {
       verify: (_) async {
         expect(await settings.loadBrightness(), 0.25);
         expect(client.sets, isEmpty);
+      },
+    );
+
+    blocTest<DisplayBrightnessCubit, double>(
+      'setBrightness floors at kMinDisplayBrightness (not fully black)',
+      setUp: () {
+        client.supported = false;
+      },
+      build: build,
+      act: (cubit) async {
+        await cubit.load();
+        await cubit.setBrightness(0);
+      },
+      expect: () => [0.8, kMinDisplayBrightness],
+      verify: (_) async {
+        expect(await settings.loadBrightness(), kMinDisplayBrightness);
       },
     );
   });

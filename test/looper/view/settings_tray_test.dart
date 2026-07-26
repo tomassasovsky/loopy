@@ -660,7 +660,9 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
       await tester.pump();
 
-      expect(cubit.state.brightness, closeTo(before + 0.05, 0.001));
+      // Flutter steps by `_adjustmentUnit * (max - min)`; with
+      // `min: kMinDisplayBrightness` (0.1) that is 0.05 * 0.9 = 0.045.
+      expect(cubit.state.brightness, closeTo(before + 0.045, 0.001));
       debugDefaultTargetPlatformOverride = null;
     });
   });

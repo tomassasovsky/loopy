@@ -29,14 +29,14 @@ class DisplayBrightnessCubit extends Cubit<double> {
     final saved = await _settings.loadBrightness();
     _hardwareSupported = await _client.isSupported();
     if (isClosed) return;
-    emit(saved.clamp(0.0, 1.0));
-    await _applyHardware(saved);
+    emit(clampDisplayBrightness(saved));
+    await _applyHardware(clampDisplayBrightness(saved));
   }
 
-  /// Sets brightness (`0..1`), persists it, dims in software (via listeners),
-  /// and applies DDC when available.
+  /// Sets brightness (`kMinDisplayBrightness..1`), persists it, dims in
+  /// software (via listeners), and applies DDC when available.
   Future<void> setBrightness(double value) async {
-    final clamped = value.clamp(0.0, 1.0);
+    final clamped = clampDisplayBrightness(value);
     if (clamped != state) emit(clamped);
     await _settings.saveBrightness(clamped);
     await _applyHardware(clamped);

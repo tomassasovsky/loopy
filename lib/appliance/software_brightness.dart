@@ -1,8 +1,19 @@
 import 'package:flutter/material.dart';
 
-/// Multiplies RGB by [brightness] (`0..1`). Identity at `1.0`.
+/// Floor for display brightness (`0..1`).
+///
+/// Software dim multiplies RGB — `0` is a black screen and the user could not
+/// see the Control Center slider to recover. Keep a visible minimum.
+const double kMinDisplayBrightness = 0.1;
+
+/// Clamps [brightness] into `[kMinDisplayBrightness, 1.0]`.
+double clampDisplayBrightness(double brightness) =>
+    brightness.clamp(kMinDisplayBrightness, 1.0);
+
+/// Multiplies RGB by [brightness] (`kMinDisplayBrightness..1`). Identity at
+/// `1.0`.
 ColorFilter softwareBrightnessFilter(double brightness) {
-  final b = brightness.clamp(0.0, 1.0);
+  final b = clampDisplayBrightness(brightness);
   return ColorFilter.matrix(<double>[
     b,
     0,
@@ -36,7 +47,7 @@ class SoftwareBrightness extends StatelessWidget {
     super.key,
   });
 
-  /// Dim level in `0..1` (`1` = no filter).
+  /// Dim level in `kMinDisplayBrightness..1` (`1` = no filter).
   final double brightness;
 
   /// Subtree to dim.
@@ -44,7 +55,7 @@ class SoftwareBrightness extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final b = brightness.clamp(0.0, 1.0);
+    final b = clampDisplayBrightness(brightness);
     if (b >= 1.0) return child;
     return ColorFiltered(
       colorFilter: softwareBrightnessFilter(b),

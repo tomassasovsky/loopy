@@ -5,6 +5,7 @@ import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:loopy/app/loopy_navigator.dart';
+import 'package:loopy/appliance/software_brightness.dart';
 import 'package:loopy/bluetooth/bluetooth_cubit.dart';
 import 'package:loopy/bluetooth/bluetooth_tray_panel.dart';
 import 'package:loopy/l10n/l10n.dart';
@@ -522,7 +523,7 @@ class _TrayHome extends StatelessWidget {
                     icon: bluetooth.status.powered
                         ? Icons.bluetooth
                         : Icons.bluetooth_disabled,
-                    // Caption: peer name when Connected, else the generic label.
+                    // Caption: peer name when Connected, else the generic label
                     label:
                         bluetooth.status.connected &&
                             bluetooth.status.device.isNotEmpty
@@ -531,7 +532,8 @@ class _TrayHome extends StatelessWidget {
                     semanticLabel:
                         bluetooth.status.connected &&
                             bluetooth.status.device.isNotEmpty
-                        ? '${l10n.trayBluetoothLabel}, ${bluetooth.status.device}'
+                        ? '${l10n.trayBluetoothLabel}, '
+                              '${bluetooth.status.device}'
                         : l10n.trayBluetoothLabel,
                     isOn: bluetooth.supported && bluetooth.status.powered,
                     onTap: bluetooth.supported && !bluetooth.busy
@@ -737,9 +739,11 @@ class _BrightnessSliderTileState extends State<_BrightnessSliderTile> {
     super.dispose();
   }
 
-  void _increase() => widget.onChanged((widget.value + _step).clamp(0.0, 1.0));
+  void _increase() =>
+      widget.onChanged(clampDisplayBrightness(widget.value + _step));
 
-  void _decrease() => widget.onChanged((widget.value - _step).clamp(0.0, 1.0));
+  void _decrease() =>
+      widget.onChanged(clampDisplayBrightness(widget.value - _step));
 
   static String _percent(double value) => '${(value * 100).round()}%';
 
@@ -767,8 +771,12 @@ class _BrightnessSliderTileState extends State<_BrightnessSliderTile> {
         slider: true,
         label: l10n.trayBrightnessLabel,
         value: _percent(widget.value),
-        increasedValue: _percent((widget.value + _step).clamp(0.0, 1.0)),
-        decreasedValue: _percent((widget.value - _step).clamp(0.0, 1.0)),
+        increasedValue: _percent(
+          clampDisplayBrightness(widget.value + _step),
+        ),
+        decreasedValue: _percent(
+          clampDisplayBrightness(widget.value - _step),
+        ),
         onIncrease: _increase,
         onDecrease: _decrease,
         child: ExcludeSemantics(
@@ -808,7 +816,9 @@ class _BrightnessSliderTileState extends State<_BrightnessSliderTile> {
                   ),
                   child: Slider(
                     focusNode: _focusNode,
-                    value: widget.value,
+                    // Floor above 0 — software dim at 0 is a black screen.
+                    min: kMinDisplayBrightness,
+                    value: clampDisplayBrightness(widget.value),
                     onChanged: widget.onChanged,
                     label: _percent(widget.value),
                   ),
