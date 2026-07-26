@@ -588,7 +588,7 @@ class _AppViewState extends State<_AppView> {
     messenger.showMaterialBanner(
       MaterialBanner(
         key: const Key('app_update_banner'),
-        content: Text(l10n.updateBannerTitle(manifest.version)),
+        content: Text(l10n.updateBannerTitle('${manifest.version}')),
         leading: const Icon(Icons.system_update_outlined),
         actions: [
           TextButton(

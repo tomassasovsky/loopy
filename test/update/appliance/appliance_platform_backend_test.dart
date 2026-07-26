@@ -19,7 +19,7 @@ class _FakeEnv implements ApplianceEnv {
   final Exception? rebootError;
 
   Uri? fetchedUrl;
-  int? stagedVersionArg;
+  String? stagedVersionArg;
   int rebootCalls = 0;
 
   @override
@@ -35,7 +35,7 @@ class _FakeEnv implements ApplianceEnv {
   }
 
   @override
-  Stream<double> stage(int version) {
+  Stream<double> stage(String version) {
     stagedVersionArg = version;
     if (stageError != null) return Stream.error(stageError!);
     return Stream.fromIterable(stageProgress);
@@ -60,10 +60,13 @@ void main() {
   group('isSupported', () {
     test('true only when both the version file and the helper exist', () {
       expect(
-        backend(_FakeEnv(files: {_version: '2', _helper: ''})).isSupported,
+        backend(_FakeEnv(files: {_version: '0.2.0', _helper: ''})).isSupported,
         isTrue,
       );
-      expect(backend(_FakeEnv(files: {_version: '2'})).isSupported, isFalse);
+      expect(
+        backend(_FakeEnv(files: {_version: '0.2.0'})).isSupported,
+        isFalse,
+      );
       expect(backend(_FakeEnv(files: {_helper: ''})).isSupported, isFalse);
       expect(backend(_FakeEnv()).isSupported, isFalse);
     });
@@ -84,16 +87,26 @@ void main() {
   });
 
   group('version reads', () {
-    test('parse the marker files, defaulting to 0', () async {
-      final b = backend(_FakeEnv(files: {_version: '2\n', _staged: '3'}));
-      expect(await b.currentVersion(), 2);
-      expect(await b.stagedVersion(), 3);
+    test(
+      'parses the marker files as semver, defaulting to Version.none',
+      () async {
+        final b = backend(
+          _FakeEnv(files: {_version: '0.2.0\n', _staged: '0.3.0'}),
+        );
+        expect(await b.currentVersion(), Version.parse('0.2.0'));
+        expect(await b.stagedVersion(), Version.parse('0.3.0'));
+      },
+    );
+
+    test('parses a prerelease (experimental) semver', () async {
+      final b = backend(_FakeEnv(files: {_version: '0.2.0-experimental.7'}));
+      expect(await b.currentVersion(), Version.parse('0.2.0-experimental.7'));
     });
 
-    test('treat missing/garbage as 0', () async {
+    test('treats missing/garbage as Version.none', () async {
       final b = backend(_FakeEnv(files: {_version: 'x'}));
-      expect(await b.currentVersion(), 0);
-      expect(await b.stagedVersion(), 0);
+      expect(await b.currentVersion(), Version.none);
+      expect(await b.stagedVersion(), Version.none);
     });
   });
 
@@ -101,12 +114,12 @@ void main() {
     test('parses the manifest and hits the per-channel URL', () async {
       final env = _FakeEnv(
         files: {_channel: 'experimental'},
-        body: '{"version":2,"bundle":"b.raucb","sha256":"s"}',
+        body: '{"version":"0.2.0","bundle":"b.raucb","sha256":"s"}',
       );
 
       final manifest = await backend(env).fetchManifest();
 
-      expect(manifest?.version, 2);
+      expect(manifest?.version, Version.parse('0.2.0'));
       expect(
         env.fetchedUrl.toString(),
         'https://segno.aquiles.dev/updates/appliance/experimental/manifest.json',
@@ -128,21 +141,27 @@ void main() {
 
   group('stage and reboot', () {
     test(
-      'downloadAndStage forwards the version and streams progress',
+      'downloadAndStage forwards the version string and streams progress',
       () async {
         final env = _FakeEnv(stageProgress: const [0.25, 1.0]);
-        const manifest = UpdateManifest(version: 7, bundle: 'b.raucb');
+        final manifest = UpdateManifest(
+          version: Version.parse('0.7.0'),
+          bundle: 'b.raucb',
+        );
 
         final progress = await backend(env).downloadAndStage(manifest).toList();
 
         expect(progress, [0.25, 1.0]);
-        expect(env.stagedVersionArg, 7);
+        expect(env.stagedVersionArg, '0.7.0');
       },
     );
 
     test('downloadAndStage surfaces a helper failure', () {
       final env = _FakeEnv(stageError: Exception('rauc failed'));
-      const manifest = UpdateManifest(version: 7, bundle: 'b.raucb');
+      final manifest = UpdateManifest(
+        version: Version.parse('0.7.0'),
+        bundle: 'b.raucb',
+      );
       expect(
         backend(env).downloadAndStage(manifest),
         emitsError(isA<Exception>()),

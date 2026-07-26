@@ -1,3 +1,4 @@
+import 'package:pub_semver/pub_semver.dart';
 import 'package:update_repository/src/update_manifest.dart';
 
 /// The per-platform half of the update system, behind a single interface so the
@@ -22,12 +23,12 @@ abstract interface class PlatformUpdateBackend {
   /// display. Empty when [isSupported] is `false`.
   String get channel;
 
-  /// The running build number. `0` when unknown.
-  Future<int> currentVersion();
+  /// The running semantic version. [Version.none] (`0.0.0`) when unknown.
+  Future<Version> currentVersion();
 
-  /// The build number already staged to the inactive slot and awaiting a
-  /// restart to apply, or `0` if nothing is staged.
-  Future<int> stagedVersion();
+  /// The semantic version already staged to the inactive slot and awaiting a
+  /// restart to apply, or [Version.none] if nothing is staged.
+  Future<Version> stagedVersion();
 
   /// Fetches and parses the channel manifest. Read-only — no download, no
   /// install — so it is safe to call automatically. Returns `null` when the

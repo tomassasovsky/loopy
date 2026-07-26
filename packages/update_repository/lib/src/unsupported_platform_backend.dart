@@ -1,3 +1,4 @@
+import 'package:pub_semver/pub_semver.dart';
 import 'package:update_repository/src/platform_update_backend.dart';
 import 'package:update_repository/src/update_manifest.dart';
 
@@ -16,10 +17,10 @@ class UnsupportedPlatformBackend implements PlatformUpdateBackend {
   String get channel => '';
 
   @override
-  Future<int> currentVersion() async => 0;
+  Future<Version> currentVersion() async => Version.none;
 
   @override
-  Future<int> stagedVersion() async => 0;
+  Future<Version> stagedVersion() async => Version.none;
 
   @override
   Future<UpdateManifest?> fetchManifest() async => null;

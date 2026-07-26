@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pub_semver/pub_semver.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 class _InMemoryStore implements KeyValueStore {
@@ -742,9 +743,17 @@ void main() {
     });
 
     test('round-trips as a sorted CSV string', () async {
-      await repository.saveDismissedUpdateVersions({3, 1, 2});
-      expect(store.values['updates.dismissed'], '1,2,3');
-      expect(await repository.loadDismissedUpdateVersions(), {1, 2, 3});
+      await repository.saveDismissedUpdateVersions({
+        Version.parse('0.3.0'),
+        Version.parse('0.1.0'),
+        Version.parse('0.2.0'),
+      });
+      expect(store.values['updates.dismissed'], '0.1.0,0.2.0,0.3.0');
+      expect(await repository.loadDismissedUpdateVersions(), {
+        Version.parse('0.1.0'),
+        Version.parse('0.2.0'),
+        Version.parse('0.3.0'),
+      });
     });
 
     test('reads an empty stored value as an empty set', () async {
@@ -753,8 +762,11 @@ void main() {
     });
 
     test('ignores unparseable entries', () async {
-      await store.setString('updates.dismissed', '1,,x,4');
-      expect(await repository.loadDismissedUpdateVersions(), {1, 4});
+      await store.setString('updates.dismissed', '0.1.0,,not-semver,0.4.0');
+      expect(await repository.loadDismissedUpdateVersions(), {
+        Version.parse('0.1.0'),
+        Version.parse('0.4.0'),
+      });
     });
   });
 }

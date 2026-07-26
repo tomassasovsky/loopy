@@ -8,8 +8,8 @@ void main() {
     test('reports itself unsupported with inert reads', () async {
       expect(backend.isSupported, isFalse);
       expect(backend.channel, '');
-      expect(await backend.currentVersion(), 0);
-      expect(await backend.stagedVersion(), 0);
+      expect(await backend.currentVersion(), Version.none);
+      expect(await backend.stagedVersion(), Version.none);
       expect(await backend.fetchManifest(), isNull);
     });
 
@@ -18,7 +18,7 @@ void main() {
       () {
         expect(
           backend.downloadAndStage(
-            const UpdateManifest(version: 1, bundle: 'b.raucb'),
+            UpdateManifest(version: Version(0, 1, 0), bundle: 'b.raucb'),
           ),
           emitsError(isA<UnsupportedError>()),
         );

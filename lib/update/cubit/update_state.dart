@@ -31,7 +31,7 @@ class UpdateState extends Equatable {
     this.phase = UpdatePhase.idle,
     this.supported = false,
     this.channel = '',
-    this.currentVersion = 0,
+    this.currentVersion,
     this.available,
     this.progress = 0,
     this.autoCheck = true,
@@ -48,8 +48,10 @@ class UpdateState extends Equatable {
   /// The channel this device follows, for display.
   final String channel;
 
-  /// The running build number (`0` when unknown).
-  final int currentVersion;
+  /// The running semantic version, or `null` before the first load / when
+  /// unknown. Nullable (rather than [Version.none]) so this state can stay
+  /// `const` — `pub_semver`'s [Version] is not const-constructible.
+  final Version? currentVersion;
 
   /// The newer manifest found by the last check, or `null` if none.
   final UpdateManifest? available;
@@ -60,9 +62,9 @@ class UpdateState extends Equatable {
   /// Whether the passive, read-only check runs automatically.
   final bool autoCheck;
 
-  /// Build numbers the user dismissed the notification for; a newer version
+  /// Versions the user dismissed the notification for; a newer version
   /// re-notifies because it is not in this set.
-  final Set<int> dismissed;
+  final Set<Version> dismissed;
 
   /// A human-readable message when [phase] is [UpdatePhase.error].
   final String? errorMessage;
@@ -82,12 +84,12 @@ class UpdateState extends Equatable {
     UpdatePhase? phase,
     bool? supported,
     String? channel,
-    int? currentVersion,
+    Version? currentVersion,
     UpdateManifest? available,
     bool clearAvailable = false,
     double? progress,
     bool? autoCheck,
-    Set<int>? dismissed,
+    Set<Version>? dismissed,
     String? errorMessage,
     bool clearError = false,
   }) {

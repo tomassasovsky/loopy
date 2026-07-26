@@ -14,6 +14,7 @@ dependencies:
     sdk: flutter
   local_storage_client:
     path: ../local_storage_client
+  pub_semver: ^2.2.0
 
 dev_dependencies:
   flutter_test:

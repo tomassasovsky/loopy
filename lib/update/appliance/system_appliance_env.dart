@@ -45,9 +45,14 @@ class SystemApplianceEnv implements ApplianceEnv {
   }
 
   @override
-  Stream<double> stage(int version) async* {
-    final args = ['install', '$version'];
+  Stream<double> stage(String version) async* {
+    final args = ['install', version];
     final process = await Process.start(helperPath, args);
+    final stderrLines = <String>[];
+    final stderrDone = process.stderr
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .forEach(stderrLines.add);
     final progress = RegExp(r'^PROGRESS\s+(\d+)');
     await for (final line
         in process.stdout
@@ -59,8 +64,12 @@ class SystemApplianceEnv implements ApplianceEnv {
       }
     }
     final code = await process.exitCode;
+    await stderrDone;
     if (code != 0) {
-      throw ProcessException(helperPath, args, 'update helper failed', code);
+      final reason = stderrLines.isEmpty
+          ? 'update helper failed'
+          : stderrLines.join('\n');
+      throw ProcessException(helperPath, args, reason, code);
     }
     yield 1;
   }
