@@ -2084,32 +2084,33 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
                             cmd->trackmask.mask & valid, memory_order_relaxed);
       break;
     }
-    /* FX type / count, addressed by (channel, lane) in the typed `fx` / `fxcount`
-     * union arms. */
+    /* Compat lane FX → Track Post (mirrored to every lane). New code pushes
+     * LE_CMD_SET_TRACK_FX_POST*; these remain for any stale ring traffic. */
     case LE_CMD_SET_LANE_FX: {
       const int32_t ch = cmd->fx.channel;
-      const int32_t lane = cmd->fx.lane;
       const int32_t index = cmd->fx.index;
-      if (!valid_channel(e, ch) || lane < 0 || lane >= LE_MAX_LANES ||
-          index < 0 || index >= LE_FX_MAX) {
-        break;
-      }
+      if (!valid_channel(e, ch) || index < 0 || index >= LE_FX_MAX) break;
       le_plog_push(e, frame, *cmd);
-      le_lane* ln = &e->tracks[ch].lanes[lane];
-      store_i32(&ln->a_fx_type[index], cmd->fx.type);
-      /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
-      le_fx_entry_reset(&ln->fx, index);
+      le_track* tr = &e->tracks[ch];
+      store_i32(&tr->a_fx_post_type[index], cmd->fx.type);
+      le_fx_entry_reset(&tr->fx_post_live, index);
+      for (int l = 0; l < LE_MAX_LANES; ++l) {
+        store_i32(&tr->lanes[l].a_fx_type[index], cmd->fx.type);
+        le_fx_entry_reset(&tr->lanes[l].fx, index);
+      }
       break;
     }
     case LE_CMD_SET_LANE_FX_COUNT: {
       const int32_t ch = cmd->fxcount.channel;
-      const int32_t lane = cmd->fxcount.lane;
       int32_t count = cmd->fxcount.count;
-      if (!valid_channel(e, ch) || lane < 0 || lane >= LE_MAX_LANES) break;
+      if (!valid_channel(e, ch)) break;
       le_plog_push(e, frame, *cmd);
       if (count < 0) count = 0;
       if (count > LE_FX_MAX) count = LE_FX_MAX;
-      store_i32(&e->tracks[ch].lanes[lane].a_fx_count, count);
+      store_i32(&e->tracks[ch].a_fx_post_count, count);
+      for (int l = 0; l < LE_MAX_LANES; ++l) {
+        store_i32(&e->tracks[ch].lanes[l].a_fx_count, count);
+      }
       break;
     }
     /* ---- multi-lane routing commands ----
@@ -2202,6 +2203,95 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       if (count < 0) count = 0;
       if (count > LE_FX_MAX) count = LE_FX_MAX;
       store_i32(&e->monitors[input].a_fx_count, count);
+      break;
+    }
+    case LE_CMD_SET_INPUT_FX_PRE: {
+      const int32_t input = cmd->fx.channel;
+      const int32_t index = cmd->fx.index;
+      if (input < 0 || input >= LE_MAX_INPUTS || index < 0 ||
+          index >= LE_FX_MAX) {
+        break;
+      }
+      le_plog_push(e, frame, *cmd);
+      le_monitor_input* m = &e->monitors[input];
+      store_i32(&m->a_fx_pre_type[index], cmd->fx.type);
+      le_fx_entry_reset(&m->fx_pre, index);
+      break;
+    }
+    case LE_CMD_SET_INPUT_FX_PRE_COUNT: {
+      const int32_t input = cmd->fxcount.channel;
+      int32_t count = cmd->fxcount.count;
+      if (input < 0 || input >= LE_MAX_INPUTS) break;
+      le_plog_push(e, frame, *cmd);
+      if (count < 0) count = 0;
+      if (count > LE_FX_MAX) count = LE_FX_MAX;
+      store_i32(&e->monitors[input].a_fx_pre_count, count);
+      break;
+    }
+    case LE_CMD_SET_TRACK_FX_PRE: {
+      const int32_t ch = cmd->fx.channel;
+      const int32_t index = cmd->fx.index;
+      if (!valid_channel(e, ch) || index < 0 || index >= LE_FX_MAX) break;
+      le_plog_push(e, frame, *cmd);
+      le_track* tr = &e->tracks[ch];
+      store_i32(&tr->a_fx_pre_type[index], cmd->fx.type);
+      for (int l = 0; l < LE_MAX_LANES; ++l) {
+        le_fx_entry_reset(&tr->lanes[l].fx_pre, index);
+      }
+      break;
+    }
+    case LE_CMD_SET_TRACK_FX_PRE_COUNT: {
+      const int32_t ch = cmd->fxcount.channel;
+      int32_t count = cmd->fxcount.count;
+      if (!valid_channel(e, ch)) break;
+      le_plog_push(e, frame, *cmd);
+      if (count < 0) count = 0;
+      if (count > LE_FX_MAX) count = LE_FX_MAX;
+      store_i32(&e->tracks[ch].a_fx_pre_count, count);
+      break;
+    }
+    case LE_CMD_SET_TRACK_FX_POST: {
+      const int32_t ch = cmd->fx.channel;
+      const int32_t index = cmd->fx.index;
+      if (!valid_channel(e, ch) || index < 0 || index >= LE_FX_MAX) break;
+      le_plog_push(e, frame, *cmd);
+      le_track* tr = &e->tracks[ch];
+      store_i32(&tr->a_fx_post_type[index], cmd->fx.type);
+      le_fx_entry_reset(&tr->fx_post_live, index);
+      for (int l = 0; l < LE_MAX_LANES; ++l) {
+        store_i32(&tr->lanes[l].a_fx_type[index], cmd->fx.type);
+        le_fx_entry_reset(&tr->lanes[l].fx, index);
+      }
+      break;
+    }
+    case LE_CMD_SET_TRACK_FX_POST_COUNT: {
+      const int32_t ch = cmd->fxcount.channel;
+      int32_t count = cmd->fxcount.count;
+      if (!valid_channel(e, ch)) break;
+      le_plog_push(e, frame, *cmd);
+      if (count < 0) count = 0;
+      if (count > LE_FX_MAX) count = LE_FX_MAX;
+      store_i32(&e->tracks[ch].a_fx_post_count, count);
+      for (int l = 0; l < LE_MAX_LANES; ++l) {
+        store_i32(&e->tracks[ch].lanes[l].a_fx_count, count);
+      }
+      break;
+    }
+    case LE_CMD_SET_TRACK_LIVE_SIGNAL: {
+      const int32_t ch = cmd->arg_i;
+      if (!valid_channel(e, ch)) break;
+      le_plog_push(e, frame, *cmd);
+      int32_t mode = (int32_t)cmd->arg_f;
+      if (mode < LE_LIVE_SIGNAL_OFF) mode = LE_LIVE_SIGNAL_OFF;
+      if (mode > LE_LIVE_SIGNAL_ON) mode = LE_LIVE_SIGNAL_ON;
+      store_i32(&e->tracks[ch].a_live_signal, mode);
+      break;
+    }
+    case LE_CMD_SET_LIVE_SIGNAL_FOCUS: {
+      const int32_t ch = cmd->arg_i;
+      if (ch < -1 || ch >= e->track_count) break;
+      le_plog_push(e, frame, *cmd);
+      store_i32(&e->a_live_signal_focus, ch);
       break;
     }
     case LE_CMD_SET_MONITOR_INPUT_OUTPUT: {
@@ -3234,8 +3324,27 @@ static inline void mix_tracks_frame(
   int mut[LE_MAX_TRACKS][LE_MAX_LANES];
   int32_t lane_in[LE_MAX_TRACKS][LE_MAX_LANES];
   uint32_t out_mask[LE_MAX_TRACKS][LE_MAX_LANES];
+  int32_t live_sig[LE_MAX_TRACKS];
+  int32_t tr_pre_count[LE_MAX_TRACKS];
+  int32_t tr_pre_type[LE_MAX_TRACKS][LE_FX_MAX];
+  float tr_pre_params[LE_MAX_TRACKS][LE_FX_MAX][LE_FX_PARAMS];
+  int tr_has_pre[LE_MAX_TRACKS];
   for (int t = 0; t < tc; ++t) {
     st[t] = load_i32(&e->tracks[t].a_state);
+    live_sig[t] = load_i32(&e->tracks[t].a_live_signal);
+    tr_has_pre[t] = 0;
+    int32_t n = load_i32(&e->tracks[t].a_fx_pre_count);
+    if (n < 0) n = 0;
+    if (n > LE_FX_MAX) n = LE_FX_MAX;
+    tr_pre_count[t] = n;
+    for (int s = 0; s < n; ++s) {
+      const int32_t ty = load_i32(&e->tracks[t].a_fx_pre_type[s]);
+      tr_pre_type[t][s] = ty;
+      if (ty != LE_FX_NONE) tr_has_pre[t] = 1;
+      for (int p = 0; p < LE_FX_PARAMS; ++p) {
+        tr_pre_params[t][s][p] = load_f32(&e->tracks[t].a_fx_pre_param[s][p]);
+      }
+    }
     for (int l = 0; l < lane_n[t]; ++l) {
       le_lane* ln = &e->tracks[t].lanes[l];
       buf[t][l] = ln->pool[load_i32(&ln->a_live)];
@@ -3246,6 +3355,32 @@ static inline void mix_tracks_frame(
           atomic_load_explicit(&ln->a_output_mask, memory_order_relaxed);
     }
   }
+  /* Input Pre snapshot + once-per-frame wet cache (shared across tracks). */
+  int32_t in_pre_count[LE_MAX_INPUTS];
+  int32_t in_pre_type[LE_MAX_INPUTS][LE_FX_MAX];
+  float in_pre_params[LE_MAX_INPUTS][LE_FX_MAX][LE_FX_PARAMS];
+  int in_has_pre[LE_MAX_INPUTS];
+  float in_pre_wet[LE_MAX_INPUTS];
+  int in_pre_done[LE_MAX_INPUTS];
+  for (int c = 0; c < LE_MAX_INPUTS; ++c) {
+    in_has_pre[c] = 0;
+    in_pre_done[c] = 0;
+    in_pre_wet[c] = 0.0f;
+    int32_t n = load_i32(&e->monitors[c].a_fx_pre_count);
+    if (n < 0) n = 0;
+    if (n > LE_FX_MAX) n = LE_FX_MAX;
+    in_pre_count[c] = n;
+    for (int s = 0; s < n; ++s) {
+      const int32_t ty = load_i32(&e->monitors[c].a_fx_pre_type[s]);
+      in_pre_type[c][s] = ty;
+      if (ty != LE_FX_NONE) in_has_pre[c] = 1;
+      for (int p = 0; p < LE_FX_PARAMS; ++p) {
+        in_pre_params[c][s][p] =
+            load_f32(&e->monitors[c].a_fx_pre_param[s][p]);
+      }
+    }
+  }
+  const int32_t live_focus = load_i32(&e->a_live_signal_focus);
   /* Latency compensation: captured input is recorded this many frames earlier so
    * it aligns with what the player heard. Monitoring stays live (it is no longer
    * folded into the loop buffer at the playhead). */
@@ -3376,6 +3511,29 @@ static inline void mix_tracks_frame(
       }
     }
 
+    const int live_on =
+        live_sig[t] == LE_LIVE_SIGNAL_ON ||
+        (live_sig[t] == LE_LIVE_SIGNAL_AUTO && live_focus == t);
+    float live_pre_wet = 0.0f;
+    int live_pre_ready = 0;
+
+    /* Advance every active Input Pre chain once per frame (silence when the
+     * input is absent/excluded) so delay/reverb state never freezes between
+     * takes — same continuity rule as playback Post. */
+    for (int c = 0; c < ch_in && c < LE_MAX_INPUTS; ++c) {
+      if (in_pre_done[c]) continue;
+      float clean = 0.0f;
+      if (in && !(excluded & (1u << c))) clean = in[f * ch_in + c];
+      float il = clean;
+      float ir = clean;
+      if (in_has_pre[c]) {
+        fx_apply_chain(&e->monitors[c].fx_pre, sr, fx_cap, &il, &ir,
+                       in_pre_count[c], in_pre_type[c], in_pre_params[c]);
+      }
+      in_pre_wet[c] = il;
+      in_pre_done[c] = 1;
+    }
+
     for (int l = 0; l < lane_n[t]; ++l) {
       /* Clean single-input capture: a lane records exactly its assigned hardware
        * input — never an average of several — or silence when it has no input,
@@ -3391,47 +3549,63 @@ static inline void mix_tracks_frame(
        * lazy-alloc window, or a count/alloc mismatch) records and plays nothing
        * rather than dereferencing a NULL pool. */
       float* lbuf = buf[t][l];
-      if (lbuf == NULL) continue;
+      le_lane* ln = &e->tracks[t].lanes[l];
+
+      /* Pre bake: Input Pre → Track Pre. Track Pre DSP advances every frame
+       * when engaged (even while not writing) so tails do not ghost into the
+       * next take; write + Live Signal consume the wet. */
+      float write_sample =
+          (ic >= 0 && ic < LE_MAX_INPUTS) ? in_pre_wet[ic] : insample;
+      float pl = write_sample;
+      float pr = write_sample;
+      if (tr_has_pre[t]) {
+        fx_apply_chain(&ln->fx_pre, sr, fx_cap, &pl, &pr, tr_pre_count[t],
+                       tr_pre_type[t], tr_pre_params[t]);
+        write_sample = pl;
+      }
+      if (l == 0 && live_on) {
+        live_pre_wet = write_sample;
+        live_pre_ready = 1;
+      }
 
       float loopsample = 0.0f;
-      if (st[t] == LE_TRACK_RECORDING) {
-        if (rec_w >= 0) lbuf[rec_w] = insample;
-      } else if (st[t] == LE_TRACK_OVERDUBBING || st[t] == LE_TRACK_PLAYING) {
-        /* Mix the existing loop (read before write). Layer the live input at the
-         * compensated position, scaled by the punch envelope so it ramps in on
-         * punch-in and out on punch-out (od_gain keeps the write alive for the
-         * fade-out tail after the state has already returned to PLAYING).
-         * od_gain == 0 in steady playback, so this is a plain read.
-         * trk_pos[t] (Free mode, B2b): this track's own clock position;
-         * equals pos otherwise. */
-        loopsample = lbuf[seg_base[t] + trk_pos[t]];
-        if (od_gain > 0.0f) {
-          /* Backup-on-write: save the pre-value into the armed shadow first —
-           * the incremental per-pass undo snapshot (same slot on every lane,
-           * lockstep). Live stays authoritative; the shadow becomes one undo
-           * layer when the pass completes (or drains after punch-out). */
-          if (backing) {
-            float* sb = e->tracks[t].lanes[l].pool[tr->dub_slot];
-            if (sb != NULL) sb[wdub] = lbuf[wdub];
+      if (lbuf != NULL) {
+        if (st[t] == LE_TRACK_RECORDING) {
+          if (rec_w >= 0) lbuf[rec_w] = write_sample;
+        } else if (st[t] == LE_TRACK_OVERDUBBING || st[t] == LE_TRACK_PLAYING) {
+          /* Mix the existing loop (read before write). Layer the live input at
+           * the compensated position, scaled by the punch envelope so it ramps
+           * in on punch-in and out on punch-out (od_gain keeps the write alive
+           * for the fade-out tail after the state has already returned to
+           * PLAYING). od_gain == 0 in steady playback, so this is a plain read.
+           * trk_pos[t] (Free mode, B2b): this track's own clock position;
+           * equals pos otherwise. */
+          loopsample = lbuf[seg_base[t] + trk_pos[t]];
+          if (od_gain > 0.0f) {
+            /* Backup-on-write: save the pre-value into the armed shadow first —
+             * the incremental per-pass undo snapshot (same slot on every lane,
+             * lockstep). Live stays authoritative; the shadow becomes one undo
+             * layer when the pass completes (or drains after punch-out). */
+            if (backing) {
+              float* sb = e->tracks[t].lanes[l].pool[tr->dub_slot];
+              if (sb != NULL) sb[wdub] = lbuf[wdub];
+            }
+            /* Feedback scales the existing content at the write head before the
+             * new Pre-baked layer is summed in. fb == 1.0 (the default) is the
+             * classic additive overdub. */
+            lbuf[wdub] = lbuf[wdub] * overdub_fb + write_sample * od_gain;
           }
-          /* Feedback scales the existing content at the write head before the new
-           * layer is summed in, bounding runaway buildup. fb == 1.0 (the default)
-           * is the classic additive `+= insample`. */
-          lbuf[wdub] = lbuf[wdub] * overdub_fb + insample * od_gain;
         }
       }
 
-      /* The lane's mono output: its dry loop content at the lane's playback
-       * volume while it sounds, silence otherwise, run through the lane's whole
-       * (stageless) effects chain on its `fx` state. Effects run every frame the
+      /* Track Post on playback (lane fx mirror). Effects run every frame the
        * lane has them (even on silence) so delay tails and LFO phase stay
        * continuous; the wet result is routed only while the lane is audible. */
       const int audible =
           (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
-          !mut[t][l];
+          !mut[t][l] && lbuf != NULL;
       float wl = audible ? loopsample * vol[t][l] : 0.0f;
       float wr = wl;
-      le_lane* ln = &e->tracks[t].lanes[l];
       if (has_fx[t][l]) {
         fx_apply_chain(&ln->fx, sr, fx_cap, &wl, &wr, fx_count[t][l],
                        fx_type[t][l], fx_params[t][l]);
@@ -3444,6 +3618,21 @@ static inline void mix_tracks_frame(
       if (la > lane_peak[t][l]) lane_peak[t][l] = la;
       if (la > frame_trk_peak[t]) frame_trk_peak[t] = la;
       lane_sumsq[t][l] += loopsample * loopsample;
+    }
+
+    /* Live Signal: Track Pre→Post of lane 0's assigned input into the monitor
+     * mix. Uses fx_post_live so monitoring never shares a delay line with
+     * playback Post. Input Post remains a separate mix_monitors_frame path. */
+    if (live_on && live_pre_ready) {
+      float ml = live_pre_wet;
+      float mr = live_pre_wet;
+      if (has_fx[t][0]) {
+        fx_apply_chain(&tr->fx_post_live, sr, fx_cap, &ml, &mr, fx_count[t][0],
+                       fx_type[t][0], fx_params[t][0]);
+      }
+      const float g = vol[t][0];
+      le_fx_route(out, f, ch_out, out_mask[t][0] & out_enabled, ml * g,
+                  mr * g);
     }
 
     /* Advance the per-pass capture once per written frame (all lanes share the

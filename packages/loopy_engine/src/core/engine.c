@@ -130,6 +130,35 @@ int valid_channel(le_engine* e, int32_t ch) {
 
 /* ---- configuration / lifecycle ---- */
 
+/* Releases heap owned by one FX chain's DSP state (delay rings, octaver,
+ * plugins) and resets runtime integrators. Control-thread only while the
+ * device is closed (configure / destroy). */
+static void le_fx_state_release(le_fx_state* fx) {
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    free(fx->delay[s][0]);
+    fx->delay[s][0] = NULL;
+    free(fx->delay[s][1]);
+    fx->delay[s][1] = NULL;
+    le_fx_free_octaver(fx, s);
+    le_fx_entry_reset(fx, s);
+    le_plugin_slot_destroy(
+        atomic_load_explicit(&fx->plugin[s], memory_order_relaxed));
+    atomic_store_explicit(&fx->plugin[s], NULL, memory_order_relaxed);
+  }
+}
+
+static void le_fx_chain_config_clear(_Atomic int32_t* count,
+                                     _Atomic int32_t* types,
+                                     _Atomic uint32_t params[][LE_FX_PARAMS]) {
+  store_i32(count, 0);
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    store_i32(&types[s], LE_FX_NONE);
+    for (int p = 0; p < LE_FX_PARAMS; ++p) {
+      store_f32(&params[s][p], 0.0f);
+    }
+  }
+}
+
 /* Resets a lane's routing/volume/mute/effects/metering to defaults (recording
  * hardware input [input_channel]), clearing its effect DSP state and releasing
  * its delay lines. Does NOT touch the pool buffers — the caller owns
@@ -146,54 +175,24 @@ void le_lane_reset(le_lane* ln, int32_t input_channel) {
   store_i32(&ln->a_len, 0);
   store_f32(&ln->a_rms_bits, 0.0f);
   store_f32(&ln->a_peak_bits, 0.0f);
-  store_i32(&ln->a_fx_count, 0);
-  for (int s = 0; s < LE_FX_MAX; ++s) {
-    store_i32(&ln->a_fx_type[s], LE_FX_NONE);
-    for (int p = 0; p < LE_FX_PARAMS; ++p) {
-      store_f32(&ln->a_fx_param[s][p], 0.0f);
-    }
-    free(ln->fx.delay[s][0]);
-    ln->fx.delay[s][0] = NULL;
-    free(ln->fx.delay[s][1]);
-    ln->fx.delay[s][1] = NULL;
-    le_fx_free_octaver(&ln->fx, s);
-    le_fx_entry_reset(&ln->fx, s);
-    /* Destroy any hosted plugin slot too. Reset runs from le_engine_configure
-     * while the device is closed (no audio thread), so a direct destroy is safe
-     * — mirrors le_engine_destroy. Without this, a start→stop→start or any
-     * reconfigure leaks the live IPluginHost and its loaded plugin binary. */
-    le_plugin_slot_destroy(
-        atomic_load_explicit(&ln->fx.plugin[s], memory_order_relaxed));
-    atomic_store_explicit(&ln->fx.plugin[s], NULL, memory_order_relaxed);
-  }
+  le_fx_chain_config_clear(&ln->a_fx_count, ln->a_fx_type, ln->a_fx_param);
+  le_fx_state_release(&ln->fx);
+  le_fx_state_release(&ln->fx_pre);
 }
 
 /* Resets a live monitor input to defaults: disabled, full stereo output, unity
- * volume, unmuted, and an empty (clean) single chain — clearing its effect DSP
- * state and releasing its delay lines. Used at configure. */
+ * volume, unmuted, and empty Pre/Post chains — clearing DSP state and releasing
+ * delay lines. Used at configure. */
 static void le_monitor_input_reset(le_monitor_input* m) {
   store_i32(&m->a_enabled, 0);
   atomic_store_explicit(&m->a_output_mask, 0x3u, memory_order_relaxed);
   store_f32(&m->a_vol_bits, 1.0f);
   store_i32(&m->a_muted, 0);
-  store_i32(&m->a_fx_count, 0);
-  for (int s = 0; s < LE_FX_MAX; ++s) {
-    store_i32(&m->a_fx_type[s], LE_FX_NONE);
-    for (int p = 0; p < LE_FX_PARAMS; ++p) {
-      store_f32(&m->a_fx_param[s][p], 0.0f);
-    }
-    free(m->fx.delay[s][0]);
-    m->fx.delay[s][0] = NULL;
-    free(m->fx.delay[s][1]);
-    m->fx.delay[s][1] = NULL;
-    le_fx_free_octaver(&m->fx, s);
-    le_fx_entry_reset(&m->fx, s);
-    /* Destroy any hosted plugin slot too (see le_lane_reset) — otherwise a
-     * reconfigure leaks the monitor input's live plugin host + binary. */
-    le_plugin_slot_destroy(
-        atomic_load_explicit(&m->fx.plugin[s], memory_order_relaxed));
-    atomic_store_explicit(&m->fx.plugin[s], NULL, memory_order_relaxed);
-  }
+  le_fx_chain_config_clear(&m->a_fx_count, m->a_fx_type, m->a_fx_param);
+  le_fx_state_release(&m->fx);
+  le_fx_chain_config_clear(&m->a_fx_pre_count, m->a_fx_pre_type,
+                           m->a_fx_pre_param);
+  le_fx_state_release(&m->fx_pre);
 }
 
 int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
@@ -263,6 +262,12 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     store_i32(&tr->a_one_shot, 0); /* B4: per-track setting, resets like the
                                     * length preset above (not by clear —
                                     * see le_engine_set_one_shot's doc) */
+    le_fx_chain_config_clear(&tr->a_fx_pre_count, tr->a_fx_pre_type,
+                             tr->a_fx_pre_param);
+    le_fx_chain_config_clear(&tr->a_fx_post_count, tr->a_fx_post_type,
+                             tr->a_fx_post_param);
+    le_fx_state_release(&tr->fx_post_live);
+    store_i32(&tr->a_live_signal, LE_LIVE_SIGNAL_OFF);
     tr->length_preset_target_frames = 0;
     tr->pending_record = 0;
     tr->pending_trigger = 0;
@@ -604,6 +609,7 @@ le_engine* le_engine_create(void) {
    * a_looper_mode, -1 is NOT calloc's zero-fill, so this store is load-
    * bearing, not just legibility. */
   store_i32(&engine->a_primary_track, -1);
+  store_i32(&engine->a_live_signal_focus, -1);
   /* MIDI clock mode SETTING (Phase C/E, D15): same seeded-once persistence as
    * the looper mode / primary track above. OFF (0) is both the enum's zero
    * value and calloc's zero-fill; kept explicit for the same legibility
@@ -628,31 +634,21 @@ void le_engine_destroy(le_engine* engine) {
     engine->backend->close(engine);
   }
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    le_track* tr = &engine->tracks[t];
+    le_fx_state_release(&tr->fx_post_live);
     for (int l = 0; l < LE_MAX_LANES; ++l) {
-      le_lane* ln = &engine->tracks[t].lanes[l];
+      le_lane* ln = &tr->lanes[l];
       for (int i = 0; i < LE_POOL_SLOTS; ++i) {
         free(ln->pool[i]);
       }
-      for (int s = 0; s < LE_FX_MAX; ++s) {
-        free(ln->fx.delay[s][0]);
-        free(ln->fx.delay[s][1]);
-        le_fx_free_octaver(&ln->fx, s);
-        /* The device is already closed (no audio thread), so any hosted plugin
-         * slot — including one left behind by a stalled-callback clear — can be
-         * destroyed directly without the quiescent handshake. */
-        le_plugin_slot_destroy(
-            atomic_load_explicit(&ln->fx.plugin[s], memory_order_relaxed));
-      }
+      /* Device already closed — direct destroy is safe (no audio thread). */
+      le_fx_state_release(&ln->fx);
+      le_fx_state_release(&ln->fx_pre);
     }
   }
   for (int c = 0; c < LE_MAX_INPUTS; ++c) {
-    for (int s = 0; s < LE_FX_MAX; ++s) {
-      free(engine->monitors[c].fx.delay[s][0]);
-      free(engine->monitors[c].fx.delay[s][1]);
-      le_fx_free_octaver(&engine->monitors[c].fx, s);
-      le_plugin_slot_destroy(atomic_load_explicit(
-          &engine->monitors[c].fx.plugin[s], memory_order_relaxed));
-    }
+    le_fx_state_release(&engine->monitors[c].fx);
+    le_fx_state_release(&engine->monitors[c].fx_pre);
   }
   free(engine->lat_buf);
   /* The device is already closed (no audio thread), so the performance-capture

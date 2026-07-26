@@ -225,8 +225,9 @@ typedef struct le_fx_state {
  * (whose sole writer is the control thread), so undo/redo never races the audio
  * callback.
  *
- * The effects fields are the per-lane record-route chain: a single
- * non-destructive chain run on playback. The recording stays dry. */
+ * Lane FX: Track Post playback DSP (per-lane state) plus Track Pre write-path
+ * DSP. Canonical Pre/Post config lives on le_track; a_fx_* mirrors Track Post
+ * for le_engine_set_lane_fx* compat. */
 typedef struct le_lane {
   _Atomic int32_t a_input_channel; /* hardware input recorded (-1 = none) */
   _Atomic uint32_t a_output_mask;  /* bitmask of output channels to play to */
@@ -249,37 +250,37 @@ typedef struct le_lane {
   _Atomic uint32_t a_rms_bits;
   _Atomic uint32_t a_peak_bits;
 
-  /* Per-lane effects chain. Published config (control writes, audio reads once
-   * per buffer): an ordered array of LE_FX_MAX entries, of which a_fx_count are
-   * active, each with a type and LE_FX_PARAMS normalized parameters. The chain
-   * is stageless — every active entry colors playback in order — and runs on
-   * the lane's own `fx` DSP state. */
+  /* Track Post mirror (compat: le_engine_set_lane_fx*). Playback-only. */
   _Atomic int32_t a_fx_count;
   _Atomic int32_t a_fx_type[LE_FX_MAX];
   _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
   le_fx_state fx;
+
+  /* Track Pre write-path DSP (config from le_track.a_fx_pre_*). */
+  le_fx_state fx_pre;
 } le_lane;
 
-/* One hardware input's live monitor (engine-level, one slot per input).
+/* One hardware input: Input Pre (bakes on record) + Input Post (live/FOH only).
  *
- * When a_enabled, the input's live sample runs through ONE non-destructive effect
- * chain (stageless, on its own `fx` state) at a_vol_bits, routed to the output
- * channels a_output_mask selects unless a_muted. An empty chain (a_fx_count == 0)
- * is the clean (dry) path — there is no special-case dry concept. The monitored
- * signal is NEVER recorded and is independent of all track state, so an input can
- * be monitored whether or not any track records or plays it. Input-level enable
- * gates the whole input (and honours loopback exclusion + the latency-measurement
- * suppress/restore). This single chain is what le_engine_record deep-copies onto a
- * recording lane (snapshot-on-record). */
+ * Compat: le_engine_set_monitor_input_fx* writes Post (a_fx_* / fx). Input Pre
+ * is le_engine_set_input_fx_pre*. When a_enabled, live sample → Input Post →
+ * outs. Input Post never prints; Input Pre runs on the record/overdub write
+ * path for lanes assigned to this input. */
 typedef struct le_monitor_input {
   _Atomic int32_t a_enabled;      /* 0/1 live monitoring on for this input */
   _Atomic uint32_t a_output_mask; /* output channels the monitor plays to */
   _Atomic uint32_t a_vol_bits;    /* monitor gain (float bits, 0..1) */
   _Atomic int32_t a_muted;        /* 0/1 monitor mute */
+  /* Input Post (compat monitor FX surface). */
   _Atomic int32_t a_fx_count;
   _Atomic int32_t a_fx_type[LE_FX_MAX];
   _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
   le_fx_state fx;
+  /* Input Pre — prints into the record/overdub buffer. */
+  _Atomic int32_t a_fx_pre_count;
+  _Atomic int32_t a_fx_pre_type[LE_FX_MAX];
+  _Atomic uint32_t a_fx_pre_param[LE_FX_MAX][LE_FX_PARAMS];
+  le_fx_state fx_pre;
 } le_monitor_input;
 
 /* What one history entry represents. */
@@ -498,6 +499,21 @@ typedef struct le_track {
    * free_clock itself is — there is no per-track wrap event to hook in
    * Multi/Sync/Band. */
   _Atomic int32_t a_one_shot;
+
+  /* ---- Track Pre / Post FX + Live Signal (Sheeran-style racks, part 1) ----
+   * Two chains per track (not a tagged ordered list). Pre prints into the
+   * record/overdub buffer; Post colors playback only. Config is shared by every
+   * lane (P9); each lane owns Pre/Post DSP state so parallel inputs stay
+   * independent. fx_post_live is a dedicated Live Signal Post DSP so monitoring
+   * never shares a delay line with playback Post. */
+  _Atomic int32_t a_fx_pre_count;
+  _Atomic int32_t a_fx_pre_type[LE_FX_MAX];
+  _Atomic uint32_t a_fx_pre_param[LE_FX_MAX][LE_FX_PARAMS];
+  _Atomic int32_t a_fx_post_count;
+  _Atomic int32_t a_fx_post_type[LE_FX_MAX];
+  _Atomic uint32_t a_fx_post_param[LE_FX_MAX][LE_FX_PARAMS];
+  le_fx_state fx_post_live; /* Live Signal Post only (lane 0 assigned input) */
+  _Atomic int32_t a_live_signal; /* le_live_signal_mode */
 } le_track;
 
 /* Performance-recording capture state (le_perf_arm / le_perf_disarm,
@@ -681,6 +697,11 @@ struct le_engine {
    * survives; only an explicit re-crown, LE_CMD_CROWN_PRIMARY, changes it).
    * Meaningful only in Sync/Band; see le_sync_quantize_active below. */
   _Atomic int32_t a_primary_track;
+
+  /* Live Signal Auto focus (P11): UI-selected monitoring focus track, distinct
+   * from a_primary_track. -1 = none. When a track's live_signal is AUTO, it
+   * monitors only while this equals that track index. */
+  _Atomic int32_t a_live_signal_focus;
 
   /* MIDI clock mode (Phase C/E, D15, published — see le_snapshot's trailing
    * clock block). A SETTING, seeded once in le_engine_create and persisting

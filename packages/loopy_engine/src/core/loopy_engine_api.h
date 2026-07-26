@@ -258,17 +258,13 @@ typedef enum le_command_code {
   LE_CMD_SET_LANE_MUTE = 29,   /* lane mute.
                                 * arg_i = channel*LE_MAX_LANES + lane,
                                 * arg_f = 0/1. */
-  /* ---- per-input live monitor (one slot per hardware input) ----
-   * Each hardware input has a SINGLE live-monitor chain: input-level enable gates
-   * the whole input, then the input's live signal runs through its own effect
-   * chain / routing / volume / mute. An empty chain is the clean (dry) path. Never
-   * recorded, independent of all track state. The chain you monitor live is the
-   * chain that is snapshot-copied onto a track lane when you record into it (a
-   * clean monitor chain leaves the lane's own staged chain untouched). The
-   * monitor commands are keyed by input only (no per-lane index): the FX commands
-   * carry (input, index, type) in the typed `fx` arm (lane unused), the count in
-   * `fxcount` (lane unused); output rides the `trackmask` arm (channel = input);
-   * volume/mute use the generic { arg_i = input, arg_f = value } arm. */
+  /* ---- per-input live monitor + Input Post (one slot per hardware input) ----
+   * Input-level enable gates the whole input; the live signal runs through
+   * Input Post / routing / volume / mute (never prints). Input Pre is a
+   * separate write-path chain (LE_CMD_SET_INPUT_FX_PRE*). Compat:
+   * SET_MONITOR_INPUT_FX* writes Input Post. FX commands use the typed `fx` /
+   * `fxcount` arms (channel = input, lane unused); output rides `trackmask`;
+   * volume/mute use { arg_i = input, arg_f = value }. */
   LE_CMD_SET_MONITOR_INPUT = 30, /* enable/disable a hardware input's monitor.
                                   * arg_i = input, arg_f = enabled (0/1). */
   LE_CMD_SET_MONITOR_INPUT_FX = 31, /* set the input's chain entry type (and reset
@@ -376,21 +372,44 @@ typedef enum le_command_code {
   LE_CMD_SET_CLOCK_MODE = 48, /* arg_i = le_clock_mode. RECEIVE (2) is
                                * rejected — see le_engine_set_clock_mode. */
 
+  /* ---- Sheeran-style Pre/Post FX + Live Signal (part 1) ----
+   * Each owner (hardware input / track) has TWO chains of up to LE_FX_MAX:
+   * Pre (prints on record/overdub) and Post (playback / live only). Compat
+   * shims: SET_MONITOR_INPUT_FX* → Input Post; SET_LANE_FX* → Track Post
+   * (copied to every lane). New setters address Pre/Post explicitly. */
+  LE_CMD_SET_INPUT_FX_PRE = 49,       /* fx arm: channel = input, index, type */
+  LE_CMD_SET_INPUT_FX_PRE_COUNT = 50, /* fxcount arm: channel = input, count */
+  LE_CMD_SET_TRACK_FX_PRE = 51,       /* fx arm: channel = track, index, type */
+  LE_CMD_SET_TRACK_FX_PRE_COUNT = 52, /* fxcount arm: channel = track, count */
+  LE_CMD_SET_TRACK_FX_POST = 53,      /* fx arm: channel = track, index, type */
+  LE_CMD_SET_TRACK_FX_POST_COUNT = 54, /* fxcount arm: channel = track, count */
+  LE_CMD_SET_TRACK_LIVE_SIGNAL = 55, /* arg_i = track, arg_f = le_live_signal_mode */
+  LE_CMD_SET_LIVE_SIGNAL_FOCUS = 56, /* arg_i = track (-1 clears focus) */
+
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
   LE_EVT_LAYER_RETIRED = 100, /* a completed overdub-pass snapshot. evt arm:
                                * channel, slot, generation. */
 } le_command_code;
 
-/* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
- * carries an ordered chain of up to LE_FX_MAX entries, each with a type and
- * LE_FX_PARAMS normalized (0..1) parameters. The chain is non-destructive (the
- * recording is ALWAYS dry; effects color playback only) and every active entry
- * applies in chain order — there is no pre/post stage. The cap exists only so
- * the audio thread reads a fixed-size, allocation-free array — it is far beyond
- * musical need, not a CPU limit. */
+/* Per-owner effects: each hardware input and each track carries TWO ordered
+ * chains (Pre + Post), each up to LE_FX_MAX entries with LE_FX_PARAMS normalized
+ * (0..1) parameters. Pre prints into the record/overdub buffer; Post colors
+ * playback / Live Signal / input monitor only. Pre and Post each have their own
+ * LE_FX_MAX budget (not a shared pool). Compat: le_engine_set_lane_fx* writes
+ * Track Post; le_engine_set_monitor_input_fx* writes Input Post. */
 #define LE_FX_MAX 8
 #define LE_FX_PARAMS 4
+
+/* Live Signal mode per track (Sheeran Looper X parity). Off: no track FX in the
+ * monitor mix (Input Post still follows input-monitor enable). On: always
+ * monitor Track Pre→Post of the track's lane-0 assigned input. Auto: same as On
+ * only while a_live_signal_focus equals this track (P11; distinct from crown). */
+typedef enum le_live_signal_mode {
+  LE_LIVE_SIGNAL_OFF = 0,
+  LE_LIVE_SIGNAL_AUTO = 1,
+  LE_LIVE_SIGNAL_ON = 2,
+} le_live_signal_mode;
 
 /* Built-in effect types. Designed so a hosted VST3/CLAP plugin can later slot
  * in as just another type. Each type reads its entry's LE_FX_PARAMS normalized
@@ -1433,39 +1452,28 @@ LE_EXPORT int32_t le_engine_set_overdub_feedback(le_engine* engine,
  * second press before then cancels. Disabling cancels tracks still waiting. */
 LE_EXPORT int32_t le_engine_set_auto_record(le_engine* engine, int32_t enabled);
 
-/* Sets chain entry [index] (0..LE_FX_MAX-1) on lane [lane] of track [channel] to
- * [type]. Changing the type resets that entry's DSP state; LE_FX_DELAY lazily
- * allocates the entry's delay line (on this calling thread) and seeds the type's
- * default parameters. The chain is non-destructive and stageless — every active
- * entry colors playback in order. This sets the entry's value only; use
- * le_engine_set_lane_fx_count to make entries active. */
+/* Compat shim → Track Post: sets Post chain entry [index] on track [channel]
+ * and mirrors it onto every lane (lane arg kept for ABI; ownership is track-
+ * level). Post never prints — playback only. Prefer le_engine_set_track_fx_post
+ * for new code. */
 LE_EXPORT int32_t le_engine_set_lane_fx(le_engine* engine, int32_t channel,
                                         int32_t lane, int32_t index,
                                         int32_t type);
 
-/* Sets the active chain length on lane [lane] of track [channel] to [count]
- * (0..LE_FX_MAX): only entries [0, count) are processed, in order. */
+/* Compat shim → Track Post active length (mirrored to every lane). */
 LE_EXPORT int32_t le_engine_set_lane_fx_count(le_engine* engine, int32_t channel,
                                               int32_t lane, int32_t count);
 
-/* Sets parameter [param] (0..LE_FX_PARAMS-1) of chain entry [index] on lane
- * [lane] of track [channel] to [value] (clamped to 0..1). The parameter's
- * meaning depends on the entry's le_fx_type. */
+/* Compat shim → Track Post parameter (mirrored to every lane). */
 LE_EXPORT int32_t le_engine_set_lane_fx_param(le_engine* engine, int32_t channel,
                                               int32_t lane, int32_t index,
                                               int32_t param, float value);
 
-/* ---- per-input live monitor ---- *
- * Each hardware input has a SINGLE live-monitor chain: input-level enable gates
- * the whole input, then the live signal runs through one effect chain / routing /
- * volume / mute. An empty chain is the clean (dry) path. The monitored signal is
- * NEVER recorded and is independent of all track state (record/play/overdub), so
- * an input can be monitored whether or not any track is using it. The chain you
- * monitor live is the chain that is snapshot-copied onto a track lane the moment
- * you record into that input (le_engine_record), so a take sounds like what you
- * heard; the copy is a deep copy taken on the control thread (never recorded into
- * the buffer — playback re-applies it), so later input-chain edits do not alter
- * earlier takes. */
+/* ---- per-input live monitor + Input Pre/Post ---- *
+ * Each hardware input has Input Pre (bakes on record/overdub) and Input Post
+ * (live/FOH only, never prints). Compat: le_engine_set_monitor_input_fx* writes
+ * Input Post. When a_enabled, the live sample runs through Input Post / routing /
+ * volume / mute. Live Signal (per-track) is a separate monitor path. */
 
 /* Enables or disables live monitoring of hardware input [input]. When enabled,
  * the input routes per its own output mask; a loopback-excluded input is never
@@ -1488,27 +1496,59 @@ LE_EXPORT int32_t le_engine_set_monitor_input_volume(le_engine* engine,
 LE_EXPORT int32_t le_engine_set_monitor_input_mute(le_engine* engine,
                                                    int32_t input, int32_t muted);
 
-/* Sets chain entry [index] (0..LE_FX_MAX-1) on hardware input [input]'s monitor
- * chain to [type]. Changing the type resets that entry's DSP state; LE_FX_DELAY
- * lazily allocates the entry's delay line (on this calling thread) and seeds the
- * type's default parameters. Use le_engine_set_monitor_input_fx_count to make
- * entries active. */
+/* Compat shim → Input Post: sets Post chain entry [index] on input [input].
+ * Explicit Input Post setters land with the Dart surface in a later part. */
 LE_EXPORT int32_t le_engine_set_monitor_input_fx(le_engine* engine, int32_t input,
                                                  int32_t index, int32_t type);
 
-/* Sets hardware input [input]'s monitor active chain length to [count]
- * (0..LE_FX_MAX): only entries [0, count) are processed, in order. */
+/* Compat shim → Input Post active length. */
 LE_EXPORT int32_t le_engine_set_monitor_input_fx_count(le_engine* engine,
                                                        int32_t input,
                                                        int32_t count);
 
-/* Sets parameter [param] (0..LE_FX_PARAMS-1) of hardware input [input]'s monitor
- * chain entry [index] to [value] (clamped to 0..1). Its meaning depends on the
- * entry's le_fx_type. */
+/* Compat shim → Input Post parameter. */
 LE_EXPORT int32_t le_engine_set_monitor_input_fx_param(le_engine* engine,
                                                        int32_t input,
                                                        int32_t index,
                                                        int32_t param, float value);
+
+/* ---- Input / Track Pre+Post + Live Signal (part 1 native surface) ----
+ * Temporary dual API: legacy lane/monitor FX setters remain as Post shims;
+ * these address Pre/Post and Live Signal explicitly. Dart ffigen may lag —
+ * native tests call these directly. */
+
+LE_EXPORT int32_t le_engine_set_input_fx_pre(le_engine* engine, int32_t input,
+                                             int32_t index, int32_t type);
+LE_EXPORT int32_t le_engine_set_input_fx_pre_count(le_engine* engine,
+                                                   int32_t input, int32_t count);
+LE_EXPORT int32_t le_engine_set_input_fx_pre_param(le_engine* engine,
+                                                   int32_t input, int32_t index,
+                                                   int32_t param, float value);
+
+LE_EXPORT int32_t le_engine_set_track_fx_pre(le_engine* engine, int32_t channel,
+                                             int32_t index, int32_t type);
+LE_EXPORT int32_t le_engine_set_track_fx_pre_count(le_engine* engine,
+                                                   int32_t channel,
+                                                   int32_t count);
+LE_EXPORT int32_t le_engine_set_track_fx_pre_param(le_engine* engine,
+                                                   int32_t channel,
+                                                   int32_t index, int32_t param,
+                                                   float value);
+
+LE_EXPORT int32_t le_engine_set_track_fx_post(le_engine* engine, int32_t channel,
+                                              int32_t index, int32_t type);
+LE_EXPORT int32_t le_engine_set_track_fx_post_count(le_engine* engine,
+                                                    int32_t channel,
+                                                    int32_t count);
+LE_EXPORT int32_t le_engine_set_track_fx_post_param(le_engine* engine,
+                                                    int32_t channel,
+                                                    int32_t index,
+                                                    int32_t param, float value);
+
+LE_EXPORT int32_t le_engine_set_track_live_signal(le_engine* engine,
+                                                  int32_t channel, int32_t mode);
+LE_EXPORT int32_t le_engine_set_live_signal_focus(le_engine* engine,
+                                                  int32_t channel);
 
 /* ---- structural output gate ---- *
  * Turns hardware output [output] on/off as a routing target. A disabled output is

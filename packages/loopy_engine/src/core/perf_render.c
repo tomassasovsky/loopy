@@ -1037,7 +1037,10 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
       const le_command* cmd = &log[log_index].cmd;
       switch (cmd->code) {
         case LE_CMD_SET_LANE_FX:
-          if (cmd->fx.channel == channel && cmd->fx.lane == 0 &&
+        case LE_CMD_SET_TRACK_FX_POST:
+          /* Lane FX shim and explicit Track Post both drive wet playback. */
+          if (cmd->fx.channel == channel &&
+              (cmd->code == LE_CMD_SET_TRACK_FX_POST || cmd->fx.lane == 0) &&
               cmd->fx.index >= 0 && cmd->fx.index < LE_FX_MAX) {
             /* Mirrors le_engine_set_lane_fx's control-side behavior
              * (engine_commands.c: le_fx_prepare_entry), not just the
@@ -1064,7 +1067,10 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
           }
           break;
         case LE_CMD_SET_LANE_FX_COUNT:
-          if (cmd->fxcount.channel == channel && cmd->fxcount.lane == 0) {
+        case LE_CMD_SET_TRACK_FX_POST_COUNT:
+          if (cmd->fxcount.channel == channel &&
+              (cmd->code == LE_CMD_SET_TRACK_FX_POST_COUNT ||
+               cmd->fxcount.lane == 0)) {
             int32_t count = cmd->fxcount.count;
             if (count < 0) count = 0;
             if (count > LE_FX_MAX) count = LE_FX_MAX;

@@ -91,20 +91,31 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
   `a_live` in lockstep. **Lazy lane allocation**: only lane 0 of each track is
   allocated at configure; `le_engine_set_lane_count` allocates added lanes on the
   control thread, and a **real-time null-guard** keeps the audio thread from
-  dereferencing an unallocated lane buffer. Track-addressed setters (volume /
-  mute / input / output / fx) map to **lane 0** for backward compatibility.
+  dereferencing an unallocated lane buffer.   Track-addressed volume / mute / input / output setters map to **lane 0** for
+  backward compatibility; FX setters map to **Track Post** (shared by all lanes).
 - Lane buffer pools + undo/redo stacks are owned by the **control thread** (sole
   writer of each lane's atomic `a_live`). The **audio thread only reads
   `lane.pool[a_live]`** — no allocation/locks/stack-access on the callback.
-- **Effects are per-lane** (one **stageless**, non-destructive chain on each
-  lane's own `fx` state — the pre/post `stage` and the per-lane `mon_fx` are
-  gone): `le_engine_set_lane_fx(channel,lane,index,type)` / `…_fx_count` /
-  `…_fx_param`. Track-addressed FX setters map to **lane 0** for back-compat.
+- **Effects are Pre/Post per owner** (Sheeran-style, part 1 — issue #351): each
+  hardware input and each track has two chains (`pre[]` + `post[]`, each up to
+  `LE_FX_MAX`). **Record/overdub write:** Input Pre → Track Pre → buffer.
+  **Playback:** buffer → Track Post. **Input Post** is live/FOH only (never
+  prints). Track Pre/Post are shared by every lane of that track (P9).
+- **Temporary dual API (part 1):** `le_engine_set_lane_fx*` still posts
+  `LE_CMD_SET_LANE_FX*` for perf-log/offline-render compat but **mirrors onto
+  Track Post** (all lanes). `le_engine_set_monitor_input_fx*` writes **Input
+  Post**. New explicit setters: `le_engine_set_input_fx_pre*`,
+  `le_engine_set_track_fx_pre*` / `…_post*`, `le_engine_set_track_live_signal`,
+  `le_engine_set_live_signal_focus` (P11 — UI focus ≠ primary crown). Dart
+  ffigen may lag; native tests call the new symbols directly.
+- **Live Signal** per track: Off / Auto / On. On/Auto monitor path = Track
+  Pre → Post of lane 0's assigned input (separate `fx_post_live` DSP so it
+  never shares a delay line with playback Post). Input Post remains the
+  independent `mix_monitors_frame` path.
 - **Live monitoring is per hardware input** (`le_monitor_input monitors[LE_MAX_INPUTS]`,
   one slot per input, ≤ `LE_MAX_INPUTS`=8): each enabled input is summed live
-  through **its own** stageless chain into its output mask, **never recorded**,
-  independent of all track state — replacing the old global monitor-FX bus,
-  monitor-follow-track, and monitor masks. `le_engine_set_monitor_input(input,
+  through **Input Post** into its output mask, **never recorded**,
+  independent of all track state. `le_engine_set_monitor_input(input,
   enabled,output)` / `…_fx` / `…_fx_count` / `…_fx_param`. A loopback
   measurement clears all monitor enables (cable-feedback safety); `passthrough`
   enables input 0 at start.

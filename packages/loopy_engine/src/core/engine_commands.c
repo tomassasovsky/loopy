@@ -1516,6 +1516,97 @@ static int32_t le_fx_prepare_entry(le_fx_state* fx, _Atomic int32_t* a_type,
   return LE_OK;
 }
 
+/* Prepares Track Post DSP on every lane + Live Signal Post. Seeds defaults into
+ * each owner's param atomics when the published type changes. */
+static int32_t le_prepare_track_post(le_engine* engine, int32_t channel,
+                                     int32_t index, int32_t type) {
+  le_track* tr = &engine->tracks[channel];
+  if (le_fx_prepare_entry(&tr->fx_post_live, tr->a_fx_post_type,
+                          tr->a_fx_post_param, index, type,
+                          engine->fx_delay_frames) != LE_OK) {
+    return LE_ERR_INVALID;
+  }
+  for (int l = 0; l < LE_MAX_LANES; ++l) {
+    le_lane* ln = &tr->lanes[l];
+    if (le_fx_prepare_entry(&ln->fx, ln->a_fx_type, ln->a_fx_param, index, type,
+                            engine->fx_delay_frames) != LE_OK) {
+      return LE_ERR_INVALID;
+    }
+  }
+  return LE_OK;
+}
+
+/* Prepares Track Pre DSP on every lane; seeds track Pre params once. */
+static int32_t le_prepare_track_pre(le_engine* engine, int32_t channel,
+                                    int32_t index, int32_t type) {
+  le_track* tr = &engine->tracks[channel];
+  /* Seed track Pre params via lane 0's prepare against the track arrays, then
+   * allocate remaining lanes' Pre DSP (params already on the track). */
+  if (le_fx_prepare_entry(&tr->lanes[0].fx_pre, tr->a_fx_pre_type,
+                          tr->a_fx_pre_param, index, type,
+                          engine->fx_delay_frames) != LE_OK) {
+    return LE_ERR_INVALID;
+  }
+  for (int l = 1; l < LE_MAX_LANES; ++l) {
+    if (le_fx_prepare(&tr->lanes[l].fx_pre, index, type,
+                      engine->fx_delay_frames > 0 ? engine->fx_delay_frames
+                                                  : 48000) != LE_OK) {
+      return LE_ERR_INVALID;
+    }
+  }
+  return LE_OK;
+}
+
+int32_t le_engine_set_track_fx_post(le_engine* engine, int32_t channel,
+                                    int32_t index, int32_t type) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (type < LE_FX_NONE || type > LE_FX_REVERB) return LE_ERR_INVALID;
+  if (le_prepare_track_post(engine, channel, index, type) != LE_OK) {
+    return LE_ERR_INVALID;
+  }
+  return le_push_cmd(engine,
+                     (le_command){.code = LE_CMD_SET_TRACK_FX_POST,
+                                  .fx = {channel, 0, index, type}});
+}
+
+int32_t le_engine_set_track_fx_post_count(le_engine* engine, int32_t channel,
+                                          int32_t count) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (count < 0) count = 0;
+  if (count > LE_FX_MAX) count = LE_FX_MAX;
+  return le_push_cmd(engine,
+                     (le_command){.code = LE_CMD_SET_TRACK_FX_POST_COUNT,
+                                  .fxcount = {channel, 0, count}});
+}
+
+int32_t le_engine_set_track_fx_post_param(le_engine* engine, int32_t channel,
+                                          int32_t index, int32_t param,
+                                          float value) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (param < 0 || param >= LE_FX_PARAMS) return LE_ERR_INVALID;
+  if (value < 0.0f) value = 0.0f;
+  if (value > 1.0f) value = 1.0f;
+  le_track* tr = &engine->tracks[channel];
+  store_f32(&tr->a_fx_post_param[index][param], value);
+  for (int l = 0; l < LE_MAX_LANES; ++l) {
+    store_f32(&tr->lanes[l].a_fx_param[index][param], value);
+  }
+  le_plog_push_ctrl(
+      engine, (le_command){.code = LE_PLOG_SET_LANE_FX_PARAM,
+                           .fx = {channel, 0,
+                                  LE_PLOG_FX_PARAM_PACK(index, param),
+                                  (int32_t)f32_to_bits(value)}});
+  return LE_OK;
+}
+
+/* Compat → Track Post. Still posts LE_CMD_SET_LANE_FX* so perf-log / offline
+ * render round-trips stay intact; apply_command mirrors onto every lane + the
+ * track Post canonical config (P9). */
 int32_t le_engine_set_lane_fx(le_engine* engine, int32_t channel, int32_t lane,
                               int32_t index, int32_t type) {
   if (engine == NULL) return LE_ERR_INVALID;
@@ -1523,14 +1614,9 @@ int32_t le_engine_set_lane_fx(le_engine* engine, int32_t channel, int32_t lane,
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
   if (type < LE_FX_NONE || type > LE_FX_REVERB) return LE_ERR_INVALID;
-  le_lane* ln = &engine->tracks[channel].lanes[lane];
-  if (le_fx_prepare_entry(&ln->fx, ln->a_fx_type, ln->a_fx_param, index, type,
-                          engine->fx_delay_frames) != LE_OK) {
+  if (le_prepare_track_post(engine, channel, index, type) != LE_OK) {
     return LE_ERR_INVALID;
   }
-  /* Publish the type via the ring so the audio thread resets the entry's DSP
-   * state in lockstep. The delay pointer written above is made visible to the
-   * audio thread by the ring's release/acquire pairing. */
   return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_LANE_FX,
                                           .fx = {channel, lane, index, type}});
 }
@@ -1550,24 +1636,10 @@ int32_t le_engine_set_lane_fx_count(le_engine* engine, int32_t channel,
 int32_t le_engine_set_lane_fx_param(le_engine* engine, int32_t channel,
                                     int32_t lane, int32_t index, int32_t param,
                                     float value) {
-  if (engine == NULL) return LE_ERR_INVALID;
-  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
-  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
-  if (param < 0 || param >= LE_FX_PARAMS) return LE_ERR_INVALID;
-  if (value < 0.0f) value = 0.0f;
-  if (value > 1.0f) value = 1.0f;
-  /* Params are plain published atomics read once per buffer; a direct store is
-   * race-free and needs no ring command (unlike the type, which also resets
-   * audio-thread DSP state). Works whether or not the device is running. */
-  store_f32(&engine->tracks[channel].lanes[lane].a_fx_param[index][param],
-            value);
-  le_plog_push_ctrl(
-      engine, (le_command){.code = LE_PLOG_SET_LANE_FX_PARAM,
-                           .fx = {channel, lane,
-                                  LE_PLOG_FX_PARAM_PACK(index, param),
-                                  (int32_t)f32_to_bits(value)}});
-  return LE_OK;
+  (void)lane;
+  return le_engine_set_track_fx_post_param(engine, channel, index, param,
+                                           value);
 }
 
 int32_t le_engine_set_monitor_input(le_engine* engine, int32_t input,
@@ -1603,6 +1675,7 @@ int32_t le_engine_set_monitor_input_mute(le_engine* engine, int32_t input,
                  muted ? 1.0f : 0.0f);
 }
 
+/* Compat → Input Post. */
 int32_t le_engine_set_monitor_input_fx(le_engine* engine, int32_t input,
                                        int32_t index, int32_t type) {
   if (engine == NULL) return LE_ERR_INVALID;
@@ -1645,6 +1718,101 @@ int32_t le_engine_set_monitor_input_fx_param(le_engine* engine, int32_t input,
                                   LE_PLOG_FX_PARAM_PACK(index, param),
                                   (int32_t)f32_to_bits(value)}});
   return LE_OK;
+}
+
+/* ---- Input Pre / Track Pre / Live Signal ---- */
+
+int32_t le_engine_set_input_fx_pre(le_engine* engine, int32_t input,
+                                   int32_t index, int32_t type) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (type < LE_FX_NONE || type > LE_FX_REVERB) return LE_ERR_INVALID;
+  le_monitor_input* m = &engine->monitors[input];
+  if (le_fx_prepare_entry(&m->fx_pre, m->a_fx_pre_type, m->a_fx_pre_param,
+                          index, type, engine->fx_delay_frames) != LE_OK) {
+    return LE_ERR_INVALID;
+  }
+  return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_INPUT_FX_PRE,
+                                          .fx = {input, 0, index, type}});
+}
+
+int32_t le_engine_set_input_fx_pre_count(le_engine* engine, int32_t input,
+                                         int32_t count) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
+  if (count < 0) count = 0;
+  if (count > LE_FX_MAX) count = LE_FX_MAX;
+  return le_push_cmd(engine,
+                     (le_command){.code = LE_CMD_SET_INPUT_FX_PRE_COUNT,
+                                  .fxcount = {input, 0, count}});
+}
+
+int32_t le_engine_set_input_fx_pre_param(le_engine* engine, int32_t input,
+                                         int32_t index, int32_t param,
+                                         float value) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (param < 0 || param >= LE_FX_PARAMS) return LE_ERR_INVALID;
+  if (value < 0.0f) value = 0.0f;
+  if (value > 1.0f) value = 1.0f;
+  store_f32(&engine->monitors[input].a_fx_pre_param[index][param], value);
+  return LE_OK;
+}
+
+int32_t le_engine_set_track_fx_pre(le_engine* engine, int32_t channel,
+                                   int32_t index, int32_t type) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (type < LE_FX_NONE || type > LE_FX_REVERB) return LE_ERR_INVALID;
+  if (le_prepare_track_pre(engine, channel, index, type) != LE_OK) {
+    return LE_ERR_INVALID;
+  }
+  return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_TRACK_FX_PRE,
+                                          .fx = {channel, 0, index, type}});
+}
+
+int32_t le_engine_set_track_fx_pre_count(le_engine* engine, int32_t channel,
+                                         int32_t count) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (count < 0) count = 0;
+  if (count > LE_FX_MAX) count = LE_FX_MAX;
+  return le_push_cmd(engine,
+                     (le_command){.code = LE_CMD_SET_TRACK_FX_PRE_COUNT,
+                                  .fxcount = {channel, 0, count}});
+}
+
+int32_t le_engine_set_track_fx_pre_param(le_engine* engine, int32_t channel,
+                                         int32_t index, int32_t param,
+                                         float value) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (param < 0 || param >= LE_FX_PARAMS) return LE_ERR_INVALID;
+  if (value < 0.0f) value = 0.0f;
+  if (value > 1.0f) value = 1.0f;
+  store_f32(&engine->tracks[channel].a_fx_pre_param[index][param], value);
+  return LE_OK;
+}
+
+int32_t le_engine_set_track_live_signal(le_engine* engine, int32_t channel,
+                                        int32_t mode) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (mode < LE_LIVE_SIGNAL_OFF || mode > LE_LIVE_SIGNAL_ON) {
+    return LE_ERR_INVALID;
+  }
+  return le_push(engine, LE_CMD_SET_TRACK_LIVE_SIGNAL, channel, (float)mode);
+}
+
+int32_t le_engine_set_live_signal_focus(le_engine* engine, int32_t channel) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  /* -1 clears focus; otherwise must be an in-range track. */
+  if (channel < -1 || channel >= engine->track_count) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_SET_LIVE_SIGNAL_FOCUS, channel, 0.0f);
 }
 
 /* ---- structural output gate ---- */

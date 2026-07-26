@@ -317,11 +317,9 @@ static void test_looper_record_then_play(void) {
   le_engine_destroy(e);
 }
 
-/* THE DRY-RECORDING INVARIANT (umbrella D-P1, part 7 headline): an FX in a
- * lane chain colours playback only — the captured loop buffer is byte-identical
- * to the same take with no FX. The record route is FX-agnostic, so this holds
- * for a hosted plugin exactly as for the built-in drive used here (a plugin
- * slot can't be wired without a scan in this harness). */
+/* DRY-RECORDING FOR TRACK POST: set_lane_fx maps to Track Post, which colours
+ * playback only — the captured loop buffer stays byte-identical to a dry take.
+ * Track/Input Pre intentionally break this (see pre_bake_delay). */
 static void test_dry_recording_invariant(void) {
   printf("test_dry_recording_invariant\n");
   const float kIn = 0.8f;
@@ -10194,6 +10192,208 @@ static void test_fx_stereo_ring_retained_across_type_reorder(void) {
   le_engine_destroy(e); /* must free each retained ring exactly once */
 }
 
+/* ---- Sheeran-style Pre/Post + Live Signal (part 1) ---- */
+
+/* Recording with Track Pre delay (Post empty) stores wet content: leading
+ * silence until the delay time, then the delayed signal in the buffer. */
+static void test_pre_bake_delay(void) {
+  printf("test_pre_bake_delay\n");
+  const int n = 64;
+  le_engine* e = make_configured_engine();
+  float out[64];
+  CHECK(le_engine_set_track_fx_pre(e, 0, 0, LE_FX_DELAY) == LE_OK);
+  CHECK(le_engine_set_track_fx_pre_param(e, 0, 0, 0, 10.0f / 47999.0f) ==
+        LE_OK);
+  CHECK(le_engine_set_track_fx_pre_param(e, 0, 0, 1, 0.0f) == LE_OK);
+  CHECK(le_engine_set_track_fx_pre_param(e, 0, 0, 2, 1.0f) == LE_OK);
+  CHECK(le_engine_set_track_fx_pre_count(e, 0, 1) == LE_OK);
+  drain(e);
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, n, out);
+  le_engine_record(e, 0);
+  drain(e);
+  float wet_buf[64];
+  CHECK(le_engine_export_track(e, 0, wet_buf, n) == n);
+  CHECK(fabsf(wet_buf[0]) < 1e-5f); /* nothing in the line yet */
+  CHECK(wet_buf[63] > 0.9f);        /* delayed signal arrived in the buffer */
+  le_engine_destroy(e);
+}
+
+/* Input Pre alone bakes into the record buffer (Track Pre empty). */
+static void test_input_pre_bakes(void) {
+  printf("test_input_pre_bakes\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  CHECK(le_engine_set_input_fx_pre(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_input_fx_pre_param(e, 0, 0, 0, 0.0f) == LE_OK);
+  CHECK(le_engine_set_input_fx_pre_param(e, 0, 0, 1, 1.0f) == LE_OK);
+  CHECK(le_engine_set_input_fx_pre_count(e, 0, 1) == LE_OK);
+  drain(e);
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  float buf[LOOP_N];
+  CHECK(le_engine_export_track(e, 0, buf, LOOP_N) == LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(buf[i] - tanhf(1.0f)) < 1e-5f);
+  }
+  le_engine_destroy(e);
+}
+
+/* Post-only reverb leaves the recorded buffer matching a dry control. */
+static void test_post_never_bakes(void) {
+  printf("test_post_never_bakes\n");
+  const float kIn = 0.8f;
+
+  le_engine* e = make_configured_engine();
+  CHECK(le_engine_set_track_fx_post(e, 0, 0, LE_FX_REVERB) == LE_OK);
+  CHECK(le_engine_set_track_fx_post_param(e, 0, 0, 0, 0.6f) == LE_OK);
+  CHECK(le_engine_set_track_fx_post_param(e, 0, 0, 1, 0.5f) == LE_OK);
+  CHECK(le_engine_set_track_fx_post_param(e, 0, 0, 2, 1.0f) == LE_OK);
+  CHECK(le_engine_set_track_fx_post_count(e, 0, 1) == LE_OK);
+  drain(e);
+  float out[64];
+  le_engine_record(e, 0);
+  process_const(e, kIn, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  float with_post[LOOP_N];
+  CHECK(le_engine_export_track(e, 0, with_post, LOOP_N) == LOOP_N);
+  le_engine_destroy(e);
+
+  e = make_configured_engine();
+  le_engine_record(e, 0);
+  process_const(e, kIn, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  float no_fx[LOOP_N];
+  CHECK(le_engine_export_track(e, 0, no_fx, LOOP_N) == LOOP_N);
+  le_engine_destroy(e);
+
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(with_post[i] - no_fx[i]) < 1e-6f);
+    CHECK(with_post[i] == kIn);
+  }
+}
+
+/* Live Signal Off omits track FX from the monitor mix while Pre still bakes. */
+static void test_live_signal_off_still_prints(void) {
+  printf("test_live_signal_off_still_prints\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+
+  CHECK(le_engine_set_track_fx_pre(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_track_fx_pre_param(e, 0, 0, 0, 0.0f) == LE_OK);
+  CHECK(le_engine_set_track_fx_pre_param(e, 0, 0, 1, 1.0f) == LE_OK);
+  CHECK(le_engine_set_track_fx_pre_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_track_fx_post(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_track_fx_post_param(e, 0, 0, 0, 0.0f) == LE_OK);
+  CHECK(le_engine_set_track_fx_post_param(e, 0, 0, 1, 1.0f) == LE_OK);
+  CHECK(le_engine_set_track_fx_post_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_track_live_signal(e, 0, LE_LIVE_SIGNAL_OFF) == LE_OK);
+  /* No input monitor — Live Signal Off must not inject track FX into outs. */
+  drain(e);
+
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i]) < 1e-6f);
+  le_engine_record(e, 0);
+  drain(e);
+
+  float buf[LOOP_N];
+  CHECK(le_engine_export_track(e, 0, buf, LOOP_N) == LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(buf[i] - tanhf(1.0f)) < 1e-5f);
+  }
+  le_engine_destroy(e);
+}
+
+/* Auto monitors only when focus matches; On monitors regardless. Live Signal
+ * path is Track Pre → Post (P1). */
+static void test_live_signal_auto_on(void) {
+  printf("test_live_signal_auto_on\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+
+  /* Pre then Post: both unity drives → tanh(tanh(1)). */
+  CHECK(le_engine_set_track_fx_pre(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_track_fx_pre_param(e, 0, 0, 0, 0.0f) == LE_OK);
+  CHECK(le_engine_set_track_fx_pre_param(e, 0, 0, 1, 1.0f) == LE_OK);
+  CHECK(le_engine_set_track_fx_pre_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_track_fx_post(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_track_fx_post_param(e, 0, 0, 0, 0.0f) == LE_OK);
+  CHECK(le_engine_set_track_fx_post_param(e, 0, 0, 1, 1.0f) == LE_OK);
+  CHECK(le_engine_set_track_fx_post_count(e, 0, 1) == LE_OK);
+  const float expect = tanhf(tanhf(1.0f));
+
+  /* Auto without focus: silent. */
+  CHECK(le_engine_set_track_live_signal(e, 0, LE_LIVE_SIGNAL_AUTO) == LE_OK);
+  CHECK(le_engine_set_live_signal_focus(e, -1) == LE_OK);
+  drain(e);
+  process_const(e, 1.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i]) < 1e-6f);
+
+  /* Auto with focus on a different track: still silent (P11). */
+  CHECK(le_engine_set_live_signal_focus(e, 1) == LE_OK);
+  drain(e);
+  process_const(e, 1.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i]) < 1e-6f);
+
+  /* Auto with focus on track 0: hear Pre→Post. */
+  CHECK(le_engine_set_live_signal_focus(e, 0) == LE_OK);
+  drain(e);
+  process_const(e, 1.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i] - expect) < 1e-5f);
+  }
+
+  /* On monitors regardless of focus. */
+  CHECK(le_engine_set_live_signal_focus(e, -1) == LE_OK);
+  CHECK(le_engine_set_track_live_signal(e, 0, LE_LIVE_SIGNAL_ON) == LE_OK);
+  drain(e);
+  process_const(e, 1.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i] - expect) < 1e-5f);
+  }
+  le_engine_destroy(e);
+}
+
+/* Overdub reprints through Track Pre into the write path. */
+static void test_pre_overdub_reprints(void) {
+  printf("test_pre_overdub_reprints\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+
+  /* Dry base layer of 0.5. */
+  le_engine_record(e, 0);
+  process_const(e, 0.5f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+
+  CHECK(le_engine_set_track_fx_pre(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_track_fx_pre_param(e, 0, 0, 0, 0.0f) == LE_OK);
+  CHECK(le_engine_set_track_fx_pre_param(e, 0, 0, 1, 1.0f) == LE_OK);
+  CHECK(le_engine_set_track_fx_pre_count(e, 0, 1) == LE_OK);
+  drain(e);
+
+  CHECK(le_engine_record(e, 0) == LE_OK); /* -> OVERDUBBING */
+  process_const(e, 1.0f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch out */
+  drain(e);
+  /* Let the overdub punch envelope finish writing. */
+  process_const(e, 0.0f, LOOP_N, out);
+  drain(e);
+
+  float buf[LOOP_N];
+  CHECK(le_engine_export_track(e, 0, buf, LOOP_N) == LOOP_N);
+  const float expect = 0.5f + tanhf(1.0f);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(buf[i] - expect) < 1e-4f);
+  }
+  le_engine_destroy(e);
+}
+
 /* The monitor-lane setters reject a null engine and out-of-range input / lane /
  * index / type / param args; values clamp rather than erroring. */
 static void test_monitor_input_fx_rejects_invalid_args(void) {
@@ -10782,10 +10982,10 @@ static void test_two_lanes_unmerged_both_play(void) {
   le_engine_destroy(e);
 }
 
-/* A lane's effect chain colors only its own lane: a drive on lane 0 wets only
- * lane 0's playback while sibling lane 1 stays dry. */
-static void test_lane_fx_colors_only_its_lane(void) {
-  printf("test_lane_fx_colors_only_its_lane\n");
+/* Track Post (compat set_lane_fx) is shared by every lane of the track (P9):
+ * a drive engaged via the lane-0 shim wets both lanes' playback. */
+static void test_lane_fx_compat_applies_track_post_to_all_lanes(void) {
+  printf("test_lane_fx_compat_applies_track_post_to_all_lanes\n");
   le_engine* e = make_two_lane_engine();
   float out[2 * LOOP_N];
   float zin[2 * LOOP_N] = {0};
@@ -10796,20 +10996,18 @@ static void test_lane_fx_colors_only_its_lane(void) {
 
   record_two_lane(e, 1.0f, 2.0f); /* lane0 records 1.0, lane1 records 2.0 */
 
-  /* Post-record, set a unity drive on lane 0 only (the per-lane "tweak this take"
-   * editor — distinct from the pre-record input chain that the snapshot copies). */
+  /* Post-record Track Post via the lane-fx compat shim. */
   le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE);
   le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.0f); /* 1x pre-gain */
   le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 1.0f); /* unity level */
   le_engine_set_lane_fx_count(e, 0, 0, 1);
   drain(e);
 
-  /* Playback over silence: lane 0 is driven (tanh(1.0)) on out 0; lane 1 is dry
-   * (2.0) on out 1 — the effect never bled across lanes. */
+  /* Both lanes get Track Post: out0 = tanh(1), out1 = tanh(2). */
   le_engine_process(e, out, zin, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) {
     CHECK(fabsf(out[i * 2 + 0] - tanhf(1.0f)) < 1e-5f);
-    CHECK(fabsf(out[i * 2 + 1] - 2.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - tanhf(2.0f)) < 1e-5f);
   }
 
   le_engine_destroy(e);
@@ -16731,7 +16929,7 @@ int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_lane_setters_reject_invalid_args();
   test_two_lanes_unmerged_both_play();
-  test_lane_fx_colors_only_its_lane();
+  test_lane_fx_compat_applies_track_post_to_all_lanes();
   test_lane_volume_and_mute();
   test_undo_across_lanes();
   test_lazy_lane_allocation();
@@ -17012,6 +17210,12 @@ int main(void) {
   test_fx_reverb_then_mono_effect_is_stereo();
   test_fx_stereo_chain_independent_lr_state();
   test_fx_stereo_ring_retained_across_type_reorder();
+  test_pre_bake_delay();
+  test_input_pre_bakes();
+  test_post_never_bakes();
+  test_live_signal_off_still_prints();
+  test_live_signal_auto_on();
+  test_pre_overdub_reprints();
   test_monitor_input_fx_rejects_invalid_args();
   test_fx_fourth_param_is_inert();
   test_octaver_pv_shifts_pitch_preserves_formant();
