@@ -44,6 +44,16 @@ class UpdatesSettingsSection extends StatelessWidget {
           value: state.autoCheck,
           onChanged: (on) => unawaited(cubit.setAutoCheck(value: on)),
         ),
+        const SizedBox(height: 12),
+        SetupToggleRow(
+          toggleKey: const Key('settings_updatesExperimentalChannel_switch'),
+          title: l10n.updatesExperimentalChannelTitle,
+          subtitle: l10n.updatesExperimentalChannelSubtitle,
+          value: state.channel == 'experimental',
+          onChanged: state.phase == UpdatePhase.downloading
+              ? (_) {}
+              : (on) => unawaited(cubit.setExperimentalChannel(value: on)),
+        ),
         const SizedBox(height: 20),
         _CheckNowRow(state: state, onTap: cubit.check),
         if (state.phase == UpdatePhase.error && state.errorMessage != null) ...[

@@ -16,6 +16,8 @@
     },
     "updatesAutoCheckTitle": "Check for updates automatically",
     "updatesAutoCheckSubtitle": "Looks for a newer version in the background. Never downloads or installs on its own.",
+    "updatesExperimentalChannelTitle": "Experimental channel",
+    "updatesExperimentalChannelSubtitle": "Get pre-release builds. Turn off to follow production releases only.",
     "updatesCheckNowTitle": "Check now",
     "updatesCheckNowSubtitle": "Look for a newer version right now.",
     "updatesCheckingLabel": "Checking for updates…",

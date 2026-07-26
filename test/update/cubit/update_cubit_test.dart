@@ -33,15 +33,18 @@ void main() {
     when(() => updates.currentVersion()).thenAnswer((_) async => _v1);
     when(() => updates.checkForUpdate()).thenAnswer((_) async => null);
     when(() => settings.loadUpdateAutoCheck()).thenAnswer((_) async => true);
+    when(() => settings.loadUpdateChannel()).thenAnswer((_) async => null);
     when(
       () => settings.loadDismissedUpdateVersions(),
     ).thenAnswer((_) async => const {});
     when(
       () => settings.saveUpdateAutoCheck(value: any(named: 'value')),
     ).thenAnswer((_) async {});
+    when(() => settings.saveUpdateChannel(any())).thenAnswer((_) async {});
     when(
       () => settings.saveDismissedUpdateVersions(any()),
     ).thenAnswer((_) async {});
+    when(() => updates.setChannel(any())).thenAnswer((_) async {});
   });
 
   UpdateCubit build() => UpdateCubit(updates: updates, settings: settings);
@@ -239,6 +242,76 @@ void main() {
       ],
       verify: (_) =>
           verify(() => settings.saveUpdateAutoCheck(value: false)).called(1),
+    );
+  });
+
+  group('setExperimentalChannel', () {
+    blocTest<UpdateCubit, UpdateState>(
+      'pins experimental, clears the prior offer, and re-checks',
+      seed: () => UpdateState(
+        supported: true,
+        channel: 'production',
+        phase: UpdatePhase.available,
+        available: _v2,
+      ),
+      setUp: () {
+        when(() => updates.channel).thenReturn('experimental');
+        when(() => updates.checkForUpdate()).thenAnswer((_) async => _v2);
+      },
+      build: build,
+      act: (cubit) => cubit.setExperimentalChannel(value: true),
+      expect: () => [
+        isA<UpdateState>()
+            .having((s) => s.channel, 'channel', 'experimental')
+            .having((s) => s.phase, 'phase', UpdatePhase.idle)
+            .having((s) => s.available, 'available', isNull),
+        isA<UpdateState>().having(
+          (s) => s.phase,
+          'phase',
+          UpdatePhase.checking,
+        ),
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.available)
+            .having((s) => s.available, 'available', _v2),
+      ],
+      verify: (_) {
+        verify(() => updates.setChannel('experimental')).called(1);
+        verify(() => settings.saveUpdateChannel('experimental')).called(1);
+      },
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'is a no-op while downloading',
+      seed: () => const UpdateState(
+        supported: true,
+        channel: 'production',
+        phase: UpdatePhase.downloading,
+      ),
+      build: build,
+      act: (cubit) => cubit.setExperimentalChannel(value: true),
+      expect: () => const <UpdateState>[],
+      verify: (_) {
+        verifyNever(() => updates.setChannel(any()));
+        verifyNever(() => settings.saveUpdateChannel(any()));
+      },
+    );
+  });
+
+  group('load applies a saved channel', () {
+    blocTest<UpdateCubit, UpdateState>(
+      'calls setChannel before the first check',
+      setUp: () {
+        when(
+          () => settings.loadUpdateChannel(),
+        ).thenAnswer((_) async => 'experimental');
+        when(() => updates.channel).thenReturn('experimental');
+        when(
+          () => settings.loadUpdateAutoCheck(),
+        ).thenAnswer((_) async => false);
+      },
+      build: build,
+      act: (cubit) => cubit.load(),
+      verify: (_) => verify(() => updates.setChannel('experimental')).called(1),
     );
   });
 

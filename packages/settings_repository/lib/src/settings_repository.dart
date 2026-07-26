@@ -826,6 +826,7 @@ class SettingsRepository {
       _store.setString(_laneEffectsKey(channel, lane), encoded);
 
   static const String _updateAutoCheckKey = 'updates.auto_check';
+  static const String _updateChannelKey = 'updates.channel';
   static const String _updateDismissedKey = 'updates.dismissed';
 
   /// Whether the app runs the passive, read-only update check automatically.
@@ -836,6 +837,19 @@ class SettingsRepository {
   /// Persists whether the passive update check runs automatically.
   Future<void> saveUpdateAutoCheck({required bool value}) =>
       _store.setBool(_updateAutoCheckKey, value: value);
+
+  /// Loads the user-selected update channel (`experimental` / `production`),
+  /// or `null` when the user has never set one (fall back to the device's
+  /// baked `/etc/loopy/update-channel` marker).
+  Future<String?> loadUpdateChannel() async {
+    final raw = await _store.getString(_updateChannelKey);
+    if (raw == null || raw.trim().isEmpty) return null;
+    return raw.trim();
+  }
+
+  /// Persists the user-selected update channel.
+  Future<void> saveUpdateChannel(String channel) =>
+      _store.setString(_updateChannelKey, channel);
 
   /// Loads the set of update semantic versions whose notification the user
   /// dismissed. Stored as a comma-separated list of semver strings (the same

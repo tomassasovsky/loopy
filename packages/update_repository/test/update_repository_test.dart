@@ -25,6 +25,11 @@ class _FakeBackend implements PlatformUpdateBackend {
   int applyCount = 0;
 
   @override
+  Future<void> setChannel(String channel) async {
+    this.channel = normalizeUpdateChannel(channel);
+  }
+
+  @override
   Future<Version> currentVersion() async => current;
 
   @override

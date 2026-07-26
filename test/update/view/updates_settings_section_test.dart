@@ -30,6 +30,9 @@ void main() {
     when(
       () => cubit.setAutoCheck(value: any(named: 'value')),
     ).thenAnswer((_) async {});
+    when(
+      () => cubit.setExperimentalChannel(value: any(named: 'value')),
+    ).thenAnswer((_) async {});
   });
 
   Future<void> pump(WidgetTester tester, UpdateState state) {
@@ -79,6 +82,24 @@ void main() {
       find.byKey(const Key('settings_updatesAutoCheck_switch')),
     );
     verify(() => cubit.setAutoCheck(value: true)).called(1);
+  });
+
+  testWidgets('toggling experimental channel persists via the cubit', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      const UpdateState(
+        supported: true,
+        phase: UpdatePhase.upToDate,
+        channel: 'production',
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(const Key('settings_updatesExperimentalChannel_switch')),
+    );
+    verify(() => cubit.setExperimentalChannel(value: true)).called(1);
   });
 
   testWidgets('available: shows notes and an action row; tap downloads', (

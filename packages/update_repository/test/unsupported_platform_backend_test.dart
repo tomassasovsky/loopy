@@ -8,6 +8,8 @@ void main() {
     test('reports itself unsupported with inert reads', () async {
       expect(backend.isSupported, isFalse);
       expect(backend.channel, '');
+      await backend.setChannel('experimental');
+      expect(backend.channel, '');
       expect(await backend.currentVersion(), Version.none);
       expect(await backend.stagedVersion(), Version.none);
       expect(await backend.fetchManifest(), isNull);

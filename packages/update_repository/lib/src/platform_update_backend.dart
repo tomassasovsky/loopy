@@ -23,6 +23,11 @@ abstract interface class PlatformUpdateBackend {
   /// display. Empty when [isSupported] is `false`.
   String get channel;
 
+  /// Pins the device to [channel] (`experimental` / `production`). On the
+  /// appliance this writes a durable override the OTA helper also reads; on
+  /// unsupported platforms this is a no-op.
+  Future<void> setChannel(String channel);
+
   /// The running semantic version. [Version.none] (`0.0.0`) when unknown.
   Future<Version> currentVersion();
 

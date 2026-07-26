@@ -20,6 +20,7 @@
 set -eu
 
 BASE_URL="${LOOPY_UPDATE_BASE:-https://segno.aquiles.dev/updates/appliance}"
+CHANNEL_OVERRIDE_FILE="${LOOPY_CHANNEL_OVERRIDE_FILE:-/data/loopy/update-channel}"
 CHANNEL_FILE="${LOOPY_CHANNEL_FILE:-/etc/loopy/update-channel}"
 CUR_FILE="${LOOPY_VERSION_FILE:-/etc/loopy/build-version}"
 STAGED_FILE="/data/.ota-staged-version"   # on /data so it survives OS updates
@@ -27,6 +28,18 @@ PENDING_FLAG="/run/loopy-update-pending"  # tmpfs marker: "reboot to activate"
 
 log() { echo "loopy-update-ctl: $*" >&2; }
 progress() { echo "PROGRESS $1"; }
+
+# Prefer the Settings-written override on /data, then the image-baked marker.
+resolve_channel() {
+    channel=$(cat "$CHANNEL_OVERRIDE_FILE" 2>/dev/null || true)
+    channel=$(printf '%s' "$channel" | tr -d '[:space:]')
+    if [ -z "$channel" ]; then
+        channel=$(cat "$CHANNEL_FILE" 2>/dev/null || true)
+        channel=$(printf '%s' "$channel" | tr -d '[:space:]')
+    fi
+    [ -n "$channel" ] || channel=production
+    printf '%s\n' "$channel"
+}
 
 _int() { case "$1" in ''|*[!0-9]*) echo 0 ;; *) echo "$1" ;; esac; }
 
@@ -62,7 +75,7 @@ semver_newer() {
 
 do_install() {
     command -v rauc >/dev/null 2>&1 || { log "rauc not installed"; return 1; }
-    channel=$(cat "$CHANNEL_FILE" 2>/dev/null || echo production)
+    channel=$(resolve_channel)
     current=$(cat "$CUR_FILE" 2>/dev/null || echo "0.0.0")
 
     work=$(mktemp -d /tmp/loopy-update.XXXXXX)

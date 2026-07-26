@@ -737,6 +737,18 @@ void main() {
     });
   });
 
+  group('update channel', () {
+    test('returns null when unset', () async {
+      expect(await repository.loadUpdateChannel(), isNull);
+    });
+
+    test('round-trips experimental', () async {
+      await repository.saveUpdateChannel('experimental');
+      expect(await repository.loadUpdateChannel(), 'experimental');
+      expect(store.values['updates.channel'], 'experimental');
+    });
+  });
+
   group('dismissed update versions', () {
     test('defaults to an empty set', () async {
       expect(await repository.loadDismissedUpdateVersions(), isEmpty);

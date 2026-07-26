@@ -9,6 +9,8 @@
     "updatesVersionValue": "v{version}",
     "updatesAutoCheckTitle": "Buscar actualizaciones automáticamente",
     "updatesAutoCheckSubtitle": "Busca una versión más reciente en segundo plano. Nunca descarga ni instala por su cuenta.",
+    "updatesExperimentalChannelTitle": "Canal experimental",
+    "updatesExperimentalChannelSubtitle": "Recibe versiones preliminares. Desactívalo para seguir solo las versiones de producción.",
     "updatesCheckNowTitle": "Buscar ahora",
     "updatesCheckNowSubtitle": "Busca una versión más reciente ahora.",
     "updatesCheckingLabel": "Buscando actualizaciones…",

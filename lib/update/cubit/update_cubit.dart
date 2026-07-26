@@ -31,6 +31,10 @@ class UpdateCubit extends Cubit<UpdateState> {
   Future<void> _restore() async {
     final autoCheck = await _settings.loadUpdateAutoCheck();
     final dismissed = await _settings.loadDismissedUpdateVersions();
+    final savedChannel = await _settings.loadUpdateChannel();
+    if (savedChannel != null) {
+      await _updates.setChannel(savedChannel);
+    }
     final current = await _updates.currentVersion();
     if (isClosed) return;
     emit(
@@ -110,5 +114,27 @@ class UpdateCubit extends Cubit<UpdateState> {
   Future<void> setAutoCheck({required bool value}) async {
     if (value != state.autoCheck) emit(state.copyWith(autoCheck: value));
     await _settings.saveUpdateAutoCheck(value: value);
+  }
+
+  /// Switches between the experimental and production update channels.
+  /// Persists the choice, writes the appliance override the OTA helper reads,
+  /// clears any in-flight offer from the previous channel, and re-checks.
+  /// No-op while a download is in progress.
+  Future<void> setExperimentalChannel({required bool value}) async {
+    if (state.phase == UpdatePhase.downloading) return;
+    final channel = value ? 'experimental' : 'production';
+    if (channel == state.channel) return;
+    await _updates.setChannel(channel);
+    await _settings.saveUpdateChannel(channel);
+    if (isClosed) return;
+    emit(
+      state.copyWith(
+        channel: channel,
+        phase: UpdatePhase.idle,
+        clearAvailable: true,
+        clearError: true,
+      ),
+    );
+    if (_updates.isSupported) await check();
   }
 }
