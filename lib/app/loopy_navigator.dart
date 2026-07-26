@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:loopy/app/app_toasts.dart';
 import 'package:loopy/looper/view/settings_page.dart';
 import 'package:loopy/theme/page_transitions.dart';
 
@@ -10,6 +11,18 @@ final GlobalKey<NavigatorState> loopyNavigatorKey = GlobalKey<NavigatorState>();
 const String loopySettingsRouteName = 'loopy/settings';
 
 bool _settingsOpen = false;
+SettingsSection? _openSettingsSection;
+
+/// Whether Settings is open on the Updates tab (skip the update toast).
+bool get isLoopyUpdatesSettingsOpen =>
+    _settingsOpen && _openSettingsSection == SettingsSection.updates;
+
+void _onSettingsSectionChanged(SettingsSection section) {
+  _openSettingsSection = section;
+  if (section == SettingsSection.updates) {
+    dismissAppToast(AppToastId.update);
+  }
+}
 
 /// Pushes the [SettingsPage] onto the root navigator, guarding
 /// against stacking duplicates from rapid triggers (menu + key + right-click).
@@ -21,14 +34,22 @@ Future<void> openLoopySettings({
   final navigator = loopyNavigatorKey.currentState;
   if (navigator == null || _settingsOpen) return;
   _settingsOpen = true;
+  _openSettingsSection = section;
+  if (section == SettingsSection.updates) {
+    dismissAppToast(AppToastId.update);
+  }
   try {
     await navigator.push(
       desktopPageRoute<void>(
-        (_) => SettingsPage(initialSection: section),
+        (_) => SettingsPage(
+          initialSection: section,
+          onSectionChanged: _onSettingsSectionChanged,
+        ),
         settings: const RouteSettings(name: loopySettingsRouteName),
       ),
     );
   } finally {
     _settingsOpen = false;
+    _openSettingsSection = null;
   }
 }

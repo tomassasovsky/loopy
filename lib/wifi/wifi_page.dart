@@ -11,6 +11,7 @@ import 'package:loopy/theme/page_transitions.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/wifi/wifi_cubit.dart';
 import 'package:loopy/wifi/wifi_error_message.dart';
+import 'package:loopy/wifi/wifi_network_visibility.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:wifi_repository/wifi_repository.dart';
 
@@ -257,6 +258,9 @@ class _WifiPageState extends State<WifiPage> {
 }
 
 /// One horizontal strip: SSID · status · IP + action chips.
+///
+/// While a join is in flight the joining SSID stays in the found-networks
+/// list (with a spinner) — this strip only shows a real association.
 class _WifiStatusStrip extends StatelessWidget {
   const _WifiStatusStrip({
     required this.state,
@@ -272,17 +276,13 @@ class _WifiStatusStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final connectingSsid = state.connectingSsid;
-    final connecting = connectingSsid != null;
     final disconnecting = state.disconnecting;
-    final connected = state.status.connected && !connecting && !disconnecting;
-    final ssid = connecting
-        ? connectingSsid
-        : (state.status.ssid.isEmpty ? '—' : state.status.ssid);
+    final connected = state.status.connected && !disconnecting;
+    final ssid = connected && state.status.ssid.isNotEmpty
+        ? state.status.ssid
+        : '—';
     final ip = state.status.ip.isEmpty ? '—' : state.status.ip;
-    final detail = connecting
-        ? l10n.wifiConnectingLabel
-        : disconnecting
+    final detail = disconnecting
         ? l10n.wifiStatusDisconnecting
         : connected
         ? '${l10n.wifiStatusConnected} · $ip'
@@ -298,7 +298,7 @@ class _WifiStatusStrip extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
         child: Row(
           children: [
-            if (connecting || disconnecting)
+            if (disconnecting)
               SizedBox(
                 width: 18,
                 height: 18,
@@ -316,28 +316,34 @@ class _WifiStatusStrip extends StatelessWidget {
               ),
             const SizedBox(width: 10),
             Expanded(
-              child: Text.rich(
-                TextSpan(
-                  children: [
-                    TextSpan(
-                      text: ssid,
-                      style: TextStyle(
-                        color: surface.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 280),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                child: Text.rich(
+                  key: ValueKey<String>('$ssid|$detail'),
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: ssid,
+                        style: TextStyle(
+                          color: surface.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
-                    ),
-                    TextSpan(
-                      text: '  $detail',
-                      style: TextStyle(
-                        color: surface.textSecondary,
-                        fontSize: 12,
+                      TextSpan(
+                        text: '  $detail',
+                        style: TextStyle(
+                          color: surface.textSecondary,
+                          fontSize: 12,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
             ),
             if (connected) ...[
@@ -391,12 +397,14 @@ class _WifiNetworkList extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                for (var i = 0; i < state.networks.length; i++) ...[
-                  if (i > 0) Divider(height: 1, color: surface.line),
+                for (final entry in visibleWifiNetworks(
+                  state,
+                ).asMap().entries) ...[
+                  if (entry.key > 0) Divider(height: 1, color: surface.line),
                   _NetworkRow(
-                    network: state.networks[i],
-                    connecting: state.connectingSsid == state.networks[i].ssid,
-                    onTap: state.busy ? null : () => onJoin(state.networks[i]),
+                    network: entry.value,
+                    connecting: state.connectingSsid == entry.value.ssid,
+                    onTap: state.busy ? null : () => onJoin(entry.value),
                   ),
                 ],
               ],

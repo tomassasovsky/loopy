@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/app/app_toasts.dart';
 import 'package:loopy/app/audio_bootstrap.dart';
 import 'package:loopy/app/loopy_navigator.dart';
 import 'package:loopy/appliance/display_brightness_cubit.dart';
@@ -27,6 +28,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:toastification/toastification.dart';
 import 'package:update_repository/update_repository.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
@@ -413,10 +415,6 @@ class _AppView extends StatefulWidget {
 class _AppViewState extends State<_AppView> {
   Timer? _pushTimer;
 
-  /// Drives the app-level device connect/disconnect banner. Held at the shell
-  /// (above the pages) so the banner survives navigation between layouts.
-  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
-
   /// Resolves localized strings from inside [MaterialApp] when this state
   /// sits above it in the tree.
   AppLocalizations get _l10n {
@@ -496,198 +494,141 @@ class _AppViewState extends State<_AppView> {
     }
   }
 
-  /// Shows a persistent "disconnected — trying to reconnect" banner when a
-  /// pinned device is lost, and replaces it with a transient "reconnected"
-  /// snackbar when it returns. Driven from [AudioSetupCubit] connectivity
-  /// transitions; mounted on the shell messenger so it persists across layouts.
+  /// Persistent "disconnected — trying to reconnect" toast when a pinned
+  /// device is lost; replaced by a short "reconnected" toast when it returns.
   void _showConnectivityBanner(AudioSetupState state) {
-    final messenger = _messengerKey.currentState;
-    if (messenger == null) return;
     final l10n = _l10n;
-    messenger.clearMaterialBanners();
+    dismissAppToast(AppToastId.deviceLost);
     final name = state.connectivityDeviceName.isEmpty
         ? l10n.audioDeviceFallbackName
         : state.connectivityDeviceName;
     switch (state.deviceConnectivity) {
       case DeviceConnectivity.lost:
-        messenger.showMaterialBanner(
-          MaterialBanner(
-            key: const Key('app_deviceLost_banner'),
-            content: Text(l10n.deviceDisconnectedBanner(name)),
-            leading: const Icon(Icons.warning_amber_rounded),
-            actions: [
-              TextButton(
-                onPressed: messenger.clearMaterialBanners,
-                child: Text(l10n.dismiss),
-              ),
-            ],
-          ),
+        showAppToast(
+          id: AppToastId.deviceLost,
+          type: ToastificationType.warning,
+          title: Text(l10n.deviceDisconnectedBanner(name)),
+          icon: const Icon(Icons.warning_amber_rounded),
         );
       case DeviceConnectivity.restored:
-        messenger
-          ..clearSnackBars()
-          ..showSnackBar(
-            SnackBar(
-              key: const Key('app_deviceRestored_snackbar'),
-              content: Text(l10n.deviceReconnectedSnackbar(name)),
-              duration: const Duration(seconds: 3),
-            ),
-          );
+        showAppSnackToast(
+          id: AppToastId.deviceRestored,
+          title: Text(l10n.deviceReconnectedSnackbar(name)),
+          icon: const Icon(Icons.check_circle_outline),
+        );
       case DeviceConnectivity.none:
         break;
     }
   }
 
-  /// The MIDI analog of [_showConnectivityBanner]: a persistent disconnect
-  /// banner when the pinned foot controller is unplugged, replaced by a
-  /// transient "reconnected" snackbar when it returns. Independent of the audio
-  /// device banner above (a separate messenger entry).
+  /// MIDI analog of [_showConnectivityBanner].
   void _showMidiConnectivityBanner(MidiSetupState state) {
-    final messenger = _messengerKey.currentState;
-    if (messenger == null) return;
     final l10n = _l10n;
+    dismissAppToast(AppToastId.midiLost);
     final connection = state.connection;
     final name = connection.connectivityDeviceName.isEmpty
         ? connection.selectedName
         : connection.connectivityDeviceName;
     switch (connection.connectivity) {
       case MidiConnectivity.lost:
-        messenger.showMaterialBanner(
-          MaterialBanner(
-            key: const Key('app_midiLost_banner'),
-            content: Text(l10n.midiDisconnectedBanner(name)),
-            leading: const Icon(Icons.piano_off_outlined),
-            actions: [
-              TextButton(
-                onPressed: messenger.clearMaterialBanners,
-                child: Text(l10n.dismiss),
-              ),
-            ],
-          ),
+        showAppToast(
+          id: AppToastId.midiLost,
+          type: ToastificationType.warning,
+          title: Text(l10n.midiDisconnectedBanner(name)),
+          icon: const Icon(Icons.piano_off_outlined),
         );
       case MidiConnectivity.restored:
-        messenger
-          ..clearMaterialBanners()
-          ..showSnackBar(
-            SnackBar(
-              key: const Key('app_midiRestored_snackbar'),
-              content: Text(l10n.midiReconnectedSnackbar(name)),
-              duration: const Duration(seconds: 3),
-            ),
-          );
+        showAppSnackToast(
+          id: AppToastId.midiRestored,
+          title: Text(l10n.midiReconnectedSnackbar(name)),
+          icon: const Icon(Icons.check_circle_outline),
+        );
       case MidiConnectivity.none:
         break;
     }
   }
 
-  /// Non-pointer signal that the console is waiting for its pinned audio
-  /// interface to (re)appear at boot, after which it auto-starts the engine.
-  /// The banner clears itself when recovery finishes (status returns to idle).
+  /// Waiting for the pinned audio interface at boot; clears when recovery
+  /// finishes (status returns to idle).
   void _showAudioRecoveryBanner(AudioRecoveryState state) {
-    final messenger = _messengerKey.currentState;
-    if (messenger == null) return;
     final l10n = _l10n;
     if (state.status != AudioRecoveryStatus.waitingForDevice) {
-      messenger.clearMaterialBanners();
+      dismissAppToast(AppToastId.audioRecovery);
       return;
     }
-    messenger.showMaterialBanner(
-      MaterialBanner(
-        key: const Key('app_audioRecovery_banner'),
-        content: Text(l10n.audioRecoveryWaitingBanner),
-        leading: const Icon(Icons.usb_off_outlined),
-        actions: [
-          TextButton(
-            onPressed: () => unawaited(openLoopySettings()),
-            child: Text(l10n.settingsMenuItem),
-          ),
-        ],
-      ),
+    showAppToast(
+      id: AppToastId.audioRecovery,
+      type: ToastificationType.warning,
+      title: Text(l10n.audioRecoveryWaitingBanner),
+      icon: const Icon(Icons.usb_off_outlined),
+      actions: [
+        TextButton(
+          onPressed: () => unawaited(openLoopySettings()),
+          child: Text(l10n.settingsMenuItem),
+        ),
+      ],
     );
   }
 
-  /// Startup notification that a newer build is available. Dismissible per
-  /// version: "Not now" records the version so it never nags again for it (a
-  /// later version re-notifies). "Update…" opens the Settings Updates section,
-  /// where downloading/installing is an explicit, opt-in action.
+  /// Startup notice that a newer build is available. Skipped when Settings →
+  /// Updates is already open. "Not now" dismisses that version; "Update…"
+  /// opens the Updates section.
   void _showUpdateBanner(BuildContext context, UpdateState state) {
-    final messenger = _messengerKey.currentState;
-    if (messenger == null) return;
     final manifest = state.available;
     if (!state.shouldNotify || manifest == null) {
-      messenger.clearMaterialBanners();
+      dismissAppToast(AppToastId.update);
+      return;
+    }
+    if (isLoopyUpdatesSettingsOpen) {
+      dismissAppToast(AppToastId.update);
       return;
     }
     final l10n = _l10n;
     final cubit = context.read<UpdateCubit>();
-    messenger.showMaterialBanner(
-      MaterialBanner(
-        key: const Key('app_update_banner'),
-        content: Text(l10n.updateBannerTitle('${manifest.version}')),
-        leading: const Icon(Icons.system_update_outlined),
-        actions: [
-          TextButton(
-            key: const Key('app_update_banner_dismiss'),
-            onPressed: () {
-              messenger.clearMaterialBanners();
-              unawaited(cubit.dismiss(manifest.version));
-            },
-            child: Text(l10n.updateBannerDismissAction),
-          ),
-          TextButton(
-            key: const Key('app_update_banner_update'),
-            onPressed: () {
-              messenger.clearMaterialBanners();
-              unawaited(
-                openLoopySettings(section: SettingsSection.updates),
-              );
-            },
-            child: Text(l10n.updateBannerUpdateAction),
-          ),
-        ],
-      ),
+    showAppToast(
+      id: AppToastId.update,
+      title: Text(l10n.updateBannerTitle('${manifest.version}')),
+      icon: const Icon(Icons.system_update_outlined),
+      actions: [
+        TextButton(
+          key: const Key(AppToastId.updateDismiss),
+          onPressed: () {
+            dismissAppToast(AppToastId.update);
+            unawaited(cubit.dismiss(manifest.version));
+          },
+          child: Text(l10n.updateBannerDismissAction),
+        ),
+        TextButton(
+          key: const Key(AppToastId.updateAction),
+          onPressed: () {
+            dismissAppToast(AppToastId.update);
+            unawaited(openLoopySettings(section: SettingsSection.updates));
+          },
+          child: Text(l10n.updateBannerUpdateAction),
+        ),
+      ],
     );
   }
 
-  /// Operator-visible banner when the secondary waveform window failed to come
-  /// up (the open path would otherwise degrade silently to a dark screen).
+  /// Secondary waveform window failed to open.
   void _showWaveformWindowFailedBanner() {
-    final messenger = _messengerKey.currentState;
-    if (messenger == null) return;
     final l10n = _l10n;
-    messenger.showMaterialBanner(
-      MaterialBanner(
-        key: const Key('app_waveformWindowFailed_banner'),
-        content: Text(l10n.waveformWindowFailedBanner),
-        leading: const Icon(Icons.desktop_access_disabled_outlined),
-        actions: [
-          TextButton(
-            onPressed: messenger.clearMaterialBanners,
-            child: Text(l10n.dismiss),
-          ),
-        ],
-      ),
+    showAppToast(
+      id: AppToastId.waveformFailed,
+      type: ToastificationType.error,
+      title: Text(l10n.waveformWindowFailedBanner),
+      icon: const Icon(Icons.desktop_access_disabled_outlined),
     );
   }
 
-  /// Notice when only one display is connected on the dual-display console, so
-  /// a missing second panel is obvious rather than a half-blank setup.
+  /// Only one display on the dual-display console.
   void _showSingleDisplayNotice() {
-    final messenger = _messengerKey.currentState;
-    if (messenger == null) return;
     final l10n = _l10n;
-    messenger.showMaterialBanner(
-      MaterialBanner(
-        key: const Key('app_singleDisplay_banner'),
-        content: Text(l10n.singleDisplayNotice),
-        leading: const Icon(Icons.monitor_outlined),
-        actions: [
-          TextButton(
-            onPressed: messenger.clearMaterialBanners,
-            child: Text(l10n.dismiss),
-          ),
-        ],
-      ),
+    showAppToast(
+      id: AppToastId.singleDisplay,
+      type: ToastificationType.warning,
+      title: Text(l10n.singleDisplayNotice),
+      icon: const Icon(Icons.monitor_outlined),
     );
   }
 
@@ -735,45 +676,56 @@ class _AppViewState extends State<_AppView> {
           listener: _showUpdateBanner,
         ),
       ],
-      child: MaterialApp(
-        scaffoldMessengerKey: _messengerKey,
-        navigatorKey: loopyNavigatorKey,
-        // The manual toggle forces the high-contrast palette on every platform;
-        // highContrastTheme additionally honors the OS flag where Flutter
-        // delivers it (iOS only).
-        theme: context.watch<HighContrastCubit>().state
-            ? AppTheme.highContrast
-            : AppTheme.neon,
-        highContrastTheme: AppTheme.highContrast,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: Builder(
-          builder: (context) {
-            final page = LooperPage(exportDirectory: widget.exportDirectory);
-            if (!loopyUsesFlutterTitleBar && !loopyUsesCursorAutoHide) {
-              return page;
+      child: ToastificationWrapper(
+        config: const ToastificationConfig(
+          alignment: Alignment.topCenter,
+          itemWidth: 520,
+          animationDuration: Duration(milliseconds: 280),
+        ),
+        child: MaterialApp(
+          navigatorKey: loopyNavigatorKey,
+          // Manual toggle forces high-contrast on every platform;
+          // highContrastTheme also honors the OS flag (iOS).
+          theme: context.watch<HighContrastCubit>().state
+              ? AppTheme.highContrast
+              : AppTheme.neon,
+          highContrastTheme: AppTheme.highContrast,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Builder(
+            builder: (context) {
+              final page = LooperPage(exportDirectory: widget.exportDirectory);
+              if (!loopyUsesFlutterTitleBar && !loopyUsesCursorAutoHide) {
+                return page;
+              }
+              return LoopyWindowChromeShell(
+                title: context.l10n.appMenuLabel,
+                backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                body: page,
+              );
+            },
+          ),
+          debugShowCheckedModeBanner: false,
+          builder: (context, child) {
+            // Brightness wraps the route child only — never PlatformMenuBar —
+            // so cubit rebuilds cannot remount the macOS menu delegate.
+            final brightened = BlocBuilder<DisplayBrightnessCubit, double>(
+              buildWhen: (previous, current) => previous != current,
+              builder: (context, brightness) => SoftwareBrightness(
+                brightness: brightness,
+                child: child ?? const SizedBox.shrink(),
+              ),
+            );
+            if (defaultTargetPlatform != TargetPlatform.macOS) {
+              return brightened;
             }
-            return LoopyWindowChromeShell(
-              title: context.l10n.appMenuLabel,
-              backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-              body: page,
+            return PlatformMenuBar(
+              key: const ValueKey<String>('loopy_platform_menu'),
+              menus: _menus(context),
+              child: brightened,
             );
           },
         ),
-        debugShowCheckedModeBanner: false,
-        builder: (context, child) {
-          var app = child ?? const SizedBox.shrink();
-          if (defaultTargetPlatform == TargetPlatform.macOS) {
-            app = PlatformMenuBar(menus: _menus(context), child: app);
-          }
-          return BlocBuilder<DisplayBrightnessCubit, double>(
-            buildWhen: (previous, current) => previous != current,
-            builder: (context, brightness) => SoftwareBrightness(
-              brightness: brightness,
-              child: app,
-            ),
-          );
-        },
       ),
     );
   }

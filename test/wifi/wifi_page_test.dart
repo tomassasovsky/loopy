@@ -129,16 +129,21 @@ void main() {
     await tester.pump();
 
     expect(cubit.state.connectingSsid, 'Cafe');
-    expect(find.byKey(const Key('wifi_status_spinner')), findsOneWidget);
+    // Joining feedback lives on the found-networks row only — not the
+    // connected slot — until association succeeds.
+    expect(find.byKey(const Key('wifi_status_spinner')), findsNothing);
     expect(find.byKey(const Key('wifi_network_spinner_Cafe')), findsOneWidget);
     expect(
       find.textContaining(l10n.wifiConnectingLabel),
       findsOneWidget,
     );
+    expect(find.textContaining(l10n.wifiStatusDisconnected), findsOneWidget);
 
     client.connectGate!.complete();
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('wifi_status_spinner')), findsNothing);
+    expect(find.byKey(const Key('wifi_network_spinner_Cafe')), findsNothing);
     expect(find.textContaining(l10n.wifiStatusConnected), findsOneWidget);
+    // Connected SSID moves out of the found list into the status strip.
+    expect(find.byKey(const Key('wifi_network_Cafe')), findsNothing);
   });
 }

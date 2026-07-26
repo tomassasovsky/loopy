@@ -21,7 +21,9 @@ IFACE="${LOOPY_WIFI_IFACE:-wlan0}"
 CONF="${LOOPY_WPA_CONF:-/data/wpa_supplicant/wpa_supplicant-${IFACE}.conf}"
 CTRL_DIR="${LOOPY_WPA_CTRL:-/run/wpa_supplicant}"
 CONNECT_WAIT_SECS="${LOOPY_WIFI_CONNECT_TIMEOUT:-45}"
-CONNECT_TIMEOUT_SECS="${LOOPY_WIFI_CONNECT_TIMEOUT:-30}"
+# NM gets a shorter budget so we can fall back to wpa_supplicant quickly.
+NM_CONNECT_WAIT_SECS="${LOOPY_WIFI_NM_CONNECT_TIMEOUT:-20}"
+CONNECT_TIMEOUT_SECS="${LOOPY_WIFI_CONNECT_TIMEOUT:-45}"
 # Prefer WiFi over the ephemeral wired profile (autoconnect-priority -999).
 WIFI_AUTOCONNECT_PRIORITY="${LOOPY_WIFI_AUTOCONNECT_PRIORITY:-100}"
 
@@ -34,15 +36,50 @@ json_escape() {
 have_nmcli() { command -v nmcli >/dev/null 2>&1; }
 have_wpa_cli() { command -v wpa_cli >/dev/null 2>&1; }
 
-# Prefer NM when nmcli is installed; otherwise the classic wpa stack.
+# Prefer NM when it still owns the iface; once we hand wlan0 to wpa
+# (managed no), keep using wpa so status/scan/connect stay coherent.
 wifi_backend() {
     if have_nmcli; then
+        nm_state=$(nmcli -t -f GENERAL.STATE device show "$IFACE" 2>/dev/null \
+            | head -n1 || true)
+        case "$nm_state" in
+            *unmanaged*)
+                if have_wpa_cli; then
+                    printf '%s\n' wpa
+                    return 0
+                fi
+                ;;
+        esac
         printf '%s\n' nm
     elif have_wpa_cli; then
         printf '%s\n' wpa
     else
         printf '%s\n' none
     fi
+}
+
+# Release wlan0 from NetworkManager so wpa_supplicant can own association.
+# Never killall wpa_supplicant — that breaks NM's dbus-owned instance.
+nm_release_wifi() {
+    have_nmcli || return 0
+    nmcli device disconnect "$IFACE" >/dev/null 2>&1 || true
+    nmcli device set "$IFACE" managed no >/dev/null 2>&1 || true
+}
+
+# Ask NetworkManager to take wlan0 back (e.g. after forget/radio-off cleanup).
+nm_claim_wifi() {
+    have_nmcli || return 0
+    nmcli device set "$IFACE" managed yes >/dev/null 2>&1 || true
+}
+
+dhcp_wifi() {
+    [ -n "$(iface_ip)" ] && return 0
+    if command -v udhcpc >/dev/null 2>&1; then
+        udhcpc -i "$IFACE" -n -q -t 5 >/dev/null 2>&1 || true
+    elif command -v dhclient >/dev/null 2>&1; then
+        dhclient -1 "$IFACE" >/dev/null 2>&1 || true
+    fi
+    [ -n "$(iface_ip)" ]
 }
 
 disable_powersave() {
@@ -186,22 +223,41 @@ do_connect_nm() {
     ssid=$1
     psk=${2:-}
     nmcli radio wifi on >/dev/null 2>&1 || true
+    # If a prior wpa takeover left the iface unmanaged, reclaim it for NM.
+    nm_claim_wifi
     disable_powersave
     do_forget_nm "$ssid" >/dev/null 2>&1 || true
 
     errf=$(mktemp)
+    passf=
     set +e
     if [ -n "$psk" ]; then
+        # Create the profile without embedding the PSK in argv, then activate
+        # via passwd-file. On this image `connection up` after `wifi-sec.psk=…`
+        # often fails immediately with "Secrets were required".
         nmcli connection add type wifi ifname "$IFACE" con-name "$ssid" \
             ssid "$ssid" \
             wifi-sec.key-mgmt wpa-psk \
-            wifi-sec.psk "$psk" \
+            wifi-sec.auth-alg open \
             connection.autoconnect yes \
             connection.autoconnect-priority "$WIFI_AUTOCONNECT_PRIORITY" \
             802-11-wireless.powersave 2 \
-            >"$errf" 2>&1 \
-            && nmcli --wait "$CONNECT_WAIT_SECS" connection up "$ssid" \
-                >"$errf" 2>&1
+            >"$errf" 2>&1
+        rc=$?
+        if [ "$rc" -eq 0 ]; then
+            passf=$(mktemp)
+            chmod 600 "$passf"
+            printf '802-11-wireless-security.psk:%s\n' "$psk" >"$passf"
+            nmcli --wait "$NM_CONNECT_WAIT_SECS" connection up "$ssid" \
+                passwd-file "$passf" >"$errf" 2>&1
+            rc=$?
+            # Persist secrets into the keyfile for autoconnect after reboot.
+            if [ "$rc" -eq 0 ]; then
+                nmcli connection modify "$ssid" \
+                    wifi-sec.psk "$psk" wifi-sec.psk-flags 0 \
+                    >/dev/null 2>&1 || true
+            fi
+        fi
     else
         nmcli connection add type wifi ifname "$IFACE" con-name "$ssid" \
             ssid "$ssid" \
@@ -209,11 +265,12 @@ do_connect_nm() {
             connection.autoconnect-priority "$WIFI_AUTOCONNECT_PRIORITY" \
             802-11-wireless.powersave 2 \
             >"$errf" 2>&1 \
-            && nmcli --wait "$CONNECT_WAIT_SECS" connection up "$ssid" \
+            && nmcli --wait "$NM_CONNECT_WAIT_SECS" connection up "$ssid" \
                 >"$errf" 2>&1
+        rc=$?
     fi
-    rc=$?
     set -e
+    rm -f "$passf"
     if [ "$rc" -ne 0 ]; then
         map_connect_error "$(cat "$errf")"
         rm -f "$errf"
@@ -298,6 +355,14 @@ wait_for_completed() {
         if [ "$state" = "COMPLETED" ]; then
             return 0
         fi
+        # brcmfmac often sticks on ASSOCIATED without ever reporting
+        # COMPLETED even after the 4-way handshake is done — probe DHCP.
+        if [ "$state" = "ASSOCIATED" ]; then
+            dhcp_wifi || true
+            if [ -n "$(iface_ip)" ]; then
+                return 0
+            fi
+        fi
         if network_temp_disabled "$id"; then
             log "authentication failed for network $id (wrong password?)"
             return 1
@@ -308,6 +373,10 @@ wait_for_completed() {
     state=$(wpa_state)
     if [ "$state" = "COMPLETED" ]; then
         return 0
+    fi
+    if [ "$state" = "ASSOCIATED" ]; then
+        dhcp_wifi || true
+        [ -n "$(iface_ip)" ] && return 0
     fi
     log "timed out waiting for association (state=${state:-unknown})"
     return 1
@@ -335,7 +404,11 @@ do_status_wpa() {
     [ -n "$signal" ] || signal=0
     ip=$(iface_ip)
     connected=false
-    [ "$wpa_st" = "COMPLETED" ] && connected=true
+    if [ "$wpa_st" = "COMPLETED" ] || {
+        [ "$wpa_st" = "ASSOCIATED" ] && [ -n "$ip" ]
+    }; then
+        connected=true
+    fi
     printf '{"supported":true,"enabled":true,"connected":%s,"ssid":"%s","ip":"%s","signal":%s}\n' \
         "$connected" "$(json_escape "$ssid")" "$(json_escape "${ip:-}")" "$signal"
 }
@@ -415,6 +488,10 @@ do_forget_wpa() {
 do_connect_wpa() {
     ssid=$1
     psk=${2:-}
+    # Hand the radio to wpa_supplicant. NM's brcmfmac path often associates
+    # then never finishes the 4-way handshake ("association took too long").
+    nm_release_wifi
+    ip link set "$IFACE" up 2>/dev/null || true
     ensure_wpa || return 1
     disable_powersave
     do_forget_wpa "$ssid" >/dev/null 2>&1 || true
@@ -448,16 +525,25 @@ do_connect_wpa() {
     wpa_cli -i "$IFACE" save_config >/dev/null 2>&1 || true
 
     if ! wait_for_completed "$id"; then
-        wpa_cli -i "$IFACE" disable_network "$id" >/dev/null 2>&1 || true
-        return 1
+        # One more DHCP probe — handshake may have finished without COMPLETED.
+        dhcp_wifi || true
+        if [ -z "$(iface_ip)" ]; then
+            wpa_cli -i "$IFACE" disable_network "$id" >/dev/null 2>&1 || true
+            return 1
+        fi
     fi
 
+    dhcp_wifi || true
     i=0
     while [ "$i" -lt 8 ]; do
         [ -n "$(iface_ip)" ] && break
         sleep 1
         i=$((i + 1))
     done
+    if [ -z "$(iface_ip)" ]; then
+        log "associated but got no IPv4 address"
+        return 1
+    fi
 
     echo '{}'
 }
@@ -500,11 +586,21 @@ do_scan() {
 }
 
 do_connect() {
-    case "$(wifi_backend)" in
-        nm) do_connect_nm "$@" ;;
-        wpa) do_connect_wpa "$@" ;;
-        *) log "no wifi backend (need nmcli or wpa_cli)"; return 1 ;;
-    esac
+    # NM join is preferred for persistence, but brcmfmac + NM commonly fails
+    # the 4-way handshake. Fall back to wpa_supplicant takeover so the
+    # console actually gets online.
+    if have_nmcli; then
+        if do_connect_nm "$@"; then
+            return 0
+        fi
+        log "NM join failed; falling back to wpa_supplicant"
+    fi
+    if have_wpa_cli; then
+        do_connect_wpa "$@"
+        return $?
+    fi
+    log "no wifi backend (need nmcli or wpa_cli)"
+    return 1
 }
 
 do_disconnect() {

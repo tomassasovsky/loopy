@@ -90,8 +90,15 @@ class WifiCubit extends Cubit<WifiState> {
         ),
       );
     } on Object catch (e) {
+      var status = state.status;
+      try {
+        status = await _repository.status();
+      } on Object {
+        // Keep the last known status if refresh fails.
+      }
       emit(
         state.copyWith(
+          status: status,
           busy: false,
           clearConnectingSsid: true,
           disconnecting: false,

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/app.dart';
+import 'package:loopy/app/loopy_navigator.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/update/view/updates_settings_section.dart';
 import 'package:loopy/visualizer/visualizer.dart';
@@ -28,7 +29,7 @@ import '../../helpers/helpers.dart';
 class _MockMidiSource extends Mock implements MidiControllerSource {}
 
 /// A supported update backend advertising v0.2.0 (current is v0.1.0), so the
-/// app's startup availability check surfaces the update banner.
+/// app's startup availability check surfaces the update toast.
 class _FakeUpdateBackend implements PlatformUpdateBackend {
   @override
   bool get isSupported => true;
@@ -51,6 +52,27 @@ class _FakeUpdateBackend implements PlatformUpdateBackend {
       Stream.fromIterable(const [1]);
   @override
   Future<void> applyAndRestart() async {}
+}
+
+/// Same as [_FakeUpdateBackend], but [fetchManifest] waits until [complete] so
+/// tests can open Settings → Updates before the availability toast would show.
+class _DeferredUpdateBackend extends _FakeUpdateBackend {
+  final Completer<UpdateManifest?> _manifest = Completer<UpdateManifest?>();
+
+  void complete() {
+    if (!_manifest.isCompleted) {
+      _manifest.complete(
+        UpdateManifest(
+          version: Version.parse('0.2.0'),
+          bundle: 'b.raucb',
+          notes: 'new stuff',
+        ),
+      );
+    }
+  }
+
+  @override
+  Future<UpdateManifest?> fetchManifest() => _manifest.future;
 }
 
 class _RecordingWindowService implements WaveformWindowService {
@@ -158,7 +180,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('shows the startup update banner when a build is available', (
+    testWidgets('shows the startup update toast when a build is available', (
       tester,
     ) async {
       await pumpAppWithUpdates(
@@ -168,7 +190,7 @@ void main() {
       expect(find.byKey(const Key('app_update_banner')), findsOneWidget);
     });
 
-    testWidgets('dismissing the update banner hides it', (tester) async {
+    testWidgets('dismissing the update toast hides it', (tester) async {
       await pumpAppWithUpdates(
         tester,
         UpdateRepository(backend: _FakeUpdateBackend()),
@@ -178,7 +200,7 @@ void main() {
       expect(find.byKey(const Key('app_update_banner')), findsNothing);
     });
 
-    testWidgets('Update on the banner opens Settings on the Updates tab', (
+    testWidgets('Update on the toast opens Settings on the Updates tab', (
       tester,
     ) async {
       await pumpAppWithUpdates(
@@ -193,13 +215,32 @@ void main() {
         find.byKey(const Key('settings_tab_updates')),
         findsOneWidget,
       );
+      expect(find.byKey(const Key('app_update_banner')), findsNothing);
       // Pop so the navigator re-entrancy guard (`_settingsOpen`) clears for
       // later tests in this file that also open Settings.
       await tester.tap(find.byKey(const Key('settings_close_button')));
       await tester.pumpAndSettle();
     });
 
-    testWidgets('no update banner on an unsupported platform', (tester) async {
+    testWidgets('no update toast while Settings Updates is already open', (
+      tester,
+    ) async {
+      final backend = _DeferredUpdateBackend();
+      await pumpAppWithUpdates(
+        tester,
+        UpdateRepository(backend: backend),
+      );
+      await openLoopySettings(section: SettingsSection.updates);
+      await tester.pumpAndSettle();
+      backend.complete();
+      await tester.pumpAndSettle();
+      expect(find.byType(UpdatesSettingsSection), findsOneWidget);
+      expect(find.byKey(const Key('app_update_banner')), findsNothing);
+      await tester.tap(find.byKey(const Key('settings_close_button')));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('no update toast on an unsupported platform', (tester) async {
       await pumpApp(tester, NoopWaveformWindowService());
       expect(find.byKey(const Key('app_update_banner')), findsNothing);
     });

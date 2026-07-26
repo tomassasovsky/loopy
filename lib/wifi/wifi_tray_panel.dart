@@ -8,6 +8,7 @@ import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/wifi/wifi_cubit.dart';
 import 'package:loopy/wifi/wifi_error_message.dart';
+import 'package:loopy/wifi/wifi_network_visibility.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:wifi_repository/wifi_repository.dart';
 
@@ -106,23 +107,28 @@ class _WifiTrayPanelState extends State<WifiTrayPanel> {
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: surface.line),
                       ),
-                      child: ListView.separated(
-                        padding: EdgeInsets.zero,
-                        itemCount: state.networks.length,
-                        separatorBuilder: (_, _) =>
-                            Divider(height: 1, color: surface.line),
-                        itemBuilder: (context, index) {
-                          final network = state.networks[index];
-                          final connecting =
-                              state.connectingSsid == network.ssid;
-                          return _NetworkRow(
-                            network: network,
-                            connecting: connecting,
-                            onTap: state.busy
-                                ? null
-                                : () => unawaited(
-                                    _join(context, cubit, network),
-                                  ),
+                      child: Builder(
+                        builder: (context) {
+                          final networks = visibleWifiNetworks(state);
+                          return ListView.separated(
+                            padding: EdgeInsets.zero,
+                            itemCount: networks.length,
+                            separatorBuilder: (_, _) =>
+                                Divider(height: 1, color: surface.line),
+                            itemBuilder: (context, index) {
+                              final network = networks[index];
+                              final connecting =
+                                  state.connectingSsid == network.ssid;
+                              return _NetworkRow(
+                                network: network,
+                                connecting: connecting,
+                                onTap: state.busy
+                                    ? null
+                                    : () => unawaited(
+                                        _join(context, cubit, network),
+                                      ),
+                              );
+                            },
                           );
                         },
                       ),
@@ -187,17 +193,13 @@ class _StatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final connectingSsid = state.connectingSsid;
-    final connecting = connectingSsid != null;
     final disconnecting = state.disconnecting;
-    final connected = state.status.connected && !connecting && !disconnecting;
-    final ssid = connecting
-        ? connectingSsid
-        : (state.status.ssid.isEmpty ? '—' : state.status.ssid);
+    final connected = state.status.connected && !disconnecting;
+    final ssid = connected && state.status.ssid.isNotEmpty
+        ? state.status.ssid
+        : '—';
     final ip = state.status.ip.isEmpty ? '—' : state.status.ip;
-    final detail = connecting
-        ? l10n.wifiConnectingLabel
-        : disconnecting
+    final detail = disconnecting
         ? l10n.wifiStatusDisconnecting
         : connected
         ? '${l10n.wifiStatusConnected} · $ip'
@@ -216,7 +218,7 @@ class _StatusCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                if (connecting || disconnecting)
+                if (disconnecting)
                   SizedBox(
                     width: 18,
                     height: 18,
@@ -234,28 +236,34 @@ class _StatusCard extends StatelessWidget {
                   ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text.rich(
-                    TextSpan(
-                      children: [
-                        TextSpan(
-                          text: ssid,
-                          style: TextStyle(
-                            color: surface.textPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 280),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    child: Text.rich(
+                      key: ValueKey<String>('$ssid|$detail'),
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: ssid,
+                            style: TextStyle(
+                              color: surface.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                        ),
-                        TextSpan(
-                          text: '  $detail',
-                          style: TextStyle(
-                            color: surface.textSecondary,
-                            fontSize: 12,
+                          TextSpan(
+                            text: '  $detail',
+                            style: TextStyle(
+                              color: surface.textSecondary,
+                              fontSize: 12,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],

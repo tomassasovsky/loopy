@@ -52,10 +52,16 @@ class SettingsPage extends StatefulWidget {
   const SettingsPage({
     super.key,
     this.initialSection = SettingsSection.view,
+    this.onSectionChanged,
   });
 
-  /// Section shown when the page first opens (e.g. Updates from the banner).
+  /// Section shown when the page first opens (e.g. Updates from the toast).
   final SettingsSection initialSection;
+
+  /// Notifies when the left-rail selection changes (and once for the initial
+  /// section). Used so the shell can suppress the update toast while Updates
+  /// is already visible.
+  final ValueChanged<SettingsSection>? onSectionChanged;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -64,7 +70,17 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   late SettingsSection _section = widget.initialSection;
 
-  void _select(SettingsSection section) => setState(() => _section = section);
+  @override
+  void initState() {
+    super.initState();
+    widget.onSectionChanged?.call(_section);
+  }
+
+  void _select(SettingsSection section) {
+    if (section == _section) return;
+    setState(() => _section = section);
+    widget.onSectionChanged?.call(section);
+  }
 
   @override
   Widget build(BuildContext context) {
