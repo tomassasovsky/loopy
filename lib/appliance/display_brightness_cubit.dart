@@ -1,5 +1,6 @@
 import 'package:bloc/bloc.dart';
 import 'package:brightness_client/brightness_client.dart';
+import 'package:loopy/app/view/app.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// App-wide display brightness (`0..1`).

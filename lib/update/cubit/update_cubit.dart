@@ -75,7 +75,6 @@ class UpdateCubit extends Cubit<UpdateState> {
             available: UpdateManifest(
               version: staged,
               bundle: '',
-              sha256: '',
               channel: _updates.channel,
             ),
             currentVersion: current,

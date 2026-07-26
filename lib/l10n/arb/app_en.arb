@@ -491,11 +491,11 @@
     },
     "signalInputNone": "None (clean)",
     "signalReassignInput": "Change recorded input",
-    "signalTooltip": "Signal flow (G)",
+    "signalTooltip": "Signal flow",
     "@signalTooltip": {
       "description": "Tooltip for the tracks-view button that opens the full-screen Signal surface."
     },
-    "settingsTooltip": "Settings (S)",
+    "settingsTooltip": "Settings",
     "@settingsTooltip": {
         "description": "Tooltip for the top-bar button that opens the settings page. The parenthetical names the keyboard shortcut (also reachable by right-click)."
     },

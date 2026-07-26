@@ -11,6 +11,8 @@ class BluetoothStatus extends Equatable {
     required this.discoverable,
     required this.advertising,
     this.alias = '',
+    this.connected = false,
+    this.device = '',
   });
 
   /// Parses the helper's JSON status object.
@@ -21,6 +23,8 @@ class BluetoothStatus extends Equatable {
         discoverable: json['discoverable'] == true,
         advertising: json['advertising'] == true,
         alias: '${json['alias'] ?? ''}',
+        connected: json['connected'] == true,
+        device: '${json['device'] ?? ''}',
       );
 
   /// Unsupported placeholder.
@@ -46,6 +50,12 @@ class BluetoothStatus extends Equatable {
   /// Adapter alias (e.g. "Loopy").
   final String alias;
 
+  /// Whether at least one peer is Connected.
+  final bool connected;
+
+  /// Display name of the first connected peer (empty when none).
+  final String device;
+
   @override
   List<Object?> get props => [
     supported,
@@ -53,6 +63,8 @@ class BluetoothStatus extends Equatable {
     discoverable,
     advertising,
     alias,
+    connected,
+    device,
   ];
 }
 

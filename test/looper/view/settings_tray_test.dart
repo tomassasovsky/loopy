@@ -25,6 +25,8 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 
 class _ToggleWifiClient implements WifiClient {
   bool enabled = true;
+  bool connected = false;
+  String ssid = '';
 
   @override
   bool get isSupported => true;
@@ -33,7 +35,8 @@ class _ToggleWifiClient implements WifiClient {
   Future<WifiStatus> status() async => WifiStatus(
     supported: true,
     enabled: enabled,
-    connected: false,
+    connected: connected,
+    ssid: ssid,
   );
 
   @override
@@ -56,6 +59,8 @@ class _ToggleWifiClient implements WifiClient {
 
 class _ToggleBluetoothClient implements BluetoothClient {
   bool powered = true;
+  bool connected = false;
+  String device = '';
 
   @override
   bool get isSupported => true;
@@ -66,6 +71,8 @@ class _ToggleBluetoothClient implements BluetoothClient {
     powered: powered,
     discoverable: false,
     advertising: false,
+    connected: connected,
+    device: device,
   );
 
   @override
@@ -350,6 +357,46 @@ void main() {
         await tester.tap(find.byKey(const Key('bluetooth_back')));
         await tester.pumpAndSettle();
         expect(cubit.state.destination, SettingsTrayDestination.home);
+      },
+    );
+
+    testWidgets(
+      'WiFi tile shows the SSID when associated',
+      (tester) async {
+        wifiClient
+          ..connected = true
+          ..ssid = 'Studio-5G';
+        cubit.open();
+        await pump(tester);
+        await tester.pumpAndSettle();
+
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('settingsTray_wifi')),
+            matching: find.text('Studio-5G'),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'Bluetooth tile shows the connected device name',
+      (tester) async {
+        bluetoothClient
+          ..connected = true
+          ..device = 'AirPods Pro';
+        cubit.open();
+        await pump(tester);
+        await tester.pumpAndSettle();
+
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('settingsTray_bluetooth')),
+            matching: find.text('AirPods Pro'),
+          ),
+          findsOneWidget,
+        );
       },
     );
 

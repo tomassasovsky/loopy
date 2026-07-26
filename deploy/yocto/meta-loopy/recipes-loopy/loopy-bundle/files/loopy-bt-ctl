@@ -2,17 +2,20 @@
 # loopy-bt-ctl — privileged Bluetooth helper the Flutter app drives.
 #
 # Verbs (stdout = compact JSON; detail on stderr):
-#   status                         {supported,powered,discoverable,advertising,alias}
+#   status                         {supported,powered,discoverable,advertising,alias,
+#                                   connected,device}
 #   scan                           [{name,address}, ...]  (timed discovery)
 #   power on|off                   {}  (Control Center tap toggle)
 #   discoverable on|off            {}
 #   advertise on|off               {}  (power + LE advertise / discoverable)
 #
-# Discovery and broadcasting only — no pair/connect.
+# Discovery and broadcasting only — no pair/connect. Status still reports the
+# first Connected peer (if any) so Control Center can show its name.
 set -eu
 
 ALIAS="${LOOPY_BT_ALIAS:-Loopy}"
 SCAN_SECONDS="${LOOPY_BT_SCAN_SECONDS:-5}"
+STATUS_UNSUPPORTED='{"supported":false,"powered":false,"discoverable":false,"advertising":false,"alias":"","connected":false,"device":""}'
 
 log() { echo "loopy-bt-ctl: $*" >&2; }
 
@@ -33,9 +36,40 @@ ensure_powered() {
     bt system-alias "$ALIAS" >/dev/null 2>&1 || true
 }
 
+# Prints "NAME" of the first connected peer (empty when none). Prefers
+# `bluetoothctl devices Connected` (BlueZ ≥5.65); falls back to `info`.
+first_connected_device() {
+    line=$(bt devices Connected 2>/dev/null | sed -n '/^Device /p' | head -n1 || true)
+    if [ -n "$line" ]; then
+        name=$(printf '%s\n' "$line" | cut -d' ' -f3-)
+        [ -n "$name" ] || name=$(printf '%s\n' "$line" | awk '{print $2}')
+        printf '%s' "$name"
+        return 0
+    fi
+    tmp=$(mktemp)
+    printf '%s\n' "$(bt devices 2>/dev/null || true)" >"$tmp"
+    while IFS= read -r dline; do
+        case "$dline" in
+            Device\ *) ;;
+            *) continue ;;
+        esac
+        address=$(printf '%s\n' "$dline" | awk '{print $2}')
+        [ -n "$address" ] || continue
+        info=$(bt info "$address" 2>/dev/null || true)
+        printf '%s\n' "$info" | grep -q 'Connected: yes' || continue
+        name=$(printf '%s\n' "$dline" | cut -d' ' -f3-)
+        [ -n "$name" ] || name="$address"
+        printf '%s' "$name"
+        rm -f "$tmp"
+        return 0
+    done <"$tmp"
+    rm -f "$tmp"
+    return 0
+}
+
 do_status() {
     if ! have_bt; then
-        echo '{"supported":false,"powered":false,"discoverable":false,"advertising":false,"alias":""}'
+        echo "$STATUS_UNSUPPORTED"
         return 0
     fi
     # Start bluetoothd via systemd if present.
@@ -44,21 +78,26 @@ do_status() {
     fi
     show=$(bt show 2>/dev/null || true)
     if [ -z "$show" ]; then
-        echo '{"supported":false,"powered":false,"discoverable":false,"advertising":false,"alias":""}'
+        echo "$STATUS_UNSUPPORTED"
         return 0
     fi
     powered=false
     discoverable=false
     advertising=false
+    connected=false
     alias=""
+    device=""
     printf '%s\n' "$show" | grep -q 'Powered: yes' && powered=true
     printf '%s\n' "$show" | grep -q 'Discoverable: yes' && discoverable=true
     # "Advertising: yes" appears when LE advertising is active.
     printf '%s\n' "$show" | grep -q 'Advertising: yes' && advertising=true
     alias=$(printf '%s\n' "$show" | sed -n 's/^[[:space:]]*Alias: //p' | head -n1)
     [ -n "$alias" ] || alias="$ALIAS"
-    printf '{"supported":true,"powered":%s,"discoverable":%s,"advertising":%s,"alias":"%s"}\n' \
-        "$powered" "$discoverable" "$advertising" "$(json_escape "$alias")"
+    device=$(first_connected_device)
+    [ -n "$device" ] && connected=true
+    printf '{"supported":true,"powered":%s,"discoverable":%s,"advertising":%s,"alias":"%s","connected":%s,"device":"%s"}\n' \
+        "$powered" "$discoverable" "$advertising" "$(json_escape "$alias")" \
+        "$connected" "$(json_escape "$device")"
 }
 
 do_scan() {

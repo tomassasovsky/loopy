@@ -9,10 +9,14 @@ void main() {
       'discoverable': false,
       'advertising': true,
       'alias': 'Loopy',
+      'connected': true,
+      'device': 'AirPods Pro',
     });
     expect(status.powered, isTrue);
     expect(status.advertising, isTrue);
     expect(status.alias, 'Loopy');
+    expect(status.connected, isTrue);
+    expect(status.device, 'AirPods Pro');
   });
 
   test('allows powered without discoverable or advertising', () {
@@ -26,5 +30,7 @@ void main() {
     expect(status.powered, isTrue);
     expect(status.discoverable, isFalse);
     expect(status.advertising, isFalse);
+    expect(status.connected, isFalse);
+    expect(status.device, isEmpty);
   });
 }

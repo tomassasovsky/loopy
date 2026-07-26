@@ -492,7 +492,14 @@ class _TrayHome extends StatelessWidget {
                     key: const Key('settingsTray_wifi'),
                     // On = radio up (`enabled`), not association (`connected`).
                     icon: wifi.status.enabled ? Icons.wifi : Icons.wifi_off,
-                    label: l10n.trayWifiLabel,
+                    // Caption: SSID when associated, else the generic label.
+                    label: wifi.status.connected && wifi.status.ssid.isNotEmpty
+                        ? wifi.status.ssid
+                        : l10n.trayWifiLabel,
+                    semanticLabel:
+                        wifi.status.connected && wifi.status.ssid.isNotEmpty
+                        ? '${l10n.trayWifiLabel}, ${wifi.status.ssid}'
+                        : l10n.trayWifiLabel,
                     isOn: wifi.supported && wifi.status.enabled,
                     onTap: wifi.supported && !wifi.busy
                         ? () => unawaited(_toggleWifi(context))
@@ -515,7 +522,17 @@ class _TrayHome extends StatelessWidget {
                     icon: bluetooth.status.powered
                         ? Icons.bluetooth
                         : Icons.bluetooth_disabled,
-                    label: l10n.trayBluetoothLabel,
+                    // Caption: peer name when Connected, else the generic label.
+                    label:
+                        bluetooth.status.connected &&
+                            bluetooth.status.device.isNotEmpty
+                        ? bluetooth.status.device
+                        : l10n.trayBluetoothLabel,
+                    semanticLabel:
+                        bluetooth.status.connected &&
+                            bluetooth.status.device.isNotEmpty
+                        ? '${l10n.trayBluetoothLabel}, ${bluetooth.status.device}'
+                        : l10n.trayBluetoothLabel,
                     isOn: bluetooth.supported && bluetooth.status.powered,
                     onTap: bluetooth.supported && !bluetooth.busy
                         ? () => unawaited(_toggleBluetooth(context))
@@ -613,6 +630,7 @@ class _TrayTile extends StatelessWidget {
     required this.isOn,
     required this.onTap,
     this.onLongPress,
+    this.semanticLabel,
     super.key,
   });
 
@@ -628,6 +646,9 @@ class _TrayTile extends StatelessWidget {
   /// Long-press opens in-tray config (WiFi / Bluetooth).
   final VoidCallback? onLongPress;
 
+  /// Accessibility label; defaults to [label] when null.
+  final String? semanticLabel;
+
   /// Circle diameter — independent of the tile's overall footprint (which
   /// also has to fit the caption below), same as before the caption existed.
   static const _circleSize = 72.0;
@@ -642,7 +663,7 @@ class _TrayTile extends StatelessWidget {
     return FocusableTapTarget(
       onTap: onTap,
       onLongPress: onLongPress,
-      semanticLabel: label,
+      semanticLabel: semanticLabel ?? label,
       selected: isOn,
       borderRadius: _circleSize / 2,
       child: AnimatedOpacity(
