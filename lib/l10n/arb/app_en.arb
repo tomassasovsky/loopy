@@ -1185,6 +1185,18 @@
     "@wifiConnectingLabel": {
         "description": "Shown while joining a WiFi network (status strip and row)."
     },
+    "wifiConnectFailedPassword": "Couldn’t join — check the password and try again.",
+    "@wifiConnectFailedPassword": {
+        "description": "Shown when WPA authentication fails while joining a network."
+    },
+    "wifiConnectFailedTimeout": "Couldn’t join — the network didn’t finish connecting.",
+    "@wifiConnectFailedTimeout": {
+        "description": "Shown when WiFi association times out before COMPLETED."
+    },
+    "wifiConnectFailedGeneric": "Couldn’t join that network.",
+    "@wifiConnectFailedGeneric": {
+        "description": "Fallback error when WiFi connect fails for an unknown reason."
+    },
     "wifiSsidLabel": "Network",
     "@wifiSsidLabel": {
         "description": "WiFi SSID table label."

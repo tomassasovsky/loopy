@@ -7,6 +7,7 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/wifi/wifi_cubit.dart';
+import 'package:loopy/wifi/wifi_error_message.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:wifi_repository/wifi_repository.dart';
 
@@ -80,7 +81,7 @@ class _WifiTrayPanelState extends State<WifiTrayPanel> {
             if (state.errorMessage != null) ...[
               const SizedBox(height: 8),
               Text(
-                state.errorMessage!,
+                wifiErrorMessage(l10n, state.errorMessage),
                 style: setupBody.copyWith(fontSize: 12),
               ),
             ],

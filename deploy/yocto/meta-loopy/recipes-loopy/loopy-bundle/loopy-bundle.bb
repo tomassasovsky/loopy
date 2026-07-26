@@ -66,7 +66,7 @@ RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
                   fontconfig freetype glib-2.0 mesa alsa-lib libstdc++ \
                   curl jq ca-certificates rauc \
                   parted e2fsprogs-resize2fs \
-                  wpa-supplicant bluez5 ddcutil iproute2"
+                  wpa-supplicant bluez5 ddcutil iproute2 iw"
 
 inherit systemd
 # App + rtirq oneshot + data-grow oneshot + the /boot(tryboot selector) and

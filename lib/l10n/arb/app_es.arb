@@ -981,6 +981,18 @@
     "@wifiConnectingLabel": {
         "description": "Shown while joining a WiFi network (status strip and row)."
     },
+    "wifiConnectFailedPassword": "No se pudo unir — revisá la contraseña e intentá de nuevo.",
+    "@wifiConnectFailedPassword": {
+        "description": "Shown when WPA authentication fails while joining a network."
+    },
+    "wifiConnectFailedTimeout": "No se pudo unir — la red no terminó de conectar.",
+    "@wifiConnectFailedTimeout": {
+        "description": "Shown when WiFi association times out before COMPLETED."
+    },
+    "wifiConnectFailedGeneric": "No se pudo unir a esa red.",
+    "@wifiConnectFailedGeneric": {
+        "description": "Fallback error when WiFi connect fails for an unknown reason."
+    },
     "wifiSsidLabel": "Red",
     "@wifiSsidLabel": {
         "description": "WiFi SSID table label."
