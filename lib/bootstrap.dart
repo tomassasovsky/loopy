@@ -53,9 +53,11 @@ Future<void> bootstrap(FutureOr<Widget> Function() builder) async {
     );
   };
 
+  // Return false so fatal isolate errors still tear down the process —
+  // loopy.service Restart=always then brings the kiosk back cleanly.
   PlatformDispatcher.instance.onError = (error, stack) {
     AppLog.error('PlatformDispatcher', error: error, stack: stack);
-    return true;
+    return false;
   };
 
   Bloc.observer = const AppBlocObserver();

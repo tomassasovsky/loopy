@@ -82,7 +82,6 @@ void main() {
         final result = await tryAutoStartEngine(
           repository: repository,
           settings: settings,
-          consoleMode: false,
         );
 
         expect(result.started, isTrue);
@@ -136,6 +135,44 @@ void main() {
           final saved = await settings.loadAudioConfig();
           expect(saved?.playbackDeviceId, 'scarlett');
           expect(saved?.captureDeviceId, 'scarlett');
+        },
+      );
+
+      test(
+        'console first-run falls back to system default when pin open fails',
+        () async {
+          debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+          // Fail the pinned open, succeed on the empty-id fallback.
+          engine
+            ..devices = const [
+              le.AudioDevice(
+                id: 'scarlett',
+                name: 'Scarlett 4i4',
+                isDefault: false,
+                isInput: false,
+              ),
+              le.AudioDevice(
+                id: 'scarlett',
+                name: 'Scarlett 4i4',
+                isDefault: false,
+                isInput: true,
+              ),
+            ]
+            ..startResults = [EngineResult.device, EngineResult.ok];
+
+          final result = await tryAutoStartEngine(
+            repository: repository,
+            settings: settings,
+            consoleMode: true,
+          );
+
+          expect(result.started, isTrue);
+          expect(engine.startCalls, 2);
+          expect(engine.lastConfig?.playbackDeviceId, '');
+          expect(engine.lastConfig?.captureDeviceId, '');
+          final saved = await settings.loadAudioConfig();
+          expect(saved?.playbackDeviceId, '');
+          expect(saved?.captureDeviceId, '');
         },
       );
 
@@ -239,6 +276,46 @@ void main() {
           final saved = await settings.loadAudioConfig();
           expect(saved?.playbackDeviceId, 'scarlett');
           expect(saved?.captureDeviceId, 'scarlett');
+        },
+      );
+
+      test(
+        'healed pin skips loopback auto-measure even when loopback is routable',
+        () async {
+          debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+          engine
+            ..devices = const [
+              le.AudioDevice(
+                id: 'scarlett',
+                name: 'Scarlett 4i4',
+                isDefault: false,
+                isInput: false,
+              ),
+              le.AudioDevice(
+                id: 'scarlett',
+                name: 'Scarlett 4i4',
+                isDefault: false,
+                isInput: true,
+              ),
+            ]
+            ..loopback = const le.LoopbackInfo(
+              available: true,
+              kind: le.LoopbackKind.virtualDevice,
+              deviceName: 'Monitor',
+            );
+          await settings.saveAudioConfig(
+            const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+          );
+
+          await tryAutoStartEngine(
+            repository: repository,
+            settings: settings,
+            consoleMode: true,
+          );
+
+          expect(engine.lastConfig?.useLoopbackCapture, isFalse);
+          expect(engine.lastConfig?.captureDeviceId, 'scarlett');
+          expect(engine.measureLatencyCalls, 0);
         },
       );
     });

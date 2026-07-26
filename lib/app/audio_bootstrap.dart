@@ -179,7 +179,7 @@ Future<AutoStartResult> tryAutoStartEngine({
   );
   if (savedOffset != null && savedOffset > 0) {
     repository.setRecordOffset(savedOffset);
-  } else if ((loopback.isAutoRoutable && saved.captureDeviceId.isEmpty) ||
+  } else if ((loopback.isAutoRoutable && captureId.isEmpty) ||
       status.excludedInputMask != 0) {
     repository.measureLatency();
   }
@@ -330,9 +330,20 @@ Future<bool> _firstRunAutoStart({
     }
   }
 
-  final result = repository.startEngine(
+  var result = repository.startEngine(
     EngineConfig(playbackDeviceId: playbackId, captureDeviceId: captureId),
   );
+  if (!result.isOk && (playbackId.isNotEmpty || captureId.isNotEmpty)) {
+    // Console pin failed (interface busy/absent) — fall back to system default
+    // so the kiosk still comes up, matching pre-auto-pin first-run behavior.
+    AppLog.warn(
+      'audio first-run: console pin open failed result=${result.name}; '
+      'falling back to system default',
+    );
+    playbackId = '';
+    captureId = '';
+    result = repository.startEngine(const EngineConfig());
+  }
   if (!result.isOk) {
     AppLog.error('audio first-run: open failed result=${result.name}');
     return false;

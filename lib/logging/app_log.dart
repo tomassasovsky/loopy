@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 
@@ -65,24 +66,34 @@ class AppLog {
   }) {
     final stamp = DateTime.now().toUtc().toIso8601String();
     final line = '$stamp $level $message';
-    developer.log(message, name: 'loopy', level: level == 'E' ? 1000 : 0);
+    final logLevel = switch (level) {
+      'E' => 1000,
+      'W' => 900,
+      _ => 800,
+    };
+    developer.log(message, name: 'loopy', level: logLevel);
     // Intentional journal/stderr mirror for the appliance.
-    stderr.writeln(line);
-    if (error != null) stderr.writeln('$error');
-    if (stack != null) stderr.writeln('$stack');
+    stderr
+      ..writeln(line)
+      ..write(error == null ? '' : '$error\n')
+      ..write(stack == null ? '' : '$stack\n');
 
     final file = _file;
     if (file == null) return;
     try {
-      final payload = StringBuffer('$line\n');
-      if (error != null) payload.writeln('$error');
-      if (stack != null) payload.writeln('$stack');
-      final bytes = payload.toString();
-      if (file.existsSync() && file.lengthSync() + bytes.length >= maxBytes) {
+      final text = StringBuffer('$line\n')
+        ..write(error == null ? '' : '$error\n')
+        ..write(stack == null ? '' : '$stack\n');
+      final payload = text.toString();
+      final byteLength = utf8.encode(payload).length;
+      if (file.existsSync() && file.lengthSync() + byteLength >= maxBytes) {
         _rotateSync();
       }
-      final target = _file ?? file;
-      target.writeAsStringSync(bytes, mode: FileMode.append, flush: true);
+      (_file ?? file).writeAsStringSync(
+        payload,
+        mode: FileMode.append,
+        flush: true,
+      );
     } on Object {
       // Never let logging take down the app.
     }

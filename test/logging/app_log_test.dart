@@ -36,14 +36,30 @@ void main() {
   });
 
   test('rotates when the active file exceeds maxBytes', () {
-    final file = File('${dir.path}/loopy.log');
-    // Seed a file just under the limit, then write past it.
-    file.writeAsStringSync('x' * (AppLog.maxBytes - 10));
+    final path = '${dir.path}/loopy.log';
+    // Seed past the threshold so the next write rotates.
+    File(path).writeAsStringSync('x' * AppLog.maxBytes);
     AppLog.info('trigger-rotate');
     expect(File('${dir.path}/loopy.log.1').existsSync(), isTrue);
-    final active = File('${dir.path}/loopy.log').readAsStringSync();
-    expect(active, contains('trigger-rotate'));
-    expect(active.contains('xxx'), isFalse);
+    final active = File(path).readAsStringSync();
+    expect(
+      active,
+      allOf(contains('trigger-rotate'), isNot(contains('xxx'))),
+    );
+  });
+
+  test('drops the oldest rotated sibling', () {
+    final active = File('${dir.path}/loopy.log');
+    final one = File('${dir.path}/loopy.log.1');
+    final two = File('${dir.path}/loopy.log.2');
+    active.writeAsStringSync('current');
+    one.writeAsStringSync('one');
+    two.writeAsStringSync('two');
+    // Force a rotate on the next write.
+    active.writeAsStringSync('x' * AppLog.maxBytes);
+    AppLog.info('newest');
+    expect(two.readAsStringSync(), 'one');
+    expect(active.readAsStringSync(), contains('newest'));
   });
 
   test('init is idempotent', () async {
