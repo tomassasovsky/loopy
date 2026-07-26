@@ -24,6 +24,9 @@ IMAGE_INSTALL:append = " \
     rauc-rpi-backend \
     raspi-utils \
     dtc \
+    ddcutil \
+    wpa-supplicant \
+    bluez5 \
     "
 # tryboot-cmdline.bbclass edits cmdline.txt inside the .wic (mtools) and regenerates
 # the bmap (bmaptool) — both are native build tools its task needs.

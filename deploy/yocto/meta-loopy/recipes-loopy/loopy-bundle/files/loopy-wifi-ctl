@@ -1,0 +1,213 @@
+#!/bin/sh
+# loopy-wifi-ctl — privileged WiFi helper the Flutter app drives.
+#
+# Verbs (stdout = compact JSON; detail on stderr):
+#   status                 {supported,enabled,connected,ssid,ip,signal}
+#   scan                   [{ssid,signal,secured}, ...]
+#   connect <ssid> [psk]   {} on success
+#   disconnect             {}
+#   forget <ssid>          {}
+#   radio on|off           {}  (iface up/down — Control Center tap toggle)
+#
+# Uses wpa_cli against wpa_supplicant; addressing comes from systemd-networkd
+# DHCP on wlan* (see 25-wlan.network).
+set -eu
+
+IFACE="${LOOPY_WIFI_IFACE:-wlan0}"
+CONF="${LOOPY_WPA_CONF:-/etc/wpa_supplicant/wpa_supplicant-${IFACE}.conf}"
+CTRL_DIR="${LOOPY_WPA_CTRL:-/run/wpa_supplicant}"
+
+log() { echo "loopy-wifi-ctl: $*" >&2; }
+
+json_escape() {
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+ensure_conf() {
+    if [ ! -f "$CONF" ]; then
+        mkdir -p "$(dirname "$CONF")"
+        cat >"$CONF" <<EOF
+ctrl_interface=DIR=${CTRL_DIR} GROUP=netdev
+update_config=1
+EOF
+    fi
+}
+
+ensure_wpa() {
+    ensure_conf
+    mkdir -p "$CTRL_DIR"
+    if wpa_cli -i "$IFACE" ping >/dev/null 2>&1; then
+        return 0
+    fi
+    if command -v systemctl >/dev/null 2>&1 \
+        && systemctl start "wpa_supplicant@${IFACE}.service" 2>/dev/null; then
+        sleep 0.5
+    fi
+    if ! wpa_cli -i "$IFACE" ping >/dev/null 2>&1; then
+        if ! command -v wpa_supplicant >/dev/null 2>&1; then
+            log "wpa_supplicant not installed"
+            return 1
+        fi
+        wpa_supplicant -B -i "$IFACE" -c "$CONF" || true
+        sleep 0.5
+    fi
+    wpa_cli -i "$IFACE" ping >/dev/null 2>&1
+}
+
+iface_ip() {
+    ip -4 -o addr show dev "$IFACE" 2>/dev/null \
+        | awk '{print $4}' | cut -d/ -f1 | head -n1
+}
+
+iface_enabled() {
+    # Administratively UP (Control Center "WiFi on"), even without an AP.
+    ip -o link show "$IFACE" 2>/dev/null | grep -q '[^,]UP'
+}
+
+do_status() {
+    if ! command -v wpa_cli >/dev/null 2>&1; then
+        echo '{"supported":false,"enabled":false,"connected":false,"ssid":"","ip":"","signal":0}'
+        return 0
+    fi
+    # Do NOT ensure_wpa here — that would bring a user-disabled radio back up
+    # on every Control Center poll. Report iface UP as "enabled".
+    enabled=false
+    iface_enabled && enabled=true
+    if [ "$enabled" != true ]; then
+        echo '{"supported":true,"enabled":false,"connected":false,"ssid":"","ip":"","signal":0}'
+        return 0
+    fi
+    state=$(wpa_cli -i "$IFACE" status 2>/dev/null || true)
+    if [ -z "$state" ]; then
+        echo '{"supported":true,"enabled":true,"connected":false,"ssid":"","ip":"","signal":0}'
+        return 0
+    fi
+    wpa_state=$(printf '%s\n' "$state" | sed -n 's/^wpa_state=//p' | head -n1)
+    ssid=$(printf '%s\n' "$state" | sed -n 's/^ssid=//p' | head -n1)
+    signal=$(printf '%s\n' "$state" | sed -n 's/^rssi=//p' | head -n1)
+    [ -n "$signal" ] || signal=0
+    ip=$(iface_ip)
+    connected=false
+    [ "$wpa_state" = "COMPLETED" ] && connected=true
+    printf '{"supported":true,"enabled":true,"connected":%s,"ssid":"%s","ip":"%s","signal":%s}\n' \
+        "$connected" "$(json_escape "$ssid")" "$(json_escape "${ip:-}")" "$signal"
+}
+
+do_radio() {
+    onoff=$1
+    case "$onoff" in on|off) ;; *) log "radio needs on|off"; return 2 ;; esac
+    if [ "$onoff" = on ]; then
+        ip link set "$IFACE" up 2>/dev/null || true
+        ensure_wpa || return 1
+    else
+        wpa_cli -i "$IFACE" disconnect >/dev/null 2>&1 || true
+        ip link set "$IFACE" down 2>/dev/null || true
+    fi
+    echo '{}'
+}
+
+do_scan() {
+    ensure_wpa || {
+        echo '[]'
+        return 1
+    }
+    wpa_cli -i "$IFACE" scan >/dev/null 2>&1 || true
+    sleep 2
+    results=$(wpa_cli -i "$IFACE" scan_results 2>/dev/null | tail -n +2 || true)
+    tmp=$(mktemp)
+    printf '%s\n' "$results" | while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        ssid=$(printf '%s\n' "$line" | awk '{
+            for (i=5; i<=NF; i++) printf "%s%s", (i>5?" ":""), $i
+        }')
+        [ -n "$ssid" ] || continue
+        signal=$(printf '%s\n' "$line" | awk '{print $3}')
+        flags=$(printf '%s\n' "$line" | awk '{print $4}')
+        secured=false
+        case "$flags" in *WPA*|*WEP*|*RSN*) secured=true ;; esac
+        printf '{"ssid":"%s","signal":%s,"secured":%s}\n' \
+            "$(json_escape "$ssid")" "${signal:-0}" "$secured"
+    done >"$tmp"
+    first=1
+    printf '['
+    while IFS= read -r obj; do
+        [ -n "$obj" ] || continue
+        if [ "$first" -eq 1 ]; then
+            first=0
+        else
+            printf ','
+        fi
+        printf '%s' "$obj"
+    done <"$tmp"
+    printf ']\n'
+    rm -f "$tmp"
+}
+
+do_connect() {
+    ssid=$1
+    psk=${2:-}
+    ensure_wpa || return 1
+    do_forget "$ssid" >/dev/null 2>&1 || true
+    id=$(wpa_cli -i "$IFACE" add_network | tr -d '[:space:]')
+    case "$id" in ''|*[!0-9]*) log "add_network failed: $id"; return 1 ;; esac
+    wpa_cli -i "$IFACE" set_network "$id" ssid "\"$ssid\"" >/dev/null
+    if [ -n "$psk" ]; then
+        wpa_cli -i "$IFACE" set_network "$id" psk "\"$psk\"" >/dev/null
+    else
+        wpa_cli -i "$IFACE" set_network "$id" key_mgmt NONE >/dev/null
+    fi
+    wpa_cli -i "$IFACE" enable_network "$id" >/dev/null
+    wpa_cli -i "$IFACE" select_network "$id" >/dev/null
+    wpa_cli -i "$IFACE" save_config >/dev/null || true
+    echo '{}'
+}
+
+do_disconnect() {
+    ensure_wpa || return 1
+    wpa_cli -i "$IFACE" disconnect >/dev/null || true
+    echo '{}'
+}
+
+do_forget() {
+    ssid=$1
+    ensure_wpa || return 1
+    list=$(wpa_cli -i "$IFACE" list_networks 2>/dev/null | tail -n +2 || true)
+    printf '%s\n' "$list" | while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        id=$(printf '%s\n' "$line" | awk '{print $1}')
+        net_ssid=$(printf '%s\n' "$line" | awk '{print $2}')
+        if [ "$net_ssid" = "$ssid" ]; then
+            wpa_cli -i "$IFACE" remove_network "$id" >/dev/null || true
+        fi
+    done
+    wpa_cli -i "$IFACE" save_config >/dev/null || true
+    echo '{}'
+}
+
+usage() {
+    log "usage: $0 status|scan|connect <ssid> [psk]|disconnect|forget <ssid>|radio on|off"
+    exit 2
+}
+
+[ $# -ge 1 ] || usage
+verb=$1
+shift
+
+case "$verb" in
+    status) do_status ;;
+    scan) do_scan ;;
+    connect)
+        [ $# -ge 1 ] || usage
+        do_connect "$@"
+        ;;
+    disconnect) do_disconnect ;;
+    forget)
+        [ $# -ge 1 ] || usage
+        do_forget "$1"
+        ;;
+    radio)
+        [ $# -ge 1 ] || usage
+        do_radio "$1"
+        ;;
+    *) usage ;;
+esac

@@ -20,6 +20,7 @@ class FocusableTapTarget extends StatefulWidget {
   const FocusableTapTarget({
     required this.onTap,
     required this.child,
+    this.onLongPress,
     this.semanticLabel,
     this.selected,
     this.button = true,
@@ -32,6 +33,9 @@ class FocusableTapTarget extends StatefulWidget {
 
   /// What activating the target does. Null makes it inert (disabled).
   final VoidCallback? onTap;
+
+  /// Optional long-press action (e.g. open config while tap toggles).
+  final VoidCallback? onLongPress;
 
   /// The widget the target wraps (the visual presentation).
   final Widget child;
@@ -74,7 +78,10 @@ class _FocusableTapTargetState extends State<FocusableTapTarget> {
 
   @override
   Widget build(BuildContext context) {
-    final enabled = widget.onTap != null;
+    // Interactive when either gesture is wired — long-press alone is valid
+    // (e.g. Control Center radio tiles: tap toggles when supported, hold opens
+    // config even when the radio stack is absent).
+    final enabled = widget.onTap != null || widget.onLongPress != null;
     final ring = widget.focusColor ?? context.routingGraph.textPrimary;
     // The visual child's own text would otherwise duplicate (or replace) the
     // supplied accessible name, so it is hidden from semantics — but ONLY the
@@ -108,7 +115,7 @@ class _FocusableTapTargetState extends State<FocusableTapTarget> {
           actions: <Type, Action<Intent>>{
             ActivateIntent: CallbackAction<ActivateIntent>(
               onInvoke: (_) {
-                widget.onTap?.call();
+                (widget.onTap ?? widget.onLongPress)?.call();
                 return null;
               },
             ),
@@ -118,6 +125,7 @@ class _FocusableTapTargetState extends State<FocusableTapTarget> {
           },
           child: GestureDetector(
             onTap: widget.onTap,
+            onLongPress: widget.onLongPress,
             behavior: HitTestBehavior.opaque,
             child: visual,
           ),

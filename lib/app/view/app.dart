@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:bluetooth_repository/bluetooth_repository.dart';
+import 'package:brightness_client/brightness_client.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -24,6 +26,7 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:update_repository/update_repository.dart';
+import 'package:wifi_repository/wifi_repository.dart';
 
 /// How often the main window pushes a waveform frame to the second window.
 const _waveformFrame = Duration(milliseconds: 33); // ~30 fps
@@ -53,6 +56,11 @@ class App extends StatelessWidget {
     this.updates = const UpdateRepository(
       backend: UnsupportedPlatformBackend(),
     ),
+    this.wifi = const WifiRepository(client: UnsupportedWifiClient()),
+    this.bluetooth = const BluetoothRepository(
+      client: UnsupportedBluetoothClient(),
+    ),
+    this.brightness = const UnsupportedBrightnessClient(),
     super.key,
   });
 
@@ -60,6 +68,15 @@ class App extends StatelessWidget {
   /// (unsupported-platform) instance so the update UI stays hidden; the app
   /// entrypoint injects the platform-appropriate one.
   final UpdateRepository updates;
+
+  /// Appliance WiFi repository (Control Center). Defaults unsupported.
+  final WifiRepository wifi;
+
+  /// Appliance Bluetooth repository (Control Center). Defaults unsupported.
+  final BluetoothRepository bluetooth;
+
+  /// Appliance brightness client (Control Center slider). Defaults unsupported.
+  final BrightnessClient brightness;
 
   /// The shared looper repository (owns the audio engine).
   final LooperRepository repository;
@@ -135,6 +152,9 @@ class App extends StatelessWidget {
         RepositoryProvider.value(value: performanceRepository),
         RepositoryProvider.value(value: pedalSim),
         RepositoryProvider.value(value: updates),
+        RepositoryProvider.value(value: wifi),
+        RepositoryProvider.value(value: bluetooth),
+        RepositoryProvider.value(value: brightness),
       ],
       child: MultiBlocProvider(
         providers: [

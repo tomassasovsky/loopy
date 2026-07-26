@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:brightness_client/brightness_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:loopy/app/loopy_navigator.dart';
@@ -16,6 +17,7 @@ import 'package:loopy/looper/view/tracks_commands.dart';
 import 'package:loopy/performance/performance.dart';
 import 'package:loopy/session/session.dart';
 import 'package:loopy/theme/theme.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 /// The full-screen Tracks view (Chewie-Monsta style): a row
 /// of tall colored track columns, each a level meter with an editable name.
@@ -93,7 +95,20 @@ class _TracksViewState extends State<TracksView> {
           ),
         ],
         child: BlocProvider(
-          create: (_) => SettingsTrayCubit(),
+          create: (context) {
+            BrightnessClient brightness;
+            try {
+              brightness = context.read<BrightnessClient>();
+            } on ProviderNotFoundException {
+              brightness = const UnsupportedBrightnessClient();
+            }
+            final cubit = SettingsTrayCubit(
+              settings: context.read<SettingsRepository>(),
+              brightnessClient: brightness,
+            );
+            unawaited(cubit.load());
+            return cubit;
+          },
           child: Stack(
             children: [
               Focus(

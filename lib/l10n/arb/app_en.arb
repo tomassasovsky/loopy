@@ -1132,13 +1132,17 @@
     "@a11yTrayHandle": {
         "description": "Accessible label for the settings tray's always-visible pull-tab handle (tap or drag to open/close)."
     },
+    "trayBackLabel": "Back",
+    "@trayBackLabel": {
+        "description": "Back control on an in-tray WiFi/Bluetooth expand panel — returns to the Control Center tiles without dismissing the tray."
+    },
     "trayWifiLabel": "WiFi",
     "@trayWifiLabel": {
-        "description": "Label for the settings tray's WiFi shortcut button (stub — no real functionality yet)."
+        "description": "Label for the settings tray's WiFi shortcut button."
     },
     "trayBluetoothLabel": "Bluetooth",
     "@trayBluetoothLabel": {
-        "description": "Label for the settings tray's Bluetooth shortcut button (stub — no real functionality yet)."
+        "description": "Label for the settings tray's Bluetooth shortcut button."
     },
     "trayTunerLabel": "Tuner",
     "@trayTunerLabel": {
@@ -1146,15 +1150,174 @@
     },
     "trayBrightnessLabel": "Brightness",
     "@trayBrightnessLabel": {
-        "description": "Label for the settings tray's brightness slider (UI-only this round — not persisted, no real display dimming)."
+        "description": "Label for the settings tray's brightness slider."
     },
     "trayComingSoonMessage": "{feature} — coming soon",
     "@trayComingSoonMessage": {
-        "description": "Message shown in the settings tray's shared placeholder dialog for a stub feature (WiFi / Bluetooth / Tuner).",
+        "description": "Message shown in the settings tray's shared placeholder dialog for a stub feature (Tuner).",
         "placeholders": {
             "feature": {
                 "type": "String"
             }
         }
+    },
+    "wifiUnsupportedBody": "WiFi is only available on the Loopy console appliance.",
+    "@wifiUnsupportedBody": {
+        "description": "Shown on the WiFi page when loopy-wifi-ctl is not present (desktop builds)."
+    },
+    "wifiStatusLabel": "Status",
+    "@wifiStatusLabel": {
+        "description": "WiFi status table label."
+    },
+    "wifiStatusConnected": "Connected",
+    "@wifiStatusConnected": {
+        "description": "WiFi connected status value."
+    },
+    "wifiStatusDisconnected": "Not connected",
+    "@wifiStatusDisconnected": {
+        "description": "WiFi disconnected status value."
+    },
+    "wifiSsidLabel": "Network",
+    "@wifiSsidLabel": {
+        "description": "WiFi SSID table label."
+    },
+    "wifiIpLabel": "IP address",
+    "@wifiIpLabel": {
+        "description": "WiFi IP address table label."
+    },
+    "wifiDisconnectTitle": "Disconnect",
+    "@wifiDisconnectTitle": {
+        "description": "WiFi disconnect action title."
+    },
+    "wifiDisconnectSubtitle": "Drop the current WiFi association",
+    "@wifiDisconnectSubtitle": {
+        "description": "WiFi disconnect action subtitle."
+    },
+    "wifiForgetTitle": "Forget network",
+    "@wifiForgetTitle": {
+        "description": "WiFi forget action title."
+    },
+    "wifiForgetSubtitle": "Remove saved credentials for {ssid}",
+    "@wifiForgetSubtitle": {
+        "description": "WiFi forget action subtitle.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiForgetConfirm": "Forget “{ssid}” and remove its saved password?",
+    "@wifiForgetConfirm": {
+        "description": "WiFi forget confirmation dialog body.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiScanTitle": "Scan for networks",
+    "@wifiScanTitle": {
+        "description": "WiFi scan action title."
+    },
+    "wifiScanSubtitle": "Refresh the list of nearby networks",
+    "@wifiScanSubtitle": {
+        "description": "WiFi scan action subtitle when idle."
+    },
+    "wifiScanningSubtitle": "Scanning…",
+    "@wifiScanningSubtitle": {
+        "description": "WiFi scan action subtitle while scanning."
+    },
+    "wifiNetworksGroup": "Networks",
+    "@wifiNetworksGroup": {
+        "description": "Group label above the WiFi scan results list."
+    },
+    "wifiEmptyNetworks": "No networks found. Tap scan to try again.",
+    "@wifiEmptyNetworks": {
+        "description": "Empty state when a WiFi scan returns no SSIDs."
+    },
+    "wifiSecuredLabel": "Secured",
+    "@wifiSecuredLabel": {
+        "description": "Subtitle fragment for a password-protected WiFi network."
+    },
+    "wifiOpenLabel": "Open",
+    "@wifiOpenLabel": {
+        "description": "Subtitle fragment for an open WiFi network."
+    },
+    "wifiPasswordTitle": "Password for {ssid}",
+    "@wifiPasswordTitle": {
+        "description": "WiFi password dialog title.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiPasswordHint": "Network password",
+    "@wifiPasswordHint": {
+        "description": "Hint for the WiFi password field."
+    },
+    "wifiJoinAction": "Join",
+    "@wifiJoinAction": {
+        "description": "Confirm button on the WiFi password dialog."
+    },
+    "bluetoothUnsupportedBody": "Bluetooth is only available on the Loopy console appliance.",
+    "@bluetoothUnsupportedBody": {
+        "description": "Shown on the Bluetooth page when loopy-bt-ctl is not present."
+    },
+    "bluetoothIntro": "Make this console discoverable so a phone or sidecar can find it. Pairing comes later.",
+    "@bluetoothIntro": {
+        "description": "Intro copy on the Bluetooth page (discovery/broadcast only)."
+    },
+    "bluetoothAliasLabel": "Name",
+    "@bluetoothAliasLabel": {
+        "description": "Bluetooth adapter alias table label."
+    },
+    "bluetoothPoweredLabel": "Adapter",
+    "@bluetoothPoweredLabel": {
+        "description": "Bluetooth powered table label."
+    },
+    "bluetoothOn": "On",
+    "@bluetoothOn": {
+        "description": "Bluetooth adapter on value."
+    },
+    "bluetoothOff": "Off",
+    "@bluetoothOff": {
+        "description": "Bluetooth adapter off value."
+    },
+    "bluetoothDiscoverableTitle": "Discoverable",
+    "@bluetoothDiscoverableTitle": {
+        "description": "Toggle title for classic Bluetooth discoverable."
+    },
+    "bluetoothDiscoverableSubtitle": "Other devices can see this console",
+    "@bluetoothDiscoverableSubtitle": {
+        "description": "Toggle subtitle for classic Bluetooth discoverable."
+    },
+    "bluetoothAdvertiseTitle": "Broadcast",
+    "@bluetoothAdvertiseTitle": {
+        "description": "Toggle title for BLE advertising."
+    },
+    "bluetoothAdvertiseSubtitle": "Advertise as Loopy over Bluetooth LE",
+    "@bluetoothAdvertiseSubtitle": {
+        "description": "Toggle subtitle for BLE advertising."
+    },
+    "bluetoothScanTitle": "Scan for devices",
+    "@bluetoothScanTitle": {
+        "description": "Bluetooth scan action title."
+    },
+    "bluetoothScanSubtitle": "Find nearby Bluetooth devices",
+    "@bluetoothScanSubtitle": {
+        "description": "Bluetooth scan action subtitle when idle."
+    },
+    "bluetoothScanningSubtitle": "Scanning…",
+    "@bluetoothScanningSubtitle": {
+        "description": "Bluetooth scan action subtitle while scanning."
+    },
+    "bluetoothDevicesGroup": "Nearby devices",
+    "@bluetoothDevicesGroup": {
+        "description": "Group label above Bluetooth scan results."
+    },
+    "bluetoothEmptyDevices": "No devices found yet. Tap scan to search.",
+    "@bluetoothEmptyDevices": {
+        "description": "Empty state when a Bluetooth scan returns nothing."
     }
 }

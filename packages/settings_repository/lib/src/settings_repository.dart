@@ -324,6 +324,16 @@ class SettingsRepository {
   Future<void> saveHighContrast({required bool value}) =>
       _store.setBool(_highContrastKey, value: value);
 
+  static const String _brightnessKey = 'ui.brightness';
+
+  /// Console display brightness (`0..1`). Defaults to `0.8` when unset.
+  Future<double> loadBrightness() async =>
+      (await _store.getDouble(_brightnessKey) ?? 0.8).clamp(0.0, 1.0);
+
+  /// Saves console display brightness (`0..1`).
+  Future<void> saveBrightness(double value) =>
+      _store.setDouble(_brightnessKey, value.clamp(0.0, 1.0));
+
   static const String _showTrackIndicatorsKey = 'tracks.indicators';
 
   /// Whether per-track status indicators show on the Tracks-view tiles.

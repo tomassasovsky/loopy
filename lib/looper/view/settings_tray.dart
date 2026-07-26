@@ -1,22 +1,29 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:loopy/app/loopy_navigator.dart';
+import 'package:loopy/bluetooth/bluetooth_cubit.dart';
+import 'package:loopy/bluetooth/bluetooth_tray_panel.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/cubit/settings_tray_cubit.dart';
 import 'package:loopy/looper/view/coming_soon_stub.dart';
 import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
 import 'package:loopy/theme/theme.dart';
+import 'package:loopy/wifi/wifi_cubit.dart';
+import 'package:loopy/wifi/wifi_tray_panel.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:wifi_repository/wifi_repository.dart';
 
 /// The console's slide-down quick-access tray (Control-Center style): a small
 /// pull-tab [_TrayHandle] pinned at the top edge at all times — tap or drag
 /// it down to reveal a near-fullscreen translucent sheet holding small,
-/// top-anchored destination tiles (Settings, Signal/FX graph,
-/// WiFi/Bluetooth/Tuner stubs) beside a compact vertical brightness slider;
-/// tap the scrim or drag it back up to dismiss.
+/// top-anchored destination tiles (Settings, Signal/FX graph, WiFi,
+/// Bluetooth, Tuner stub) beside a compact vertical brightness slider;
+/// WiFi/Bluetooth expand in-place over the tiles until Back; tap the scrim
+/// or drag the handle back up to dismiss.
 ///
 /// Hand-rolled (not the `anydrawer` package's route-based drawer): the
 /// slide needs to track the drag continuously, following the finger frame
@@ -34,7 +41,20 @@ import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 /// than navigating away from it.
 class SettingsTray extends StatefulWidget {
   /// Creates a [SettingsTray].
-  const SettingsTray({super.key});
+  ///
+  /// Optional [wifiRepository] / [bluetoothRepository] override the
+  /// [RepositoryProvider] values — used by screenshot previews and tests.
+  const SettingsTray({
+    super.key,
+    this.wifiRepository,
+    this.bluetoothRepository,
+  });
+
+  /// Optional WiFi repository override.
+  final WifiRepository? wifiRepository;
+
+  /// Optional Bluetooth repository override.
+  final BluetoothRepository? bluetoothRepository;
 
   @override
   State<SettingsTray> createState() => _SettingsTrayState();
@@ -47,6 +67,51 @@ class _SettingsTrayState extends State<SettingsTray> {
   /// giving the settle its motion. A tap-triggered toggle (no drag) always
   /// animates.
   bool _dragging = false;
+
+  WifiCubit? _wifi;
+  BluetoothCubit? _bluetooth;
+
+  WifiRepository _wifiRepository() {
+    if (widget.wifiRepository != null) return widget.wifiRepository!;
+    try {
+      return context.read<WifiRepository>();
+    } on ProviderNotFoundException {
+      return const WifiRepository(client: UnsupportedWifiClient());
+    }
+  }
+
+  BluetoothRepository _bluetoothRepository() {
+    if (widget.bluetoothRepository != null) {
+      return widget.bluetoothRepository!;
+    }
+    try {
+      return context.read<BluetoothRepository>();
+    } on ProviderNotFoundException {
+      return const BluetoothRepository(client: UnsupportedBluetoothClient());
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_wifi == null) {
+      final wifi = WifiCubit(repository: _wifiRepository());
+      unawaited(wifi.load());
+      _wifi = wifi;
+    }
+    if (_bluetooth == null) {
+      final bluetooth = BluetoothCubit(repository: _bluetoothRepository());
+      unawaited(bluetooth.load());
+      _bluetooth = bluetooth;
+    }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_wifi?.close() ?? Future<void>.value());
+    unawaited(_bluetooth?.close() ?? Future<void>.value());
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -109,7 +174,13 @@ class _SettingsTrayState extends State<SettingsTray> {
           // buttons with no visible extent.
           child: ExcludeSemantics(
             excluding: state.dragProgress <= 0,
-            child: const _TrayPanel(),
+            child: MultiBlocProvider(
+              providers: [
+                BlocProvider<WifiCubit>.value(value: _wifi!),
+                BlocProvider<BluetoothCubit>.value(value: _bluetooth!),
+              ],
+              child: const _TrayPanel(),
+            ),
           ),
         ),
         // The handle rides down with the drawer — resting at the very top
@@ -221,13 +292,10 @@ class _TrayHandle extends StatelessWidget {
   }
 }
 
-/// The tray's contents once open — near-fullscreen, iOS Control-Center
-/// style: a translucent, frosted-glass scrim (the tracks grid stays dimly
-/// visible through it, not hidden behind an opaque card) holding small,
-/// top-anchored tiles — NOT stretched to fill the available space. Real
-/// Control Center tiles are compact (~70px) regardless of how much screen
-/// the sheet itself covers; the sheet's size and a tile's size are
-/// independent decisions.
+/// The tray's contents once open — near-fullscreen frosted sheet. Home shows
+/// compact Control-Center tiles + brightness; WiFi/Bluetooth expand *inside*
+/// the sheet (animated destination swap) rather than pushing a full-screen
+/// route.
 class _TrayPanel extends StatelessWidget {
   const _TrayPanel();
 
@@ -244,15 +312,10 @@ class _TrayPanel extends StatelessWidget {
     final surface = context.surface;
     final state = context.watch<SettingsTrayCubit>().state;
     final cubit = context.read<SettingsTrayCubit>();
-    // Two tile rows tall, so the brightness bar beside them matches that
-    // block's height rather than stretching to the sheet's full height.
-    const blockHeight = _tileHeight * 2 + _gap;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     return Material(
       color: Colors.transparent,
-      // Real frosted glass — the tracks grid is blurred, not just dimmed,
-      // through the sheet. Clipped to the sheet's own bottom radius (only
-      // edge exposed, since it slides down from off the top of the screen).
       child: ClipRRect(
         borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
         child: BackdropFilter(
@@ -263,11 +326,6 @@ class _TrayPanel extends StatelessWidget {
             ),
             child: Stack(
               children: [
-                // Behind the tile content — a tap anywhere on the panel
-                // that isn't a tile (most of a near-fullscreen sheet)
-                // dismisses it, since the sheet covers nearly the whole
-                // screen and leaves little exposed scrim outside it for
-                // the full-screen scrim in `SettingsTray` to catch.
                 Positioned.fill(
                   child: Semantics(
                     button: true,
@@ -281,140 +339,59 @@ class _TrayPanel extends StatelessWidget {
                 SafeArea(
                   top: false,
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 40),
+                    // Home stays content-sized + centered; WiFi/BT use a
+                    // fixed [_RadioDivision] footprint so they don't float
+                    // as a tight blob in the middle of the sheet.
                     child: Center(
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  // Both nav tiles disable for the duration
-                                  // of a pending push: functionally required
-                                  // for Signal (`showSignalPage` has no
-                                  // re-entrancy guard of its own — a rapid
-                                  // double-tap would double-push it), and
-                                  // applied to Settings too for UX
-                                  // consistency — `openLoopySettings`
-                                  // self-guards against a real double-push, but
-                                  // leaving its tile tappable mid-push would
-                                  // still look live when it isn't.
-                                  SizedBox(
-                                    width: _tileWidth,
-                                    height: _tileHeight,
-                                    child: _TrayTile(
-                                      key: const Key('settingsTray_settings'),
-                                      icon: Icons.settings_outlined,
-                                      label: l10n.settingsTooltip,
-                                      accent: surface.textSecondary,
-                                      onTap: state.isNavigating
-                                          ? null
-                                          : () => unawaited(
-                                              _navigate(
-                                                context,
-                                                openLoopySettings,
-                                              ),
-                                            ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: _gap),
-                                  SizedBox(
-                                    width: _tileWidth,
-                                    height: _tileHeight,
-                                    child: _TrayTile(
-                                      key: const Key('settingsTray_signal'),
-                                      icon: Icons.account_tree_outlined,
-                                      label: l10n.signalTooltip,
-                                      // Signal-flow blue — the same hue that
-                                      // names "wet" routing on the Signal
-                                      // surface itself.
-                                      accent: surface.wetRoute,
-                                      onTap: state.isNavigating
-                                          ? null
-                                          : () => unawaited(
-                                              _navigate(
-                                                context,
-                                                () => showSignalPage(context),
-                                              ),
-                                            ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: _gap),
-                                  SizedBox(
-                                    width: _tileWidth,
-                                    height: _tileHeight,
-                                    child: _TrayTile(
-                                      key: const Key('settingsTray_wifi'),
-                                      icon: Icons.wifi,
-                                      label: l10n.trayWifiLabel,
-                                      accent: surface.laneColor(7),
-                                      onTap: () => unawaited(
-                                        showComingSoonStub(
-                                          context,
-                                          feature: l10n.trayWifiLabel,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: _gap),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  SizedBox(
-                                    width: _tileWidth,
-                                    height: _tileHeight,
-                                    child: _TrayTile(
-                                      key: const Key(
-                                        'settingsTray_bluetooth',
-                                      ),
-                                      icon: Icons.bluetooth,
-                                      label: l10n.trayBluetoothLabel,
-                                      accent: surface.laneColor(3),
-                                      onTap: () => unawaited(
-                                        showComingSoonStub(
-                                          context,
-                                          feature: l10n.trayBluetoothLabel,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: _gap),
-                                  SizedBox(
-                                    width: _tileWidth,
-                                    height: _tileHeight,
-                                    child: _TrayTile(
-                                      key: const Key('settingsTray_tuner'),
-                                      icon: Icons.graphic_eq,
-                                      label: l10n.trayTunerLabel,
-                                      accent: surface.laneColor(2),
-                                      onTap: () => unawaited(
-                                        showComingSoonStub(
-                                          context,
-                                          feature: l10n.trayTunerLabel,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                          const SizedBox(width: _gap),
-                          SizedBox(
-                            width: 56,
-                            height: blockHeight,
-                            child: _BrightnessSliderTile(
-                              value: state.brightness,
-                              onChanged: cubit.setBrightness,
+                      child: AnimatedSwitcher(
+                        duration: reduceMotion
+                            ? Duration.zero
+                            : const Duration(milliseconds: 240),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        transitionBuilder: (child, animation) {
+                          // Vertical handoff: incoming rises from below.
+                          final offset =
+                              Tween<Offset>(
+                                begin: const Offset(0, 0.12),
+                                end: Offset.zero,
+                              ).animate(
+                                CurvedAnimation(
+                                  parent: animation,
+                                  curve: Curves.easeOutCubic,
+                                ),
+                              );
+                          return FadeTransition(
+                            opacity: animation,
+                            child: SlideTransition(
+                              position: offset,
+                              child: child,
                             ),
-                          ),
-                        ],
+                          );
+                        },
+                        child: KeyedSubtree(
+                          key: ValueKey(state.destination),
+                          child: switch (state.destination) {
+                            SettingsTrayDestination.home =>
+                              SingleChildScrollView(
+                                child: _TrayHome(
+                                  state: state,
+                                  cubit: cubit,
+                                ),
+                              ),
+                            SettingsTrayDestination.wifi => _RadioDivision(
+                              child: WifiTrayPanel(
+                                onBack: cubit.showHome,
+                              ),
+                            ),
+                            SettingsTrayDestination.bluetooth => _RadioDivision(
+                              child: BluetoothTrayPanel(
+                                onBack: cubit.showHome,
+                              ),
+                            ),
+                          },
+                        ),
                       ),
                     ),
                   ),
@@ -424,6 +401,159 @@ class _TrayPanel extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Fixed footprint for the in-tray WiFi / Bluetooth faces — sizing only;
+/// no extra card chrome. Lists scroll inside the panel.
+class _RadioDivision extends StatelessWidget {
+  const _RadioDivision({required this.child});
+
+  /// Designated panel size (1080p console Control Center).
+  static const Size size = Size(520, 680);
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size.width,
+      height: size.height,
+      child: child,
+    );
+  }
+}
+
+/// Home face: destination tiles + brightness slider.
+class _TrayHome extends StatelessWidget {
+  const _TrayHome({required this.state, required this.cubit});
+
+  final SettingsTrayState state;
+  final SettingsTrayCubit cubit;
+
+  static const double _tileWidth = _TrayPanel._tileWidth;
+  static const double _tileHeight = _TrayPanel._tileHeight;
+  static const double _gap = _TrayPanel._gap;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final wifi = context.watch<WifiCubit>().state;
+    final bluetooth = context.watch<BluetoothCubit>().state;
+    const blockHeight = _tileHeight * 2 + _gap;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: _tileWidth,
+                  height: _tileHeight,
+                  child: _TrayTile(
+                    key: const Key('settingsTray_settings'),
+                    icon: Icons.settings_outlined,
+                    label: l10n.settingsTooltip,
+                    isOn: false,
+                    onTap: state.isNavigating
+                        ? null
+                        : () => unawaited(
+                            _navigate(context, openLoopySettings),
+                          ),
+                  ),
+                ),
+                const SizedBox(width: _gap),
+                SizedBox(
+                  width: _tileWidth,
+                  height: _tileHeight,
+                  child: _TrayTile(
+                    key: const Key('settingsTray_signal'),
+                    icon: Icons.account_tree_outlined,
+                    label: l10n.signalTooltip,
+                    isOn: false,
+                    onTap: state.isNavigating
+                        ? null
+                        : () => unawaited(
+                            _navigate(context, () => showSignalPage(context)),
+                          ),
+                  ),
+                ),
+                const SizedBox(width: _gap),
+                SizedBox(
+                  width: _tileWidth,
+                  height: _tileHeight,
+                  child: _TrayTile(
+                    key: const Key('settingsTray_wifi'),
+                    // On = radio up (`enabled`), not association (`connected`).
+                    icon: wifi.status.enabled ? Icons.wifi : Icons.wifi_off,
+                    label: l10n.trayWifiLabel,
+                    isOn: wifi.supported && wifi.status.enabled,
+                    onTap: wifi.supported && !wifi.busy
+                        ? () => unawaited(_toggleWifi(context))
+                        : null,
+                    onLongPress: cubit.openWifi,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: _gap),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: _tileWidth,
+                  height: _tileHeight,
+                  child: _TrayTile(
+                    key: const Key('settingsTray_bluetooth'),
+                    // On = adapter powered, not discoverable/advertising.
+                    icon: bluetooth.status.powered
+                        ? Icons.bluetooth
+                        : Icons.bluetooth_disabled,
+                    label: l10n.trayBluetoothLabel,
+                    isOn: bluetooth.supported && bluetooth.status.powered,
+                    onTap: bluetooth.supported && !bluetooth.busy
+                        ? () => unawaited(_toggleBluetooth(context))
+                        : null,
+                    onLongPress: cubit.openBluetooth,
+                  ),
+                ),
+                const SizedBox(width: _gap),
+                SizedBox(
+                  width: _tileWidth,
+                  height: _tileHeight,
+                  child: _TrayTile(
+                    key: const Key('settingsTray_tuner'),
+                    icon: Icons.graphic_eq,
+                    label: l10n.trayTunerLabel,
+                    isOn: false,
+                    onTap: () => unawaited(
+                      showComingSoonStub(
+                        context,
+                        feature: l10n.trayTunerLabel,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(width: _gap),
+        SizedBox(
+          width: 56,
+          height: blockHeight,
+          child: _BrightnessSliderTile(
+            value: state.brightness,
+            onChanged: (value) => unawaited(cubit.setBrightness(value)),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -449,33 +579,54 @@ Future<void> _navigate(
   }
 }
 
-/// One destination tile: a round icon button (the original circular glass
-/// shape) with a compact caption below it, outside the circle — the
-/// accessible name doubles as [FocusableTapTarget]'s `semanticLabel`, so
-/// the visible caption and what a screen reader reads out always agree.
-/// Focusable and screen-reader operable. Null [onTap] renders dimmed and
-/// inert — used while a nav push from this tray is in flight — via
-/// [AnimatedOpacity].
+/// Tap toggle for WiFi: radio on/off. Turning **on** also opens the in-tray
+/// WiFi panel so the user can pick a network.
+Future<void> _toggleWifi(BuildContext context) async {
+  final wifi = context.read<WifiCubit>();
+  final tray = context.read<SettingsTrayCubit>();
+  final turningOn = !wifi.state.status.enabled;
+  await wifi.toggleEnabled();
+  if (!context.mounted) return;
+  if (turningOn && wifi.state.status.enabled) tray.openWifi();
+}
+
+/// Tap toggle for Bluetooth: adapter power. Turning **on** also opens the
+/// in-tray Bluetooth panel.
+Future<void> _toggleBluetooth(BuildContext context) async {
+  final bluetooth = context.read<BluetoothCubit>();
+  final tray = context.read<SettingsTrayCubit>();
+  final turningOn = !bluetooth.state.status.powered;
+  await bluetooth.togglePowered();
+  if (!context.mounted) return;
+  if (turningOn && bluetooth.state.status.powered) tray.openBluetooth();
+}
+
+/// One Control Center tile: round glass button + caption. Color is a dual
+/// state — [isOn] uses [SurfaceTheme.accent], otherwise the shared off color
+/// ([SurfaceTheme.textSecondary]). Destinations that cannot be "on" pass
+/// `isOn: false`. Null [onTap] dims the tile (nav-in-flight / unsupported
+/// radio); [onLongPress] still opens config when set.
 class _TrayTile extends StatelessWidget {
   const _TrayTile({
     required this.icon,
     required this.label,
-    required this.accent,
+    required this.isOn,
     required this.onTap,
+    this.onLongPress,
     super.key,
   });
 
   final IconData icon;
   final String label;
 
-  /// The tile's tint — distinguishes each destination at a glance rather
-  /// than identical grey glyphs (e.g. [SurfaceTheme.wetRoute] for Signal, a
-  /// lane hue per stub).
-  final Color accent;
+  /// Dual-state tint: accent when on, shared off color when off.
+  final bool isOn;
 
-  /// Null renders the tile dimmed and inert — used while a nav push from
-  /// this tray is in flight.
+  /// Null renders the tile dimmed — nav push in flight, or unsupported radio.
   final VoidCallback? onTap;
+
+  /// Long-press opens in-tray config (WiFi / Bluetooth).
+  final VoidCallback? onLongPress;
 
   /// Circle diameter — independent of the tile's overall footprint (which
   /// also has to fit the caption below), same as before the caption existed.
@@ -483,30 +634,34 @@ class _TrayTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final enabled = onTap != null;
+    final surface = context.surface;
+    final accent = isOn ? surface.accent : surface.textSecondary;
+    // Tappable when either gesture is available (long-press alone still works
+    // for unsupported radios that can open the config face).
+    final interactive = onTap != null || onLongPress != null;
     return FocusableTapTarget(
       onTap: onTap,
+      onLongPress: onLongPress,
       semanticLabel: label,
+      selected: isOn,
       borderRadius: _circleSize / 2,
       child: AnimatedOpacity(
         duration: const Duration(milliseconds: 150),
-        opacity: enabled ? 1 : 0.4,
+        opacity: interactive ? 1 : 0.4,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(
               width: _circleSize,
               height: _circleSize,
-              child: Material(
-                // Translucent enough that the frosted panel behind still
-                // reads through the tile, not just around it.
-                color: accent.withValues(alpha: 0.14),
-                shape: const CircleBorder(),
-                child: InkWell(
-                  customBorder: const CircleBorder(),
-                  onTap: onTap,
-                  child: Center(child: Icon(icon, color: accent, size: 26)),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: accent.withValues(alpha: isOn ? 0.28 : 0.14),
                 ),
+                child: Center(child: Icon(icon, color: accent, size: 26)),
               ),
             ),
             const SizedBox(height: 4),
@@ -535,8 +690,7 @@ class _TrayTile extends StatelessWidget {
 /// without any custom gesture math. [Slider] already brings its own tap,
 /// drag, and keyboard handling, unlike the hand-rolled `SignalKnob`; only
 /// its semantics need replacing (see [_BrightnessSliderTileState] below).
-/// Local UI state only — not persisted, not wired to any real display
-/// dimming (see the plan's non-goals).
+/// Brightness is persisted and applied via [SettingsTrayCubit.setBrightness].
 class _BrightnessSliderTile extends StatefulWidget {
   const _BrightnessSliderTile({required this.value, required this.onChanged});
 

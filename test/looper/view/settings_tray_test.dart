@@ -1,4 +1,5 @@
 import 'package:bloc_test/bloc_test.dart';
+import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,16 +16,85 @@ import 'package:loopy/theme/theme.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:settings_repository/settings_repository.dart';
+import 'package:wifi_repository/wifi_repository.dart';
 
 import '../../helpers/helpers.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
 
+class _ToggleWifiClient implements WifiClient {
+  bool enabled = true;
+
+  @override
+  bool get isSupported => true;
+
+  @override
+  Future<WifiStatus> status() async => WifiStatus(
+    supported: true,
+    enabled: enabled,
+    connected: false,
+  );
+
+  @override
+  Future<List<WifiNetwork>> scan() async => const [];
+
+  @override
+  Future<void> connect(String ssid, {String? psk}) async {}
+
+  @override
+  Future<void> disconnect() async {}
+
+  @override
+  Future<void> forget(String ssid) async {}
+
+  @override
+  Future<void> setEnabled({required bool enabled}) async {
+    this.enabled = enabled;
+  }
+}
+
+class _ToggleBluetoothClient implements BluetoothClient {
+  bool powered = true;
+
+  @override
+  bool get isSupported => true;
+
+  @override
+  Future<BluetoothStatus> status() async => BluetoothStatus(
+    supported: true,
+    powered: powered,
+    discoverable: false,
+    advertising: false,
+  );
+
+  @override
+  Future<List<BluetoothDevice>> scan() async => const [];
+
+  @override
+  Future<void> setPowered({required bool enabled}) async {
+    powered = enabled;
+  }
+
+  @override
+  Future<void> setDiscoverable({required bool enabled}) async {}
+
+  @override
+  Future<void> setAdvertising({required bool enabled}) async {}
+}
+
 void main() {
   late SettingsTrayCubit cubit;
+  late SettingsRepository settings;
+  late _ToggleWifiClient wifiClient;
+  late _ToggleBluetoothClient bluetoothClient;
 
-  setUp(() => cubit = SettingsTrayCubit());
+  setUp(() {
+    settings = SettingsRepository(store: FakeKeyValueStore());
+    cubit = SettingsTrayCubit(settings: settings);
+    wifiClient = _ToggleWifiClient();
+    bluetoothClient = _ToggleBluetoothClient();
+  });
   tearDown(() => cubit.close());
 
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
@@ -32,13 +102,23 @@ void main() {
       theme: AppTheme.neon,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: BlocProvider<SettingsTrayCubit>.value(
-        value: cubit,
-        // A Scaffold + Stack mirrors how TracksView actually mounts the
-        // tray: as a Stack sibling over full-screen content, top edge at
-        // (0, 0).
-        child: const Scaffold(
-          body: Stack(children: [SizedBox.expand(), SettingsTray()]),
+      home: MultiRepositoryProvider(
+        providers: [
+          RepositoryProvider<WifiRepository>.value(
+            value: WifiRepository(client: wifiClient),
+          ),
+          RepositoryProvider<BluetoothRepository>.value(
+            value: BluetoothRepository(client: bluetoothClient),
+          ),
+        ],
+        child: BlocProvider<SettingsTrayCubit>.value(
+          value: cubit,
+          // A Scaffold + Stack mirrors how TracksView actually mounts the
+          // tray: as a Stack sibling over full-screen content, top edge at
+          // (0, 0).
+          child: const Scaffold(
+            body: Stack(children: [SizedBox.expand(), SettingsTray()]),
+          ),
         ),
       ),
     ),
@@ -158,62 +238,144 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  group('WiFi/Bluetooth/Tuner stub buttons', () {
-    for (final (key, labelOf) in [
-      ('settingsTray_wifi', (AppLocalizations l10n) => l10n.trayWifiLabel),
-      (
-        'settingsTray_bluetooth',
-        (AppLocalizations l10n) => l10n.trayBluetoothLabel,
-      ),
-      ('settingsTray_tuner', (AppLocalizations l10n) => l10n.trayTunerLabel),
-    ]) {
-      testWidgets(
-        'tapping $key opens a coming-soon stub naming it and leaves the '
-        'tray open underneath',
-        (tester) async {
-          cubit.open();
-          await pump(tester);
-          await tester.pump();
+  group('WiFi / Bluetooth / Tuner tiles', () {
+    testWidgets(
+      'tapping WiFi while on turns radio off and stays on home',
+      (tester) async {
+        cubit.open();
+        await pump(tester);
+        await tester.pumpAndSettle();
 
-          await tester.tap(find.byKey(Key(key)));
-          await tester.pumpAndSettle();
+        expect(wifiClient.enabled, isTrue);
+        await tester.tap(find.byKey(const Key('settingsTray_wifi')));
+        await tester.pumpAndSettle();
 
-          final l10n = await AppLocalizations.delegate.load(
-            const Locale('en'),
-          );
-          expect(
-            find.byKey(const Key('comingSoonStub_dialog')),
-            findsOneWidget,
-          );
-          expect(
-            find.text(l10n.trayComingSoonMessage(labelOf(l10n))),
-            findsOneWidget,
-          );
-          expect(cubit.state.dragProgress, 1);
+        expect(cubit.state.destination, SettingsTrayDestination.home);
+        expect(wifiClient.enabled, isFalse);
+        expect(find.byKey(const Key('settingsTray_wifi')), findsOneWidget);
+      },
+    );
 
-          await tester.tap(find.byKey(const Key('comingSoonStub_close')));
-          await tester.pumpAndSettle();
-          expect(find.byKey(const Key('comingSoonStub_dialog')), findsNothing);
-        },
-      );
-    }
+    testWidgets(
+      'tapping WiFi while off turns radio on and opens the panel',
+      (tester) async {
+        wifiClient.enabled = false;
+        cubit.open();
+        await pump(tester);
+        await tester.pumpAndSettle();
 
-    testWidgets('the stub dialog also dismisses on tap-outside (barrier)', (
-      tester,
-    ) async {
-      cubit.open();
-      await pump(tester);
-      await tester.pump();
+        await tester.tap(find.byKey(const Key('settingsTray_wifi')));
+        await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('settingsTray_wifi')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('comingSoonStub_dialog')), findsOneWidget);
+        expect(wifiClient.enabled, isTrue);
+        expect(cubit.state.destination, SettingsTrayDestination.wifi);
+        expect(find.byKey(const Key('wifi_tray_panel')), findsOneWidget);
+      },
+    );
 
-      // Tap far outside the dialog's content — the modal barrier.
-      await tester.tapAt(const Offset(5, 5));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('comingSoonStub_dialog')), findsNothing);
-    });
+    testWidgets(
+      'long-pressing WiFi expands the in-tray panel without dismissing',
+      (tester) async {
+        cubit.open();
+        await pump(tester);
+        await tester.pumpAndSettle();
+
+        await tester.longPress(find.byKey(const Key('settingsTray_wifi')));
+        await tester.pumpAndSettle();
+
+        expect(cubit.state.dragProgress, 1);
+        expect(cubit.state.destination, SettingsTrayDestination.wifi);
+        expect(find.byKey(const Key('wifi_tray_panel')), findsOneWidget);
+        expect(find.byKey(const Key('settingsTray_wifi')), findsNothing);
+
+        await tester.tap(find.byKey(const Key('wifi_back')));
+        await tester.pumpAndSettle();
+        expect(cubit.state.destination, SettingsTrayDestination.home);
+        expect(find.byKey(const Key('settingsTray_wifi')), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'tapping Bluetooth while on turns power off and stays on home',
+      (tester) async {
+        cubit.open();
+        await pump(tester);
+        await tester.pumpAndSettle();
+
+        expect(bluetoothClient.powered, isTrue);
+        await tester.tap(find.byKey(const Key('settingsTray_bluetooth')));
+        await tester.pumpAndSettle();
+
+        expect(cubit.state.destination, SettingsTrayDestination.home);
+        expect(bluetoothClient.powered, isFalse);
+      },
+    );
+
+    testWidgets(
+      'tapping Bluetooth while off turns power on and opens the panel',
+      (tester) async {
+        bluetoothClient.powered = false;
+        cubit.open();
+        await pump(tester);
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('settingsTray_bluetooth')));
+        await tester.pumpAndSettle();
+
+        expect(bluetoothClient.powered, isTrue);
+        expect(cubit.state.destination, SettingsTrayDestination.bluetooth);
+        expect(find.byKey(const Key('bluetooth_tray_panel')), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'long-pressing Bluetooth expands the in-tray panel without dismissing',
+      (tester) async {
+        cubit.open();
+        await pump(tester);
+        await tester.pumpAndSettle();
+
+        await tester.longPress(
+          find.byKey(const Key('settingsTray_bluetooth')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(cubit.state.dragProgress, 1);
+        expect(
+          cubit.state.destination,
+          SettingsTrayDestination.bluetooth,
+        );
+        expect(find.byKey(const Key('bluetooth_tray_panel')), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('bluetooth_back')));
+        await tester.pumpAndSettle();
+        expect(cubit.state.destination, SettingsTrayDestination.home);
+      },
+    );
+
+    testWidgets(
+      'tapping Tuner opens a coming-soon stub and leaves the tray open',
+      (tester) async {
+        cubit.open();
+        await pump(tester);
+        await tester.pump();
+
+        await tester.tap(find.byKey(const Key('settingsTray_tuner')));
+        await tester.pumpAndSettle();
+
+        final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+        expect(find.byKey(const Key('comingSoonStub_dialog')), findsOneWidget);
+        expect(
+          find.text(l10n.trayComingSoonMessage(l10n.trayTunerLabel)),
+          findsOneWidget,
+        );
+        expect(cubit.state.dragProgress, 1);
+
+        await tester.tap(find.byKey(const Key('comingSoonStub_close')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('comingSoonStub_dialog')), findsNothing);
+      },
+    );
   });
 
   group('isNavigating guard on Settings/Signal', () {
@@ -309,15 +471,25 @@ void main() {
             theme: AppTheme.neon,
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
-            home: MultiBlocProvider(
+            home: MultiRepositoryProvider(
               providers: [
-                BlocProvider<SettingsTrayCubit>.value(value: cubit),
-                BlocProvider<LooperBloc>.value(value: bloc),
-                BlocProvider<MonitorCubit>.value(value: monitor),
-                BlocProvider<TracksCubit>.value(value: tracks),
+                RepositoryProvider<WifiRepository>.value(
+                  value: WifiRepository(client: wifiClient),
+                ),
+                RepositoryProvider<BluetoothRepository>.value(
+                  value: BluetoothRepository(client: bluetoothClient),
+                ),
               ],
-              child: const Scaffold(
-                body: Stack(children: [SizedBox.expand(), SettingsTray()]),
+              child: MultiBlocProvider(
+                providers: [
+                  BlocProvider<SettingsTrayCubit>.value(value: cubit),
+                  BlocProvider<LooperBloc>.value(value: bloc),
+                  BlocProvider<MonitorCubit>.value(value: monitor),
+                  BlocProvider<TracksCubit>.value(value: tracks),
+                ],
+                child: const Scaffold(
+                  body: Stack(children: [SizedBox.expand(), SettingsTray()]),
+                ),
               ),
             ),
           ),

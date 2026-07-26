@@ -73,6 +73,20 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.1.0-dev.24"
+  bluetooth_client:
+    dependency: "direct dev"
+    description:
+      path: "packages/bluetooth_client"
+      relative: true
+    source: path
+    version: "0.1.0"
+  bluetooth_repository:
+    dependency: "direct main"
+    description:
+      path: "packages/bluetooth_repository"
+      relative: true
+    source: path
+    version: "0.1.0"
   boolean_selector:
     dependency: transitive
     description:
@@ -81,6 +95,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.2"
+  brightness_client:
+    dependency: "direct main"
+    description:
+      path: "packages/brightness_client"
+      relative: true
+    source: path
+    version: "0.1.0"
   characters:
     dependency: transitive
     description:
@@ -1083,6 +1104,20 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.2.1"
+  wifi_client:
+    dependency: "direct dev"
+    description:
+      path: "packages/wifi_client"
+      relative: true
+    source: path
+    version: "0.1.0"
+  wifi_repository:
+    dependency: "direct main"
+    description:
+      path: "packages/wifi_repository"
+      relative: true
+    source: path
+    version: "0.1.0"
   win32:
     dependency: transitive
     description:

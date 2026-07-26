@@ -1,5 +1,7 @@
 import 'package:bloc/bloc.dart';
+import 'package:brightness_client/brightness_client.dart';
 import 'package:equatable/equatable.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 part 'settings_tray_state.dart';
 
@@ -8,11 +10,40 @@ part 'settings_tray_state.dart';
 /// counterpart to the `S`/`G` keyboard shortcuts on console/kiosk builds,
 /// where the on-screen toolbar is hidden entirely.
 ///
-/// Pure ephemeral UI state, unlike `TracksCubit`/`HighContrastCubit`: no
-/// `SettingsRepository` dependency, and nothing here survives a restart.
+/// Tray open/drag state is ephemeral. Brightness is persisted via
+/// [SettingsRepository] and applied through [BrightnessClient] when the
+/// appliance helper supports DDC/CI.
 class SettingsTrayCubit extends Cubit<SettingsTrayState> {
-  /// Creates a [SettingsTrayCubit], closed with the default brightness.
-  SettingsTrayCubit() : super(const SettingsTrayState());
+  /// Creates a [SettingsTrayCubit].
+  SettingsTrayCubit({
+    required SettingsRepository settings,
+    BrightnessClient brightnessClient = const UnsupportedBrightnessClient(),
+  }) : _settings = settings,
+       _brightnessClient = brightnessClient,
+       super(const SettingsTrayState());
+
+  final SettingsRepository _settings;
+  final BrightnessClient _brightnessClient;
+  Future<void>? _loadFuture;
+  bool _brightnessSupported = false;
+
+  /// Restores persisted brightness and probes whether the display helper
+  /// can apply it.
+  Future<void> load() => _loadFuture ??= _restore();
+
+  Future<void> _restore() async {
+    final saved = await _settings.loadBrightness();
+    _brightnessSupported = await _brightnessClient.isSupported();
+    if (isClosed) return;
+    emit(state.copyWith(brightness: saved));
+    if (_brightnessSupported) {
+      try {
+        await _brightnessClient.set(saved);
+      } on Object {
+        // Slider still works locally if apply fails.
+      }
+    }
+  }
 
   /// Live drag progress, clamped to `0..1`. Called every
   /// `onVerticalDragUpdate` frame while the handle is being dragged.
@@ -37,8 +68,14 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// Closes the tray (tap-on-handle, tap-on-scrim, or programmatic). Named
   /// `closeTray` rather than `close` — the latter is `Cubit.close()`, which
   /// disposes the bloc's stream; overriding it here would be a hard
-  /// invalid-override error, not a UI action.
-  void closeTray() => emit(state.copyWith(dragProgress: 0));
+  /// invalid-override error, not a UI action. Always returns to the home
+  /// face so the next open isn't stuck in WiFi/Bluetooth.
+  void closeTray() => emit(
+    state.copyWith(
+      dragProgress: 0,
+      destination: SettingsTrayDestination.home,
+    ),
+  );
 
   /// Toggles open/closed. Only ever called from a tap (never mid-drag), so
   /// `dragProgress` is always settled at exactly `0` or `1` here.
@@ -50,6 +87,26 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
     }
   }
 
+  /// Expands the in-tray WiFi panel (tray stays open).
+  void openWifi() => emit(
+    state.copyWith(
+      dragProgress: 1,
+      destination: SettingsTrayDestination.wifi,
+    ),
+  );
+
+  /// Expands the in-tray Bluetooth panel (tray stays open).
+  void openBluetooth() => emit(
+    state.copyWith(
+      dragProgress: 1,
+      destination: SettingsTrayDestination.bluetooth,
+    ),
+  );
+
+  /// Returns from a WiFi/Bluetooth expand to the tile grid.
+  void showHome() =>
+      emit(state.copyWith(destination: SettingsTrayDestination.home));
+
   /// Marks a tray nav-button push as in flight — the tray disables both nav
   /// buttons until [endNavigating].
   void beginNavigating() => emit(state.copyWith(isNavigating: true));
@@ -57,8 +114,18 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// Clears the in-flight navigation guard set by [beginNavigating].
   void endNavigating() => emit(state.copyWith(isNavigating: false));
 
-  /// Sets the local-only brightness slider value (`0..1`). Not persisted;
-  /// not wired to any real display dimming.
-  void setBrightness(double value) =>
-      emit(state.copyWith(brightness: value.clamp(0.0, 1.0)));
+  /// Sets brightness (`0..1`), persists it, and applies via the host helper
+  /// when supported.
+  Future<void> setBrightness(double value) async {
+    final clamped = value.clamp(0.0, 1.0);
+    emit(state.copyWith(brightness: clamped));
+    await _settings.saveBrightness(clamped);
+    if (_brightnessSupported) {
+      try {
+        await _brightnessClient.set(clamped);
+      } on Object {
+        // Keep UI/persistence even if the panel rejects the set.
+      }
+    }
+  }
 }

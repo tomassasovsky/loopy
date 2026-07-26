@@ -38,6 +38,45 @@ journalctl -u loopy-data-grow.service -b --no-pager
 Sessions and exports live under `/data/Documents/{sessions,exports}/` and survive
 both OTA and the grow (the grow never wipes the filesystem).
 
+## Control Center (WiFi / Bluetooth / brightness)
+
+Swipe down the settings tray on the main touchscreen. On the Yocto appliance
+these tiles talk to host helpers (same pattern as OTA's `loopy-update-ctl`):
+
+| Helper | Role |
+|--------|------|
+| `/usr/bin/loopy-wifi-ctl` | scan / join / disconnect / forget (`wpa_cli`) |
+| `/usr/bin/loopy-bt-ctl` | scan + discoverable / advertise (`bluetoothctl`) |
+| `/usr/bin/loopy-brightness-ctl` | DDC/CI brightness via `ddcutil` VCP 0x10 |
+
+**On-device checklist** (after flashing an image that includes the helpers):
+
+```bash
+# WiFi
+loopy-wifi-ctl status
+loopy-wifi-ctl scan
+loopy-wifi-ctl connect 'YourSSID' 'your-psk'
+ip -4 addr show wlan0
+loopy-wifi-ctl disconnect
+
+# Bluetooth (discoverable from a phone; pairing not implemented yet)
+loopy-bt-ctl status
+loopy-bt-ctl discoverable on
+loopy-bt-ctl advertise on
+loopy-bt-ctl scan
+
+# Brightness (needs a DDC/CI-capable HDMI panel)
+loopy-brightness-ctl supported
+loopy-brightness-ctl get
+loopy-brightness-ctl set 40
+loopy-brightness-ctl set 80
+```
+
+In the app: open the tray → WiFi (join a network) → Bluetooth (toggle
+discoverable / broadcast, run a scan) → drag brightness and confirm the panel
+dims. If `supported` is false for brightness, the slider still persists but
+does not change the panel — note that for a gamma follow-up.
+
 ## Decision 1 — Kiosk rendering target: **GTK-on-Wayland** (the Flutter Linux runner)
 
 **Decision: ship the existing Flutter Linux GTK runner on Wayland. Do not use
