@@ -12,8 +12,9 @@
 # system.conf + tryboot-cmdline.bbclass are locked to this numbering (rootfs=p5/p6).
 #
 # rootfs slots are fixed-size (equal, with headroom) so a future/larger update
-# still fits the inactive slot. data is seeded modestly for now (grow-to-fill on
-# the extended layout is a follow-up).
+# still fits the inactive slot. data is seeded at 2 GiB so the flashable .wic
+# stays small; loopy-data-grow (systemd oneshot in loopy-bundle) expands p4+p7
+# to fill the card on first boot / after OTA onto a larger SD.
 part /boot/tryboot --source tryboot-partition --ondisk mmcblk0 --fstype=vfat --label tryboot --active --align 4096 --size 10
 part /boot/bootA   --source bootimg-partition --ondisk mmcblk0 --fstype=vfat --label bootA   --align 4096 --size 100
 part /boot/bootB   --source bootimg-partition --ondisk mmcblk0 --fstype=vfat --label bootB   --align 4096 --size 100

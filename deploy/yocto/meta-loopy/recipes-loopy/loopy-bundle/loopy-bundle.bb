@@ -27,6 +27,8 @@ SRC_URI = "file://loopy.service \
            file://loopy-runtime.conf \
            file://loopy-rtirq.service \
            file://loopy-rtirq \
+           file://loopy-data-grow.service \
+           file://loopy-data-grow \
            file://data.mount \
            file://boot.mount \
            file://loopy-ota-check \
@@ -53,25 +55,29 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # Runtime libs the GTK embedder + native engine link against, named explicitly so
 # they're guaranteed in the image (hard `=`, so keep everything ON this line).
 # curl/jq/ca-certificates: the OTA client (loopy-ota-check). rauc: the installer.
+# parted + e2fsprogs-resize2fs: loopy-data-grow (expand /data to fill the SD card).
 RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
                   fontconfig freetype glib-2.0 mesa alsa-lib libstdc++ \
-                  curl jq ca-certificates rauc"
+                  curl jq ca-certificates rauc \
+                  parted e2fsprogs-resize2fs"
 
 inherit systemd
-# App + rtirq oneshot + the /boot(tryboot selector) and /data mounts + the OTA
-# update timer. Direct-ALSA appliance — no PipeWire/WirePlumber.
+# App + rtirq oneshot + data-grow oneshot + the /boot(tryboot selector) and
+# /data mounts + the OTA update timer. Direct-ALSA appliance — no PipeWire/WirePlumber.
 # The OTA check/install is OPT-IN: the app does the read-only manifest check on
 # launch and the user triggers install/reboot from Settings (via loopy-update-ctl).
 # So loopy-ota-check.timer is installed but NOT auto-enabled — no background
 # auto-staging. (Re-enable the timer manually for a headless auto-update device.)
-SYSTEMD_SERVICE:${PN} = "loopy.service loopy-rtirq.service boot.mount data.mount"
+SYSTEMD_SERVICE:${PN} = "loopy.service loopy-rtirq.service loopy-data-grow.service boot.mount data.mount"
 
 FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch ${bindir}/loopy-rtirq \
+                ${bindir}/loopy-data-grow \
                 ${bindir}/loopy-ota-check \
                 ${bindir}/loopy-update-ctl \
                 ${sysconfdir}/loopy/update-channel ${sysconfdir}/loopy/build-version \
                 ${systemd_system_unitdir}/loopy.service \
                 ${systemd_system_unitdir}/loopy-rtirq.service \
+                ${systemd_system_unitdir}/loopy-data-grow.service \
                 ${systemd_system_unitdir}/boot.mount \
                 ${systemd_system_unitdir}/data.mount \
                 ${systemd_system_unitdir}/loopy-ota-check.service \
@@ -109,6 +115,12 @@ do_install() {
     # force-threads them; threadirqs on the cmdline otherwise).
     install -m 0755 ${UNPACKDIR}/loopy-rtirq ${D}${bindir}/loopy-rtirq
     install -m 0644 ${UNPACKDIR}/loopy-rtirq.service ${D}${systemd_system_unitdir}/loopy-rtirq.service
+
+    # data-grow: oneshot that expands the seeded 2 GiB /data partition (and its
+    # MBR extended container) to fill the SD card, then resize2fs. Idempotent;
+    # runs before loopy.service. See loopy-data-grow + wic/loopy-tryboot.wks.
+    install -m 0755 ${UNPACKDIR}/loopy-data-grow ${D}${bindir}/loopy-data-grow
+    install -m 0644 ${UNPACKDIR}/loopy-data-grow.service ${D}${systemd_system_unitdir}/loopy-data-grow.service
 
     # Mount units: /boot = tryboot selector (autoboot.txt, for the RAUC backend),
     # /data = persistent app data (survives updates).

@@ -7,8 +7,11 @@
 # the image — confirm on device and adjust WAYLAND_DISPLAY / XDG_RUNTIME_DIR / User.
 [Unit]
 Description=Loopy floor-console app (Wayland client under weston)
-After=weston.service
+# Wait for weston, and for the data-grow oneshot (no-op when /data already fills
+# the card) so the app never starts mid-resize after flash/OTA onto a larger SD.
+After=weston.service loopy-data-grow.service
 Requires=weston.service
+Wants=loopy-data-grow.service
 # Persistent user data lives on /data (data.mount). Block startup until it is
 # mounted so the app never writes sessions/exports to the rootfs by mistake (the
 # launcher also guards, but this makes the ordering explicit).

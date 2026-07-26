@@ -1,0 +1,15 @@
+# Expand /data (p7) to fill unused SD space before the app starts.
+# See /usr/bin/loopy-data-grow. Idempotent; safe every boot. Delivered via OTA.
+[Unit]
+Description=Loopy: grow /data partition to fill the SD card
+After=data.mount
+Before=loopy.service
+RequiresMountsFor=/data
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/loopy-data-grow
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
