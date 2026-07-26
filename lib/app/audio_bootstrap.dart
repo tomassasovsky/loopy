@@ -128,22 +128,64 @@ Future<AutoStartResult> tryAutoStartEngine({
     backend: backend,
     asioDriver: asioDriver,
   );
-  final pinned =
-      config.playbackDeviceId.isNotEmpty || config.captureDeviceId.isNotEmpty;
   AppLog.info(
     'audio auto-start: opening playback=${config.playbackDeviceId} '
     'capture=${config.captureDeviceId} rate=${config.sampleRate} '
     'buffer=${config.bufferFrames}',
   );
-  final result = repository.startEngine(config);
+  var result = repository.startEngine(config);
+  if (!result.isOk && consolePinned) {
+    // Empty-id heal picked a duplex that would not open — fall back to the
+    // system default (same as first-run) so the kiosk still comes up.
+    AppLog.warn(
+      'audio auto-start: console heal open failed result=${result.name}; '
+      'falling back to system default',
+    );
+    playbackId = '';
+    captureId = '';
+    consolePinned = false;
+    final fallback = EngineConfig(
+      sampleRate: saved.sampleRate,
+      bufferFrames: saved.bufferFrames,
+      inputChannels: saved.inputChannels,
+      outputChannels: saved.outputChannels,
+      maxLoopFrames: saved.maxLoopMinutes <= 0
+          ? 0
+          : saved.maxLoopMinutes * 60 * saved.sampleRate,
+      useLoopbackCapture: loopback.isAutoRoutable,
+      backend: backend,
+      asioDriver: asioDriver,
+    );
+    result = repository.startEngine(fallback);
+    if (result.isOk) {
+      // Persist empty ids so we don't retry a broken pin every boot; the next
+      // heal only runs while both ids stay empty, and first-run-style pin
+      // happens again once a duplex is present and openable.
+      await settings.saveAudioConfig(
+        StoredAudioConfig(
+          sampleRate: saved.sampleRate,
+          bufferFrames: saved.bufferFrames,
+          inputChannels: saved.inputChannels,
+          outputChannels: saved.outputChannels,
+          maxLoopMinutes: saved.maxLoopMinutes,
+          backend: saved.backend,
+          asioDriver: saved.asioDriver,
+        ),
+      );
+    }
+  }
   if (!result.isOk) {
     AppLog.error('audio auto-start: open failed result=${result.name}');
     // A pinned device that could not be opened (e.g. the interface is unplugged
-    // at boot) arms the recovery cubit to auto-start when it reappears.
+    // at boot) arms the recovery cubit to auto-start when it reappears. Prefer
+    // the originally attempted pin (including a failed console heal) so recovery
+    // can reopen it when the interface returns.
+    final attemptedPin =
+        config.playbackDeviceId.isNotEmpty || config.captureDeviceId.isNotEmpty;
     return (
       started: false,
       asioDrivers: asioDrivers,
-      recoveryConfig: pinned ? config : null,
+      recoveryConfig: attemptedPin ? config : null,
     );
   }
   if (consolePinned) {
@@ -270,6 +312,7 @@ Future<AutoStartResult> tryAutoStartEngine({
 
   // Per-input live monitors are restored by MonitorCubit.load() (the shell
   // creates and loads it on every launch), so they are not re-applied here.
+  final pinned = playbackId.isNotEmpty || captureId.isNotEmpty;
   AppLog.info('audio auto-start: started ok pinned=$pinned');
   return (started: true, asioDrivers: asioDrivers, recoveryConfig: null);
 }

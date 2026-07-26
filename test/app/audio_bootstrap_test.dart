@@ -280,6 +280,47 @@ void main() {
       );
 
       test(
+        'falls back to system default when heal pin open fails',
+        () async {
+          debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+          engine
+            ..devices = const [
+              le.AudioDevice(
+                id: 'scarlett',
+                name: 'Scarlett 4i4',
+                isDefault: false,
+                isInput: false,
+              ),
+              le.AudioDevice(
+                id: 'scarlett',
+                name: 'Scarlett 4i4',
+                isDefault: false,
+                isInput: true,
+              ),
+            ]
+            ..startResults = [EngineResult.device, EngineResult.ok];
+          await settings.saveAudioConfig(
+            const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+          );
+
+          final result = await tryAutoStartEngine(
+            repository: repository,
+            settings: settings,
+            consoleMode: true,
+          );
+
+          expect(result.started, isTrue);
+          expect(result.recoveryConfig, isNull);
+          expect(engine.startCalls, 2);
+          expect(engine.lastConfig?.playbackDeviceId, '');
+          expect(engine.lastConfig?.captureDeviceId, '');
+          final saved = await settings.loadAudioConfig();
+          expect(saved?.playbackDeviceId, '');
+          expect(saved?.captureDeviceId, '');
+        },
+      );
+
+      test(
         'healed pin skips loopback auto-measure even when loopback is routable',
         () async {
           debugDefaultTargetPlatformOverride = TargetPlatform.linux;
