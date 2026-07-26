@@ -176,10 +176,10 @@ Future<AutoStartResult> tryAutoStartEngine({
   }
   if (!result.isOk) {
     AppLog.error('audio auto-start: open failed result=${result.name}');
-    // A pinned device that could not be opened (e.g. the interface is unplugged
-    // at boot) arms the recovery cubit to auto-start when it reappears. Prefer
-    // the originally attempted pin (including a failed console heal) so recovery
-    // can reopen it when the interface returns.
+    // A pinned device that could not be opened (e.g. the interface is
+    // unplugged at boot) arms the recovery cubit to auto-start when it
+    // reappears. Prefer the originally attempted pin (including a failed
+    // console heal) so recovery can reopen it when the interface returns.
     final attemptedPin =
         config.playbackDeviceId.isNotEmpty || config.captureDeviceId.isNotEmpty;
     return (
