@@ -34,9 +34,19 @@ void main() {
     expect(
       wifiErrorMessage(
         l10n,
-        "ProcessException: loopy-wifi-ctl failed",
+        'ProcessException: loopy-wifi-ctl failed',
       ),
       l10n.wifiConnectFailedGeneric,
+    );
+  });
+
+  test('maps NetworkManager secrets errors to the password hint', () {
+    expect(
+      wifiErrorMessage(
+        l10n,
+        'Error: Connection activation failed: (7) Secrets were required, but not provided.',
+      ),
+      l10n.wifiConnectFailedPassword,
     );
   });
 }

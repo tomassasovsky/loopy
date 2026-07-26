@@ -38,7 +38,7 @@ SRC_URI = "file://loopy.service \
            file://loopy-wifi-ctl \
            file://loopy-bt-ctl \
            file://loopy-brightness-ctl \
-           file://25-wlan.network \
+           file://99-loopy-wifi.conf \
            file://update-channel"
 
 # No source tree (prebuilt install). walnascar bans S=${WORKDIR}; SRC_URI local
@@ -60,13 +60,14 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # they're guaranteed in the image (hard `=`, so keep everything ON this line).
 # curl/jq/ca-certificates: the OTA client (loopy-ota-check). rauc: the installer.
 # parted + e2fsprogs-resize2fs: loopy-data-grow (expand /data to fill the SD card).
-# wpa-supplicant: loopy-wifi-ctl. bluez5: loopy-bt-ctl. ddcutil: loopy-brightness-ctl.
-# iproute2: `ip` for WiFi status addressing.
+# networkmanager-nmcli: loopy-wifi-ctl (NM owns wpa_supplicant via -wifi plugin).
+# bluez5: loopy-bt-ctl. ddcutil: loopy-brightness-ctl.
 RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
                   fontconfig freetype glib-2.0 mesa alsa-lib libstdc++ \
                   curl jq ca-certificates rauc \
                   parted e2fsprogs-resize2fs \
-                  wpa-supplicant bluez5 ddcutil iproute2 iw"
+                  networkmanager-nmcli networkmanager-wifi \
+                  bluez5 ddcutil"
 
 inherit systemd
 # App + rtirq oneshot + data-grow oneshot + the /boot(tryboot selector) and
@@ -84,7 +85,7 @@ FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch ${bindir}/loopy-rtirq \
                 ${bindir}/loopy-wifi-ctl \
                 ${bindir}/loopy-bt-ctl \
                 ${bindir}/loopy-brightness-ctl \
-                ${sysconfdir}/systemd/network/25-wlan.network \
+                ${sysconfdir}/NetworkManager/conf.d/99-loopy-wifi.conf \
                 ${sysconfdir}/loopy/update-channel ${sysconfdir}/loopy/build-version \
                 ${systemd_system_unitdir}/loopy.service \
                 ${systemd_system_unitdir}/loopy-rtirq.service \
@@ -151,9 +152,10 @@ do_install() {
     install -m 0755 ${UNPACKDIR}/loopy-bt-ctl ${D}${bindir}/loopy-bt-ctl
     install -m 0755 ${UNPACKDIR}/loopy-brightness-ctl ${D}${bindir}/loopy-brightness-ctl
 
-    # systemd-networkd: DHCP on wlan* after wpa_supplicant associates.
-    install -d ${D}${sysconfdir}/systemd/network
-    install -m 0644 ${UNPACKDIR}/25-wlan.network ${D}${sysconfdir}/systemd/network/25-wlan.network
+    # NetworkManager appliance tweaks (WiFi join reliability on brcmfmac).
+    install -d ${D}${sysconfdir}/NetworkManager/conf.d
+    install -m 0644 ${UNPACKDIR}/99-loopy-wifi.conf \
+        ${D}${sysconfdir}/NetworkManager/conf.d/99-loopy-wifi.conf
 
     # /etc/loopy: update channel + this build's version number.
     # Prefer LOOPY_UPDATE_CHANNEL (set by CI) over the static file default.

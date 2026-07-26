@@ -45,9 +45,12 @@ these tiles talk to host helpers (same pattern as OTA's `loopy-update-ctl`):
 
 | Helper | Role |
 |--------|------|
-| `/usr/bin/loopy-wifi-ctl` | scan / join / disconnect / forget (`wpa_cli`) |
+| `/usr/bin/loopy-wifi-ctl` | scan / join / disconnect / forget (`nmcli` / NetworkManager) |
 | `/usr/bin/loopy-bt-ctl` | scan + discoverable / advertise (`bluetoothctl`) |
 | `/usr/bin/loopy-brightness-ctl` | DDC/CI brightness via `ddcutil` VCP 0x10 |
+
+WiFi is owned by **NetworkManager** (eth0 + wlan*). `systemd-networkd` is
+masked on the appliance image so the two managers do not fight.
 
 **On-device checklist** (after flashing an image that includes the helpers):
 

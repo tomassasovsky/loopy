@@ -4,20 +4,17 @@
 # Verbs (stdout = compact JSON; detail on stderr):
 #   status                 {supported,enabled,connected,ssid,ip,signal}
 #   scan                   [{ssid,signal,secured}, ...]
-#   connect <ssid> [psk]   {} on success (waits for association)
+#   connect <ssid> [psk]   {} on success (waits for activation)
 #   disconnect             {}
 #   forget <ssid>          {}
-#   radio on|off           {}  (iface up/down — Control Center tap toggle)
+#   radio on|off           {}  (WiFi radio — Control Center tap toggle)
 #
-# Uses wpa_cli against wpa_supplicant; addressing comes from systemd-networkd
-# DHCP on wlan* (see 25-wlan.network).
+# NetworkManager / nmcli owns association + DHCP (and wpa_supplicant as its
+# wifi backend). systemd-networkd is masked on the appliance image.
 set -eu
 
 IFACE="${LOOPY_WIFI_IFACE:-wlan0}"
-CONF="${LOOPY_WPA_CONF:-/etc/wpa_supplicant/wpa_supplicant-${IFACE}.conf}"
-CTRL_DIR="${LOOPY_WPA_CTRL:-/run/wpa_supplicant}"
-# How long connect waits for wpa_state=COMPLETED (seconds).
-CONNECT_TIMEOUT_SECS="${LOOPY_WIFI_CONNECT_TIMEOUT:-30}"
+CONNECT_WAIT_SECS="${LOOPY_WIFI_CONNECT_TIMEOUT:-45}"
 
 log() { echo "loopy-wifi-ctl: $*" >&2; }
 
@@ -25,280 +22,183 @@ json_escape() {
     printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
-# Run a wpa_cli command; succeed only on an OK reply.
-wpa_ok() {
-    out=$(wpa_cli -i "$IFACE" "$@" 2>&1) || true
-    case "$out" in
-        OK*) return 0 ;;
+have_nmcli() {
+    command -v nmcli >/dev/null 2>&1
+}
+
+# Map nmcli activation failures to a stable stderr token the Flutter UI matches.
+map_connect_error() {
+    err=$1
+    lower=$(printf '%s' "$err" | tr '[:upper:]' '[:lower:]')
+    case "$lower" in
+        *'secrets were required'*|*'no secrets'*|*'property is missing'*|*wrong*password*)
+            log "authentication failed (wrong password?)"
+            ;;
+        *'802.1x supplicant took too long'*|*timeout*|*took too long*)
+            log "timed out waiting for association"
+            ;;
         *)
-            log "wpa_cli $* -> $out"
-            return 1
+            log "connection failed: $err"
             ;;
     esac
 }
 
-ensure_conf() {
-    mkdir -p "$(dirname "$CONF")"
-    # Yocto appliance has no Debian-style `netdev` group. GROUP=netdev makes
-    # wpa_supplicant refuse to open the control socket ("Invalid group
-    # 'netdev'") and WiFi scan/connect die. Root-only ctrl_interface is fine
-    # here — helpers run as root via the Flutter Process boundary.
-    if [ ! -f "$CONF" ]; then
-        cat >"$CONF" <<EOF
-ctrl_interface=DIR=${CTRL_DIR}
-update_config=1
-EOF
-        return 0
-    fi
-    # Repair earlier helper revisions without wiping saved networks.
-    if grep -q 'GROUP=netdev' "$CONF" 2>/dev/null \
-        && ! grep -q '^netdev:' /etc/group 2>/dev/null; then
-        sed -i 's/ GROUP=netdev//' "$CONF"
-    fi
-}
-
-disable_powersave() {
-    # brcmfmac power-save is a common cause of WPA auth timeouts on the Pi.
-    command -v iw >/dev/null 2>&1 || return 0
-    iw dev "$IFACE" set power_save off >/dev/null 2>&1 || true
-}
-
-ensure_wpa() {
-    ensure_conf
-    mkdir -p "$CTRL_DIR"
-    if wpa_cli -i "$IFACE" ping >/dev/null 2>&1; then
-        disable_powersave
-        return 0
-    fi
-    if command -v systemctl >/dev/null 2>&1 \
-        && systemctl start "wpa_supplicant@${IFACE}.service" 2>/dev/null; then
-        sleep 0.5
-    fi
-    if ! wpa_cli -i "$IFACE" ping >/dev/null 2>&1; then
-        if ! command -v wpa_supplicant >/dev/null 2>&1; then
-            log "wpa_supplicant not installed"
-            return 1
-        fi
-        wpa_supplicant -B -i "$IFACE" -c "$CONF" || true
-        sleep 0.5
-    fi
-    disable_powersave
-    wpa_cli -i "$IFACE" ping >/dev/null 2>&1
-}
-
-iface_ip() {
-    ip -4 -o addr show dev "$IFACE" 2>/dev/null \
-        | awk '{print $4}' | cut -d/ -f1 | head -n1
-}
-
-iface_enabled() {
-    # Administratively UP (Control Center "WiFi on"), even without an AP.
-    # Match IFF_UP inside the <flags> list — `[^,]UP` wrongly misses `,UP`
-    # when other flags precede it (the usual case: NO-CARRIER,...,UP).
-    ip -o link show "$IFACE" 2>/dev/null | grep -Eq '[,<]UP[,>]'
-}
-
-wpa_state() {
-    wpa_cli -i "$IFACE" status 2>/dev/null | sed -n 's/^wpa_state=//p' | head -n1
-}
-
-# True when the selected network was temp-disabled after auth failures.
-network_temp_disabled() {
-    id=$1
-    wpa_cli -i "$IFACE" list_networks 2>/dev/null \
-        | awk -v id="$id" 'NR>1 && $1==id {print; exit}' \
-        | grep -q 'TEMP-DISABLED'
-}
-
-# Wait until COMPLETED, TEMP-DISABLED (auth fail), or timeout.
-wait_for_completed() {
-    id=$1
-    i=0
-    while [ "$i" -lt "$CONNECT_TIMEOUT_SECS" ]; do
-        state=$(wpa_state)
-        if [ "$state" = "COMPLETED" ]; then
-            return 0
-        fi
-        if network_temp_disabled "$id"; then
-            log "authentication failed for network $id (wrong password?)"
-            return 1
-        fi
-        sleep 1
-        i=$((i + 1))
-    done
-    state=$(wpa_state)
-    if [ "$state" = "COMPLETED" ]; then
-        return 0
-    fi
-    log "timed out waiting for association (state=${state:-unknown})"
-    return 1
-}
-
 do_status() {
-    if ! command -v wpa_cli >/dev/null 2>&1; then
+    if ! have_nmcli; then
         echo '{"supported":false,"enabled":false,"connected":false,"ssid":"","ip":"","signal":0}'
         return 0
     fi
-    # Do NOT ensure_wpa here — that would bring a user-disabled radio back up
-    # on every Control Center poll. Report iface UP as "enabled".
+
+    wifi_radio=$(nmcli -t -f WIFI radio 2>/dev/null || echo disabled)
     enabled=false
-    iface_enabled && enabled=true
+    case "$wifi_radio" in enabled|on) enabled=true ;; esac
+
     if [ "$enabled" != true ]; then
         echo '{"supported":true,"enabled":false,"connected":false,"ssid":"","ip":"","signal":0}'
         return 0
     fi
-    state=$(wpa_cli -i "$IFACE" status 2>/dev/null || true)
-    if [ -z "$state" ]; then
-        echo '{"supported":true,"enabled":true,"connected":false,"ssid":"","ip":"","signal":0}'
-        return 0
-    fi
-    wpa_st=$(printf '%s\n' "$state" | sed -n 's/^wpa_state=//p' | head -n1)
-    ssid=$(printf '%s\n' "$state" | sed -n 's/^ssid=//p' | head -n1)
-    signal=$(printf '%s\n' "$state" | sed -n 's/^rssi=//p' | head -n1)
-    if [ -z "$signal" ] || [ "$signal" = "0" ]; then
-        # status often omits rssi; signal_poll is more reliable when associated.
-        signal=$(wpa_cli -i "$IFACE" signal_poll 2>/dev/null \
-            | sed -n 's/^RSSI=//p' | head -n1)
-    fi
-    [ -n "$signal" ] || signal=0
-    ip=$(iface_ip)
+
+    # GENERAL.STATE looks like "100 (connected)" when associated.
+    state=$(nmcli -t -f GENERAL.STATE device show "$IFACE" 2>/dev/null \
+        | sed -n 's/^GENERAL.STATE://p' | head -n1)
     connected=false
-    [ "$wpa_st" = "COMPLETED" ] && connected=true
+    case "$state" in 100\ *|*\(connected\)*) connected=true ;; esac
+
+    ssid=$(nmcli -t -f GENERAL.CONNECTION device show "$IFACE" 2>/dev/null \
+        | sed -n 's/^GENERAL.CONNECTION://p' | head -n1)
+    case "$ssid" in ''|--*) ssid= ;; esac
+
+    ip=$(nmcli -t -f IP4.ADDRESS device show "$IFACE" 2>/dev/null \
+        | sed -n 's/^IP4.ADDRESS\[[0-9]*\]://p' | head -n1 | cut -d/ -f1)
+
+    signal=0
+    if [ "$connected" = true ] && [ -n "$ssid" ]; then
+        signal=$(nmcli -t -f IN-USE,SSID,SIGNAL device wifi list ifname "$IFACE" 2>/dev/null \
+            | awk -F: -v s="$ssid" '$1=="*" && $2==s {print $3; exit}')
+        [ -n "$signal" ] || signal=0
+    fi
+
     printf '{"supported":true,"enabled":true,"connected":%s,"ssid":"%s","ip":"%s","signal":%s}\n' \
-        "$connected" "$(json_escape "$ssid")" "$(json_escape "${ip:-}")" "$signal"
+        "$connected" "$(json_escape "${ssid:-}")" "$(json_escape "${ip:-}")" "$signal"
 }
 
 do_radio() {
     onoff=$1
     case "$onoff" in on|off) ;; *) log "radio needs on|off"; return 2 ;; esac
-    if [ "$onoff" = on ]; then
-        ip link set "$IFACE" up 2>/dev/null || true
-        ensure_wpa || return 1
-        disable_powersave
-    else
-        wpa_cli -i "$IFACE" disconnect >/dev/null 2>&1 || true
-        ip link set "$IFACE" down 2>/dev/null || true
-    fi
+    have_nmcli || {
+        log "nmcli not installed"
+        return 1
+    }
+    nmcli radio wifi "$onoff" >/dev/null
     echo '{}'
 }
 
 do_scan() {
-    ensure_wpa || {
+    have_nmcli || {
         echo '[]'
         return 1
     }
-    disable_powersave
-    wpa_cli -i "$IFACE" scan >/dev/null 2>&1 || true
-    # Fresh radio-on needs a beat longer for the first scan to populate.
-    sleep 3
-    results=$(wpa_cli -i "$IFACE" scan_results 2>/dev/null | tail -n +2 || true)
-    if [ -z "$results" ]; then
-        sleep 2
-        results=$(wpa_cli -i "$IFACE" scan_results 2>/dev/null | tail -n +2 || true)
-    fi
-    tmp=$(mktemp)
-    printf '%s\n' "$results" | while IFS= read -r line; do
+    nmcli radio wifi on >/dev/null 2>&1 || true
+    nmcli device wifi rescan ifname "$IFACE" >/dev/null 2>&1 || true
+    sleep 2
+
+    raw=$(mktemp)
+    ranked=$(mktemp)
+    nmcli -t -f SSID,SIGNAL,SECURITY device wifi list ifname "$IFACE" 2>/dev/null >"$raw" || true
+
+    while IFS= read -r line; do
         [ -n "$line" ] || continue
-        ssid=$(printf '%s\n' "$line" | awk '{
-            for (i=5; i<=NF; i++) printf "%s%s", (i>5?" ":""), $i
-        }')
+        security=${line##*:}
+        rest=${line%:*}
+        signal=${rest##*:}
+        ssid=${rest%:*}
         [ -n "$ssid" ] || continue
-        signal=$(printf '%s\n' "$line" | awk '{print $3}')
-        flags=$(printf '%s\n' "$line" | awk '{print $4}')
-        secured=false
-        case "$flags" in *WPA*|*WEP*|*RSN*) secured=true ;; esac
-        printf '{"ssid":"%s","signal":%s,"secured":%s}\n' \
-            "$(json_escape "$ssid")" "${signal:-0}" "$secured"
-    done >"$tmp"
+        case "$ssid" in --*) continue ;; esac
+        secured=true
+        case "$security" in ''|--*) secured=false ;; esac
+        # Escape tabs in SSID for the staging file (rare).
+        ssid_safe=$(printf '%s' "$ssid" | tr '\t' ' ')
+        printf '%s\t%s\t%s\n' "$ssid_safe" "${signal:-0}" "$secured"
+    done <"$raw" | awk -F'\t' '
+        {
+            ssid=$1; sig=$2+0; sec=$3
+            if (!(ssid in best) || sig > best[ssid]) {
+                best[ssid]=sig
+                secured[ssid]=sec
+            }
+        }
+        END {
+            for (s in best) printf "%s\t%d\t%s\n", s, best[s], secured[s]
+        }
+    ' | sort -t"$(printf '\t')" -k2,2nr >"$ranked"
+
     first=1
     printf '['
-    while IFS= read -r obj; do
-        [ -n "$obj" ] || continue
+    while IFS="$(printf '\t')" read -r ssid signal secured; do
+        [ -n "$ssid" ] || continue
         if [ "$first" -eq 1 ]; then
             first=0
         else
             printf ','
         fi
-        printf '%s' "$obj"
-    done <"$tmp"
+        printf '{"ssid":"%s","signal":%s,"secured":%s}' \
+            "$(json_escape "$ssid")" "$signal" "$secured"
+    done <"$ranked"
     printf ']\n'
-    rm -f "$tmp"
+    rm -f "$raw" "$ranked"
+}
+
+do_forget() {
+    ssid=$1
+    have_nmcli || return 1
+    nmcli -t -f UUID,NAME,TYPE connection show 2>/dev/null \
+        | awk -F: '$3 ~ /wireless|wifi/ {print $1"\t"$2}' \
+        | while IFS="$(printf '\t')" read -r uuid name; do
+            [ -n "$uuid" ] || continue
+            profile_ssid=$(nmcli -t -f 802-11-wireless.ssid connection show "$uuid" 2>/dev/null \
+                | sed -n 's/^802-11-wireless.ssid://p')
+            if [ "$name" = "$ssid" ] || [ "$profile_ssid" = "$ssid" ]; then
+                nmcli connection delete uuid "$uuid" >/dev/null 2>&1 || true
+            fi
+        done
+    echo '{}'
 }
 
 do_connect() {
     ssid=$1
     psk=${2:-}
-    ensure_wpa || return 1
-    disable_powersave
+    have_nmcli || {
+        log "nmcli not installed"
+        return 1
+    }
+    nmcli radio wifi on >/dev/null 2>&1 || true
+    # Drop stale profiles so a prior wrong PSK cannot poison activation
+    # ("Secrets were required, but not provided").
     do_forget "$ssid" >/dev/null 2>&1 || true
-    id=$(wpa_cli -i "$IFACE" add_network | tr -d '[:space:]')
-    case "$id" in ''|*[!0-9]*) log "add_network failed: $id"; return 1 ;; esac
 
-    wpa_ok set_network "$id" ssid "\"$ssid\"" || return 1
-
+    errf=$(mktemp)
+    set +e
     if [ -n "$psk" ]; then
-        # Prefer a hex PSK from wpa_passphrase — avoids wpa_cli quoting edge
-        # cases on ASCII passphrases and validates length early.
-        if command -v wpa_passphrase >/dev/null 2>&1; then
-            hex=$(wpa_passphrase "$ssid" "$psk" 2>/dev/null \
-                | awk -F= '/^[[:space:]]*psk=/ {print $2; exit}')
-            if [ -z "$hex" ]; then
-                log "invalid passphrase for '$ssid'"
-                wpa_cli -i "$IFACE" remove_network "$id" >/dev/null 2>&1 || true
-                return 1
-            fi
-            wpa_ok set_network "$id" psk "$hex" || return 1
-        else
-            wpa_ok set_network "$id" psk "\"$psk\"" || return 1
-        fi
-        wpa_ok set_network "$id" key_mgmt WPA-PSK || return 1
-        wpa_ok set_network "$id" proto RSN || true
-        wpa_ok set_network "$id" pairwise CCMP || true
+        nmcli --wait "$CONNECT_WAIT_SECS" device wifi connect "$ssid" \
+            password "$psk" ifname "$IFACE" >"$errf" 2>&1
     else
-        wpa_ok set_network "$id" key_mgmt NONE || return 1
+        nmcli --wait "$CONNECT_WAIT_SECS" device wifi connect "$ssid" \
+            ifname "$IFACE" >"$errf" 2>&1
     fi
-
-    wpa_ok enable_network "$id" || return 1
-    wpa_ok select_network "$id" || return 1
-    wpa_cli -i "$IFACE" save_config >/dev/null 2>&1 || true
-
-    if ! wait_for_completed "$id"; then
-        wpa_cli -i "$IFACE" disable_network "$id" >/dev/null 2>&1 || true
+    rc=$?
+    set -e
+    if [ "$rc" -ne 0 ]; then
+        map_connect_error "$(cat "$errf")"
+        rm -f "$errf"
         return 1
     fi
-
-    # Best-effort DHCP settle so status can include an address.
-    i=0
-    while [ "$i" -lt 8 ]; do
-        [ -n "$(iface_ip)" ] && break
-        sleep 1
-        i=$((i + 1))
-    done
-
+    rm -f "$errf"
     echo '{}'
 }
 
 do_disconnect() {
-    ensure_wpa || return 1
-    wpa_cli -i "$IFACE" disconnect >/dev/null || true
-    echo '{}'
-}
-
-do_forget() {
-    ssid=$1
-    ensure_wpa || return 1
-    # list_networks is tab-separated: id, ssid, bssid, flags — use cut so
-    # SSIDs with spaces survive (awk \$2 would truncate them).
-    list=$(wpa_cli -i "$IFACE" list_networks 2>/dev/null | tail -n +2 || true)
-    printf '%s\n' "$list" | while IFS= read -r line; do
-        [ -n "$line" ] || continue
-        id=$(printf '%s\n' "$line" | cut -f1)
-        net_ssid=$(printf '%s\n' "$line" | cut -f2)
-        if [ "$net_ssid" = "$ssid" ]; then
-            wpa_cli -i "$IFACE" remove_network "$id" >/dev/null || true
-        fi
-    done
-    wpa_cli -i "$IFACE" save_config >/dev/null || true
+    have_nmcli || return 1
+    nmcli device disconnect "$IFACE" >/dev/null 2>&1 || true
     echo '{}'
 }
 

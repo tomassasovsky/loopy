@@ -59,4 +59,8 @@ Host helpers (Yocto)    → /usr/bin/loopy-{wifi,bt,brightness}-ctl
 
 ## Non-goals
 
-Tuner; BT pairing; NetworkManager; labwc/wlr-randr brightness path.
+Tuner; BT pairing; labwc/wlr-randr brightness path.
+
+**Follow-up (landed):** WiFi moved from raw `wpa_cli` + networkd to
+**NetworkManager / nmcli** behind the same `loopy-wifi-ctl` boundary for
+mature join/retry and clearer wrong-password errors.

@@ -45,6 +45,8 @@ repos:
       meta-oe:
       meta-python:
       meta-multimedia:
+      # NetworkManager (Control Center WiFi — join/retry + clear auth errors).
+      meta-networking:
 
   meta-raspberrypi:
     url: https://git.yoctoproject.org/meta-raspberrypi

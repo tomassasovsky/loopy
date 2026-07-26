@@ -1,7 +1,0 @@
-# DHCP for WiFi once wpa_supplicant associates. Matched by name so USB
-# dongles (wlan1, …) also get an address without a second unit.
-[Match]
-Name=wlan*
-
-[Network]
-DHCP=yes
