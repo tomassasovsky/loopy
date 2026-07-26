@@ -1,12 +1,13 @@
 import 'package:bloc/bloc.dart';
 import 'package:brightness_client/brightness_client.dart';
-import 'package:loopy/app/view/app.dart';
+import 'package:loopy/appliance/software_brightness.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// App-wide display brightness (`0..1`).
 ///
-/// Always drives a Flutter software dim (see [App] builder). When the appliance
-/// [BrightnessClient] reports DDC/CI support, also applies via the host helper.
+/// Always drives a Flutter software dim (see [SoftwareBrightness]). When the
+/// appliance [BrightnessClient] reports DDC/CI support, also applies via the
+/// host helper.
 class DisplayBrightnessCubit extends Cubit<double> {
   /// Creates a [DisplayBrightnessCubit].
   DisplayBrightnessCubit({
