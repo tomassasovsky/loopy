@@ -23,8 +23,6 @@ PACKAGECONFIG[systemd] = "--enable-udev=yes,--enable-udev=no,udev"
 PACKAGECONFIG[usb] = "--enable-usb=yes,--enable-usb=no,libusb1"
 PACKAGECONFIG[x11] = "--enable-x11=yes,--enable-x11=no,libx11 xrandr"
 
-EXTRA_OECONF += "--disable-introspection"
-
 CFLAGS += "-Wno-unused-but-set-variable"
 
 do_install:append() {
