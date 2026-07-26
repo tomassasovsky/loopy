@@ -94,7 +94,7 @@ VERIFICATION COMMAND: bash packages/loopy_engine/src/test/run_native_tests.sh &&
 
 - Export stems usable in a DAW without surprise dry/wet mismatch
 - Clear/undo do not wipe rack configuration
-- Epic #351 checklist for parts 1–5 tickable
+- Epic #351 checklist for parts 1–5 can be completed
 
 ## Dependencies & Risks
 

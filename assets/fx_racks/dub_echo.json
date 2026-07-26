@@ -1,0 +1,11 @@
+{
+  "id": "factory_dub_echo",
+  "name": "Dub Echo",
+  "category": "Dub",
+  "suggestedStage": "post",
+  "effects": [
+    { "type": "delay", "params": [0.45, 0.6, 0.35, 0.5] },
+    { "type": "echo", "params": [0.5, 0.45, 0.4, 0.5] },
+    { "type": "reverb", "params": [0.4, 0.5, 0.45, 0.5] }
+  ]
+}

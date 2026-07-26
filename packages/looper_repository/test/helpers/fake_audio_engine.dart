@@ -543,6 +543,102 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  @override
+  EngineResult setInputFxPre({
+    required int input,
+    required int index,
+    required TrackEffectType type,
+  }) {
+    calls.add('setInputFxPre');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setInputFxPreCount({required int input, required int count}) {
+    calls.add('setInputFxPreCount');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setInputFxPreParam({
+    required int input,
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    calls.add('setInputFxPreParam');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackFxPre({
+    required int channel,
+    required int index,
+    required TrackEffectType type,
+  }) {
+    calls.add('setTrackFxPre');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackFxPreCount({required int channel, required int count}) {
+    calls.add('setTrackFxPreCount');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackFxPreParam({
+    required int channel,
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    calls.add('setTrackFxPreParam');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackFxPost({
+    required int channel,
+    required int index,
+    required TrackEffectType type,
+  }) {
+    calls.add('setTrackFxPost');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackFxPostCount({required int channel, required int count}) {
+    calls.add('setTrackFxPostCount');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackFxPostParam({
+    required int channel,
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    calls.add('setTrackFxPostParam');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackLiveSignal({
+    required int channel,
+    required LiveSignalMode mode,
+  }) {
+    calls.add('setTrackLiveSignal');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setLiveSignalFocus({required int channel}) {
+    calls.add('setLiveSignalFocus');
+    return EngineResult.ok;
+  }
+
   /// Overridable fingerprints so a test can drive the divergence-detection path
   /// without a real engine; default to the empty-chain basis.
   int laneFingerprint = FxFingerprint.offset;

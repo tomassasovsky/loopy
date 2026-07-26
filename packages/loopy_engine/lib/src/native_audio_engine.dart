@@ -9,6 +9,7 @@ import 'package:loopy_engine/src/engine_config.dart';
 import 'package:loopy_engine/src/engine_snapshot.dart';
 import 'package:loopy_engine/src/ffi_strings.dart';
 import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart';
+import 'package:loopy_engine/src/live_signal_mode.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
 import 'package:loopy_engine/src/performance_render_progress.dart';
 import 'package:loopy_engine/src/plugin_descriptor.dart';
@@ -1188,6 +1189,148 @@ class NativeAudioEngine implements AudioEngine {
   @override
   int monitorFxFingerprint({required int input}) =>
       _bindings.le_engine_monitor_fx_fingerprint(_engine, input);
+
+  @override
+  EngineResult setInputFxPre({
+    required int input,
+    required int index,
+    required TrackEffectType type,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_input_fx_pre(_engine, input, index, type.code),
+    );
+  }
+
+  @override
+  EngineResult setInputFxPreCount({required int input, required int count}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_input_fx_pre_count(_engine, input, count),
+    );
+  }
+
+  @override
+  EngineResult setInputFxPreParam({
+    required int input,
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_input_fx_pre_param(
+        _engine,
+        input,
+        index,
+        param,
+        value,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setTrackFxPre({
+    required int channel,
+    required int index,
+    required TrackEffectType type,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_fx_pre(_engine, channel, index, type.code),
+    );
+  }
+
+  @override
+  EngineResult setTrackFxPreCount({
+    required int channel,
+    required int count,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_fx_pre_count(_engine, channel, count),
+    );
+  }
+
+  @override
+  EngineResult setTrackFxPreParam({
+    required int channel,
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_fx_pre_param(
+        _engine,
+        channel,
+        index,
+        param,
+        value,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setTrackFxPost({
+    required int channel,
+    required int index,
+    required TrackEffectType type,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_fx_post(_engine, channel, index, type.code),
+    );
+  }
+
+  @override
+  EngineResult setTrackFxPostCount({
+    required int channel,
+    required int count,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_fx_post_count(_engine, channel, count),
+    );
+  }
+
+  @override
+  EngineResult setTrackFxPostParam({
+    required int channel,
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_fx_post_param(
+        _engine,
+        channel,
+        index,
+        param,
+        value,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setTrackLiveSignal({
+    required int channel,
+    required LiveSignalMode mode,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_live_signal(_engine, channel, mode.code),
+    );
+  }
+
+  @override
+  EngineResult setLiveSignalFocus({required int channel}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_live_signal_focus(_engine, channel),
+    );
+  }
 
   @override
   Float32List readVisual() {

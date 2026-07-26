@@ -10,6 +10,7 @@ import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/tracks_cubit.dart';
 import 'package:loopy/looper/view/fx_editor/fx_dock.dart';
 import 'package:loopy/looper/view/fx_editor/fx_scope.dart';
+import 'package:loopy/looper/view/fx_page/fx_page.dart';
 import 'package:loopy/looper/view/signal_graph/signal_fx_summary.dart';
 import 'package:loopy/looper/view/signal_graph/signal_knob.dart';
 import 'package:loopy/looper/view/signal_graph/signal_routing_chips.dart';
@@ -110,22 +111,14 @@ class _SignalListViewState extends State<SignalListView> {
   bool get _anyFocus =>
       _focusedInput != null || _focusedTake != null || _tracedOutput != null;
 
-  // Selecting an input / take card opens the FX dock on that chain (and closes
-  // it when the same card is tapped again); outputs carry no FX, so tracing one
-  // closes the dock.
+  // Selecting an input / take card focuses routing tags; FX editing lives on
+  // the dedicated FX page (Signal dock is demoted — open via FX summary).
   void _focusInput(int c) => setState(() {
     final same = _focusedInput == c;
     _focusedInput = same ? null : c;
     _focusedTake = null;
     _tracedOutput = null;
-    _editedScope = same
-        ? null
-        : InputFxScope(
-            monitor: _monitor,
-            looper: _bloc,
-            repository: context.read<LooperRepository>(),
-            input: c,
-          );
+    _editedScope = null;
   });
 
   void _focusTake(TakeRow take) => setState(() {
@@ -134,15 +127,10 @@ class _SignalListViewState extends State<SignalListView> {
     _focusedTake = same ? null : key;
     _focusedInput = null;
     _tracedOutput = null;
-    _editedScope = same
-        ? null
-        : LaneFxScope(
-            looper: _bloc,
-            repository: context.read<LooperRepository>(),
-            track: take.track,
-            lane: take.laneIndex,
-          );
+    _editedScope = null;
   });
+
+  void _openFxPage() => unawaited(showFxPage(context));
 
   void _traceOutput(int o) => setState(() {
     final same = _tracedOutput == o;
@@ -329,27 +317,9 @@ class _SignalListViewState extends State<SignalListView> {
   int _laneCount(LooperState looper, int track) =>
       track < looper.tracks.length ? looper.tracks[track].lanes.length : 1;
 
-  /// Opens the bottom FX dock on input [input]'s live-monitor chain.
-  void _editInputFx(int input) {
-    setState(() {
-      _editedScope = InputFxScope(
-        monitor: _monitor,
-        looper: _bloc,
-        repository: context.read<LooperRepository>(),
-        input: input,
-      );
-    });
-  }
+  /// Opens the dedicated FX page (primary FX editor).
+  void _editInputFx(int input) => _openFxPage();
 
-  /// Opens the bottom FX dock on lane [lane] of track [track].
-  void _editLaneFx(int track, int lane) {
-    setState(() {
-      _editedScope = LaneFxScope(
-        looper: _bloc,
-        repository: context.read<LooperRepository>(),
-        track: track,
-        lane: lane,
-      );
-    });
-  }
+  /// Opens the dedicated FX page (primary FX editor).
+  void _editLaneFx(int track, int lane) => _openFxPage();
 }

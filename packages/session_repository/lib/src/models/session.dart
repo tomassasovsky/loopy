@@ -337,7 +337,8 @@ class SessionLaneChain {
 }
 
 /// One hardware input's live-monitor configuration within a [Session] (schema
-/// v2+): routing / mix plus the monitor's [encoded] effect chain.
+/// v2+): routing / mix plus the monitor's [encoded] effect chain (Input Post
+/// from schema v5; pre-v5 single chains migrate to Post).
 @immutable
 class SessionMonitor {
   /// Creates a [SessionMonitor].
@@ -348,6 +349,7 @@ class SessionMonitor {
     required this.volume,
     required this.muted,
     required this.encoded,
+    this.preEncoded = '',
   });
 
   /// Projects a [SessionMonitor] from a decoded JSON map.
@@ -357,7 +359,8 @@ class SessionMonitor {
     outputMask: (json['outputMask'] as num).toInt(),
     volume: (json['volume'] as num).toDouble(),
     muted: json['muted'] as bool,
-    encoded: json['encoded'] as String,
+    encoded: json['encoded'] as String? ?? '',
+    preEncoded: json['preEncoded'] as String? ?? '',
   );
 
   /// Hardware input index.
@@ -376,8 +379,13 @@ class SessionMonitor {
   /// Whether the monitor is muted.
   final bool muted;
 
-  /// The monitor chain as an opaque `encodeTrackEffects` string.
+  /// Input Post chain as an opaque `encodeTrackEffects` string (schema v5;
+  /// pre-v5 single monitor chain migrates here).
   final String encoded;
+
+  /// Input Pre chain as an opaque `encodeTrackEffects` string (schema v5;
+  /// empty for pre-v5 manifests).
+  final String preEncoded;
 
   /// Serializes this monitor to a JSON map.
   Map<String, dynamic> toJson() => {
@@ -387,6 +395,7 @@ class SessionMonitor {
     'volume': volume,
     'muted': muted,
     'encoded': encoded,
+    'preEncoded': preEncoded,
   };
 
   @override
@@ -399,11 +408,76 @@ class SessionMonitor {
           outputMask == other.outputMask &&
           volume == other.volume &&
           muted == other.muted &&
-          encoded == other.encoded;
+          encoded == other.encoded &&
+          preEncoded == other.preEncoded;
 
   @override
-  int get hashCode =>
-      Object.hash(input, enabled, outputMask, volume, muted, encoded);
+  int get hashCode => Object.hash(
+    input,
+    enabled,
+    outputMask,
+    volume,
+    muted,
+    encoded,
+    preEncoded,
+  );
+}
+
+/// One track's Pre/Post racks + Live Signal within a [Session] (schema v5).
+///
+/// Chains are opaque `encodeTrackEffects` strings so this data package never
+/// depends on the effect model.
+@immutable
+class SessionTrackRack {
+  /// Creates a [SessionTrackRack].
+  const SessionTrackRack({
+    required this.channel,
+    this.preEncoded = '',
+    this.postEncoded = '',
+    this.liveSignal = 'off',
+  });
+
+  /// Projects a [SessionTrackRack] from a decoded JSON map.
+  factory SessionTrackRack.fromJson(Map<String, dynamic> json) =>
+      SessionTrackRack(
+        channel: (json['channel'] as num).toInt(),
+        preEncoded: json['preEncoded'] as String? ?? '',
+        postEncoded: json['postEncoded'] as String? ?? '',
+        liveSignal: json['liveSignal'] as String? ?? 'off',
+      );
+
+  /// Track channel index.
+  final int channel;
+
+  /// Track Pre chain (opaque).
+  final String preEncoded;
+
+  /// Track Post chain (opaque).
+  final String postEncoded;
+
+  /// Live Signal mode name: `off` / `auto` / `on`.
+  final String liveSignal;
+
+  /// Serializes this rack to a JSON map.
+  Map<String, dynamic> toJson() => {
+    'channel': channel,
+    'preEncoded': preEncoded,
+    'postEncoded': postEncoded,
+    'liveSignal': liveSignal,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SessionTrackRack &&
+          runtimeType == other.runtimeType &&
+          channel == other.channel &&
+          preEncoded == other.preEncoded &&
+          postEncoded == other.postEncoded &&
+          liveSignal == other.liveSignal;
+
+  @override
+  int get hashCode => Object.hash(channel, preEncoded, postEncoded, liveSignal);
 }
 
 /// A saved Loopy session: the transport/tempo settings, the tracks, and (schema
@@ -449,6 +523,7 @@ class Session {
     required this.baseLengthFrames,
     required this.tracks,
     this.laneChains = const [],
+    this.trackRacks = const [],
     this.monitors = const [],
     this.tempoBpm = 0,
     this.tempoSource = TempoSource.none,
@@ -493,6 +568,10 @@ class Session {
         for (final c in (json['laneChains'] as List<dynamic>? ?? const []))
           SessionLaneChain.fromJson(c as Map<String, dynamic>),
       ],
+      trackRacks: [
+        for (final r in (json['trackRacks'] as List<dynamic>? ?? const []))
+          SessionTrackRack.fromJson(r as Map<String, dynamic>),
+      ],
       monitors: [
         for (final m in (json['monitors'] as List<dynamic>? ?? const []))
           SessionMonitor.fromJson(m as Map<String, dynamic>),
@@ -515,15 +594,12 @@ class Session {
     );
   }
 
-  /// The manifest schema version this code writes and accepts. v4 adds the
-  /// tempo-grid + click + count-in fields (see the class doc); every field is
-  /// additive and defaults to grid-off, so v3 (and earlier) manifests still
-  /// load losslessly. v3 replaced the per-track single `stem` with per-lane
-  /// [SessionTrack.lanes] (each holding ordered audio layers); v2 added the
-  /// lane + monitor effect chains. v1, v2, and v3 bundles still load — a
-  /// legacy track migrates to one lane-0 live layer, and a v1 bundle loads
-  /// with empty chains.
-  static const int formatVersion = 4;
+  /// The manifest schema version this code writes and accepts. v5 adds track
+  /// Pre/Post racks + Live Signal ([trackRacks]) and Input Pre
+  /// ([SessionMonitor.preEncoded]); v4 Input/Lane chains migrate to Post.
+  /// v4 adds the tempo-grid + click + count-in fields; every field is additive
+  /// and defaults safely, so earlier manifests still load losslessly.
+  static const int formatVersion = 5;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';
@@ -541,7 +617,12 @@ class Session {
   final List<SessionTrack> tracks;
 
   /// The lane effect chains the session defines (empty for a v1 bundle).
+  /// Schema v5 prefers [trackRacks]; lane chains remain for migration / UI
+  /// mirrors (lane 0 → Track Post when racks are absent).
   final List<SessionLaneChain> laneChains;
+
+  /// Track Pre/Post + Live Signal racks (schema v5; empty for pre-v5).
+  final List<SessionTrackRack> trackRacks;
 
   /// The per-input live monitors the session defines (empty for a v1 bundle).
   final List<SessionMonitor> monitors;
@@ -603,7 +684,7 @@ class Session {
   final List<int> oneShotChannels;
 
   /// Serializes this session manifest to a JSON map. Always writes the
-  /// current [formatVersion] (v4, per D12 — this code never writes v3).
+  /// current [formatVersion] (v5).
   Map<String, dynamic> toJson() => {
     'version': formatVersion,
     'sampleRate': sampleRate,
@@ -611,6 +692,7 @@ class Session {
     'baseLengthFrames': baseLengthFrames,
     'tracks': [for (final t in tracks) t.toJson()],
     'laneChains': [for (final c in laneChains) c.toJson()],
+    'trackRacks': [for (final r in trackRacks) r.toJson()],
     'monitors': [for (final m in monitors) m.toJson()],
     'tempoBpm': tempoBpm,
     'tempoSource': tempoSource.name,
@@ -647,6 +729,7 @@ class Session {
           primaryTrack == other.primaryTrack &&
           _listEquals(tracks, other.tracks) &&
           _listEquals(laneChains, other.laneChains) &&
+          _listEquals(trackRacks, other.trackRacks) &&
           _listEquals(monitors, other.monitors) &&
           _listEquals(oneShotChannels, other.oneShotChannels);
 
@@ -668,6 +751,7 @@ class Session {
     primaryTrack,
     Object.hashAll(tracks),
     Object.hashAll(laneChains),
+    Object.hashAll(trackRacks),
     Object.hashAll(monitors),
     Object.hashAll(oneShotChannels),
   );

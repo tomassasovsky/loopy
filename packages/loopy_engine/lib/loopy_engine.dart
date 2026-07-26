@@ -17,6 +17,7 @@ export 'src/audio_engine.dart'
         EnginePluginHosting,
         EngineResult,
         EngineRouting,
+        FxRackControl,
         LooperModeControl,
         LooperTransport,
         MasterBusControl,
@@ -38,6 +39,7 @@ export 'src/engine_snapshot.dart'
         kMaxInputs,
         kMaxLanes;
 export 'src/fx_fingerprint.dart' show FxFingerprint;
+export 'src/live_signal_mode.dart' show LiveSignalMode;
 export 'src/loopback_info.dart' show LoopbackInfo, LoopbackKind;
 export 'src/mock_audio_engine.dart' show MockAudioEngine, MockPluginSlotHandle;
 export 'src/native_audio_engine.dart'

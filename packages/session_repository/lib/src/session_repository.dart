@@ -28,10 +28,17 @@ typedef SessionBundle = ({
 @immutable
 class SessionChains {
   /// Creates a [SessionChains].
-  const SessionChains({this.laneChains = const [], this.monitors = const []});
+  const SessionChains({
+    this.laneChains = const [],
+    this.trackRacks = const [],
+    this.monitors = const [],
+  });
 
-  /// The lane effect chains to persist.
+  /// The lane effect chains to persist (legacy / UI mirror of track Post).
   final List<SessionLaneChain> laneChains;
+
+  /// Track Pre/Post + Live Signal racks (schema v5).
+  final List<SessionTrackRack> trackRacks;
 
   /// The per-input monitor configurations to persist.
   final List<SessionMonitor> monitors;
@@ -430,6 +437,7 @@ class SessionRepository {
           : snapshot.masterLengthFrames,
       tracks: captured.tracks,
       laneChains: chains.laneChains,
+      trackRacks: chains.trackRacks,
       monitors: chains.monitors,
       // Tempo/signature/quantize/click/count-in are session-level settings,
       // not derived-from-track-content state, so — unlike baseLengthFrames

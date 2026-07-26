@@ -36,7 +36,11 @@ journalctl -u loopy-data-grow.service -b --no-pager
 ```
 
 Sessions and exports live under `/data/Documents/{sessions,exports}/` and survive
-both OTA and the grow (the grow never wipes the filesystem).
+both OTA and the grow (the grow never wipes the filesystem). User FX rack
+presets (Sheeran-style part 4) persist under the Flutter application-support
+directory on the appliance (`HOME=/data` → typically
+`/data/.local/share/…/fx_user_presets.json`); factory packs ship in the app
+bundle (`assets/fx_racks/`).
 
 ## Decision 1 — Kiosk rendering target: **GTK-on-Wayland** (the Flutter Linux runner)
 

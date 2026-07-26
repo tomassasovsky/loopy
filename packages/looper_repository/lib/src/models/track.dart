@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/lane.dart';
-import 'package:loopy_engine/loopy_engine.dart';
+import 'package:looper_repository/src/models/track_effect.dart';
+import 'package:loopy_engine/loopy_engine.dart' show LiveSignalMode, TrackState;
 
 /// A single looper track: a multi-lane container that owns the transport
 /// (state, loop multiple, undo/redo depth) and its [lanes].
@@ -8,6 +9,10 @@ import 'package:loopy_engine/loopy_engine.dart';
 /// The scalar [volume]/[muted]/[inputMask]/[outputMask]/[rms]/[peak] fields
 /// mirror lane 0 so existing single-lane callers (the channel strip, the
 /// routing graph) keep working; full per-lane state lives in [lanes].
+///
+/// Channel-level FX racks ([preEffects] / [postEffects] / [liveSignal]) are the
+/// Sheeran-style source of truth; [Lane.effects] mirrors track Post until
+/// per-lane overrides land.
 class Track extends Equatable {
   /// Creates a [Track].
   const Track({
@@ -29,6 +34,9 @@ class Track extends Equatable {
     this.pending = false,
     this.lengthPresetBars = 0,
     this.oneShot = false,
+    this.preEffects = const [],
+    this.postEffects = const [],
+    this.liveSignal = LiveSignalMode.off,
     this.lanes = const [],
   });
 
@@ -97,6 +105,16 @@ class Track extends Equatable {
   /// Mirrors lane 0.
   final int outputMask;
 
+  /// Track **Pre** chain — baked into recorded PCM on this channel.
+  final List<TrackEffect> preEffects;
+
+  /// Track **Post** chain — shapes playback; never baked into the buffer.
+  /// Mirrored onto [Lane.effects] until per-lane overrides exist.
+  final List<TrackEffect> postEffects;
+
+  /// Live Signal mode for this track (`off` / `auto` / `on`).
+  final LiveSignalMode liveSignal;
+
   /// The track's lanes, in lane order. Each records one input into its own
   /// clean buffer; empty in synthetic/default tracks.
   final List<Lane> lanes;
@@ -138,6 +156,9 @@ class Track extends Equatable {
     pending,
     lengthPresetBars,
     oneShot,
+    preEffects,
+    postEffects,
+    liveSignal,
     lanes,
   ];
 }

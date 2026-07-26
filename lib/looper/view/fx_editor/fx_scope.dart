@@ -2,6 +2,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
+import 'package:loopy/looper/cubit/fx_racks_cubit.dart';
 
 /// A scope-agnostic adapter over one editable FX chain — either a hardware
 /// input's live-monitor chain ([InputFxScope]) or a recorded lane's snapshot
@@ -100,7 +101,8 @@ class InputFxScope extends FxScope {
   String label(AppLocalizations l10n) => l10n.fxEditorInputTitle(input + 1);
 
   @override
-  String consequence(AppLocalizations l10n) => l10n.fxEditorInputConsequence;
+  String consequence(AppLocalizations l10n) =>
+      l10n.fxEditorInputPostConsequence;
 
   @override
   bool get isPresent => input >= 0 && input < looper.state.status.inputChannels;
@@ -179,7 +181,8 @@ class LaneFxScope extends FxScope {
   String label(AppLocalizations l10n) => l10n.laneNumberLabel(lane + 1);
 
   @override
-  String consequence(AppLocalizations l10n) => l10n.fxEditorLaneConsequence;
+  String consequence(AppLocalizations l10n) =>
+      l10n.fxEditorTrackPostConsequence;
 
   @override
   bool get isPresent {
@@ -236,6 +239,318 @@ class LaneFxScope extends FxScope {
       repository.lanePluginParamText(
         channel: track,
         lane: lane,
+        index: index,
+        paramId: paramId,
+        value: value,
+      );
+}
+
+/// Input **Pre** chain — baked into new takes. Edits go through [FxRacksCubit].
+class InputPreFxScope extends FxScope {
+  /// Creates an [InputPreFxScope].
+  const InputPreFxScope({
+    required this.fxRacks,
+    required this.looper,
+    required this.repository,
+    required this.input,
+  });
+
+  /// FX page edit surface.
+  final FxRacksCubit fxRacks;
+
+  /// Engine status for presence checks.
+  final LooperBloc looper;
+
+  /// Read-only repository handle.
+  final LooperRepository repository;
+
+  /// Hardware input channel.
+  final int input;
+
+  @override
+  String label(AppLocalizations l10n) => l10n.fxEditorInputTitle(input + 1);
+
+  @override
+  String consequence(AppLocalizations l10n) => l10n.fxEditorInputPreConsequence;
+
+  @override
+  bool get isPresent => input >= 0 && input < looper.state.status.inputChannels;
+
+  @override
+  List<TrackEffect> get effects =>
+      isPresent ? repository.inputPreEffects(input) : const [];
+
+  void _push(List<TrackEffect> next) {
+    fxRacks
+      ..selectInput(input)
+      ..setInputStage(FxStage.pre)
+      ..setInputEffects(next);
+  }
+
+  @override
+  void addEffect() => _push([
+    ...effects,
+    BuiltInEffect(type: TrackEffectType.drive),
+  ]);
+
+  @override
+  void insertPlugin(PluginRef ref) {
+    // Pre chains are built-in only in this revision.
+  }
+
+  @override
+  void removeEffect(int index) {
+    if (index < 0 || index >= effects.length) return;
+    _push([...effects]..removeAt(index));
+  }
+
+  @override
+  void moveEffect(int from, int to) {
+    if (from < 0 || from >= effects.length) return;
+    final target = to.clamp(0, effects.length - 1);
+    if (from == target) return;
+    final next = [...effects];
+    next.insert(target, next.removeAt(from));
+    _push(next);
+  }
+
+  @override
+  void setType(int index, TrackEffectType type) {
+    if (index < 0 || index >= effects.length) return;
+    _push([...effects]..[index] = BuiltInEffect(type: type));
+  }
+
+  @override
+  void setParam(int index, int param, double value) {
+    final current = effects;
+    if (index < 0 || index >= current.length) return;
+    final fx = current[index];
+    if (fx is! BuiltInEffect) return;
+    if (param < 0 || param >= fx.params.length) return;
+    final params = List<double>.of(fx.params)..[param] = value;
+    _push([...current]..[index] = fx.copyWith(params: params));
+  }
+
+  @override
+  void setPluginParam(int index, int paramId, double value) {}
+
+  @override
+  void openPluginEditor(int index) {}
+
+  @override
+  void relinkPlugin(int index, PluginRef ref) {}
+
+  @override
+  String? formatPluginValue(int index, int paramId, double value) => null;
+}
+
+/// Track **Pre** chain — baked into takes on [track].
+class TrackPreFxScope extends FxScope {
+  /// Creates a [TrackPreFxScope].
+  const TrackPreFxScope({
+    required this.fxRacks,
+    required this.looper,
+    required this.repository,
+    required this.track,
+  });
+
+  /// FX page edit surface.
+  final FxRacksCubit fxRacks;
+
+  /// Looper state for presence.
+  final LooperBloc looper;
+
+  /// Read-only repository handle.
+  final LooperRepository repository;
+
+  /// Track channel.
+  final int track;
+
+  @override
+  String label(AppLocalizations l10n) => l10n.defaultTrackName(track + 1);
+
+  @override
+  String consequence(AppLocalizations l10n) => l10n.fxEditorTrackPreConsequence;
+
+  @override
+  bool get isPresent => track >= 0 && track < looper.state.tracks.length;
+
+  @override
+  List<TrackEffect> get effects =>
+      isPresent ? repository.trackPreEffects(track) : const [];
+
+  void _push(List<TrackEffect> next) {
+    fxRacks
+      ..selectTrack(track)
+      ..setTrackStage(FxStage.pre)
+      ..setTrackEffects(next);
+  }
+
+  @override
+  void addEffect() => _push([
+    ...effects,
+    BuiltInEffect(type: TrackEffectType.drive),
+  ]);
+
+  @override
+  void insertPlugin(PluginRef ref) {}
+
+  @override
+  void removeEffect(int index) {
+    if (index < 0 || index >= effects.length) return;
+    _push([...effects]..removeAt(index));
+  }
+
+  @override
+  void moveEffect(int from, int to) {
+    if (from < 0 || from >= effects.length) return;
+    final target = to.clamp(0, effects.length - 1);
+    if (from == target) return;
+    final next = [...effects];
+    next.insert(target, next.removeAt(from));
+    _push(next);
+  }
+
+  @override
+  void setType(int index, TrackEffectType type) {
+    if (index < 0 || index >= effects.length) return;
+    _push([...effects]..[index] = BuiltInEffect(type: type));
+  }
+
+  @override
+  void setParam(int index, int param, double value) {
+    final current = effects;
+    if (index < 0 || index >= current.length) return;
+    final fx = current[index];
+    if (fx is! BuiltInEffect) return;
+    if (param < 0 || param >= fx.params.length) return;
+    final params = List<double>.of(fx.params)..[param] = value;
+    _push([...current]..[index] = fx.copyWith(params: params));
+  }
+
+  @override
+  void setPluginParam(int index, int paramId, double value) {}
+
+  @override
+  void openPluginEditor(int index) {}
+
+  @override
+  void relinkPlugin(int index, PluginRef ref) {}
+
+  @override
+  String? formatPluginValue(int index, int paramId, double value) => null;
+}
+
+/// Track **Post** chain via [FxRacksCubit] (channel-level).
+class TrackPostFxScope extends FxScope {
+  /// Creates a [TrackPostFxScope].
+  const TrackPostFxScope({
+    required this.fxRacks,
+    required this.looper,
+    required this.repository,
+    required this.track,
+  });
+
+  /// FX page edit surface.
+  final FxRacksCubit fxRacks;
+
+  /// Looper state for presence.
+  final LooperBloc looper;
+
+  /// Read-only repository handle.
+  final LooperRepository repository;
+
+  /// Track channel.
+  final int track;
+
+  @override
+  String label(AppLocalizations l10n) => l10n.defaultTrackName(track + 1);
+
+  @override
+  String consequence(AppLocalizations l10n) =>
+      l10n.fxEditorTrackPostConsequence;
+
+  @override
+  bool get isPresent => track >= 0 && track < looper.state.tracks.length;
+
+  @override
+  List<TrackEffect> get effects =>
+      isPresent ? repository.trackPostEffects(track) : const [];
+
+  void _push(List<TrackEffect> next) {
+    fxRacks
+      ..selectTrack(track)
+      ..setTrackStage(FxStage.post)
+      ..setTrackEffects(next);
+  }
+
+  @override
+  void addEffect() => _push([
+    ...effects,
+    BuiltInEffect(type: TrackEffectType.drive),
+  ]);
+
+  @override
+  void insertPlugin(PluginRef ref) => _push([
+    ...effects,
+    PluginEffect(ref: ref),
+  ]);
+
+  @override
+  void removeEffect(int index) {
+    if (index < 0 || index >= effects.length) return;
+    _push([...effects]..removeAt(index));
+  }
+
+  @override
+  void moveEffect(int from, int to) {
+    if (from < 0 || from >= effects.length) return;
+    final target = to.clamp(0, effects.length - 1);
+    if (from == target) return;
+    final next = [...effects];
+    next.insert(target, next.removeAt(from));
+    _push(next);
+  }
+
+  @override
+  void setType(int index, TrackEffectType type) {
+    if (index < 0 || index >= effects.length) return;
+    _push([...effects]..[index] = BuiltInEffect(type: type));
+  }
+
+  @override
+  void setParam(int index, int param, double value) {
+    final current = effects;
+    if (index < 0 || index >= current.length) return;
+    final fx = current[index];
+    if (fx is! BuiltInEffect) return;
+    if (param < 0 || param >= fx.params.length) return;
+    final params = List<double>.of(fx.params)..[param] = value;
+    _push([...current]..[index] = fx.copyWith(params: params));
+  }
+
+  @override
+  void setPluginParam(int index, int paramId, double value) {
+    looper.add(
+      LooperLanePluginParamChanged(track, 0, index, paramId, value),
+    );
+  }
+
+  @override
+  void openPluginEditor(int index) {
+    looper.add(LooperLanePluginEditorOpened(track, 0, index));
+  }
+
+  @override
+  void relinkPlugin(int index, PluginRef ref) {
+    looper.add(LooperLanePluginRelinked(track, 0, index, ref));
+  }
+
+  @override
+  String? formatPluginValue(int index, int paramId, double value) =>
+      repository.lanePluginParamText(
+        channel: track,
+        lane: 0,
         index: index,
         paramId: paramId,
         value: value,

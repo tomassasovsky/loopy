@@ -479,6 +479,63 @@ class FakeSessionEngine implements AudioEngine {
     required double value,
   }) => EngineResult.ok;
   @override
+  EngineResult setInputFxPre({
+    required int input,
+    required int index,
+    required TrackEffectType type,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setInputFxPreCount({required int input, required int count}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setInputFxPreParam({
+    required int input,
+    required int index,
+    required int param,
+    required double value,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setTrackFxPre({
+    required int channel,
+    required int index,
+    required TrackEffectType type,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setTrackFxPreCount({required int channel, required int count}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setTrackFxPreParam({
+    required int channel,
+    required int index,
+    required int param,
+    required double value,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setTrackFxPost({
+    required int channel,
+    required int index,
+    required TrackEffectType type,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setTrackFxPostCount({
+    required int channel,
+    required int count,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setTrackFxPostParam({
+    required int channel,
+    required int index,
+    required int param,
+    required double value,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setTrackLiveSignal({
+    required int channel,
+    required LiveSignalMode mode,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setLiveSignalFocus({required int channel}) => EngineResult.ok;
+  @override
   int laneFxFingerprint({required int channel, required int lane}) =>
       FxFingerprint.offset;
   @override

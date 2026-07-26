@@ -3,17 +3,13 @@ import 'package:looper_repository/src/models/track_effect.dart';
 
 /// The live-monitor configuration for one hardware input.
 ///
-/// When [enabled], hardware input [input] is monitored live through a single
-/// non-destructive [effects] chain, routed to the outputs in [outputMask],
-/// scaled by [volume] and gated by [muted]. An empty [effects] chain is the
-/// clean (dry) path — there is no special-case dry concept. The monitored
-/// signal is never recorded and is independent of any track's record/playback
-/// state.
+/// When [enabled], hardware input [input] is monitored live through
+/// [preEffects] (prints into new takes) then [effects] / [postEffects]
+/// (FOH/monitor colour only — never recorded). Routed to the outputs in
+/// [outputMask], scaled by [volume] and gated by [muted].
 ///
-/// This single chain is what is **snapshot-copied** onto a track lane the
-/// moment you record into [input]: the take plays back through the chain you
-/// monitored, while the recorded buffer stays clean. The copy is by value, so
-/// editing the input chain afterwards never alters an earlier take.
+/// Empty chains are the clean (dry) path. Pre/Post replace the old single-chain
+/// "snapshot onto lane at record" model: Pre is the print path; Post stays live.
 class InputMonitor extends Equatable {
   /// Creates an [InputMonitor].
   const InputMonitor({
@@ -22,6 +18,7 @@ class InputMonitor extends Equatable {
     this.outputMask = 0x3,
     this.volume = 1,
     this.muted = false,
+    this.preEffects = const [],
     this.effects = const [],
   });
 
@@ -40,9 +37,16 @@ class InputMonitor extends Equatable {
   /// Whether the monitor is muted.
   final bool muted;
 
-  /// The input's live effect chain, in processing order. Never recorded; an
-  /// empty chain is the clean (dry) path. Snapshot-copied to a lane on record.
+  /// Input **Pre** chain — baked into recorded PCM. Empty = dry print.
+  final List<TrackEffect> preEffects;
+
+  /// Input **Post** chain — live/FOH colour only; never prints. Empty = dry
+  /// monitor path. Kept as [effects] for existing callers; prefer
+  /// [postEffects].
   final List<TrackEffect> effects;
+
+  /// Alias for [effects] (Input Post).
+  List<TrackEffect> get postEffects => effects;
 
   /// Returns a copy with the given fields replaced.
   InputMonitor copyWith({
@@ -50,14 +54,17 @@ class InputMonitor extends Equatable {
     int? outputMask,
     double? volume,
     bool? muted,
+    List<TrackEffect>? preEffects,
     List<TrackEffect>? effects,
+    List<TrackEffect>? postEffects,
   }) => InputMonitor(
     input: input,
     enabled: enabled ?? this.enabled,
     outputMask: outputMask ?? this.outputMask,
     volume: volume ?? this.volume,
     muted: muted ?? this.muted,
-    effects: effects ?? this.effects,
+    preEffects: preEffects ?? this.preEffects,
+    effects: postEffects ?? effects ?? this.effects,
   );
 
   @override
@@ -67,6 +74,7 @@ class InputMonitor extends Equatable {
     outputMask,
     volume,
     muted,
+    preEffects,
     effects,
   ];
 }

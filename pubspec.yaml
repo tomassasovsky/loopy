@@ -71,6 +71,8 @@ dev_dependencies:
 flutter:
   generate: true
   uses-material-design: true
+  assets:
+    - assets/fx_racks/
   fonts:
     - family: Space Grotesk
       fonts:

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:loopy_engine/src/audio_device.dart';
 import 'package:loopy_engine/src/engine_config.dart';
 import 'package:loopy_engine/src/engine_snapshot.dart';
+import 'package:loopy_engine/src/live_signal_mode.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
 import 'package:loopy_engine/src/performance_render_progress.dart';
 import 'package:loopy_engine/src/plugin_descriptor.dart';
@@ -566,6 +567,76 @@ abstract interface class MonitorControl {
   int monitorFxFingerprint({required int input});
 }
 
+/// Sheeran-style Pre/Post FX racks + Live Signal (part 1 native / part 2 Dart).
+///
+/// Compat: [EffectsControl.setLaneFx] writes Track Post; [MonitorControl]
+/// FX setters write Input Post. These methods address Pre/Post and Live Signal
+/// explicitly.
+abstract interface class FxRackControl {
+  /// Sets Input Pre chain entry [index] on hardware input [input] to [type].
+  EngineResult setInputFxPre({
+    required int input,
+    required int index,
+    required TrackEffectType type,
+  });
+
+  /// Sets Input Pre active chain length on [input].
+  EngineResult setInputFxPreCount({required int input, required int count});
+
+  /// Sets Input Pre parameter on [input].
+  EngineResult setInputFxPreParam({
+    required int input,
+    required int index,
+    required int param,
+    required double value,
+  });
+
+  /// Sets Track Pre chain entry [index] on track [channel] to [type].
+  EngineResult setTrackFxPre({
+    required int channel,
+    required int index,
+    required TrackEffectType type,
+  });
+
+  /// Sets Track Pre active chain length on [channel].
+  EngineResult setTrackFxPreCount({required int channel, required int count});
+
+  /// Sets Track Pre parameter on [channel].
+  EngineResult setTrackFxPreParam({
+    required int channel,
+    required int index,
+    required int param,
+    required double value,
+  });
+
+  /// Sets Track Post chain entry [index] on track [channel] to [type].
+  EngineResult setTrackFxPost({
+    required int channel,
+    required int index,
+    required TrackEffectType type,
+  });
+
+  /// Sets Track Post active chain length on [channel].
+  EngineResult setTrackFxPostCount({required int channel, required int count});
+
+  /// Sets Track Post parameter on [channel].
+  EngineResult setTrackFxPostParam({
+    required int channel,
+    required int index,
+    required int param,
+    required double value,
+  });
+
+  /// Sets Live Signal mode on track [channel].
+  EngineResult setTrackLiveSignal({
+    required int channel,
+    required LiveSignalMode mode,
+  });
+
+  /// Sets the Live Signal Auto focus track (`-1` clears). Distinct from crown.
+  EngineResult setLiveSignalFocus({required int channel});
+}
+
 /// Session persistence: stem export/import and committing a restored session.
 abstract interface class SessionIo {
   /// Copies track [channel]'s recorded mono loop PCM out for session export, or
@@ -818,6 +889,7 @@ abstract interface class AudioEngine
         MasterBusControl,
         EffectsControl,
         MonitorControl,
+        FxRackControl,
         EnginePluginHosting,
         EnginePerformanceCapture,
         SessionIo {}

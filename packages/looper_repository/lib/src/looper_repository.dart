@@ -247,14 +247,27 @@ class LooperRepository {
   /// changes / reconnects.
   final Map<int, bool> _monitorInputEnabled = {};
 
-  /// Per-input monitor output mask, volume, mute, and a single effect chain —
+  /// Per-input monitor output mask, volume, mute, and Input **Post** chain —
   /// each remembered and re-applied on every successful (re)start. An empty
-  /// chain is the clean (dry) path; this chain is what gets snapshot-copied
-  /// onto a track lane when recording into the input.
+  /// chain is the clean (dry) FOH/monitor path; Post never prints into PCM.
   final Map<int, int> _monitorOutput = {};
   final Map<int, double> _monitorVolume = {};
   final Map<int, bool> _monitorMute = {};
   final Map<int, List<TrackEffect>> _monitorEffects = {};
+
+  /// Input **Pre** chains (print into takes). Keyed by hardware input.
+  final Map<int, List<TrackEffect>> _inputPreEffects = {};
+
+  /// Track **Pre** / **Post** chains and Live Signal mode, keyed by channel.
+  /// [Lane.effects] / [_laneEffects] mirror Track Post until per-lane overrides
+  /// exist.
+  final Map<int, List<TrackEffect>> _trackPreEffects = {};
+  final Map<int, List<TrackEffect>> _trackPostEffects = {};
+  final Map<int, LiveSignalMode> _trackLiveSignal = {};
+
+  /// Live Signal focus channel (`null` / absent = none). Distinct from the
+  /// Sync/Band primary crown.
+  int? _liveSignalFocus;
 
   /// Live plugin slot handles keyed by chain position — `(channel, lane,
   /// index)` for lane chains, `(input, index)` for monitor chains. Repopulated
@@ -512,6 +525,12 @@ class LooperRepository {
           multiple: s.tracks[i].multiple,
           inputMask: s.tracks[i].inputMask,
           outputMask: s.tracks[i].outputMask,
+          preEffects: _trackPreEffects[i] ?? const <TrackEffect>[],
+          postEffects:
+              _trackPostEffects[i] ??
+              _laneEffects[(i, 0)] ??
+              const <TrackEffect>[],
+          liveSignal: _trackLiveSignal[i] ?? LiveSignalMode.off,
           lanes: [
             for (var l = 0; l < s.tracks[i].lanes.length; l++)
               Lane(
@@ -522,7 +541,10 @@ class LooperRepository {
                 lengthFrames: s.tracks[i].lanes[l].lengthFrames,
                 rms: s.tracks[i].lanes[l].rms,
                 peak: s.tracks[i].lanes[l].peak,
-                effects: _laneEffects[(i, l)] ?? const [],
+                effects:
+                    _laneEffects[(i, l)] ??
+                    _trackPostEffects[i] ??
+                    const <TrackEffect>[],
               ),
           ],
         ),
@@ -648,8 +670,17 @@ class LooperRepository {
       for (final key in _laneEffects.keys) {
         _applyLaneEffects(key.$1, key.$2);
       }
-      // Re-apply per-input live monitors: enable first, then the single chain's
-      // routing / mix / effects.
+      _trackPreEffects.keys.toList().forEach(_applyTrackPreEffects);
+      _trackPostEffects.keys.toList().forEach(_applyTrackPostEffects);
+      _trackLiveSignal.forEach(
+        (channel, mode) =>
+            _engine.setTrackLiveSignal(channel: channel, mode: mode),
+      );
+      final focus = _liveSignalFocus;
+      if (focus != null) {
+        _engine.setLiveSignalFocus(channel: focus);
+      }
+      // Re-apply per-input live monitors: enable first, then Pre/Post chains.
       _monitorInputEnabled.forEach(
         (input, enabled) =>
             _engine.setMonitorInputEnabled(input: input, enabled: enabled),
@@ -666,6 +697,7 @@ class LooperRepository {
         (input, muted) =>
             _engine.setMonitorInputMute(input: input, muted: muted),
       );
+      _inputPreEffects.keys.toList().forEach(_applyInputPreEffects);
       _monitorEffects.keys.toList().forEach(_applyMonitorEffects);
       // Re-apply the structural output gate. A fresh start enables every
       // output, so only the stored OFF entries need re-asserting (default-on).
@@ -784,21 +816,16 @@ class LooperRepository {
 
   /// Advances track [channel]: record / finalize loop / toggle overdub.
   ///
-  /// When the track is leaving EMPTY (a fresh capture), the input's live
-  /// monitor chain is snapshot-copied onto each recording lane and pushed to
-  /// the engine, so the take's remembered FX matches what was monitored. The
-  /// repository is the sole record-time snapshot authority: it computes the
-  /// snapshot from the synchronously-correct `_monitorEffects` cache (never
-  /// from ring-deferred engine state), so there is no drain-timing race. The
-  /// copy is by value, so editing the input chain afterwards never alters the
-  /// take (D3).
+  /// Pre/Post racks are the source of truth: Input/Track Pre bake into PCM on
+  /// the engine side; Track Post shapes playback. Snapshot-on-record
+  /// ([_snapshotMonitorChainsOntoLanes]) is retired for new empty-track
+  /// records — calling it would overwrite Track Post with Input Post.
   EngineResult record({int channel = 0}) {
     final snapshot = _engine.snapshot();
     final state = channel >= 0 && channel < snapshot.tracks.length
         ? snapshot.tracks[channel].state
         : null;
     if (state == TrackState.empty) {
-      _snapshotMonitorChainsOntoLanes(channel);
       // The engine unmutes every lane on a record-from-empty (a fresh take is
       // always audible); forget the remembered mutes too, or a device
       // reconnect would replay them and silence the take mid-performance.
@@ -837,6 +864,8 @@ class LooperRepository {
   /// empty* monitored chain always overwrites the lane (D2 — the take sounds
   /// like what was monitored), even if plugin captures reduce it to empty; that
   /// overwrite is pushed too, so cache and engine stay equal.
+  // Kept for reference / emergency bridge; not called — Pre/Post are authoritative.
+  // ignore: unused_element
   void _snapshotMonitorChainsOntoLanes(int channel) {
     // Iterate the repo's own lane config (`_laneCount` / `_laneInput`). The repo
     // is the single writer of both — every `setLaneCount` / `setLaneInput`
@@ -929,19 +958,12 @@ class LooperRepository {
   }
 
   /// The erasure both clears share: forget the remembered mutes (the engine
-  /// force-unmutes every lane) and empty the take's chains in cache + engine,
-  /// persisting each (F3 — without this, settings keeps the erased take's chain
-  /// and a restart replays it onto the fresh take).
+  /// force-unmutes every lane). **Pre/Post racks and Live Signal are track
+  /// configuration** — they survive clear (Sheeran-style part 5). Lane effect
+  /// mirrors of Track Post are left in place so playback colour remains after
+  /// the PCM is wiped.
   void _dropTakeState(int channel) {
     _forgetLaneMutes(channel);
-    final clearedLanes = [
-      for (final key in _laneEffects.keys)
-        if (key.$1 == channel) key.$2,
-    ];
-    for (final lane in clearedLanes) {
-      setLaneEffects(channel: channel, lane: lane, effects: const []);
-      onLaneChainChanged?.call(channel, lane);
-    }
   }
 
   /// Captures what a clear on [channel] is about to throw away and the engine
@@ -1267,18 +1289,57 @@ class LooperRepository {
     }
 
     // Chains: reset every remembered chain the rig does not define, then
-    // apply the rig's. `setLaneEffects` / `setMonitorEffects` keep cache and
+    // apply the rig's. `setLaneEffects` / Pre-Post setters keep cache and
     // engine in lockstep (an empty chain pushes count 0 to the engine, wiping
     // any leftover engine-side chain a clear alone would have kept).
     for (final key in _laneEffects.keys.toList()) {
-      if (!rig.laneEffects.containsKey(key)) {
+      if (!rig.laneEffects.containsKey(key) &&
+          !rig.trackPostEffects.containsKey(key.$1)) {
         setLaneEffects(channel: key.$1, lane: key.$2, effects: const []);
       }
     }
-    rig.laneEffects.forEach(
-      (key, effects) =>
-          setLaneEffects(channel: key.$1, lane: key.$2, effects: effects),
+    for (final channel in _trackPreEffects.keys.toList()) {
+      if (!rig.trackPreEffects.containsKey(channel)) {
+        setTrackPreEffects(channel: channel, effects: const []);
+      }
+    }
+    for (final channel in _trackPostEffects.keys.toList()) {
+      if (!rig.trackPostEffects.containsKey(channel) &&
+          !rig.laneEffects.keys.any((k) => k.$1 == channel)) {
+        setTrackPostEffects(channel: channel, effects: const []);
+      }
+    }
+    for (final channel in _trackLiveSignal.keys.toList()) {
+      if (!rig.trackLiveSignal.containsKey(channel)) {
+        setTrackLiveSignal(channel: channel, mode: LiveSignalMode.off);
+      }
+    }
+
+    if (rig.trackPostEffects.isNotEmpty || rig.trackPreEffects.isNotEmpty) {
+      rig.trackPreEffects.forEach(
+        (channel, effects) =>
+            setTrackPreEffects(channel: channel, effects: effects),
+      );
+      rig.trackPostEffects.forEach(
+        (channel, effects) =>
+            setTrackPostEffects(channel: channel, effects: effects),
+      );
+      // Still mirror legacy laneEffects for UI when present and no post rack.
+      rig.laneEffects.forEach((key, effects) {
+        if (!rig.trackPostEffects.containsKey(key.$1)) {
+          setLaneEffects(channel: key.$1, lane: key.$2, effects: effects);
+        }
+      });
+    } else {
+      rig.laneEffects.forEach(
+        (key, effects) =>
+            setLaneEffects(channel: key.$1, lane: key.$2, effects: effects),
+      );
+    }
+    rig.trackLiveSignal.forEach(
+      (channel, mode) => setTrackLiveSignal(channel: channel, mode: mode),
     );
+
     // Monitors: fully reset every remembered monitor the rig does not define —
     // not just its chain but its enable / routing / mix too, or an input
     // enabled under session A would keep monitoring under session B (the F2
@@ -1295,6 +1356,7 @@ class LooperRepository {
       setMonitorVolume(input: input, volume: 1);
       setMonitorMute(input: input, muted: false);
       setMonitorEffects(input: input, effects: const []);
+      setInputPreEffects(input: input, effects: const []);
     }
     for (final monitor in rig.monitors) {
       setMonitorInputEnabled(input: monitor.input, enabled: monitor.enabled);
@@ -1302,6 +1364,7 @@ class LooperRepository {
       setMonitorVolume(input: monitor.input, volume: monitor.volume);
       setMonitorMute(input: monitor.input, muted: monitor.muted);
       setMonitorEffects(input: monitor.input, effects: monitor.effects);
+      setInputPreEffects(input: monitor.input, effects: monitor.preEffects);
     }
   }
 
@@ -1351,6 +1414,7 @@ class LooperRepository {
       ..._monitorVolume.keys,
       ..._monitorMute.keys,
       ..._monitorEffects.keys,
+      ..._inputPreEffects.keys,
     };
     final result = <int, InputMonitor>{};
     for (final input in inputs) {
@@ -1360,6 +1424,7 @@ class LooperRepository {
         outputMask: monitorOutput(input),
         volume: monitorVolume(input),
         muted: monitorMuted(input),
+        preEffects: inputPreEffects(input),
         effects: monitorEffects(input),
       );
       // Skip inputs equal to the disabled default (no state worth persisting).
@@ -1609,10 +1674,9 @@ class LooperRepository {
   }
 
   /// Replaces lane [lane] of track [channel]'s effect chain with [effects]
-  /// (clamped to [kTrackEffectMax]). Remembered and re-applied on every
-  /// (re)start. Use this for structural edits (add / remove / reorder / type);
-  /// it resets the affected entries' DSP state. For a live parameter tweak use
-  /// [setLaneEffectParam], which does not.
+  /// (clamped to [kTrackEffectMax]). **Post shim:** also updates Track Post
+  /// (lane 0 wins when migrating; any lane edit updates the channel Post rack
+  /// until per-lane overrides exist). Prefer [setTrackPostEffects].
   EngineResult setLaneEffects({
     required int channel,
     required int lane,
@@ -1626,14 +1690,154 @@ class LooperRepository {
     } else {
       _laneEffects[(channel, lane)] = clamped;
     }
+    // Channel-level Track Post is the Sheeran source of truth; lane 0 edits
+    // update it (migration / UI shim). Other lanes keep a local mirror until
+    // per-lane overrides land.
+    if (lane == 0) {
+      if (clamped.isEmpty) {
+        _trackPostEffects.remove(channel);
+      } else {
+        _trackPostEffects[channel] = List<TrackEffect>.of(clamped);
+      }
+    }
     _reproject();
     if (!_intendRunning) return EngineResult.ok;
     final result = _applyLaneEffects(channel, lane);
+    if (lane == 0) {
+      _applyTrackPostEffects(channel);
+    }
     // A restored chain whose plugin id wasn't in the (cold-start-empty) scan
     // cache lands here as unavailable — kick the one-shot recovery scan.
     _recoverUnavailablePlugins();
     return result;
   }
+
+  /// Replaces track [channel]'s **Pre** chain (prints into PCM).
+  EngineResult setTrackPreEffects({
+    required int channel,
+    required List<TrackEffect> effects,
+  }) {
+    final clamped = _clampChain(effects);
+    if (clamped.isEmpty) {
+      _trackPreEffects.remove(channel);
+    } else {
+      _trackPreEffects[channel] = clamped;
+    }
+    _reproject();
+    if (!_intendRunning) return EngineResult.ok;
+    return _applyTrackPreEffects(channel);
+  }
+
+  /// Replaces track [channel]'s **Post** chain (playback colour) and mirrors it
+  /// onto every remembered lane for that channel.
+  EngineResult setTrackPostEffects({
+    required int channel,
+    required List<TrackEffect> effects,
+  }) {
+    final clamped = _clampChain(effects);
+    if (clamped.isEmpty) {
+      _trackPostEffects.remove(channel);
+    } else {
+      _trackPostEffects[channel] = clamped;
+    }
+    final count = _laneCount[channel] ?? 1;
+    for (var lane = 0; lane < count; lane++) {
+      if (clamped.isEmpty) {
+        _laneEffects.remove((channel, lane));
+      } else {
+        _laneEffects[(channel, lane)] = List<TrackEffect>.of(clamped);
+      }
+    }
+    _reproject();
+    if (!_intendRunning) return EngineResult.ok;
+    var result = _applyTrackPostEffects(channel);
+    for (var lane = 0; lane < count; lane++) {
+      final r = _applyLaneEffects(channel, lane);
+      if (r != EngineResult.ok) result = r;
+    }
+    _recoverUnavailablePlugins();
+    return result;
+  }
+
+  /// Sets Live Signal mode for track [channel].
+  EngineResult setTrackLiveSignal({
+    required int channel,
+    required LiveSignalMode mode,
+  }) {
+    if (mode == LiveSignalMode.off) {
+      _trackLiveSignal.remove(channel);
+    } else {
+      _trackLiveSignal[channel] = mode;
+    }
+    _reproject();
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setTrackLiveSignal(channel: channel, mode: mode);
+  }
+
+  /// Sets the Live Signal focus channel (for [LiveSignalMode.auto] tracks).
+  EngineResult setLiveSignalFocus({required int channel}) {
+    _liveSignalFocus = channel;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setLiveSignalFocus(channel: channel);
+  }
+
+  /// Replaces Input [input] **Pre** chain (prints into takes).
+  EngineResult setInputPreEffects({
+    required int input,
+    required List<TrackEffect> effects,
+  }) {
+    final clamped = _clampChain(effects);
+    if (clamped.isEmpty) {
+      _inputPreEffects.remove(input);
+    } else {
+      _inputPreEffects[input] = clamped;
+    }
+    if (!_intendRunning) return EngineResult.ok;
+    return _applyInputPreEffects(input);
+  }
+
+  /// Replaces Input [input] **Post** chain (FOH/monitor only). Alias of
+  /// [setMonitorEffects].
+  EngineResult setInputPostEffects({
+    required int input,
+    required List<TrackEffect> effects,
+  }) => setMonitorEffects(input: input, effects: effects);
+
+  List<TrackEffect> _clampChain(List<TrackEffect> effects) =>
+      effects.length > kTrackEffectMax
+      ? effects.sublist(0, kTrackEffectMax)
+      : List<TrackEffect>.of(effects);
+
+  /// Every remembered Track Pre chain.
+  Map<int, List<TrackEffect>> allTrackPreEffects() => {
+    for (final e in _trackPreEffects.entries)
+      e.key: List<TrackEffect>.unmodifiable(e.value),
+  };
+
+  /// Every remembered Track Post chain.
+  Map<int, List<TrackEffect>> allTrackPostEffects() => {
+    for (final e in _trackPostEffects.entries)
+      e.key: List<TrackEffect>.unmodifiable(e.value),
+  };
+
+  /// Every remembered non-off Live Signal mode.
+  Map<int, LiveSignalMode> allTrackLiveSignal() => Map.unmodifiable(
+    _trackLiveSignal,
+  );
+
+  /// Input [input]'s remembered Pre chain.
+  List<TrackEffect> inputPreEffects(int input) =>
+      List<TrackEffect>.unmodifiable(_inputPreEffects[input] ?? const []);
+
+  /// Track [channel]'s remembered Pre chain.
+  List<TrackEffect> trackPreEffects(int channel) =>
+      List<TrackEffect>.unmodifiable(_trackPreEffects[channel] ?? const []);
+
+  /// Track [channel]'s remembered Post chain.
+  List<TrackEffect> trackPostEffects(int channel) =>
+      List<TrackEffect>.unmodifiable(
+        _trackPostEffects[channel] ?? _laneEffects[(channel, 0)] ?? const [],
+      );
 
   /// Sets parameter [param] of chain entry [index] on lane [lane] of track
   /// [channel] to [value] (`0..1`) without resetting DSP state. Remembered and
@@ -1836,6 +2040,86 @@ class LooperRepository {
   /// in processing order.
   List<TrackEffect> laneEffects(int channel, int lane) =>
       List<TrackEffect>.unmodifiable(_laneEffects[(channel, lane)] ?? const []);
+
+  /// Pushes Input [input] Pre built-ins to the engine (plugins skipped — Pre
+  /// slot ABI is built-in only in this revision).
+  EngineResult _applyInputPreEffects(int input) {
+    final effects = _inputPreEffects[input] ?? const <TrackEffect>[];
+    var count = 0;
+    for (var i = 0; i < effects.length; i++) {
+      final fx = effects[i];
+      if (fx is! BuiltInEffect) continue;
+      _engine.setInputFxPre(
+        input: input,
+        index: count,
+        type: trackEffectTypeToEngine(fx.type),
+      );
+      for (var p = 0; p < fx.params.length; p++) {
+        _engine.setInputFxPreParam(
+          input: input,
+          index: count,
+          param: p,
+          value: fx.params[p],
+        );
+      }
+      count++;
+    }
+    return _engine.setInputFxPreCount(input: input, count: count);
+  }
+
+  /// Pushes Track [channel] Pre built-ins to the engine.
+  EngineResult _applyTrackPreEffects(int channel) {
+    final effects = _trackPreEffects[channel] ?? const <TrackEffect>[];
+    var count = 0;
+    for (var i = 0; i < effects.length; i++) {
+      final fx = effects[i];
+      if (fx is! BuiltInEffect) continue;
+      _engine.setTrackFxPre(
+        channel: channel,
+        index: count,
+        type: trackEffectTypeToEngine(fx.type),
+      );
+      for (var p = 0; p < fx.params.length; p++) {
+        _engine.setTrackFxPreParam(
+          channel: channel,
+          index: count,
+          param: p,
+          value: fx.params[p],
+        );
+      }
+      count++;
+    }
+    return _engine.setTrackFxPreCount(channel: channel, count: count);
+  }
+
+  /// Pushes Track [channel] Post built-ins to the engine (plugins still ride
+  /// the lane Post path via [_applyLaneEffects]).
+  EngineResult _applyTrackPostEffects(int channel) {
+    final effects =
+        _trackPostEffects[channel] ??
+        _laneEffects[(channel, 0)] ??
+        const <TrackEffect>[];
+    var count = 0;
+    for (var i = 0; i < effects.length; i++) {
+      final fx = effects[i];
+      if (fx is! BuiltInEffect) continue;
+      _engine.setTrackFxPost(
+        channel: channel,
+        index: count,
+        type: trackEffectTypeToEngine(fx.type),
+      );
+      for (var p = 0; p < fx.params.length; p++) {
+        _engine.setTrackFxPostParam(
+          channel: channel,
+          index: count,
+          param: p,
+          value: fx.params[p],
+        );
+      }
+      count++;
+    }
+    return _engine.setTrackFxPostCount(channel: channel, count: count);
+  }
 
   /// Pushes lane [lane] of track [channel]'s remembered chain to the engine:
   /// each entry's type (which seeds default params), then its parameter values,
@@ -2046,11 +2330,11 @@ class LooperRepository {
   /// Track [channel]'s lane 0 remembered effect chain. Convenience for lane 0.
   List<TrackEffect> trackEffects(int channel) => laneEffects(channel, 0);
 
-  /// Replaces monitor [input]'s effect chain with [effects] (clamped to
-  /// [kTrackEffectMax]). An empty chain is the clean (dry) path. Remembered and
-  /// re-applied on every (re)start; this is the chain snapshot-copied onto a
-  /// lane on record. A structural edit resets the affected entries' DSP state.
-  /// For a live parameter tweak use [setMonitorEffectParam].
+  /// Replaces monitor [input]'s **Post** chain with [effects] (clamped to
+  /// [kTrackEffectMax]). An empty chain is the clean (dry) FOH path. Remembered
+  /// and re-applied on every (re)start. Prefer [setInputPostEffects]; this
+  /// remains the Post shim for existing callers. For a live parameter tweak
+  /// use [setMonitorEffectParam].
   EngineResult setMonitorEffects({
     required int input,
     required List<TrackEffect> effects,

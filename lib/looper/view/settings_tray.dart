@@ -7,6 +7,7 @@ import 'package:loopy/app/loopy_navigator.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/cubit/settings_tray_cubit.dart';
 import 'package:loopy/looper/view/coming_soon_stub.dart';
+import 'package:loopy/looper/view/fx_page/fx_page.dart';
 import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
@@ -339,6 +340,25 @@ class _TrayPanel extends StatelessWidget {
                                               _navigate(
                                                 context,
                                                 () => showSignalPage(context),
+                                              ),
+                                            ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: _gap),
+                                  SizedBox(
+                                    width: _tileWidth,
+                                    height: _tileHeight,
+                                    child: _TrayTile(
+                                      key: const Key('settingsTray_fx'),
+                                      icon: Icons.graphic_eq_outlined,
+                                      label: l10n.trayFxLabel,
+                                      accent: surface.laneColor(3),
+                                      onTap: state.isNavigating
+                                          ? null
+                                          : () => unawaited(
+                                              _navigate(
+                                                context,
+                                                () => showFxPage(context),
                                               ),
                                             ),
                                     ),

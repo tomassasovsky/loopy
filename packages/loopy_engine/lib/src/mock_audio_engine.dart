@@ -6,6 +6,7 @@ import 'package:loopy_engine/src/engine_config.dart';
 import 'package:loopy_engine/src/engine_snapshot.dart';
 import 'package:loopy_engine/src/fx_fingerprint.dart';
 import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart';
+import 'package:loopy_engine/src/live_signal_mode.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
 import 'package:loopy_engine/src/performance_render_progress.dart';
 import 'package:loopy_engine/src/plugin_descriptor.dart';
@@ -742,6 +743,78 @@ class MockAudioEngine implements AudioEngine {
     required int param,
     required double value,
   }) => _requireRunning();
+
+  @override
+  EngineResult setInputFxPre({
+    required int input,
+    required int index,
+    required TrackEffectType type,
+  }) => _requireRunning();
+
+  @override
+  EngineResult setInputFxPreCount({
+    required int input,
+    required int count,
+  }) => _requireRunning();
+
+  @override
+  EngineResult setInputFxPreParam({
+    required int input,
+    required int index,
+    required int param,
+    required double value,
+  }) => _requireRunning();
+
+  @override
+  EngineResult setTrackFxPre({
+    required int channel,
+    required int index,
+    required TrackEffectType type,
+  }) => _requireRunning();
+
+  @override
+  EngineResult setTrackFxPreCount({
+    required int channel,
+    required int count,
+  }) => _requireRunning();
+
+  @override
+  EngineResult setTrackFxPreParam({
+    required int channel,
+    required int index,
+    required int param,
+    required double value,
+  }) => _requireRunning();
+
+  @override
+  EngineResult setTrackFxPost({
+    required int channel,
+    required int index,
+    required TrackEffectType type,
+  }) => _requireRunning();
+
+  @override
+  EngineResult setTrackFxPostCount({
+    required int channel,
+    required int count,
+  }) => _requireRunning();
+
+  @override
+  EngineResult setTrackFxPostParam({
+    required int channel,
+    required int index,
+    required int param,
+    required double value,
+  }) => _requireRunning();
+
+  @override
+  EngineResult setTrackLiveSignal({
+    required int channel,
+    required LiveSignalMode mode,
+  }) => _requireRunning();
+
+  @override
+  EngineResult setLiveSignalFocus({required int channel}) => _requireRunning();
 
   // The mock runs no DSP and holds no engine-side chain, so every chain
   // fingerprints to the empty-chain basis (the repository owns the real cache).

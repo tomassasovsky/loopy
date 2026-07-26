@@ -73,9 +73,22 @@ abstract final class FxChainsWriter {
       }
     }
 
-    if (effectsByChannelLane.isEmpty) return '';
+    // Schema / export note: Pre is already baked into PCM stems; Post chains
+    // are listed here (lane effects or explicit trackRacks.post when present).
+    final trackRacks = manifest['trackRacks'] as List<dynamic>? ?? const [];
+
+    if (effectsByChannelLane.isEmpty && trackRacks.isEmpty) return '';
 
     final buffer = StringBuffer();
+    for (final rack in trackRacks) {
+      final json = rack as Map<String, dynamic>;
+      final channel = (json['channel'] as num?)?.toInt();
+      if (channel == null) continue;
+      buffer.writeln('Track $channel Pre (baked into PCM):');
+      _writeOpaqueOrEmpty(buffer, json['pre']);
+      buffer.writeln('Track $channel Post (playback):');
+      _writeOpaqueOrEmpty(buffer, json['post']);
+    }
     for (final channel in effectsByChannelLane.keys.toList()..sort()) {
       final lanes = effectsByChannelLane[channel]!;
       for (final lane in lanes.keys.toList()..sort()) {
@@ -94,6 +107,19 @@ abstract final class FxChainsWriter {
       }
     }
     return buffer.toString();
+  }
+
+  static void _writeOpaqueOrEmpty(StringBuffer buffer, Object? value) {
+    if (value is List && value.isNotEmpty) {
+      for (var i = 0; i < value.length; i++) {
+        final rendered = _renderEffect(value[i] as Map<String, dynamic>);
+        buffer.writeln('  ${i + 1}. $rendered');
+      }
+    } else if (value is String && value.isNotEmpty) {
+      buffer.writeln('  (opaque chain, length ${value.length})');
+    } else {
+      buffer.writeln('  (no effects)');
+    }
   }
 
   static String _renderEffect(Map<String, dynamic> effect) {

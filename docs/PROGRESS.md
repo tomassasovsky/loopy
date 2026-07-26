@@ -107,7 +107,12 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
   Post**. New explicit setters: `le_engine_set_input_fx_pre*`,
   `le_engine_set_track_fx_pre*` / `…_post*`, `le_engine_set_track_live_signal`,
   `le_engine_set_live_signal_focus` (P11 — UI focus ≠ primary crown). Dart
-  ffigen may lag; native tests call the new symbols directly.
+  ffigen + `FxRackControl` on `AudioEngine` expose the setters; session schema
+  **v5** persists opaque `trackRacks` + Input Pre (`preEncoded`). Snapshot-on-
+  record is **retired** — Pre bakes in the engine; Post is never copied onto
+  lanes at record. Dedicated **FX page** (`lib/looper/view/fx_page/`) is the
+  primary editor; Signal docks deep-link there. Factory racks live in
+  `assets/fx_racks/`.
 - **Live Signal** per track: Off / Auto / On. On/Auto monitor path = Track
   Pre → Post of lane 0's assigned input (separate `fx_post_live` DSP so it
   never shares a delay line with playback Post). Input Post remains the

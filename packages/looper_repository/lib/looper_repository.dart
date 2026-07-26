@@ -15,6 +15,7 @@ export 'package:loopy_engine/loopy_engine.dart'
         ClickMode,
         EngineResult,
         GridDivision,
+        LiveSignalMode,
         LooperMode,
         PluginScanProgress,
         TempoSource,

@@ -79,11 +79,11 @@ each with ≥1 usable pack built from Loopy Delay/Reverb/Drive/Filter/etc.
 ## Success Criteria
 
 ```success-criteria
-GOAL: Factory racks are browsable and applicable; user presets roundtrip effect types and params across restart.
+GOAL: Factory racks can be browsed and applied; user presets round-trip effect types and params across restart.
 
 SUCCESS CRITERIA:
 - Factory packs load and apply onto Input/Track Pre or Post without crash | verify: /Users/Tomas/development/flutter/bin/flutter test --name "FxRack preset|factory rack|FxPreset"
-- User preset save/load roundtrips types + params | verify: /Users/Tomas/development/flutter/bin/flutter test --name "FxRack preset|user preset|FxPreset"
+- User preset save/load round-trips types + params | verify: /Users/Tomas/development/flutter/bin/flutter test --name "FxRack preset|user preset|FxPreset"
 - Factory categories include at least Vocal, Guitar, Dub (or documented rename) | verify: rg -n "Vocal|Guitar|Dub" assets/fx_racks packages -g '*.json' | head
 - l10n for preset UI in both ARBs | verify: rg -n "preset|Preset|fxRack" lib/l10n/arb/app_en.arb lib/l10n/arb/app_es.arb
 - Analyzer clean on preset + FX page touch points | verify: /Users/Tomas/development/flutter/bin/flutter analyze lib/looper/view/fx_page

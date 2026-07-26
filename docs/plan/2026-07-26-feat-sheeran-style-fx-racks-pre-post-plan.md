@@ -181,7 +181,7 @@ VST3-in-rack vs #194
   - [ ] Preset format + factory library content
   - [ ] Apply / save / load / persist UX
   - [ ] Tests for apply roundtrip
-- Exit: factory packs browsable; user preset survives restart
+- Exit: factory packs can be browsed; user preset survives restart
 - Effort: L (content-heavy)
 
 #### Phase 4 — Hardening + export

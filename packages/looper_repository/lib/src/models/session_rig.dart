@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
-import 'package:loopy_engine/loopy_engine.dart' show LooperMode;
+import 'package:loopy_engine/loopy_engine.dart' show LiveSignalMode, LooperMode;
 
 /// One lane's restored audio, routing, and mix inside a [SessionRigTrack].
 ///
@@ -92,7 +92,8 @@ class SessionRigMonitor {
     required this.outputMask,
     required this.volume,
     required this.muted,
-    required this.effects,
+    this.preEffects = const [],
+    this.effects = const [],
   });
 
   /// Hardware input index.
@@ -111,7 +112,11 @@ class SessionRigMonitor {
   /// Whether the monitor is muted.
   final bool muted;
 
-  /// The monitor's effect chain (empty = the clean/dry path).
+  /// Input Pre chain (prints into takes). Empty = dry print.
+  final List<TrackEffect> preEffects;
+
+  /// Input Post chain (FOH/monitor only). Empty = dry monitor path.
+  /// Schema v4 `encoded` migrates here.
   final List<TrackEffect> effects;
 }
 
@@ -134,6 +139,9 @@ class SessionRig {
     this.baseLengthFrames = 0,
     this.tracks = const [],
     this.laneEffects = const {},
+    this.trackPreEffects = const {},
+    this.trackPostEffects = const {},
+    this.trackLiveSignal = const {},
     this.monitors = const [],
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
@@ -147,9 +155,18 @@ class SessionRig {
   final List<SessionRigTrack> tracks;
 
   /// Every lane effect chain the session defines, keyed by `(channel, lane)`.
-  /// Chains exist independently of audio, so keys may reference tracks with no
-  /// [tracks] entry.
+  /// Legacy / UI mirror of track Post; schema v5 prefers [trackPostEffects].
   final Map<(int, int), List<TrackEffect>> laneEffects;
+
+  /// Track Pre chains keyed by channel (schema v5).
+  final Map<int, List<TrackEffect>> trackPreEffects;
+
+  /// Track Post chains keyed by channel (schema v5). v4 lane chains migrate
+  /// here (lane 0 wins when lanes disagree).
+  final Map<int, List<TrackEffect>> trackPostEffects;
+
+  /// Per-track Live Signal mode (schema v5).
+  final Map<int, LiveSignalMode> trackLiveSignal;
 
   /// The per-input live monitors the session defines.
   final List<SessionRigMonitor> monitors;

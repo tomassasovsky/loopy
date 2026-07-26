@@ -250,5 +250,38 @@ void main() {
         expect(text, isNot(contains('Filter')));
       },
     );
+
+    test('FxRack manifest trackRacks lists Pre baked + Post playback', () {
+      File('${dir.path}/performance.json').writeAsStringSync(
+        jsonEncode({
+          'armSnapshot': {
+            'tracks': <dynamic>[],
+          },
+          'layers': <dynamic>[],
+          'trackRacks': [
+            {
+              'channel': 1,
+              'pre': [
+                {
+                  'type': 3,
+                  'params': [0.5, 0.5, 0.5, 0.5],
+                },
+              ],
+              'post': [
+                {
+                  'type': 7,
+                  'params': [0.4, 0.4, 0.4, 0.4],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      final text = FxChainsWriter.render(dir.path);
+      expect(text, contains('Pre (baked into PCM)'));
+      expect(text, contains('Post (playback)'));
+      expect(text, contains('Delay'));
+      expect(text, contains('Reverb'));
+    });
   });
 }
