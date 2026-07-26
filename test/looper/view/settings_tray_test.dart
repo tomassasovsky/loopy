@@ -1,5 +1,7 @@
 import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -98,12 +100,14 @@ void main() {
     await pump(tester);
     expect(cubit.state.dragProgress, 0);
 
-    // Past 50% of the tray's fixed reveal height (well past — the drag
-    // helper delivers the offset over several synthetic pointer moves, and
-    // only the net displacement needs to clear the threshold).
+    // Past 50% of the tray's reveal height — well past (the drag helper
+    // delivers the offset over several synthetic pointer moves, and only the
+    // net displacement needs to clear the threshold); the tray is
+    // near-fullscreen (test surface height 600 - 24 = 576), so 500px clears
+    // the 288px halfway point.
     await tester.drag(
       find.byKey(const Key('settingsTray_handle')),
-      const Offset(0, 160),
+      const Offset(0, 500),
     );
     await tester.pumpAndSettle();
 
@@ -130,7 +134,10 @@ void main() {
     await pump(tester);
     await tester.pump();
 
-    await tester.tap(find.byKey(const Key('settingsTray_scrim')));
+    // The panel now fills much more of the screen (Control-Center sized),
+    // so the scrim's default center point can land on the panel itself —
+    // tap explicitly below it instead.
+    await tester.tapAt(const Offset(400, 580));
     await tester.pumpAndSettle();
 
     expect(cubit.state.dragProgress, 0);
@@ -342,33 +349,101 @@ void main() {
     );
   });
 
-  testWidgets('the brightness slider renders the state default (0.8)', (
-    tester,
-  ) async {
-    cubit.open();
-    await pump(tester);
-    await tester.pump();
+  group('brightness slider tile', () {
+    testWidgets(
+      'exposes the state default (0.8) as an 80% semantics value',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+        cubit.open();
+        await pump(tester);
+        await tester.pump();
 
-    expect(
-      tester
-          .widget<Slider>(find.byKey(const Key('settingsTray_brightness')))
-          .value,
-      0.8,
+        // Slider sets its own semantics boundary — an ancestor label never
+        // merges into it, so `_BrightnessSliderTile` excludes Slider's own
+        // semantics and replaces them wholesale with one node.
+        expect(
+          tester.getSemantics(find.byType(Slider)),
+          isSemantics(
+            isSlider: true,
+            label: 'Brightness',
+            value: '80%',
+            hasIncreaseAction: true,
+            hasDecreaseAction: true,
+          ),
+        );
+        handle.dispose();
+      },
     );
-  });
 
-  testWidgets('dragging the brightness slider updates the cubit', (
-    tester,
-  ) async {
-    cubit.open();
-    await pump(tester);
-    await tester.pump();
+    testWidgets('dragging down (toward the bottom) lowers the value', (
+      tester,
+    ) async {
+      cubit.open();
+      await pump(tester);
+      await tester.pump();
 
-    final slider = find.byKey(const Key('settingsTray_brightness'));
-    await tester.drag(slider, const Offset(-200, 0));
-    await tester.pump();
+      final slider = find.byKey(const Key('settingsTray_brightness'));
+      await tester.drag(slider, const Offset(0, 100));
+      await tester.pump();
 
-    expect(cubit.state.brightness, lessThan(0.8));
+      expect(cubit.state.brightness, lessThan(0.8));
+    });
+
+    testWidgets('dragging up (toward the top) raises the value', (
+      tester,
+    ) async {
+      cubit.open();
+      await pump(tester);
+      await tester.pump();
+
+      final slider = find.byKey(const Key('settingsTray_brightness'));
+      await tester.drag(slider, const Offset(0, -300));
+      await tester.pump();
+
+      expect(cubit.state.brightness, greaterThan(0.9));
+    });
+
+    testWidgets(
+      'a tap moves the value to the tapped position — unlike a plain '
+      'Slider ignoring taps, this one changes value on tap, not just drag',
+      (tester) async {
+        cubit.open();
+        await pump(tester);
+        await tester.pump();
+
+        await tester.tap(find.byKey(const Key('settingsTray_brightness')));
+        await tester.pump();
+
+        expect(cubit.state.brightness, inInclusiveRange(0.0, 1.0));
+      },
+    );
+
+    testWidgets('the arrow-up key increases the value by the 5% step', (
+      tester,
+    ) async {
+      // Slider's arrow-key step is platform-dependent (10% on iOS/macOS, 5%
+      // elsewhere — see `_adjustmentUnit` in the Flutter SDK's
+      // `slider.dart`) — pinned so this assertion is deterministic on every
+      // machine, not just this one. Reset inline (not via `tearDown`/
+      // `addTearDown`) — the test framework's own foundation-debug-var
+      // check runs before either gets a chance to fire.
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+
+      cubit.open();
+      await pump(tester);
+      await tester.pump();
+
+      // The tile's own pointer listener requests focus on tap.
+      await tester.tap(find.byKey(const Key('settingsTray_brightness')));
+      await tester.pump();
+      final before = cubit.state.brightness;
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump();
+
+      expect(cubit.state.brightness, closeTo(before + 0.05, 0.001));
+      debugDefaultTargetPlatformOverride = null;
+    });
   });
 
   testWidgets('every tap target is labeled (labeledTapTargetGuideline)', (

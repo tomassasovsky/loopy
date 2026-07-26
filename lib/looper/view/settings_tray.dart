@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -7,14 +8,26 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/cubit/settings_tray_cubit.dart';
 import 'package:loopy/looper/view/coming_soon_stub.dart';
 import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
-import 'package:loopy/looper/view/signal_graph/signal_style.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 
 /// The console's slide-down quick-access tray (Control-Center style): a small
 /// pull-tab [_TrayHandle] pinned at the top edge at all times — tap or drag
-/// it down to reveal Settings, Signal/FX graph, WiFi/Bluetooth/Tuner stubs,
-/// and a local brightness slider; tap the scrim or swipe up to dismiss.
+/// it down to reveal a near-fullscreen translucent sheet holding small,
+/// top-anchored destination tiles (Settings, Signal/FX graph,
+/// WiFi/Bluetooth/Tuner stubs) beside a compact vertical brightness slider;
+/// tap the scrim or drag it back up to dismiss.
+///
+/// Hand-rolled (not the `anydrawer` package's route-based drawer): the
+/// slide needs to track the drag continuously, following the finger frame
+/// by frame, which `anydrawer` can't do for an *opening* drag — its
+/// `AnyDrawerController`/`AnyDrawerRegion` only support threshold-then-snap
+/// (accumulate the drag, and only on release play a fixed animation).
+/// `dragEnabled` drag-to-*dismiss* on an already-open `anydrawer` drawer
+/// does track the finger, but only because it writes straight into that
+/// route's own `AnimationController` — a controller that doesn't exist
+/// until the route is pushed, so there's no way to reuse that trick for the
+/// reveal-from-closed gesture this tray needs.
 ///
 /// Overlaid as a `Stack` sibling of `TracksView`'s content (see
 /// `tracks_view.dart`), not a route — it paints over the tracks grid rather
@@ -28,10 +41,6 @@ class SettingsTray extends StatefulWidget {
 }
 
 class _SettingsTrayState extends State<SettingsTray> {
-  /// The tray panel's fully-open height — sized for one row of five badged
-  /// shortcut buttons, the divider, and the brightness slider.
-  static const double _kTrayHeight = 232;
-
   /// True for the lifetime of a handle drag. While true, the panel height and
   /// scrim opacity track the pointer with no animation (every frame is a
   /// fresh, instant target); once the drag ends the next change animates,
@@ -48,13 +57,21 @@ class _SettingsTrayState extends State<SettingsTray> {
         ? Duration.zero
         : const Duration(milliseconds: 220);
 
+    // Full-height, like iOS Control Center — the tray covers the entire
+    // touchscreen with a translucent scrim (see `_TrayPanel`), not a small
+    // dropdown; the tiles inside stay small and top-anchored rather than
+    // stretching to fill that space (see `_TrayPanel`'s layout).
+    final trayHeight = MediaQuery.sizeOf(context).height.clamp(340.0, 3000.0);
+
     return Stack(
+      fit: StackFit.expand,
       children: [
-        // The scrim: dismisses on tap, hit-testable (and in the semantics
-        // tree — IgnorePointer.ignoringSemantics mirrors `ignoring` by
-        // default) only once the tray has any visible extent, so it never
-        // blocks touches to TracksView, or a screen reader's tap-to-dismiss,
-        // while fully closed.
+        // The scrim: a flat dim, opacity-animated (it never moves — only
+        // ever fades) — dismisses on tap, hit-testable (and in the
+        // semantics tree — IgnorePointer.ignoringSemantics mirrors
+        // `ignoring` by default) only once the tray has any visible extent,
+        // so it never blocks touches to TracksView, or a screen reader's
+        // tap-to-dismiss, while fully closed.
         Positioned.fill(
           child: IgnorePointer(
             ignoring: state.dragProgress <= 0,
@@ -74,55 +91,58 @@ class _SettingsTrayState extends State<SettingsTray> {
             ),
           ),
         ),
-        Positioned(
-          top: 0,
+        // The panel itself: unlike the scrim, this genuinely translates —
+        // a fixed-height card whose top edge slides from fully off-screen
+        // (`-trayHeight`, tucked behind the handle) down to `0`, dragging
+        // its whole contents down as one rigid body rather than wiping a
+        // clip boundary over a stationary layout (an opacity/height fade
+        // reads as content *appearing in place*, not as something sliding).
+        AnimatedPositioned(
+          duration: motion,
+          curve: Curves.easeOut,
+          top: (state.dragProgress.clamp(0.0, 1.0) - 1) * trayHeight,
           left: 0,
           right: 0,
-          child: Column(
-            children: [
-              _TrayHandle(
-                progress: state.dragProgress.clamp(0.0, 1.0),
-                duration: motion,
-                onDragStart: () => setState(() => _dragging = true),
-                // Reads `cubit.state` (always current) rather than the
-                // `state` closed over from this build — several pointer-move
-                // events can fire back-to-back before the next rebuild, and
-                // accumulating from a build-time snapshot would drop all but
-                // the last delta in that batch instead of summing them.
-                onDragUpdate: (dy) => cubit.dragTo(
-                  cubit.state.dragProgress + dy / _kTrayHeight,
-                ),
-                onDragEnd: () {
-                  cubit.settleFromDrag();
-                  setState(() => _dragging = false);
-                },
-                onTap: cubit.toggle,
-              ),
-              AnimatedContainer(
-                duration: motion,
-                curve: Curves.easeOut,
-                height: state.dragProgress.clamp(0.0, 1.0) * _kTrayHeight,
-                child: ClipRect(
-                  child: OverflowBox(
-                    minHeight: _kTrayHeight,
-                    maxHeight: _kTrayHeight,
-                    alignment: Alignment.topCenter,
-                    // Clipped to zero height while closed (and hit-testing
-                    // with it, via ClipRect) — also drop it from the
-                    // semantics tree then, so a screen reader never lands on
-                    // buttons with no visible extent.
-                    child: ExcludeSemantics(
-                      excluding: state.dragProgress <= 0,
-                      child: _TrayPanel(
-                        brightness: state.brightness,
-                        isNavigating: state.isNavigating,
-                        onBrightnessChanged: cubit.setBrightness,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+          height: trayHeight,
+          // Off-screen (top + height <= 0) while closed — also drop it from
+          // the semantics tree then, so a screen reader never lands on
+          // buttons with no visible extent.
+          child: ExcludeSemantics(
+            excluding: state.dragProgress <= 0,
+            child: const _TrayPanel(),
+          ),
+        ),
+        // The handle rides down with the drawer — resting at the very top
+        // of the screen while closed, and at the drawer's own bottom edge
+        // (fully inside it, not hanging off past the screen) once open —
+        // rather than staying pinned at the top while the drawer grows out
+        // from under it, so there's always a pull tab right at the sheet's
+        // visible edge to drag closed.
+        AnimatedPositioned(
+          duration: motion,
+          curve: Curves.easeOut,
+          top:
+              state.dragProgress.clamp(0.0, 1.0) *
+              (trayHeight - _TrayHandle.height),
+          left: 0,
+          right: 0,
+          child: _TrayHandle(
+            progress: state.dragProgress.clamp(0.0, 1.0),
+            duration: motion,
+            onDragStart: () => setState(() => _dragging = true),
+            // Reads `cubit.state` (always current) rather than the
+            // `state` closed over from this build — several pointer-move
+            // events can fire back-to-back before the next rebuild, and
+            // accumulating from a build-time snapshot would drop all but
+            // the last delta in that batch instead of summing them.
+            onDragUpdate: (dy) => cubit.dragTo(
+              cubit.state.dragProgress + dy / trayHeight,
+            ),
+            onDragEnd: () {
+              cubit.settleFromDrag();
+              setState(() => _dragging = false);
+            },
+            onTap: cubit.toggle,
           ),
         ),
       ],
@@ -132,7 +152,7 @@ class _SettingsTrayState extends State<SettingsTray> {
 
 /// The always-visible pull tab pinned at the top edge. Owns ALL drag
 /// recognition for the tray — confined here (rather than spread over the
-/// full tray body) so the brightness `Slider` inside the open panel owns its
+/// full tray body) so the brightness slider inside the open panel owns its
 /// own gesture arena outright, with no competing recognizer over its hit
 /// area. If a future change widens the tray's own drag region, that
 /// isolation breaks silently — keep drag handling on this widget alone.
@@ -146,19 +166,25 @@ class _TrayHandle extends StatelessWidget {
     required this.onTap,
   });
 
-  /// Live/settled drag progress (`0..1`) — brightens the tab and turns its
-  /// chevron as the tray opens, so the handle itself previews the motion
-  /// rather than sitting as a static affordance.
+  /// Live/settled drag progress (`0..1`) — tints the pill as the tray opens,
+  /// so the handle itself previews the motion rather than sitting as a
+  /// static affordance.
   final double progress;
 
-  /// Reduced-motion-aware duration for the chevron's rotation and the tab's
-  /// colour lerp (zero during an active drag, so both track the pointer).
+  /// Reduced-motion-aware duration for the pill's colour lerp (zero during
+  /// an active drag, so it tracks the pointer).
   final Duration duration;
 
   final VoidCallback onDragStart;
   final ValueChanged<double> onDragUpdate;
   final VoidCallback onDragEnd;
   final VoidCallback onTap;
+
+  /// Total rendered height (padding + pill) — [SettingsTray] needs this to
+  /// position the handle at the drawer's own bottom edge, not just its own
+  /// intrinsic size, since it's wrapped in an `AnimatedPositioned` with no
+  /// `bottom`/`height` of its own.
+  static const double height = 21;
 
   @override
   Widget build(BuildContext context) {
@@ -177,50 +203,16 @@ class _TrayHandle extends StatelessWidget {
         onTap: onTap,
         child: Container(
           width: double.infinity,
-          padding: const EdgeInsets.only(bottom: 6),
+          padding: const EdgeInsets.symmetric(vertical: 8),
           color: Colors.transparent,
           alignment: Alignment.topCenter,
-          // A small protruding tab (rather than a bare line floating on the
-          // tracks grid) — reads as a physical pull, and its own drop shadow
-          // separates it from whatever's directly behind it.
           child: AnimatedContainer(
             duration: duration,
-            padding: const EdgeInsets.fromLTRB(16, 7, 12, 7),
+            width: 40,
+            height: 5,
             decoration: BoxDecoration(
-              color: surface.card,
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(14),
-                bottomRight: Radius.circular(14),
-              ),
-              border: Border.all(color: surface.line),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AnimatedContainer(
-                  duration: duration,
-                  width: 28,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: tint,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                AnimatedRotation(
-                  duration: duration,
-                  turns: progress > 0.5 ? 0.5 : 0,
-                  curve: Curves.easeOut,
-                  child: Icon(Icons.keyboard_arrow_down, size: 16, color: tint),
-                ),
-              ],
+              color: tint,
+              borderRadius: BorderRadius.circular(2.5),
             ),
           ),
         ),
@@ -229,185 +221,203 @@ class _TrayHandle extends StatelessWidget {
   }
 }
 
-/// The tray's contents once open: a row of shortcut buttons (Settings,
-/// Signal/FX, WiFi, Bluetooth, Tuner) and the brightness slider.
+/// The tray's contents once open — near-fullscreen, iOS Control-Center
+/// style: a translucent, frosted-glass scrim (the tracks grid stays dimly
+/// visible through it, not hidden behind an opaque card) holding small,
+/// top-anchored tiles — NOT stretched to fill the available space. Real
+/// Control Center tiles are compact (~70px) regardless of how much screen
+/// the sheet itself covers; the sheet's size and a tile's size are
+/// independent decisions.
 class _TrayPanel extends StatelessWidget {
-  const _TrayPanel({
-    required this.brightness,
-    required this.isNavigating,
-    required this.onBrightnessChanged,
-  });
+  const _TrayPanel();
 
-  final double brightness;
-  final bool isNavigating;
-  final ValueChanged<double> onBrightnessChanged;
+  /// Fixed tile footprint — real Control Center tiles stay small no matter
+  /// how large the sheet behind them is. Taller than it is wide, to leave
+  /// room for the label under the icon.
+  static const double _tileWidth = 72;
+  static const double _tileHeight = 100;
+  static const double _gap = 12;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
+    final state = context.watch<SettingsTrayCubit>().state;
+    final cubit = context.read<SettingsTrayCubit>();
+    // Two tile rows tall, so the brightness bar beside them matches that
+    // block's height rather than stretching to the sheet's full height.
+    const blockHeight = _tileHeight * 2 + _gap;
+
     return Material(
       color: Colors.transparent,
-      child: DecoratedBox(
-        // A little vertical depth (cardHigh -> card) so the panel reads as
-        // a raised instrument-panel surface rather than a flat sheet, matching
-        // the Signal surface's chrome (see signal_chrome.dart).
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [surface.cardHigh, surface.card],
-          ),
-          borderRadius: const BorderRadius.vertical(
-            bottom: Radius.circular(18),
-          ),
-          border: Border(bottom: BorderSide(color: surface.line)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.4),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
+      // Real frosted glass — the tracks grid is blurred, not just dimmed,
+      // through the sheet. Clipped to the sheet's own bottom radius (only
+      // edge exposed, since it slides down from off the top of the screen).
+      child: ClipRRect(
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: surface.background.withValues(alpha: 0.78),
             ),
-          ],
-        ),
-        child: SafeArea(
-          top: false,
-          bottom: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+            child: Stack(
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    // Both nav buttons disable for the duration of a pending
-                    // push: functionally required for Signal (`showSignalPage`
-                    // has no re-entrancy guard of its own — a rapid
-                    // double-tap would double-push it), and applied to
-                    // Settings too for UX consistency — `openLoopySettings`
-                    // self-guards against a real double-push, but leaving
-                    // its button tappable mid-push would still look live
-                    // when it isn't.
-                    _TrayButton(
-                      key: const Key('settingsTray_settings'),
-                      icon: Icons.settings_outlined,
-                      label: l10n.settingsTooltip,
-                      accent: surface.textSecondary,
-                      onTap: isNavigating
-                          ? null
-                          : () => unawaited(
-                              _navigate(context, openLoopySettings),
-                            ),
+                // Behind the tile content — a tap anywhere on the panel
+                // that isn't a tile (most of a near-fullscreen sheet)
+                // dismisses it, since the sheet covers nearly the whole
+                // screen and leaves little exposed scrim outside it for
+                // the full-screen scrim in `SettingsTray` to catch.
+                Positioned.fill(
+                  child: Semantics(
+                    button: true,
+                    label: l10n.dismiss,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: cubit.closeTray,
                     ),
-                    _TrayButton(
-                      key: const Key('settingsTray_signal'),
-                      icon: Icons.account_tree_outlined,
-                      label: l10n.signalTooltip,
-                      // Signal-flow blue — the same hue that names "wet"
-                      // routing on the Signal surface itself.
-                      accent: surface.wetRoute,
-                      onTap: isNavigating
-                          ? null
-                          : () => unawaited(
-                              _navigate(
-                                context,
-                                () => showSignalPage(context),
+                  ),
+                ),
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+                    child: Center(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  // Both nav tiles disable for the duration
+                                  // of a pending push: functionally required
+                                  // for Signal (`showSignalPage` has no
+                                  // re-entrancy guard of its own — a rapid
+                                  // double-tap would double-push it), and
+                                  // applied to Settings too for UX
+                                  // consistency — `openLoopySettings`
+                                  // self-guards against a real double-push, but
+                                  // leaving its tile tappable mid-push would
+                                  // still look live when it isn't.
+                                  SizedBox(
+                                    width: _tileWidth,
+                                    height: _tileHeight,
+                                    child: _TrayTile(
+                                      key: const Key('settingsTray_settings'),
+                                      icon: Icons.settings_outlined,
+                                      label: l10n.settingsTooltip,
+                                      accent: surface.textSecondary,
+                                      onTap: state.isNavigating
+                                          ? null
+                                          : () => unawaited(
+                                              _navigate(
+                                                context,
+                                                openLoopySettings,
+                                              ),
+                                            ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: _gap),
+                                  SizedBox(
+                                    width: _tileWidth,
+                                    height: _tileHeight,
+                                    child: _TrayTile(
+                                      key: const Key('settingsTray_signal'),
+                                      icon: Icons.account_tree_outlined,
+                                      label: l10n.signalTooltip,
+                                      // Signal-flow blue — the same hue that
+                                      // names "wet" routing on the Signal
+                                      // surface itself.
+                                      accent: surface.wetRoute,
+                                      onTap: state.isNavigating
+                                          ? null
+                                          : () => unawaited(
+                                              _navigate(
+                                                context,
+                                                () => showSignalPage(context),
+                                              ),
+                                            ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: _gap),
+                                  SizedBox(
+                                    width: _tileWidth,
+                                    height: _tileHeight,
+                                    child: _TrayTile(
+                                      key: const Key('settingsTray_wifi'),
+                                      icon: Icons.wifi,
+                                      label: l10n.trayWifiLabel,
+                                      accent: surface.laneColor(7),
+                                      onTap: () => unawaited(
+                                        showComingSoonStub(
+                                          context,
+                                          feature: l10n.trayWifiLabel,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
-                    ),
-                    _TrayButton(
-                      key: const Key('settingsTray_wifi'),
-                      icon: Icons.wifi,
-                      label: l10n.trayWifiLabel,
-                      accent: surface.laneColor(7),
-                      onTap: () => unawaited(
-                        showComingSoonStub(
-                          context,
-                          feature: l10n.trayWifiLabel,
-                        ),
-                      ),
-                    ),
-                    _TrayButton(
-                      key: const Key('settingsTray_bluetooth'),
-                      icon: Icons.bluetooth,
-                      label: l10n.trayBluetoothLabel,
-                      accent: surface.laneColor(3),
-                      onTap: () => unawaited(
-                        showComingSoonStub(
-                          context,
-                          feature: l10n.trayBluetoothLabel,
-                        ),
-                      ),
-                    ),
-                    _TrayButton(
-                      key: const Key('settingsTray_tuner'),
-                      icon: Icons.graphic_eq,
-                      label: l10n.trayTunerLabel,
-                      accent: surface.laneColor(2),
-                      onTap: () => unawaited(
-                        showComingSoonStub(
-                          context,
-                          feature: l10n.trayTunerLabel,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Divider(height: 1, thickness: 1, color: surface.line),
-                ),
-                Row(
-                  children: [
-                    Container(
-                      width: 30,
-                      height: 30,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: surface.accent.withValues(alpha: 0.14),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.brightness_6_outlined,
-                        size: 16,
-                        color: surface.accent,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: SliderTheme(
-                        data: SliderThemeData(
-                          trackHeight: 3,
-                          activeTrackColor: surface.accent,
-                          inactiveTrackColor: surface.line,
-                          thumbColor: surface.accent,
-                          overlayColor: surface.accent.withValues(alpha: 0.12),
-                          thumbShape: const RoundSliderThumbShape(
-                            enabledThumbRadius: 7,
+                              const SizedBox(height: _gap),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  SizedBox(
+                                    width: _tileWidth,
+                                    height: _tileHeight,
+                                    child: _TrayTile(
+                                      key: const Key(
+                                        'settingsTray_bluetooth',
+                                      ),
+                                      icon: Icons.bluetooth,
+                                      label: l10n.trayBluetoothLabel,
+                                      accent: surface.laneColor(3),
+                                      onTap: () => unawaited(
+                                        showComingSoonStub(
+                                          context,
+                                          feature: l10n.trayBluetoothLabel,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: _gap),
+                                  SizedBox(
+                                    width: _tileWidth,
+                                    height: _tileHeight,
+                                    child: _TrayTile(
+                                      key: const Key('settingsTray_tuner'),
+                                      icon: Icons.graphic_eq,
+                                      label: l10n.trayTunerLabel,
+                                      accent: surface.laneColor(2),
+                                      onTap: () => unawaited(
+                                        showComingSoonStub(
+                                          context,
+                                          feature: l10n.trayTunerLabel,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
-                        ),
-                        child: Slider(
-                          key: const Key('settingsTray_brightness'),
-                          value: brightness,
-                          label: l10n.trayBrightnessLabel,
-                          semanticFormatterCallback: (value) =>
-                              '${l10n.trayBrightnessLabel} '
-                              '${(value * 100).round()}%',
-                          onChanged: onBrightnessChanged,
-                        ),
+                          const SizedBox(width: _gap),
+                          SizedBox(
+                            width: 56,
+                            height: blockHeight,
+                            child: _BrightnessSliderTile(
+                              value: state.brightness,
+                              onChanged: cubit.setBrightness,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    SizedBox(
-                      width: 34,
-                      child: Text(
-                        '${(brightness * 100).round()}%',
-                        textAlign: TextAlign.end,
-                        style: signalMono(color: surface.textSecondary),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ],
             ),
@@ -419,10 +429,12 @@ class _TrayPanel extends StatelessWidget {
 }
 
 /// Runs a tray nav-button push (`openLoopySettings` or `showSignalPage`,
-/// unchanged from the `S`/`G` keyboard shortcuts and desktop toolbar).
-/// Closes the tray synchronously — before [push] resolves — and holds the
-/// `isNavigating` guard for the push's duration even if it throws, so a
-/// failed navigation can never leave both nav buttons stuck disabled.
+/// unchanged from the `S`/`G` keyboard shortcuts and desktop toolbar — both
+/// pick up the app-wide fade + scale-up transition from
+/// `AppTheme`'s `pageTransitionsTheme`). Closes the tray synchronously —
+/// before [push] resolves — and holds the `isNavigating` guard for the
+/// push's duration even if it throws, so a failed navigation can never leave
+/// both nav tiles stuck disabled.
 Future<void> _navigate(
   BuildContext context,
   Future<void> Function() push,
@@ -437,12 +449,15 @@ Future<void> _navigate(
   }
 }
 
-/// One tray shortcut: an icon in a coloured circular badge over a short
-/// label, focusable and screen-reader operable via [FocusableTapTarget].
-/// Null [onTap] renders dimmed and inert (used while a nav push from this
-/// tray is in flight).
-class _TrayButton extends StatelessWidget {
-  const _TrayButton({
+/// One destination tile: a round icon button (the original circular glass
+/// shape) with a compact caption below it, outside the circle — the
+/// accessible name doubles as [FocusableTapTarget]'s `semanticLabel`, so
+/// the visible caption and what a screen reader reads out always agree.
+/// Focusable and screen-reader operable. Null [onTap] renders dimmed and
+/// inert — used while a nav push from this tray is in flight — via
+/// [AnimatedOpacity].
+class _TrayTile extends StatelessWidget {
+  const _TrayTile({
     required this.icon,
     required this.label,
     required this.accent,
@@ -453,50 +468,179 @@ class _TrayButton extends StatelessWidget {
   final IconData icon;
   final String label;
 
-  /// The badge's tint — distinguishes each destination at a glance rather
-  /// than five identical grey glyphs in a row (e.g. [SurfaceTheme.wetRoute]
-  /// for Signal, a lane hue per stub).
+  /// The tile's tint — distinguishes each destination at a glance rather
+  /// than identical grey glyphs (e.g. [SurfaceTheme.wetRoute] for Signal, a
+  /// lane hue per stub).
   final Color accent;
 
+  /// Null renders the tile dimmed and inert — used while a nav push from
+  /// this tray is in flight.
   final VoidCallback? onTap;
+
+  /// Circle diameter — independent of the tile's overall footprint (which
+  /// also has to fit the caption below), same as before the caption existed.
+  static const _circleSize = 72.0;
 
   @override
   Widget build(BuildContext context) {
-    final surface = context.surface;
     final enabled = onTap != null;
-    final tint = enabled ? accent : surface.textTertiary;
     return FocusableTapTarget(
       onTap: onTap,
       semanticLabel: label,
-      borderRadius: 14,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      borderRadius: _circleSize / 2,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 150),
+        opacity: enabled ? 1 : 0.4,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 44,
-              height: 44,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: tint.withValues(alpha: enabled ? 0.16 : 0.08),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: tint.withValues(alpha: enabled ? 0.4 : 0.16),
+            SizedBox(
+              width: _circleSize,
+              height: _circleSize,
+              child: Material(
+                // Translucent enough that the frosted panel behind still
+                // reads through the tile, not just around it.
+                color: accent.withValues(alpha: 0.14),
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: onTap,
+                  child: Center(child: Icon(icon, color: accent, size: 26)),
                 ),
               ),
-              child: Icon(icon, color: tint, size: 20),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             Text(
               label,
-              style: signalLabel(
-                color: enabled ? surface.textSecondary : surface.textTertiary,
-              ),
-              maxLines: 1,
+              textAlign: TextAlign.center,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: accent,
+                fontSize: 10,
+                height: 1,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The brightness control, Control-Center style: a tall bar, built by
+/// rotating a plain [Slider] a quarter turn — `RotatedBox` rotates
+/// hit-testing along with painting, so the drag gesture lands correctly
+/// without any custom gesture math. [Slider] already brings its own tap,
+/// drag, and keyboard handling, unlike the hand-rolled `SignalKnob`; only
+/// its semantics need replacing (see [_BrightnessSliderTileState] below).
+/// Local UI state only — not persisted, not wired to any real display
+/// dimming (see the plan's non-goals).
+class _BrightnessSliderTile extends StatefulWidget {
+  const _BrightnessSliderTile({required this.value, required this.onChanged});
+
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  @override
+  State<_BrightnessSliderTile> createState() => _BrightnessSliderTileState();
+}
+
+class _BrightnessSliderTileState extends State<_BrightnessSliderTile> {
+  /// The step announced by the accessibility increase/decrease actions —
+  /// independent of [Slider]'s own *physical*-keyboard step, which is
+  /// platform-dependent (`_adjustmentUnit` in the Flutter SDK's
+  /// `slider.dart`: 10% on iOS/macOS, 5% elsewhere) and out of our control.
+  static const double _step = 0.05;
+
+  final _focusNode = FocusNode(debugLabel: 'settingsTray_brightness');
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _increase() => widget.onChanged((widget.value + _step).clamp(0.0, 1.0));
+
+  void _decrease() => widget.onChanged((widget.value - _step).clamp(0.0, 1.0));
+
+  static String _percent(double value) => '${(value * 100).round()}%';
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    return RotatedBox(
+      key: const Key('settingsTray_brightness'),
+      // -90°: dragging up (screen-space) increases the slider's own
+      // left-to-right value.
+      quarterTurns: 3,
+      // Slider sets its own semantics boundary — an ancestor label never
+      // merges into it, always landing as a second, disjoint node — so its
+      // semantics are excluded and replaced wholesale here with one node a
+      // screen reader actually reads as "Brightness, 80%" rather than two
+      // unconnected stops. A GestureDetector requests focus on tap-down
+      // (Slider only does that as a side effect of its own recognizers
+      // winning the gesture arena, which an outer detector can't rely on).
+      child: Semantics(
+        // `container: true` — otherwise this merges upward into whatever
+        // ancestor Semantics happens to be in scope (the tray's own scrim
+        // dismiss button included), instead of staying its own node.
+        container: true,
+        slider: true,
+        label: l10n.trayBrightnessLabel,
+        value: _percent(widget.value),
+        increasedValue: _percent((widget.value + _step).clamp(0.0, 1.0)),
+        decreasedValue: _percent((widget.value - _step).clamp(0.0, 1.0)),
+        onIncrease: _increase,
+        onDecrease: _decrease,
+        child: ExcludeSemantics(
+          // A `Listener` (not a `GestureDetector`) — Slider's own drag
+          // recognizer resolves the gesture arena eagerly (on pointer-down,
+          // for a responsive drag-to-set-value feel), rejecting a competing
+          // `TapGestureRecognizer` before its `onTapDown` ever fires. A raw
+          // pointer listener sits outside that arena entirely, so it always
+          // sees the down event regardless of which recognizer wins it.
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (_) => _focusNode.requestFocus(),
+            // A translucent capsule behind the bar, matching the tiles'
+            // frosted-card look — a bare `Slider` on its own reads as a
+            // stray line floating over the panel, not a real control.
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: surface.accent.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.08),
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 18,
+                    activeTrackColor: surface.accent,
+                    inactiveTrackColor: surface.accent.withValues(alpha: 0.12),
+                    thumbColor: Colors.white,
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 11,
+                      elevation: 2,
+                    ),
+                    overlayShape: SliderComponentShape.noOverlay,
+                  ),
+                  child: Slider(
+                    focusNode: _focusNode,
+                    value: widget.value,
+                    onChanged: widget.onChanged,
+                    label: _percent(widget.value),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

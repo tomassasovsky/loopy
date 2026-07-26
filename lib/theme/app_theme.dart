@@ -1,4 +1,5 @@
 import 'package:loopy/theme/looper_theme.dart';
+import 'package:loopy/theme/page_transitions.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart';
 
@@ -167,5 +168,15 @@ abstract final class AppTheme {
     colorScheme: scheme,
     fontFamily: SurfaceTheme.displayFont,
     appBarTheme: AppBarTheme(backgroundColor: scheme.surfaceContainerHighest),
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: FadeScalePageTransitionsBuilder(),
+        TargetPlatform.iOS: FadeScalePageTransitionsBuilder(),
+        TargetPlatform.macOS: FadeScalePageTransitionsBuilder(),
+        TargetPlatform.windows: FadeScalePageTransitionsBuilder(),
+        TargetPlatform.linux: FadeScalePageTransitionsBuilder(),
+        TargetPlatform.fuchsia: FadeScalePageTransitionsBuilder(),
+      },
+    ),
   );
 }
