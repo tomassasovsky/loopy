@@ -1,6 +1,7 @@
 # Appliance (Pi 4B) update release pipeline — #304.
 # Builds the signed RAUC .raucb + a channel manifest and publishes them to a GitHub
-# Release; the segno.aquiles.dev mirror then serves them to devices per channel.
+# Release; CI then POSTs /hooks/sync so segno.aquiles.dev mirrors immediately
+# (poll remains the fallback).
 #
 #   push to `experimental`  -> experimental channel (GitHub prerelease)
 #   push tag `v*`           -> production  channel (GitHub full release)
@@ -202,3 +203,30 @@ jobs:
           files: |
             release-artifacts/*.raucb
             release-artifacts/manifest.json
+
+      # Devices read from segno.aquiles.dev, not GitHub. Nudge the mirror now so
+      # Check Now does not wait for the poll interval (default 300s). Soft-fail:
+      # a missed trigger still gets picked up by the next poll.
+      - name: Trigger segno mirror sync
+        env:
+          SEGNO_SYNC_TOKEN: ${{ secrets.SEGNO_SYNC_TOKEN }}
+          SEGNO_SYNC_URL: https://segno.aquiles.dev/hooks/sync
+        run: |
+          set -eu
+          if [ -z "${SEGNO_SYNC_TOKEN:-}" ]; then
+            echo "::warning::SEGNO_SYNC_TOKEN unset; segno will catch up on next poll"
+            exit 0
+          fi
+          # Brief retries: GitHub's Releases API can lag a few seconds after publish.
+          for i in 1 2 3 4 5 6; do
+            echo "segno sync attempt $i…"
+            if out=$(curl -fsS -X POST \
+                -H "Authorization: Bearer ${SEGNO_SYNC_TOKEN}" \
+                --max-time 300 \
+                "$SEGNO_SYNC_URL"); then
+              printf '%s\n' "$out"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::warning::segno sync trigger failed after retries; poll will catch up"
