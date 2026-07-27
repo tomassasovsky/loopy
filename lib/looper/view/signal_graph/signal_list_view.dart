@@ -7,6 +7,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
+import 'package:loopy/looper/cubit/fx_racks_cubit.dart';
 import 'package:loopy/looper/cubit/tracks_cubit.dart';
 import 'package:loopy/looper/view/fx_editor/fx_dock.dart';
 import 'package:loopy/looper/view/fx_editor/fx_scope.dart';
@@ -29,11 +30,13 @@ part 'signal_row_views.dart';
 
 /// Opens the unified **Signal** surface as a full-screen page from the
 /// tracks flow. Re-provides the state objects it drives — [LooperBloc],
-/// [MonitorCubit], and [TracksCubit] — into the pushed route.
+/// [MonitorCubit], [TracksCubit], and [FxRacksCubit] (Live Signal) — into
+/// the pushed route.
 Future<void> showSignalPage(BuildContext context) {
   final bloc = context.read<LooperBloc>();
   final monitor = context.read<MonitorCubit>();
   final tracks = context.read<TracksCubit>();
+  final repository = context.read<LooperRepository>();
   return Navigator.of(context).push(
     desktopPageRoute<void>(
       (_) => MultiBlocProvider(
@@ -41,6 +44,9 @@ Future<void> showSignalPage(BuildContext context) {
           BlocProvider.value(value: bloc),
           BlocProvider.value(value: monitor),
           BlocProvider.value(value: tracks),
+          BlocProvider(
+            create: (_) => FxRacksCubit(repository: repository),
+          ),
         ],
         child: Scaffold(
           key: const Key('signal_page'),
@@ -77,13 +83,10 @@ Future<void> showSignalPage(BuildContext context) {
   );
 }
 
-/// The whole signal flow as **three side-by-side lists** — inputs, tracks,
-/// outputs — with no wires. Routing is shown as output-hued chips; "what
-/// connects to what" comes from per-output colour + **tap-to-trace** (tap a row
-/// to light its connections across all panes and dim the rest). Tracks are
-/// grouped so a single-lane track is one row (no "Lane 1"); a multi-lane track
-/// nests its takes. Each input/lane card carries its mix + a tappable FX
-/// summary that opens the chain in the bottom **FX dock** ([FxDock]).
+/// Sheeran-style **Audio Routing** surface: left sidebar
+/// (Input / Track / Output) and a single content pane of vertical columns.
+/// Live Signal Auto/On/Off lives on Track columns; FX summaries open the
+/// dedicated FX page for Pre/Post racks.
 class SignalListView extends StatefulWidget {
   /// Creates a [SignalListView].
   const SignalListView({this.trackNames = const [], super.key});
@@ -100,6 +103,7 @@ class _SignalListViewState extends State<SignalListView> {
   int? _focusedInput;
   ({int track, int lane})? _focusedTake;
   int? _tracedOutput;
+  _SignalSection _section = _SignalSection.input;
 
   /// The chain currently open in the bottom FX dock, or null when the dock is
   /// closed. Tapping a row's FX summary sets it; the dock's close clears it.
@@ -107,6 +111,7 @@ class _SignalListViewState extends State<SignalListView> {
 
   MonitorCubit get _monitor => context.read<MonitorCubit>();
   LooperBloc get _bloc => context.read<LooperBloc>();
+  FxRacksCubit get _fxRacks => context.read<FxRacksCubit>();
 
   bool get _anyFocus =>
       _focusedInput != null || _focusedTake != null || _tracedOutput != null;
@@ -195,103 +200,95 @@ class _SignalListViewState extends State<SignalListView> {
         child: Column(
           children: [
             Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final stacked = constraints.maxWidth < kSignalStackBreakpoint;
-                  final panes = [
-                    _InputsPane(
-                      rows: rows,
-                      trace: trace,
-                      selectedInput: _focusedInput,
-                      onTap: _onTapInput,
-                      onToggleRoute: (input, output) {
-                        final m = monitor.forInput(input);
-                        unawaited(
-                          _monitor.setOutputMask(
-                            input,
-                            m.outputMask ^ (1 << output),
-                          ),
-                        );
-                      },
-                      onToggleGate: (input) => unawaited(
-                        _monitor.setEnabled(
+              child: _SignalRouterShell(
+                section: _section,
+                onSelect: (s) => setState(() => _section = s),
+                panes: [
+                  _InputsPane(
+                    rows: rows,
+                    trace: trace,
+                    selectedInput: _focusedInput,
+                    onTap: _onTapInput,
+                    onToggleRoute: (input, output) {
+                      final m = monitor.forInput(input);
+                      unawaited(
+                        _monitor.setOutputMask(
                           input,
-                          enabled: !monitor.forInput(input).enabled,
+                          m.outputMask ^ (1 << output),
                         ),
-                      ),
-                      onEditFx: _editInputFx,
-                      onMuteToggled: (input) => unawaited(
-                        _monitor.setMute(
-                          input,
-                          muted: !monitor.forInput(input).muted,
-                        ),
-                      ),
-                      onVolumeChanged: (input, v) =>
-                          unawaited(_monitor.setVolume(input, v)),
-                    ),
-                    _TracksPane(
-                      rows: rows,
-                      trace: trace,
-                      selectedTake: _focusedTake,
-                      trackNames: widget.trackNames,
-                      onTap: _focusTake,
-                      onToggleRoute: (take, output) => _bloc.add(
-                        LooperLaneOutputChanged(
-                          take.track,
-                          take.laneIndex,
-                          take.lane.outputMask ^ (1 << output),
-                        ),
-                      ),
-                      onReassignInput: (take, input) => _bloc.add(
-                        LooperLaneInputChanged(
-                          take.track,
-                          take.laneIndex,
-                          input,
-                        ),
-                      ),
-                      onEditFx: (take) =>
-                          _editLaneFx(take.track, take.laneIndex),
-                      onMuteToggled: (take) => _bloc.add(
-                        LooperLaneMuteToggled(take.track, take.laneIndex),
-                      ),
-                      onVolumeChanged: (take, v) => _bloc.add(
-                        LooperLaneVolumeChanged(take.track, take.laneIndex, v),
-                      ),
-                      onAddLane: (track) => _bloc.add(
-                        LooperLaneCountChanged(
-                          track,
-                          _laneCount(looper, track) + 1,
-                        ),
-                      ),
-                      onRemoveLane: (track) => _bloc.add(
-                        LooperLaneCountChanged(
-                          track,
-                          _laneCount(looper, track) - 1,
-                        ),
+                      );
+                    },
+                    onToggleGate: (input) => unawaited(
+                      _monitor.setEnabled(
+                        input,
+                        enabled: !monitor.forInput(input).enabled,
                       ),
                     ),
-                    _OutputsPane(
-                      rows: rows,
-                      trace: trace,
-                      noActiveOutputs: noActiveOutputs,
-                      tracedOutput: _tracedOutput,
-                      trackNames: widget.trackNames,
-                      onTapRow: _traceOutput,
-                      onToggleGate: (o, {required enabled}) => _bloc.add(
-                        LooperOutputEnabledToggled(o, enabled: enabled),
+                    onEditFx: _editInputFx,
+                    onMuteToggled: (input) => unawaited(
+                      _monitor.setMute(
+                        input,
+                        muted: !monitor.forInput(input).muted,
                       ),
                     ),
-                  ];
-                  if (stacked) {
-                    // Too narrow for three columns: switch to tabs so each
-                    // list gets the full width instead of a long stack.
-                    return _SignalTabs(panes: panes);
-                  }
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [for (final p in panes) Expanded(child: p)],
-                  );
-                },
+                    onVolumeChanged: (input, v) =>
+                        unawaited(_monitor.setVolume(input, v)),
+                  ),
+                  _TracksPane(
+                    rows: rows,
+                    trace: trace,
+                    selectedTake: _focusedTake,
+                    trackNames: widget.trackNames,
+                    onTap: _focusTake,
+                    onToggleRoute: (take, output) => _bloc.add(
+                      LooperLaneOutputChanged(
+                        take.track,
+                        take.laneIndex,
+                        take.lane.outputMask ^ (1 << output),
+                      ),
+                    ),
+                    onReassignInput: (take, input) => _bloc.add(
+                      LooperLaneInputChanged(
+                        take.track,
+                        take.laneIndex,
+                        input,
+                      ),
+                    ),
+                    onEditFx: (take) => _editLaneFx(take.track, take.laneIndex),
+                    onMuteToggled: (take) => _bloc.add(
+                      LooperLaneMuteToggled(take.track, take.laneIndex),
+                    ),
+                    onVolumeChanged: (take, v) => _bloc.add(
+                      LooperLaneVolumeChanged(take.track, take.laneIndex, v),
+                    ),
+                    onAddLane: (track) => _bloc.add(
+                      LooperLaneCountChanged(
+                        track,
+                        _laneCount(looper, track) + 1,
+                      ),
+                    ),
+                    onRemoveLane: (track) => _bloc.add(
+                      LooperLaneCountChanged(
+                        track,
+                        _laneCount(looper, track) - 1,
+                      ),
+                    ),
+                    onCycleLiveSignal: (group) =>
+                        _fxRacks.cycleLiveSignal(group.track),
+                    onFocusLiveSignal: _fxRacks.focusLiveSignal,
+                  ),
+                  _OutputsPane(
+                    rows: rows,
+                    trace: trace,
+                    noActiveOutputs: noActiveOutputs,
+                    tracedOutput: _tracedOutput,
+                    trackNames: widget.trackNames,
+                    onTapRow: _traceOutput,
+                    onToggleGate: (o, {required enabled}) => _bloc.add(
+                      LooperOutputEnabledToggled(o, enabled: enabled),
+                    ),
+                  ),
+                ],
               ),
             ),
             if (_editedScope != null)

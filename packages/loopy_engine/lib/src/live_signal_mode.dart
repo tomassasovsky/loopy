@@ -23,3 +23,10 @@ enum LiveSignalMode {
   static LiveSignalMode fromCode(int code) =>
       values.firstWhere((m) => m.code == code, orElse: () => off);
 }
+
+/// Cycles Off → Auto → On → Off (Sheeran Audio Routing button).
+LiveSignalMode nextLiveSignalMode(LiveSignalMode mode) => switch (mode) {
+  LiveSignalMode.off => LiveSignalMode.auto,
+  LiveSignalMode.auto => LiveSignalMode.on,
+  LiveSignalMode.on => LiveSignalMode.off,
+};

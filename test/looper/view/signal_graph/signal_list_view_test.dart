@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
+import 'package:loopy/looper/cubit/fx_racks_cubit.dart';
+import 'package:loopy/looper/cubit/tracks_cubit.dart';
 import 'package:loopy/looper/view/signal_graph/signal_list_view.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -24,6 +26,7 @@ void main() {
     late LooperBloc bloc;
     late MonitorCubit monitor;
     late LooperRepository repository;
+    late SettingsRepository settings;
 
     LooperState stateWith({
       List<Track> tracks = const [
@@ -48,13 +51,14 @@ void main() {
 
     setUp(() {
       bloc = _MockLooperBloc();
+      settings = SettingsRepository(store: FakeKeyValueStore());
       repository = LooperRepository(
         engine: FakeAudioEngine(),
         ticker: const Stream<void>.empty(),
       );
       monitor = MonitorCubit(
         repository: repository,
-        settings: SettingsRepository(store: FakeKeyValueStore()),
+        settings: settings,
       );
     });
 
@@ -76,11 +80,27 @@ void main() {
             providers: [
               BlocProvider<LooperBloc>.value(value: bloc),
               BlocProvider<MonitorCubit>.value(value: monitor),
+              BlocProvider(
+                create: (_) => TracksCubit(settings: settings, trackCount: 4),
+              ),
+              BlocProvider(
+                create: (_) => FxRacksCubit(repository: repository),
+              ),
             ],
             child: const Scaffold(body: SignalListView()),
           ),
         ),
       );
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> goTrack(WidgetTester tester) async {
+      await tester.tap(find.byKey(const Key('signalNav_track')));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> goOutput(WidgetTester tester) async {
+      await tester.tap(find.byKey(const Key('signalNav_output')));
       await tester.pumpAndSettle();
     }
 
@@ -99,17 +119,25 @@ void main() {
       },
     );
 
-    testWidgets('renders an input/output row per channel and a track row', (
+    testWidgets('sidebar switches Input / Track / Output columns', (
       tester,
     ) async {
       seed(stateWith());
       await pump(tester);
 
+      expect(find.byKey(const Key('signalList_sidebar')), findsOneWidget);
       expect(find.byKey(const Key('signalIn_0')), findsOneWidget);
       expect(find.byKey(const Key('signalIn_2')), findsOneWidget);
+      expect(find.byKey(const Key('signalTake_0_0')), findsNothing);
+      expect(find.byKey(const Key('signalOut_0')), findsNothing);
+
+      await goTrack(tester);
+      expect(find.byKey(const Key('signalTake_0_0')), findsOneWidget);
+      expect(find.byKey(const Key('signalLiveSignal_0')), findsOneWidget);
+
+      await goOutput(tester);
       expect(find.byKey(const Key('signalOut_0')), findsOneWidget);
       expect(find.byKey(const Key('signalOut_1')), findsOneWidget);
-      expect(find.byKey(const Key('signalTake_0_0')), findsOneWidget);
     });
 
     testWidgets('a single-lane track reads as the track, not "Lane 1"', (
@@ -117,6 +145,7 @@ void main() {
     ) async {
       seed(stateWith());
       await pump(tester);
+      await goTrack(tester);
       // The track's own row reads as the track (a feeder chip on an output card
       // may also say "Track 1", so scope to the take row itself).
       expect(
@@ -138,6 +167,7 @@ void main() {
       await monitor.setEnabled(0, enabled: true);
       await monitor.setOutputMask(0, 0x2);
       await pump(tester);
+      await goOutput(tester);
 
       final out = find.byKey(const Key('signalOut_1'));
       // Two labelled rows: inputs and tracks, each with its own chip.
@@ -153,6 +183,7 @@ void main() {
     testWidgets('an output with no feeders says so', (tester) async {
       seed(stateWith()); // only Out 2 is fed; Out 1 is empty.
       await pump(tester);
+      await goOutput(tester);
       expect(
         find.descendant(
           of: find.byKey(const Key('signalOut_0')),
@@ -171,10 +202,28 @@ void main() {
         ),
       );
       await pump(tester);
+      await goTrack(tester);
       expect(find.byKey(const Key('signalTake_0_0')), findsOneWidget);
       expect(find.byKey(const Key('signalTake_0_1')), findsOneWidget);
       expect(find.text('Lane 1'), findsOneWidget);
       expect(find.text('Lane 2'), findsOneWidget);
+    });
+
+    testWidgets('Live Signal cycles Off → Auto → On on a Track column', (
+      tester,
+    ) async {
+      seed(stateWith());
+      await pump(tester);
+      await goTrack(tester);
+
+      expect(repository.trackLiveSignal(0), LiveSignalMode.off);
+      await tester.tap(find.byKey(const Key('signalLiveSignal_0')));
+      await tester.pumpAndSettle();
+      expect(repository.trackLiveSignal(0), LiveSignalMode.auto);
+
+      await tester.tap(find.byKey(const Key('signalLiveSignal_0')));
+      await tester.pumpAndSettle();
+      expect(repository.trackLiveSignal(0), LiveSignalMode.on);
     });
 
     testWidgets('tapping an input card traces without changing its gate', (
@@ -197,44 +246,38 @@ void main() {
       expect(monitor.state.forInput(0).enabled, isFalse);
     });
 
-    testWidgets('the input FX summary opens the dock for that input', (
-      tester,
-    ) async {
+    testWidgets('the input FX summary opens the FX page', (tester) async {
       seed(stateWith());
       await pump(tester);
 
       await tester.tap(find.byKey(const Key('signalInFx_0')));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('fx_dock')), findsOneWidget);
-      expect(find.text('Input 1'), findsOneWidget);
+      expect(find.byKey(const Key('fx_page')), findsOneWidget);
     });
 
-    testWidgets('the take FX summary opens the dock for that lane', (
-      tester,
-    ) async {
+    testWidgets('the take FX summary opens the FX page', (tester) async {
       seed(stateWith());
       await pump(tester);
+      await goTrack(tester);
 
       await tester.tap(find.byKey(const Key('signalTakeFx_0_0')));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('fx_dock')), findsOneWidget);
-      // The dock opened for the lane scope (its header reads "Lane 1").
-      expect(find.text('Lane 1'), findsOneWidget);
+      expect(find.byKey(const Key('fx_page')), findsOneWidget);
     });
 
-    testWidgets('the dock closes via its close affordance', (tester) async {
+    testWidgets('the FX page closes via its back affordance', (tester) async {
       seed(stateWith());
       await pump(tester);
 
       await tester.tap(find.byKey(const Key('signalInFx_0')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('fx_dock')), findsOneWidget);
+      expect(find.byKey(const Key('fx_page')), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('fxDock_close')));
+      await tester.tap(find.byKey(const Key('fx_page_back')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('fx_dock')), findsNothing);
+      expect(find.byKey(const Key('fx_page')), findsNothing);
     });
 
     testWidgets('a single-lane track carries an add-lane control', (
@@ -242,6 +285,7 @@ void main() {
     ) async {
       seed(stateWith()); // single-lane track 0
       await pump(tester);
+      await goTrack(tester);
 
       await tester.tap(find.byKey(const Key('signalGraph_addLane_0')));
       await tester.pump();
@@ -263,6 +307,7 @@ void main() {
     ) async {
       seed(stateWith());
       await pump(tester);
+      await goTrack(tester);
 
       await tester.tap(find.byKey(const Key('signalTake_0_0_mute')));
       await tester.pump();
@@ -292,6 +337,7 @@ void main() {
     ) async {
       seed(stateWith());
       await pump(tester);
+      await goTrack(tester);
 
       final knob = find.byKey(const Key('signalTake_0_0_volume'));
       final gesture = await tester.startGesture(tester.getCenter(knob));
@@ -323,6 +369,7 @@ void main() {
         ),
       );
       await pump(tester);
+      await goTrack(tester);
 
       await tester.tap(find.byKey(const Key('signalGraph_removeLane_0')));
       await tester.pump();
@@ -393,6 +440,7 @@ void main() {
       ) async {
         seed(stateWith()); // lane routes to Out 2 (mask 0x2)
         await pump(tester);
+        await goTrack(tester);
 
         await tester.tap(find.byKey(const Key('signalTake_0_0_chip_1')));
         await tester.pump();
@@ -414,6 +462,7 @@ void main() {
         ),
       );
       await pump(tester);
+      await goTrack(tester);
 
       await tester.tap(find.byKey(const Key('signalCapture_0_0')));
       await tester.pumpAndSettle();
@@ -428,6 +477,7 @@ void main() {
     ) async {
       seed(stateWith()); // lane records In 2 (inputChannel 1)
       await pump(tester);
+      await goTrack(tester);
 
       await tester.tap(find.byKey(const Key('signalCapture_0_0')));
       await tester.pumpAndSettle();
@@ -446,6 +496,7 @@ void main() {
         ),
       );
       await pump(tester);
+      await goTrack(tester);
 
       // Both badges exist with their own keys (no collision on inputChannel).
       expect(find.byKey(const Key('signalCapture_0_0')), findsOneWidget);
@@ -497,11 +548,10 @@ void main() {
       seed(stateWith());
       await pump(tester);
 
-      // Trace Out 1 (nothing routes there by default) -> In 1 dims but stays
-      // a tappable semantics node.
-      await tester.tap(find.byKey(const Key('signalOut_0')));
+      // Trace Input 0 → unrelated inputs dim but stay tappable.
+      await tester.tap(find.byKey(const Key('signalIn_0')));
       await tester.pumpAndSettle();
-      final node = tester.getSemantics(find.byKey(const Key('signalIn_0')));
+      final node = tester.getSemantics(find.byKey(const Key('signalIn_1')));
       expect(node, isSemantics(hasTapAction: true));
       handle.dispose();
     });
@@ -509,6 +559,7 @@ void main() {
     testWidgets('an enabled output toggles its gate off', (tester) async {
       seed(stateWith());
       await pump(tester);
+      await goOutput(tester);
 
       await tester.tap(find.byKey(const Key('signalGraph_out_0')));
       await tester.pump();
@@ -521,6 +572,7 @@ void main() {
     testWidgets('a gated-off output toggles back on', (tester) async {
       seed(stateWith(outputEnabledMask: 0));
       await pump(tester);
+      await goOutput(tester);
 
       await tester.tap(find.byKey(const Key('signalGraph_out_0')));
       await tester.pump();
@@ -535,6 +587,7 @@ void main() {
     ) async {
       seed(stateWith(outputEnabledMask: 0));
       await pump(tester);
+      await goOutput(tester);
       expect(
         find.byKey(const Key('signalGraph_noActiveOutputs')),
         findsOneWidget,
@@ -552,11 +605,11 @@ void main() {
           .any((w) => w.opacity < 1);
       expect(anyDimmed(), isFalse);
 
-      await tester.tap(find.byKey(const Key('signalOut_0')));
+      await tester.tap(find.byKey(const Key('signalIn_0')));
       await tester.pumpAndSettle();
       expect(anyDimmed(), isTrue);
 
-      await tester.tap(find.byKey(const Key('signalOut_0')));
+      await tester.tap(find.byKey(const Key('signalIn_0')));
       await tester.pumpAndSettle();
       expect(anyDimmed(), isFalse);
     });
@@ -567,37 +620,22 @@ void main() {
       final handle = tester.ensureSemantics();
       seed(stateWith());
       await pump(tester);
+      await goOutput(tester);
 
       final node = tester.getSemantics(find.byKey(const Key('signalOut_0')));
       expect(node.label.toLowerCase(), contains('output'));
       handle.dispose();
     });
 
-    testWidgets('a narrow window switches the columns to tabs', (tester) async {
+    testWidgets('keeps the sidebar IA on a narrow window', (tester) async {
       seed(stateWith());
       await pump(tester, size: const Size(700, 1000));
-      expect(find.byKey(const Key('signalList_tabbed')), findsOneWidget);
-      expect(find.byType(TabBar), findsOneWidget);
-      // The inputs tab is shown first; outputs lives behind another tab.
+      expect(find.byKey(const Key('signalList_sidebar')), findsOneWidget);
       expect(find.byKey(const Key('signalIn_0')), findsOneWidget);
-    });
-
-    testWidgets('tabs switch between the lists on a narrow window', (
-      tester,
-    ) async {
-      seed(stateWith());
-      await pump(tester, size: const Size(700, 1000));
       expect(find.byKey(const Key('signalOut_0')), findsNothing);
 
-      await tester.tap(find.textContaining('OUTPUTS'));
-      await tester.pumpAndSettle();
+      await goOutput(tester);
       expect(find.byKey(const Key('signalOut_0')), findsOneWidget);
-    });
-
-    testWidgets('stays three panes on a wide window', (tester) async {
-      seed(stateWith());
-      await pump(tester);
-      expect(find.byKey(const Key('signalList_tabbed')), findsNothing);
     });
   });
 }

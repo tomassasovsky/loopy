@@ -67,29 +67,37 @@ class _InputRow extends StatelessWidget {
         children: [
           Row(
             children: [
-              Text(
-                l10n.inputChannelLabel(row.input + 1).toUpperCase(),
-                style: signalMono(
-                  color: surface.textPrimary,
-                  size: 12,
-                  weight: FontWeight.w600,
+              Expanded(
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        l10n.inputChannelLabel(row.input + 1).toUpperCase(),
+                        overflow: TextOverflow.ellipsis,
+                        style: signalMono(
+                          color: surface.textPrimary,
+                          size: 12,
+                          weight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Semantics(
+                      button: true,
+                      label: on ? l10n.signalInputLive : l10n.signalInputOff,
+                      child: InkWell(
+                        key: Key('signalInGate_${row.input}'),
+                        onTap: onToggleGate,
+                        borderRadius: BorderRadius.circular(20),
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: SignalGateDot(on: on),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Semantics(
-                button: true,
-                label: on ? l10n.signalInputLive : l10n.signalInputOff,
-                child: InkWell(
-                  key: Key('signalInGate_${row.input}'),
-                  onTap: onToggleGate,
-                  borderRadius: BorderRadius.circular(20),
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: SignalGateDot(on: on),
-                  ),
-                ),
-              ),
-              const Spacer(),
               _MixControl(
                 keyPrefix: 'signalIn_${row.input}',
                 muted: m.muted,
@@ -173,24 +181,32 @@ class _TakeRow extends StatelessWidget {
         children: [
           Row(
             children: [
-              Text(
-                label,
-                style: signalMono(
-                  color: surface.textPrimary,
-                  size: 12.5,
-                  weight: FontWeight.w600,
+              Expanded(
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        label,
+                        overflow: TextOverflow.ellipsis,
+                        style: signalMono(
+                          color: surface.textPrimary,
+                          size: 12.5,
+                          weight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _CaptureBadge(
+                      badgeKey: Key(
+                        'signalCapture_${take.track}_${take.laneIndex}',
+                      ),
+                      inputChannel: lane.inputChannel,
+                      inputCount: inputCount,
+                      onReassign: onReassignInput,
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
-              _CaptureBadge(
-                badgeKey: Key(
-                  'signalCapture_${take.track}_${take.laneIndex}',
-                ),
-                inputChannel: lane.inputChannel,
-                inputCount: inputCount,
-                onReassign: onReassignInput,
-              ),
-              const Spacer(),
               _MixControl(
                 keyPrefix: 'signalTake_${take.track}_${take.laneIndex}',
                 muted: lane.muted,

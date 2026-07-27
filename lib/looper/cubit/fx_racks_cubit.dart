@@ -55,7 +55,8 @@ class FxRacksState extends Equatable {
   ];
 }
 
-/// Presentation surface for Input/Track Pre+Post and Live Signal.
+/// Presentation surface for Input/Track Pre+Post racks and Live Signal
+/// (Live Signal is edited from Signal → Track columns).
 ///
 /// Widgets talk only to this cubit (plus Bloc/Cubit scopes for docks);
 /// never call [LooperRepository] FX setters from the view layer.
@@ -104,7 +105,23 @@ class FxRacksCubit extends Cubit<FxRacksState> {
 
   /// Sets Live Signal [mode] for the selected track.
   void setLiveSignal(LiveSignalMode mode) {
-    _repository.setTrackLiveSignal(channel: state.selectedTrack, mode: mode);
+    setLiveSignalForTrack(state.selectedTrack, mode);
+  }
+
+  /// Sets Live Signal [mode] for [channel] (Signal → Track columns).
+  void setLiveSignalForTrack(int channel, LiveSignalMode mode) {
+    _repository.setTrackLiveSignal(channel: channel, mode: mode);
+  }
+
+  /// Cycles Live Signal Off → Auto → On for [channel].
+  void cycleLiveSignal(int channel) {
+    final current = _repository.trackLiveSignal(channel);
+    setLiveSignalForTrack(channel, nextLiveSignalMode(current));
+  }
+
+  /// Pushes Live Signal focus for Auto without changing FX page selection.
+  void focusLiveSignal(int channel) {
+    _repository.setLiveSignalFocus(channel: channel);
   }
 
   /// Current Input chain for the selected input + stage.

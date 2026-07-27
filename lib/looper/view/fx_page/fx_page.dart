@@ -16,7 +16,8 @@ import 'package:loopy/looper/view/fx_editor/fx_scope.dart';
 import 'package:loopy/theme/page_transitions.dart';
 import 'package:loopy/theme/surface_theme.dart';
 
-/// Opens the dedicated **FX** page (Input | Track Pre/Post + Live Signal).
+/// Opens the dedicated **FX** page (Input | Track Pre/Post racks + presets).
+/// Live Signal lives on Signal → Track (Sheeran Audio Routing placement).
 Future<void> showFxPage(BuildContext context) {
   final bloc = context.read<LooperBloc>();
   final monitor = context.read<MonitorCubit>();
@@ -42,8 +43,7 @@ Future<void> showFxPage(BuildContext context) {
   );
 }
 
-/// Dedicated FX racks page: Input column | Track column with Pre/Post and Live
-/// Signal.
+/// Dedicated FX racks page: Input column | Track column with Pre/Post only.
 class FxPage extends StatelessWidget {
   /// Creates an [FxPage].
   const FxPage({super.key});
@@ -181,18 +181,6 @@ class _FxBody extends StatelessWidget {
             stage: state.trackStage,
             onStage: fx.setTrackStage,
             scope: trackScope,
-            footer: _LiveSignalControl(
-              mode: trackCount > 0
-                  ? looper
-                        .state
-                        .tracks[state.selectedTrack.clamp(
-                          0,
-                          trackCount - 1,
-                        )]
-                        .liveSignal
-                  : LiveSignalMode.off,
-              onChanged: fx.setLiveSignal,
-            ),
           ),
         ),
       ],
@@ -207,7 +195,6 @@ class _FxColumn extends StatelessWidget {
     required this.stage,
     required this.onStage,
     required this.scope,
-    this.footer,
   });
 
   final String title;
@@ -215,7 +202,6 @@ class _FxColumn extends StatelessWidget {
   final FxStage stage;
   final ValueChanged<FxStage> onStage;
   final FxScope scope;
-  final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
@@ -257,7 +243,6 @@ class _FxColumn extends StatelessWidget {
             onClose: () {},
           ),
         ),
-        ?footer,
       ],
     );
   }
@@ -295,47 +280,6 @@ class _IndexSelector extends StatelessWidget {
             onSelected: (_) => onSelect(i),
           );
         },
-      ),
-    );
-  }
-}
-
-class _LiveSignalControl extends StatelessWidget {
-  const _LiveSignalControl({required this.mode, required this.onChanged});
-
-  final LiveSignalMode mode;
-  final ValueChanged<LiveSignalMode> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(l10n.fxPageLiveSignal),
-          const SizedBox(height: 8),
-          SegmentedButton<LiveSignalMode>(
-            key: const Key('fx_live_signal'),
-            segments: [
-              ButtonSegment(
-                value: LiveSignalMode.off,
-                label: Text(l10n.fxPageLiveSignalOff),
-              ),
-              ButtonSegment(
-                value: LiveSignalMode.auto,
-                label: Text(l10n.fxPageLiveSignalAuto),
-              ),
-              ButtonSegment(
-                value: LiveSignalMode.on,
-                label: Text(l10n.fxPageLiveSignalOn),
-              ),
-            ],
-            selected: {mode},
-            onSelectionChanged: (s) => onChanged(s.single),
-          ),
-        ],
       ),
     );
   }

@@ -1759,6 +1759,10 @@ class LooperRepository {
     return result;
   }
 
+  /// Current Live Signal mode for track [channel] (defaults to Off).
+  LiveSignalMode trackLiveSignal(int channel) =>
+      _trackLiveSignal[channel] ?? LiveSignalMode.off;
+
   /// Sets Live Signal mode for track [channel].
   EngineResult setTrackLiveSignal({
     required int channel,

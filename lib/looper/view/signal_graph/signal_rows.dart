@@ -83,6 +83,7 @@ class TrackGroup {
     required this.track,
     required this.single,
     required this.takes,
+    this.liveSignal = LiveSignalMode.off,
   });
 
   /// The track index.
@@ -93,6 +94,9 @@ class TrackGroup {
 
   /// The track's takes, in lane order (always at least one).
   final List<TakeRow> takes;
+
+  /// Channel-level Live Signal mode (Sheeran Audio Routing → Track).
+  final LiveSignalMode liveSignal;
 }
 
 /// One hardware output's row.
@@ -161,7 +165,8 @@ class SignalRows {
 
     final tracks = <TrackGroup>[];
     for (var t = 0; t < looper.tracks.length; t++) {
-      final lanes = looper.tracks[t].lanes;
+      final track = looper.tracks[t];
+      final lanes = track.lanes;
       if (lanes.isEmpty) continue; // laneless tracks contribute no row
       final takes = <TakeRow>[];
       for (var l = 0; l < lanes.length; l++) {
@@ -183,7 +188,12 @@ class SignalRows {
         );
       }
       tracks.add(
-        TrackGroup(track: t, single: lanes.length == 1, takes: takes),
+        TrackGroup(
+          track: t,
+          single: lanes.length == 1,
+          takes: takes,
+          liveSignal: track.liveSignal,
+        ),
       );
     }
 
