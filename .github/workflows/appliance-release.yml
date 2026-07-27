@@ -151,7 +151,7 @@ jobs:
 
       - name: Restore Yocto sstate + downloads (GitHub-hosted only)
         if: inputs.runner != 'self-hosted'
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ${{ env.YOCTO_WORK_DIR }}/sstate-cache
