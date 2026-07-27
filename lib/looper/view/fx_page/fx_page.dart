@@ -13,6 +13,7 @@ import 'package:loopy/looper/fx_presets/fx_preset.dart';
 import 'package:loopy/looper/fx_presets/fx_preset_library.dart';
 import 'package:loopy/looper/view/fx_editor/fx_dock.dart';
 import 'package:loopy/looper/view/fx_editor/fx_scope.dart';
+import 'package:loopy/looper/view/signal_graph/signal_style.dart';
 import 'package:loopy/theme/page_transitions.dart';
 import 'package:loopy/theme/surface_theme.dart';
 
@@ -50,6 +51,7 @@ class FxPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final surface = context.surface;
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): () =>
@@ -59,13 +61,23 @@ class FxPage extends StatelessWidget {
         autofocus: true,
         child: Scaffold(
           key: const Key('fx_page'),
-          backgroundColor: context.surface.background,
-          body: SafeArea(
-            child: Column(
-              children: [
-                _FxChromeBar(),
-                const Expanded(child: _FxBody()),
-              ],
+          backgroundColor: surface.background,
+          body: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(-0.5, -1.15),
+                radius: 1.25,
+                colors: [surface.pageGlow, surface.background],
+                stops: const [0, 0.62],
+              ),
+            ),
+            child: const SafeArea(
+              child: Column(
+                children: [
+                  _FxChromeBar(),
+                  Expanded(child: _FxBody()),
+                ],
+              ),
             ),
           ),
         ),
@@ -75,30 +87,66 @@ class FxPage extends StatelessWidget {
 }
 
 class _FxChromeBar extends StatelessWidget {
+  const _FxChromeBar();
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 18, 12),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: surface.line)),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [surface.chromeGradientTop, surface.chromeGradientBottom],
+        ),
+      ),
       child: Row(
         children: [
-          IconButton(
+          TextButton.icon(
             key: const Key('fx_page_back'),
             onPressed: () => unawaited(Navigator.of(context).maybePop()),
-            icon: const Icon(Icons.arrow_back),
-          ),
-          Text(
-            l10n.fxPageTitle,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              color: surface.textPrimary,
+            icon: const Icon(Icons.chevron_left, size: 18),
+            label: Text(
+              l10n.close,
+              style: signalLabel(color: surface.textSecondary),
             ),
+            style: TextButton.styleFrom(
+              foregroundColor: surface.textSecondary,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            l10n.fxPageTitle.toUpperCase(),
+            style: signalLabel(
+              color: surface.textPrimary,
+              size: 14,
+              weight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            l10n.fxPageSubtitle,
+            style: signalLabel(color: surface.textTertiary),
           ),
           const Spacer(),
           TextButton(
             key: const Key('fx_page_presets'),
             onPressed: () => unawaited(_showPresets(context)),
-            child: Text(l10n.fxPagePresets),
+            style: TextButton.styleFrom(
+              foregroundColor: surface.accent,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            child: Text(
+              l10n.fxPagePresets,
+              style: signalLabel(
+                color: surface.accent,
+                weight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
@@ -116,6 +164,7 @@ class _FxBody extends StatelessWidget {
       ..watch<MonitorCubit>()
       ..watch<FxRacksCubit>();
     final l10n = context.l10n;
+    final surface = context.surface;
     final fx = context.read<FxRacksCubit>();
     final looper = context.read<LooperBloc>();
     final repository = context.read<LooperRepository>();
@@ -153,10 +202,12 @@ class _FxBody extends StatelessWidget {
           );
 
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
           child: _FxColumn(
             title: l10n.fxPageInputColumn,
+            subtitle: l10n.fxPageInputHint,
             selector: _IndexSelector(
               count: inputCount,
               selected: state.selectedInput,
@@ -168,10 +219,11 @@ class _FxBody extends StatelessWidget {
             scope: inputScope,
           ),
         ),
-        VerticalDivider(width: 1, color: context.surface.line),
+        Container(width: 1, color: surface.line),
         Expanded(
           child: _FxColumn(
             title: l10n.fxPageTrackColumn,
+            subtitle: l10n.fxPageTrackHint,
             selector: _IndexSelector(
               count: trackCount,
               selected: state.selectedTrack,
@@ -191,6 +243,7 @@ class _FxBody extends StatelessWidget {
 class _FxColumn extends StatelessWidget {
   const _FxColumn({
     required this.title,
+    required this.subtitle,
     required this.selector,
     required this.stage,
     required this.onStage,
@@ -198,6 +251,7 @@ class _FxColumn extends StatelessWidget {
   });
 
   final String title;
+  final String subtitle;
   final Widget selector;
   final FxStage stage;
   final ValueChanged<FxStage> onStage;
@@ -206,43 +260,108 @@ class _FxColumn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    final surface = context.surface;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            title.toUpperCase(),
+            style: signalLabel(
+              color: surface.textPrimary,
+              size: 13,
+              weight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: signalLabel(color: surface.textTertiary),
+          ),
+          const SizedBox(height: 14),
+          selector,
+          const SizedBox(height: 12),
+          _StageToggle(stage: stage, onStage: onStage, l10n: l10n),
+          const SizedBox(height: 12),
+          Expanded(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: surface.card.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: surface.line),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: FxDock(
+                  key: ValueKey('${scope.runtimeType}-$stage'),
+                  scope: scope,
+                  onClose: () {},
+                  fill: true,
+                  showClose: false,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StageToggle extends StatelessWidget {
+  const _StageToggle({
+    required this.stage,
+    required this.onStage,
+    required this.l10n,
+  });
+
+  final FxStage stage;
+  final ValueChanged<FxStage> onStage;
+  final AppLocalizations l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    Widget chip(FxStage value, String label) {
+      final selected = stage == value;
+      return Expanded(
+        child: Material(
+          color: selected
+              ? surface.accent.withValues(alpha: 0.18)
+              : surface.cardHigh,
+          borderRadius: BorderRadius.circular(10),
+          child: InkWell(
+            key: Key('fx_stage_${value.name}'),
+            onTap: () => onStage(value),
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: selected ? surface.accent : surface.line,
+                ),
+              ),
+              child: Text(
+                label.toUpperCase(),
+                textAlign: TextAlign.center,
+                style: signalLabel(
+                  color: selected ? surface.accent : surface.textSecondary,
+                  weight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Text(
-            title,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-        ),
-        selector,
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: SegmentedButton<FxStage>(
-            segments: [
-              ButtonSegment(
-                value: FxStage.pre,
-                label: Text(l10n.fxPagePre),
-                icon: const Icon(Icons.input),
-              ),
-              ButtonSegment(
-                value: FxStage.post,
-                label: Text(l10n.fxPagePost),
-                icon: const Icon(Icons.output),
-              ),
-            ],
-            selected: {stage},
-            onSelectionChanged: (s) => onStage(s.single),
-          ),
-        ),
-        Expanded(
-          child: FxDock(
-            key: ValueKey('${scope.runtimeType}-$stage'),
-            scope: scope,
-            onClose: () {},
-          ),
-        ),
+        chip(FxStage.pre, l10n.fxPagePre),
+        const SizedBox(width: 8),
+        chip(FxStage.post, l10n.fxPagePost),
       ],
     );
   }
@@ -263,21 +382,52 @@ class _IndexSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (count <= 0) return const SizedBox.shrink();
+    final surface = context.surface;
+    if (count <= 0) {
+      return Text(
+        context.l10n.signalNotRouted,
+        style: signalLabel(color: surface.textTertiary),
+      );
+    }
     return SizedBox(
-      height: 40,
+      height: 36,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: count,
         separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (context, i) {
           final selectedChip = i == selected;
-          return ChoiceChip(
-            key: Key('fx_select_$i'),
-            label: Text(labelOf(i)),
-            selected: selectedChip,
-            onSelected: (_) => onSelect(i),
+          return Material(
+            color: selectedChip
+                ? surface.accent.withValues(alpha: 0.18)
+                : surface.cardHigh,
+            borderRadius: BorderRadius.circular(9),
+            child: InkWell(
+              key: Key('fx_select_$i'),
+              onTap: () => onSelect(i),
+              borderRadius: BorderRadius.circular(9),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(
+                    color: selectedChip ? surface.accent : surface.line,
+                  ),
+                ),
+                child: Text(
+                  labelOf(i),
+                  style: signalMono(
+                    color: selectedChip
+                        ? surface.accent
+                        : surface.textSecondary,
+                    weight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
           );
         },
       ),
@@ -290,20 +440,41 @@ Future<void> _showPresets(BuildContext context) async {
   if (!context.mounted) return;
   final fx = context.read<FxRacksCubit>();
   final l10n = context.l10n;
+  final surface = context.surface;
   await showModalBottomSheet<void>(
     context: context,
+    backgroundColor: surface.card,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
     builder: (sheetContext) {
       final factory = library.factoryPresets;
       final user = library.userPresets;
       return SafeArea(
         child: ListView(
+          padding: const EdgeInsets.fromLTRB(8, 12, 8, 24),
           children: [
-            ListTile(title: Text(l10n.fxPageFactoryPresets)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Text(
+                l10n.fxPageFactoryPresets.toUpperCase(),
+                style: signalLabel(
+                  color: surface.textTertiary,
+                  weight: FontWeight.w600,
+                ),
+              ),
+            ),
             for (final preset in factory)
               ListTile(
                 key: Key('fx_preset_${preset.id}'),
-                title: Text(preset.name),
-                subtitle: Text(preset.category),
+                title: Text(
+                  preset.name,
+                  style: signalLabel(color: surface.textPrimary),
+                ),
+                subtitle: Text(
+                  preset.category,
+                  style: signalLabel(color: surface.textTertiary),
+                ),
                 onTap: () {
                   final effects = preset.toEffects();
                   final stage = preset.suggestedStage == 'pre'
@@ -316,10 +487,22 @@ Future<void> _showPresets(BuildContext context) async {
                   Navigator.pop(sheetContext);
                 },
               ),
-            ListTile(title: Text(l10n.fxPageUserPresets)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(
+                l10n.fxPageUserPresets.toUpperCase(),
+                style: signalLabel(
+                  color: surface.textTertiary,
+                  weight: FontWeight.w600,
+                ),
+              ),
+            ),
             for (final preset in user)
               ListTile(
-                title: Text(preset.name),
+                title: Text(
+                  preset.name,
+                  style: signalLabel(color: surface.textPrimary),
+                ),
                 onTap: () {
                   fx.setTrackEffects(preset.toEffects());
                   Navigator.pop(sheetContext);
@@ -327,8 +510,11 @@ Future<void> _showPresets(BuildContext context) async {
               ),
             ListTile(
               key: const Key('fx_preset_save'),
-              leading: const Icon(Icons.save_outlined),
-              title: Text(l10n.fxPageSavePreset),
+              leading: Icon(Icons.save_outlined, color: surface.accent),
+              title: Text(
+                l10n.fxPageSavePreset,
+                style: signalLabel(color: surface.accent),
+              ),
               onTap: () async {
                 final effects = fx.trackEffects();
                 await library.saveUserPreset(

@@ -188,6 +188,18 @@
     "signalNavTrack": "Pista",
     "signalNavOutput": "Salida",
     "signalLiveSignalTooltip": "Señal en vivo — toca para ciclar Apagado, Auto, Encendido",
+    "signalOutputSources": "Fuentes",
+    "signalOutputHint": "Enruta desde Entrada o Pista",
+    "signalOutputOn": "Encendido",
+    "signalOutputOff": "Apagado",
+    "signalOutputPair": "{a}+{b}",
+    "@signalOutputPair": {
+      "description": "Stereo pair label for adjacent outputs.",
+      "placeholders": {
+        "a": { "type": "int" },
+        "b": { "type": "int" }
+      }
+    },
     "signalVolumeLabel": "Vol",
     "signalNothingRouted": "nada enrutado aquí",
     "signalNotRouted": "sin enrutar",
@@ -310,8 +322,11 @@
     "fxEditorTrackPreConsequence": "Pre de pista — se graba en las tomas de esta pista",
     "fxEditorTrackPostConsequence": "Post de pista — moldea la reproducción, no se graba",
     "fxPageTitle": "FX",
+    "fxPageSubtitle": "Entrada · Pista racks Pre/Post",
     "fxPageInputColumn": "Entrada",
     "fxPageTrackColumn": "Pista",
+    "fxPageInputHint": "Pre se graba en las tomas · Post es solo FOH",
+    "fxPageTrackHint": "Pre se graba en las tomas · Post moldea la reproducción",
     "fxPagePre": "Pre",
     "fxPagePost": "Post",
     "fxPageLiveSignal": "Señal en vivo",

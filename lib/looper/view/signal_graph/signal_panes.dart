@@ -54,14 +54,14 @@ class _SignalSidebar extends StatelessWidget {
       (_SignalSection.output, Icons.logout, l10n.signalNavOutput),
     ];
     return Container(
-      width: 96,
+      width: 108,
+      padding: const EdgeInsets.fromLTRB(10, 14, 10, 16),
       decoration: BoxDecoration(
         color: surface.chromeBar,
         border: Border(right: BorderSide(color: surface.line)),
       ),
       child: Column(
         children: [
-          const SizedBox(height: 10),
           for (var i = 0; i < items.length; i++)
             _SidebarTab(
               sectionKey: items[i].$1.name,
@@ -100,7 +100,7 @@ class _SidebarTab extends StatelessWidget {
     final surface = context.surface;
     final fg = selected ? surface.accent : surface.textTertiary;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Material(
         color: selected
             ? surface.accent.withValues(alpha: 0.16)
@@ -111,7 +111,7 @@ class _SidebarTab extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(10),
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
             child: Column(
               children: [
                 Icon(icon, size: 22, color: fg),
@@ -559,64 +559,68 @@ class _TrackColumn extends StatelessWidget {
       ),
     );
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-          child: Row(
-            children: [
-              Icon(Icons.graphic_eq, size: 16, color: surface.textSecondary),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  trackLabel,
-                  style: signalMono(
-                    color: surface.textPrimary,
-                    size: 13,
-                    weight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              if (!group.single)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 1,
-                  ),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(9),
-                    border: Border.all(color: surface.line),
-                  ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 4, 4, 10),
+            child: Row(
+              children: [
+                Icon(Icons.graphic_eq, size: 16, color: surface.textSecondary),
+                const SizedBox(width: 6),
+                Expanded(
                   child: Text(
-                    l10n.signalTakesCount(group.takes.length),
+                    trackLabel,
                     style: signalMono(
-                      color: surface.textTertiary,
-                      size: 9,
+                      color: surface.textPrimary,
+                      size: 13,
+                      weight: FontWeight.w600,
                     ),
                   ),
                 ),
-            ],
+                if (!group.single)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(9),
+                      border: Border.all(color: surface.line),
+                    ),
+                    child: Text(
+                      l10n.signalTakesCount(group.takes.length),
+                      style: signalMono(
+                        color: surface.textTertiary,
+                        size: 9,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
-        ),
-        Expanded(
-          child: ListView(
-            children: [
-              for (final t in group.takes) takeRow(t),
-              Align(alignment: Alignment.centerLeft, child: controls),
-            ],
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.only(bottom: 8),
+              children: [
+                for (final t in group.takes) takeRow(t),
+                Align(alignment: Alignment.centerLeft, child: controls),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
-        _LiveSignalButton(
-          track: group.track,
-          mode: group.liveSignal,
-          onCycle: () {
-            onFocusLiveSignal();
-            onCycleLiveSignal();
-          },
-        ),
-      ],
+          const SizedBox(height: 10),
+          _LiveSignalButton(
+            track: group.track,
+            mode: group.liveSignal,
+            onCycle: () {
+              onFocusLiveSignal();
+              onCycleLiveSignal();
+            },
+          ),
+        ],
+      ),
     );
   }
 }
@@ -628,6 +632,7 @@ class _OutputsPane extends _Pane {
     required this.noActiveOutputs,
     required this.tracedOutput,
     required this.trackNames,
+    required this.trackPeaks,
     required this.onTapRow,
     required this.onToggleGate,
   });
@@ -637,6 +642,9 @@ class _OutputsPane extends _Pane {
   final bool noActiveOutputs;
   final int? tracedOutput;
   final List<String> trackNames;
+
+  /// Per-track peak levels (`0..1`) for Output column meters.
+  final List<double> trackPeaks;
   final ValueChanged<int> onTapRow;
   final void Function(int output, {required bool enabled}) onToggleGate;
 
@@ -646,13 +654,31 @@ class _OutputsPane extends _Pane {
   @override
   int get count => rows.outputs.length;
 
+  double _peakFor(int output) {
+    var peak = 0.0;
+    for (final t in rows.tracksFeeding(output)) {
+      if (t >= 0 && t < trackPeaks.length && trackPeaks[t] > peak) {
+        peak = trackPeaks[t];
+      }
+    }
+    return peak;
+  }
+
   @override
   Widget body() => Builder(
     builder: (context) {
       final l10n = context.l10n;
+      final surface = context.surface;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
+            child: Text(
+              l10n.signalOutputHint,
+              style: signalLabel(color: surface.textTertiary),
+            ),
+          ),
           if (noActiveOutputs)
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
@@ -665,16 +691,29 @@ class _OutputsPane extends _Pane {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 16),
               itemCount: rows.outputs.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 10),
+              separatorBuilder: (_, _) => Container(
+                width: 1,
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                color: surface.line,
+              ),
               itemBuilder: (context, i) {
                 final o = rows.outputs[i];
+                final pairMate = o.output.isEven ? o.output + 1 : o.output - 1;
+                final showPair = pairMate >= 0 && pairMate < rows.outputCount;
                 return SizedBox(
-                  width: 280,
+                  width: 220,
                   child: _TraceDim(
                     trace: trace,
                     tags: o.tags,
-                    child: _OutputRow(
+                    child: _OutputColumn(
                       row: o,
+                      peak: _peakFor(o.output),
+                      pairLabel: showPair
+                          ? l10n.signalOutputPair(
+                              (o.output.isEven ? o.output : pairMate) + 1,
+                              (o.output.isEven ? pairMate : o.output) + 1,
+                            )
+                          : null,
                       inputs: rows.inputsFeeding(o.output),
                       tracks: rows.tracksFeeding(o.output),
                       trackNames: trackNames,
@@ -695,4 +734,192 @@ class _OutputsPane extends _Pane {
 
   @override
   List<Widget> children(BuildContext context) => const [];
+}
+
+/// Sheeran-style output strip: identity, meter, sources, bus enable.
+class _OutputColumn extends StatelessWidget {
+  const _OutputColumn({
+    required this.row,
+    required this.peak,
+    required this.pairLabel,
+    required this.inputs,
+    required this.tracks,
+    required this.trackNames,
+    required this.selected,
+    required this.onTap,
+    required this.onToggleGate,
+  });
+
+  final OutputRow row;
+  final double peak;
+  final String? pairLabel;
+  final List<int> inputs;
+  final List<int> tracks;
+  final List<String> trackNames;
+  final bool selected;
+  final VoidCallback onTap;
+  final VoidCallback onToggleGate;
+
+  String _trackLabel(AppLocalizations l10n, int track) =>
+      track < trackNames.length
+      ? l10n.displayTrackName(trackNames[track], track)
+      : l10n.trackNumberLabel(track + 1);
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final nothingRouted = inputs.isEmpty && tracks.isEmpty;
+    final fill = row.enabled ? peakMeterFill(peak) : 0.0;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+      child: FocusableTapTarget(
+        key: Key('signalOut_${row.output}'),
+        onTap: onTap,
+        semanticLabel: row.enabled
+            ? l10n.a11yOutputEnabledDisable(row.output + 1)
+            : l10n.a11yOutputDisabledEnable(row.output + 1),
+        child: AnimatedContainer(
+          duration: Durations.short3,
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+          decoration: BoxDecoration(
+            color: selected
+                ? surface.accent.withValues(alpha: 0.08)
+                : surface.card.withValues(alpha: 0.4),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? surface.accent : surface.line,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                l10n.outputChannelLabel(row.output + 1).toUpperCase(),
+                style: signalMono(
+                  color: row.enabled
+                      ? surface.textPrimary
+                      : surface.textTertiary,
+                  size: 14,
+                  weight: FontWeight.w700,
+                ),
+              ),
+              if (pairLabel != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  pairLabel!,
+                  style: signalMono(color: surface.textTertiary, size: 10),
+                ),
+              ],
+              const SizedBox(height: 14),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: FractionallySizedBox(
+                    widthFactor: 0.42,
+                    heightFactor: 1,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: surface.meterTrack,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: surface.line),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(5),
+                        child: Align(
+                          alignment: Alignment.bottomCenter,
+                          child: FractionallySizedBox(
+                            heightFactor: fill.clamp(0.0, 1.0),
+                            widthFactor: 1,
+                            child: ColoredBox(
+                              color: row.enabled
+                                  ? surface.accent
+                                  : surface.textTertiary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                l10n.signalOutputSources.toUpperCase(),
+                style: signalLabel(
+                  color: surface.textTertiary,
+                  size: 9,
+                  weight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              if (nothingRouted)
+                Text(
+                  l10n.signalNothingRouted,
+                  style: signalMono(color: surface.textTertiary, size: 9.5),
+                )
+              else ...[
+                if (inputs.isNotEmpty)
+                  _FeederChips(
+                    labels: [
+                      for (final i in inputs) l10n.inputChannelLabel(i + 1),
+                    ],
+                  ),
+                if (inputs.isNotEmpty && tracks.isNotEmpty)
+                  const SizedBox(height: 6),
+                if (tracks.isNotEmpty)
+                  _FeederChips(
+                    labels: [for (final t in tracks) _trackLabel(l10n, t)],
+                  ),
+              ],
+              const SizedBox(height: 12),
+              _OutputEnableButton(
+                output: row.output,
+                enabled: row.enabled,
+                onToggle: onToggleGate,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OutputEnableButton extends StatelessWidget {
+  const _OutputEnableButton({
+    required this.output,
+    required this.enabled,
+    required this.onToggle,
+  });
+
+  final int output;
+  final bool enabled;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final fill = enabled ? surface.accent : surface.cardHigh;
+    final fg = enabled ? surface.background : surface.textSecondary;
+    return Material(
+      color: fill,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        key: Key('signalGraph_out_$output'),
+        onTap: onToggle,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Text(
+            (enabled ? l10n.signalOutputOn : l10n.signalOutputOff)
+                .toUpperCase(),
+            textAlign: TextAlign.center,
+            style: signalMono(color: fg, size: 13, weight: FontWeight.w700),
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -17,6 +17,7 @@ import 'package:loopy/looper/view/signal_graph/signal_knob.dart';
 import 'package:loopy/looper/view/signal_graph/signal_routing_chips.dart';
 import 'package:loopy/looper/view/signal_graph/signal_rows.dart';
 import 'package:loopy/looper/view/signal_graph/signal_style.dart';
+import 'package:loopy/theme/looper_theme.dart';
 import 'package:loopy/theme/page_transitions.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
@@ -283,6 +284,9 @@ class _SignalListViewState extends State<SignalListView> {
                     noActiveOutputs: noActiveOutputs,
                     tracedOutput: _tracedOutput,
                     trackNames: widget.trackNames,
+                    trackPeaks: [
+                      for (final t in looper.tracks) t.peak,
+                    ],
                     onTapRow: _traceOutput,
                     onToggleGate: (o, {required enabled}) => _bloc.add(
                       LooperOutputEnabledToggled(o, enabled: enabled),

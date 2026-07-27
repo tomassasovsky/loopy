@@ -170,9 +170,10 @@ void main() {
       await goOutput(tester);
 
       final out = find.byKey(const Key('signalOut_1'));
-      // Two labelled rows: inputs and tracks, each with its own chip.
-      expect(find.descendant(of: out, matching: find.text('IN')), findsOne);
-      expect(find.descendant(of: out, matching: find.text('TRK')), findsOne);
+      expect(
+        find.descendant(of: out, matching: find.text('SOURCES')),
+        findsOne,
+      );
       expect(find.descendant(of: out, matching: find.text('In 1')), findsOne);
       expect(
         find.descendant(of: out, matching: find.text('Track 1')),

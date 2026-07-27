@@ -18,15 +18,34 @@ import 'package:loopy/theme/surface_theme.dart';
 ///
 /// The chain is resolved live off the scope each build, so external edits
 /// reflect immediately and the dock empty-states the moment its target is gone.
+///
+/// Pass [fill] when embedding in the dedicated FX page so the rack uses the
+/// full column height instead of the Signal bottom-dock strip.
 class FxDock extends StatefulWidget {
   /// Creates an [FxDock] editing [scope]; [onClose] dismisses the dock.
-  const FxDock({required this.scope, required this.onClose, super.key});
+  const FxDock({
+    required this.scope,
+    required this.onClose,
+    this.fill = false,
+    this.showClose = true,
+    this.showHeader = true,
+    super.key,
+  });
 
   /// The chain this dock edits.
   final FxScope scope;
 
   /// Invoked when the dock's close affordance is tapped.
   final VoidCallback onClose;
+
+  /// When true, expand to parent height (FX page). When false, fixed 260 strip.
+  final bool fill;
+
+  /// Whether to show the close affordance (false on the dedicated FX page).
+  final bool showClose;
+
+  /// Whether to show the scope title/consequence header.
+  final bool showHeader;
 
   @override
   State<FxDock> createState() => _FxDockState();
@@ -57,30 +76,35 @@ class _FxDockState extends State<FxDock> {
     final l10n = context.l10n;
     final surface = context.surface;
 
-    return Container(
-      key: const Key('fx_dock'),
-      height: 260,
-      decoration: BoxDecoration(
-        color: surface.background,
-        border: Border(top: BorderSide(color: surface.line)),
-      ),
-      child: Column(
-        // Left-align the dock body (the rack, narrower than the dock, would
-        // otherwise centre under the default cross-axis alignment).
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    final body = Column(
+      // Left-align the dock body (the rack, narrower than the dock, would
+      // otherwise centre under the default cross-axis alignment).
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.showHeader)
           _FxDockHeader(
             title: _scope.label(l10n),
             consequence: _scope.consequence(l10n),
             onClose: widget.onClose,
+            showClose: widget.showClose,
           ),
-          Expanded(
-            child: _scope.isPresent
-                ? _editor(context)
-                : _Gone(message: l10n.fxEditorScopeGone),
-          ),
-        ],
+        Expanded(
+          child: _scope.isPresent
+              ? _editor(context)
+              : _Gone(message: l10n.fxEditorScopeGone),
+        ),
+      ],
+    );
+    return Container(
+      key: const Key('fx_dock'),
+      height: widget.fill ? null : 260,
+      decoration: BoxDecoration(
+        color: surface.background,
+        border: widget.fill
+            ? null
+            : Border(top: BorderSide(color: surface.line)),
       ),
+      child: body,
     );
   }
 
@@ -126,11 +150,13 @@ class _FxDockHeader extends StatelessWidget {
     required this.title,
     required this.consequence,
     required this.onClose,
+    this.showClose = true,
   });
 
   final String title;
   final String consequence;
   final VoidCallback onClose;
+  final bool showClose;
 
   @override
   Widget build(BuildContext context) {
@@ -165,14 +191,15 @@ class _FxDockHeader extends StatelessWidget {
               ],
             ),
           ),
-          IconButton(
-            key: const Key('fxDock_close'),
-            onPressed: onClose,
-            icon: const Icon(Icons.close),
-            iconSize: 18,
-            color: surface.textSecondary,
-            tooltip: l10n.close,
-          ),
+          if (showClose)
+            IconButton(
+              key: const Key('fxDock_close'),
+              onPressed: onClose,
+              icon: const Icon(Icons.close),
+              iconSize: 18,
+              color: surface.textSecondary,
+              tooltip: l10n.close,
+            ),
         ],
       ),
     );

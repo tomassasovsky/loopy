@@ -461,6 +461,18 @@
     "signalNavTrack": "Track",
     "signalNavOutput": "Output",
     "signalLiveSignalTooltip": "Live Signal — tap to cycle Off, Auto, On",
+    "signalOutputSources": "Sources",
+    "signalOutputHint": "Route sends from Input or Track",
+    "signalOutputOn": "On",
+    "signalOutputOff": "Off",
+    "signalOutputPair": "{a}+{b}",
+    "@signalOutputPair": {
+      "description": "Stereo pair label for adjacent outputs.",
+      "placeholders": {
+        "a": { "type": "int" },
+        "b": { "type": "int" }
+      }
+    },
     "signalVolumeLabel": "Vol",
     "signalNothingRouted": "nothing routed here",
     "signalNotRouted": "not routed",
@@ -593,8 +605,11 @@
     "fxEditorTrackPreConsequence": "Track Pre — baked into this track's takes",
     "fxEditorTrackPostConsequence": "Track Post — shapes playback, never baked in",
     "fxPageTitle": "FX",
+    "fxPageSubtitle": "Input · Track Pre/Post racks",
     "fxPageInputColumn": "Input",
     "fxPageTrackColumn": "Track",
+    "fxPageInputHint": "Pre prints into takes · Post is FOH only",
+    "fxPageTrackHint": "Pre prints into takes · Post shapes playback",
     "fxPagePre": "Pre",
     "fxPagePost": "Post",
     "fxPageLiveSignal": "Live Signal",
