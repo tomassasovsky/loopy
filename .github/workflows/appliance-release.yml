@@ -195,7 +195,7 @@ jobs:
           cat "$out/manifest.json"
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: appliance-${{ needs.determine-meta.outputs.channel }}-${{ needs.determine-meta.outputs.version }}
           name: "Appliance ${{ needs.determine-meta.outputs.channel }} ${{ needs.determine-meta.outputs.version }}"
