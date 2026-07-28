@@ -29,8 +29,8 @@ Send **`enclosure/out/vamp_3dprint.zip`** (STEP + STL for each part).
 
 | Part | Qty | Material | Notes |
 |---|---|---|---|
-| `vamp_platform_front` | 8 | **BLACK** PETG/ASA, ≥40% infill | Pedal pedestal, 115.4×88.8 (deck 8.9 + light-baffle skirt to 34.8, sloped top). Heat-set pilots Ø4.0 from below — **short M3×3 inserts** (4 per pedestal). Deck has a 1.2-deep locating pocket for the pedal's bottom pad; the skirt is the visible backdrop through the slot reveal, hence black. |
-| `vamp_platform_mid` | 2 | **BLACK** PETG/ASA, ≥40% infill | Tall CLEAR/BANK pedestal (deck 46.2 + skirt to 72.1), hollow with boss columns — standard **M3×5.7×4.6 inserts** (4 per pedestal) + the same pad pocket and skirt. |
+| `vamp_platform_front` | 8 | **BLACK** PETG/ASA, ≥40% infill | Pedal pedestal TUB, 115.4×88.8 (deck 8.9, walls to 36.4 with sloped top ~1mm under the faceplate). Wall inner faces tucked 0.4 behind the slot cut line, so from above only faceplate shows and the reveal reads as a dark channel. Full-height boss drop-in channels in the side walls; 12-wide rear cable notch. Heat-set pilots Ø4.0 from below — **short M3×3 inserts** (4 per pedestal); 1.2-deep pad pocket in the deck. |
+| `vamp_platform_mid` | 2 | **BLACK** PETG/ASA, ≥40% infill | Tall CLEAR/BANK tub (deck 46.2, walls to 72.8), hollow with boss columns — standard **M3×5.7×4.6 inserts** (4 per pedestal) + the same pocket, channels and notch. |
 | `vamp_led_diffuser` | 6 | **White PLA** | Pill lens, pushes into the faceplate slot from inside. |
 | `vamp_ring_diffuser` | 1 | **White PLA** | Annular lens for the encoder LED ring. |
 

@@ -145,25 +145,31 @@ PLAT_WALL       = 3.0         # printed perimeter wall (cavity hollowing)
 PLAT_DECK       = 8.0         # printed top deck (full insert engagement)
 POCKET_DEPTH    = 1.2         # bottom-pad locating pocket depth (< PEDAL_PAD_T)
 POCKET_CLR      = 0.6         # pocket clearance over the pad footprint (total)
-# Light-baffle SKIRT around the pedal: a perimeter wall rising from the deck to
-# ~1mm under the sloped faceplate, so the enclosure interior is not visible
-# through the slot reveal. The wall sits OUTBOARD of the side screw bosses
-# (span 83.25) -- the pedal drops straight in past it into the pocket. Print
-# BLACK (PETG/ASA): the wall is the visible backdrop through the reveal.
-SKIRT_T      = 2.0            # skirt wall thickness
-SKIRT_GAP    = 1.0            # skirt top to the REAL faceplate underside
+# Light-baffle TUB around the pedal: the pedestal's walls rise from the deck to
+# ~1mm under the sloped faceplate with their INNER faces set back SKIRT_SETBACK
+# behind the slot cut line -- from above you see ONLY faceplate, and the reveal
+# reads as the slot continuing down a dark channel (the wall face), not as a
+# ledge or the enclosure interior. Print BLACK (PETG/ASA).
+# The side screw bosses (span 83.25) would cross the wall line, so each side
+# wall gets a full-height vertical CHANNEL the boss slides down at drop-in --
+# it also guides the pedal into the pad pocket.
+SKIRT_SETBACK = 0.4           # wall inner face tucked behind the slot cut line
+SKIRT_GAP    = 1.0            # wall top to the REAL faceplate underside
 # Like POST_FACEDRIFT: the assembled faceplate seats ABOVE lid_top_z's bare
 # slope, and by a row-dependent amount -- measured in "VAMP console (populated)"
 # (the manufacturing source of truth) 2026-07-28: +1.6 over row 1, +0.7 over
 # row 2. Without this the skirt gap came out 2.6/1.7 instead of 1.0.
 SKIRT_DRIFT_ROW1 = 1.6
 SKIRT_DRIFT_ROW2 = 0.7
-SKIRT_NOTCH_W = 12.0          # cable notch in the rear skirt wall, centred (the
+SKIRT_NOTCH_W = 12.0          # cable notch in the rear tub wall, centred (the
                               # WTB-006 cable leaves the case at the back)
-SKIRT_IN_W   = PEDAL_SCREW_SPAN + 1.5   # 84.75: clears the bosses by 0.75/side
-SKIRT_IN_D   = PEDAL_D + 1.5            # 111.37: 0.75 per end around the case
-SKIRT_OUT_W  = SKIRT_IN_W + 2*SKIRT_T   # 88.75 -- also the pedestal footprint W
-SKIRT_OUT_D  = SKIRT_IN_D + 2*SKIRT_T   # 115.37 -- also the pedestal footprint D
+SKIRT_OUT_W  = 88.75          # pedestal footprint W (unchanged from the fence rev)
+SKIRT_OUT_D  = 115.37         # pedestal footprint D (rear must clear the posts)
+# Tub inner opening = the slot outline (projected flat) + setback. Slot depth is
+# an on-slope figure; horizontal = *cos(SLOPE_ANGLE). Defined after SLOPE_ANGLE.
+SKIRT_BOSS_CH_W    = 14.0     # boss drop-in channel width (boss dia 10 + 4)
+SKIRT_BOSS_CH_HALF = PEDAL_SCREW_SPAN/2 + 0.7   # channel floor: swallows the boss tip
+SKIRT_BOSS_CH_X    = PEDAL_D/2 - PEDAL_SCREW_BACK   # +31.695: boss axis, rearward of centre
 
 # --- screens (capacitive touch, mounted from BEHIND; aperture < bezel) --------
 BIG_BEZEL  = (359.5, 223.75)  # 15.6" panel BODY (measured): glass 359.5x206.5 edge-to-edge + a
@@ -261,6 +267,9 @@ L_SLOPE     = math.hypot(FACE_RUN, SLOPE_DROP)            # Top-plate sloped len
 SLOPE_ANGLE = math.degrees(math.atan2(SLOPE_DROP, FACE_RUN))
 # Pedal slot depth ON THE SLOPE: horizontal envelope / cos(slope) (see pedal block).
 FSW_SLOT_D = (PEDAL_D + FSW_SLOT_CLR_D) / math.cos(math.radians(SLOPE_ANGLE))
+# Tub inner opening (see the pedal block): slot outline projected flat + setback.
+SKIRT_IN_W = FSW_SLOT_W + 2*SKIRT_SETBACK                                    # 79.15
+SKIRT_IN_D = FSW_SLOT_D * math.cos(math.radians(SLOPE_ANGLE)) + 2*SKIRT_SETBACK  # 113.67
 TRANS_LEN   = math.hypot(TRANS_RUN, TRANS_DROP)          # transition facet length
 TRANS_ANGLE = math.degrees(math.atan2(TRANS_DROP, TRANS_RUN))   # transition rake (from horizontal)
 
@@ -703,9 +712,13 @@ def _check():
     # 3c. the front gap absorbed the deeper Cherub slot; keep it usable
     assert FRONT_GAP >= 40.0, f"FRONT_GAP: {FRONT_GAP:.1f} mm < 40 -- pedals crowd the screen block"
 
-    # 3d. light-baffle skirt: clears the screw bosses, the neighbouring pedestal,
-    # and the support-post pad behind row 1
-    assert SKIRT_IN_W - PEDAL_SCREW_SPAN >= 1.0, "SKIRT: side walls pinch the screw bosses"
+    # 3d. light-baffle tub: pedal drops in, bosses ride the channels, walls stay
+    # hidden behind the slot line, and the footprint clears neighbours + posts
+    assert SKIRT_IN_W - PEDAL_W >= 2.0, "SKIRT: tub opening pinches the case"
+    assert SKIRT_BOSS_CH_HALF >= PEDAL_SCREW_SPAN/2 + 0.5, "SKIRT: boss channel too shallow"
+    assert SKIRT_BOSS_CH_W >= PEDAL_SCREW_BOSS_D + 2.0, "SKIRT: boss channel too narrow"
+    assert SKIRT_IN_W - FSW_SLOT_W >= 2*SKIRT_SETBACK - 1e-9, "SKIRT: wall proud of the slot line (u)"
+    assert 2*SKIRT_BOSS_CH_HALF < SKIRT_OUT_W, "SKIRT: boss channel exits the footprint"
     row1 = sorted(u for _, u, v in PEDALS if v == PEDAL_ROW1_V)
     pitch = min(b - a for a, b in zip(row1, row1[1:]))
     assert pitch - SKIRT_OUT_W >= 4.0, f"SKIRT: outer {SKIRT_OUT_W:.1f} vs pitch {pitch:.1f}"
@@ -1250,15 +1263,24 @@ def _platform_printed(cq, ph, v_c):
                                         centered=(True, True, False)))
             .translate((0, 0, h)))
     drift = SKIRT_DRIFT_ROW1 if v_c < 150.0 else SKIRT_DRIFT_ROW2
-    zc = lid_top_z(v_c) + drift - 2*T - SKIRT_GAP   # skirt-top plane at x=0, local z (z0 = base top)
+    zc = lid_top_z(v_c) + drift - 2*T - SKIRT_GAP   # tub-top plane at x=0, local z (z0 = base top)
     cutter = (cq.Workplane("XY").box(400.0, 400.0, 200.0, centered=(True, True, False))
               .rotate((0, 0, 0), (0, 1, 0), -SLOPE_ANGLE)
               .translate((0, 0, zc)))
     ring = ring.cut(cutter)
+    # boss drop-in channels: full-height vertical slots in BOTH side walls at the
+    # screw axis, from the inner face out past the boss tip
+    for side in (-1, 1):
+        y0 = side * (SKIRT_IN_W/2 - 1.0)
+        y1 = side * SKIRT_BOSS_CH_HALF
+        ring = ring.cut(cq.Workplane("XY").box(
+            SKIRT_BOSS_CH_W, abs(y1 - y0), 60.0,
+            centered=(True, False, False)).translate(
+                (SKIRT_BOSS_CH_X, min(y0, y1), h)))
     # cable notch: full-height slot centred in the REAR wall (+X = cable end)
     ring = ring.cut(cq.Workplane("XY").box(
-        SKIRT_T + 2.0, SKIRT_NOTCH_W, 60.0,
-        centered=(True, True, False)).translate((sd/2 - SKIRT_T/2 - 1.0, 0, h)))
+        4.0, SKIRT_NOTCH_W, 60.0,
+        centered=(True, True, False)).translate((sd/2 - 1.5, 0, h)))
     body = body.union(ring)
     return body
 
