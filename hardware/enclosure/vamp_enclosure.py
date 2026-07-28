@@ -151,7 +151,15 @@ POCKET_CLR      = 0.6         # pocket clearance over the pad footprint (total)
 # (span 83.25) -- the pedal drops straight in past it into the pocket. Print
 # BLACK (PETG/ASA): the wall is the visible backdrop through the reveal.
 SKIRT_T      = 2.0            # skirt wall thickness
-SKIRT_GAP    = 1.0            # skirt top to faceplate underside
+SKIRT_GAP    = 1.0            # skirt top to the REAL faceplate underside
+# Like POST_FACEDRIFT: the assembled faceplate seats ABOVE lid_top_z's bare
+# slope, and by a row-dependent amount -- measured in "VAMP console (populated)"
+# (the manufacturing source of truth) 2026-07-28: +1.6 over row 1, +0.7 over
+# row 2. Without this the skirt gap came out 2.6/1.7 instead of 1.0.
+SKIRT_DRIFT_ROW1 = 1.6
+SKIRT_DRIFT_ROW2 = 0.7
+SKIRT_NOTCH_W = 12.0          # cable notch in the rear skirt wall, centred (the
+                              # WTB-006 cable leaves the case at the back)
 SKIRT_IN_W   = PEDAL_SCREW_SPAN + 1.5   # 84.75: clears the bosses by 0.75/side
 SKIRT_IN_D   = PEDAL_D + 1.5            # 111.37: 0.75 per end around the case
 SKIRT_OUT_W  = SKIRT_IN_W + 2*SKIRT_T   # 88.75 -- also the pedestal footprint W
@@ -1241,11 +1249,16 @@ def _platform_printed(cq, ph, v_c):
             .cut(cq.Workplane("XY").box(SKIRT_IN_D, SKIRT_IN_W, 60.0,
                                         centered=(True, True, False)))
             .translate((0, 0, h)))
-    zc = lid_top_z(v_c) - 2*T - SKIRT_GAP   # skirt-top plane at x=0, local z (z0 = base top)
+    drift = SKIRT_DRIFT_ROW1 if v_c < 150.0 else SKIRT_DRIFT_ROW2
+    zc = lid_top_z(v_c) + drift - 2*T - SKIRT_GAP   # skirt-top plane at x=0, local z (z0 = base top)
     cutter = (cq.Workplane("XY").box(400.0, 400.0, 200.0, centered=(True, True, False))
               .rotate((0, 0, 0), (0, 1, 0), -SLOPE_ANGLE)
               .translate((0, 0, zc)))
     ring = ring.cut(cutter)
+    # cable notch: full-height slot centred in the REAR wall (+X = cable end)
+    ring = ring.cut(cq.Workplane("XY").box(
+        SKIRT_T + 2.0, SKIRT_NOTCH_W, 60.0,
+        centered=(True, True, False)).translate((sd/2 - SKIRT_T/2 - 1.0, 0, h)))
     body = body.union(ring)
     return body
 
