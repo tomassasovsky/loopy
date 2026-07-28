@@ -141,10 +141,21 @@ PLATFORM_FOOT   = 18.0        # base screw inset band (holes ff/2 from the platf
 # anti-slip pad -- PROVISIONAL retention: gravity + pocket + foot pressure.
 INSERT_PILOT_D  = 4.0         # heat-set pilot bore
 INSERT_DEPTH    = 6.4         # pilot depth (5.7 insert + melt allowance)
-PLAT_WALL       = 3.0         # printed perimeter wall
+PLAT_WALL       = 3.0         # printed perimeter wall (cavity hollowing)
 PLAT_DECK       = 8.0         # printed top deck (full insert engagement)
 POCKET_DEPTH    = 1.2         # bottom-pad locating pocket depth (< PEDAL_PAD_T)
 POCKET_CLR      = 0.6         # pocket clearance over the pad footprint (total)
+# Light-baffle SKIRT around the pedal: a perimeter wall rising from the deck to
+# ~1mm under the sloped faceplate, so the enclosure interior is not visible
+# through the slot reveal. The wall sits OUTBOARD of the side screw bosses
+# (span 83.25) -- the pedal drops straight in past it into the pocket. Print
+# BLACK (PETG/ASA): the wall is the visible backdrop through the reveal.
+SKIRT_T      = 2.0            # skirt wall thickness
+SKIRT_GAP    = 1.0            # skirt top to faceplate underside
+SKIRT_IN_W   = PEDAL_SCREW_SPAN + 1.5   # 84.75: clears the bosses by 0.75/side
+SKIRT_IN_D   = PEDAL_D + 1.5            # 111.37: 0.75 per end around the case
+SKIRT_OUT_W  = SKIRT_IN_W + 2*SKIRT_T   # 88.75 -- also the pedestal footprint W
+SKIRT_OUT_D  = SKIRT_IN_D + 2*SKIRT_T   # 115.37 -- also the pedestal footprint D
 
 # --- screens (capacitive touch, mounted from BEHIND; aperture < bezel) --------
 BIG_BEZEL  = (359.5, 223.75)  # 15.6" panel BODY (measured): glass 359.5x206.5 edge-to-edge + a
@@ -684,6 +695,16 @@ def _check():
     # 3c. the front gap absorbed the deeper Cherub slot; keep it usable
     assert FRONT_GAP >= 40.0, f"FRONT_GAP: {FRONT_GAP:.1f} mm < 40 -- pedals crowd the screen block"
 
+    # 3d. light-baffle skirt: clears the screw bosses, the neighbouring pedestal,
+    # and the support-post pad behind row 1
+    assert SKIRT_IN_W - PEDAL_SCREW_SPAN >= 1.0, "SKIRT: side walls pinch the screw bosses"
+    row1 = sorted(u for _, u, v in PEDALS if v == PEDAL_ROW1_V)
+    pitch = min(b - a for a, b in zip(row1, row1[1:]))
+    assert pitch - SKIRT_OUT_W >= 4.0, f"SKIRT: outer {SKIRT_OUT_W:.1f} vs pitch {pitch:.1f}"
+    skirt_rear = PEDAL_ROW1_V + SKIRT_OUT_D / 2.0
+    assert POST_V - POST_PAD - skirt_rear >= 0.8, \
+        f"SKIRT: row-1 skirt rear v{skirt_rear:.1f} hits the post pad (front v{POST_V-POST_PAD:.1f})"
+
     # 4. screen depth: each module clears the interior under the lid (read positions)
     for ref, dep in (("SCREEN_16IN", BIG_DEPTH), ("SCREEN_7IN", SMALL_DEPTH)):
         s = byref[ref]; v_mid = s["v"] + s["h"] / 2.0
@@ -1081,7 +1102,7 @@ def platform_foot_holes():
     pass UP through the floor into the heat-set inserts in each pedestal's
     underside (4 per platform), projected from each pedal onto the flat bottom."""
     cs = math.cos(math.radians(SLOPE_ANGLE))
-    sw = PEDAL_W + 2*PLATFORM_MARGIN; sd = PEDAL_D + 2*PLATFORM_MARGIN; ff = PLATFORM_FOOT
+    sw = SKIRT_OUT_W; sd = SKIRT_OUT_D; ff = PLATFORM_FOOT
     out = []
     for _label, u, v in PEDALS:
         vb = v * cs                                # pedal depth projected onto the flat bottom
@@ -1174,17 +1195,20 @@ def _transition_face(cq):
            * cq.Location(cq.Vector(0,0,0), cq.Vector(0,1,0), TRANS_ANGLE))
     return box.val().moved(loc)
 
-def _platform_printed(cq, ph):
+def _platform_printed(cq, ph, v_c):
     """3D-printed pedal pedestal: solid deck + perimeter wall, hollowed below
     (tall MID parts) with boss columns at the insert stations. M3 heat-set
     inserts press in from BELOW at the base PLAT_SCR pattern; the deck top gets
     a shallow LOCATING POCKET for the Cherub's bottom anti-slip pad (the WTB-006
-    has no base screws -- side screws only; retention PROVISIONAL). Origin:
-    pedal centre, z=0 at the BASE PLATE TOP; height ph - T puts the deck at the
+    has no base screws -- side screws only; retention PROVISIONAL), and a
+    perimeter light-baffle SKIRT rises from the deck to SKIRT_GAP under the
+    sloped faceplate (top cut at SLOPE_ANGLE; v_c = the pedal's slot centre in
+    faceplate v, needed to height the skirt). Print BLACK. Origin: pedal
+    centre, z=0 at the BASE PLATE TOP; height ph - T puts the deck at the
     pedal standing plane. Assembly frame: X = depth (v), Y = width (u); the
     pedal mounts TOE-FORWARD (back/cable end at +X)."""
-    sw = PEDAL_W + 2*PLATFORM_MARGIN
-    sd = PEDAL_D + 2*PLATFORM_MARGIN
+    sw = SKIRT_OUT_W
+    sd = SKIRT_OUT_D
     h = ph - T
     # cap the pilot depth in the LOW front pedestal (keeps a solid mid web and
     # clears the pad pocket above) and fit SHORT inserts (M3 x 3) instead of 5.7s
@@ -1211,6 +1235,18 @@ def _platform_printed(cq, ph):
     body = body.cut(cq.Workplane("XY").box(
         PEDAL_PAD_D + POCKET_CLR, PEDAL_PAD_W + POCKET_CLR, POCKET_DEPTH,
         centered=(True, True, False)).translate((-pocket_dx, 0, h - POCKET_DEPTH)))
+    # light-baffle skirt: perimeter ring above the deck, top following the
+    # sloped faceplate underside at SKIRT_GAP. Local +X = rearward = up-slope.
+    ring = (cq.Workplane("XY").box(sd, sw, 60.0, centered=(True, True, False))
+            .cut(cq.Workplane("XY").box(SKIRT_IN_D, SKIRT_IN_W, 60.0,
+                                        centered=(True, True, False)))
+            .translate((0, 0, h)))
+    zc = lid_top_z(v_c) - 2*T - SKIRT_GAP   # skirt-top plane at x=0, local z (z0 = base top)
+    cutter = (cq.Workplane("XY").box(400.0, 400.0, 200.0, centered=(True, True, False))
+              .rotate((0, 0, 0), (0, 1, 0), -SLOPE_ANGLE)
+              .translate((0, 0, zc)))
+    ring = ring.cut(cutter)
+    body = body.union(ring)
     return body
 
 def build_platform_steps():
@@ -1218,7 +1254,7 @@ def build_platform_steps():
     import cadquery as cq
     outp = []
     for tag, v in (("front", PEDAL_ROW1_V), ("mid", PEDAL_ROW2_V)):
-        body = _platform_printed(cq, platform_h(v))
+        body = _platform_printed(cq, platform_h(v), v)
         base = os.path.join(OUT, f"vamp_platform_{tag}")
         cq.exporters.export(body.val(), base + ".step")
         cq.exporters.export(body, base + ".stl", tolerance=0.05)
@@ -1335,7 +1371,7 @@ def build_step(write_parts=True):
     # holes, and faceplate slot share one centre at every pedal position.
     _cs = math.cos(math.radians(SLOPE_ANGLE))
     for i, (label, u, v) in enumerate(PEDALS):
-        plat = _platform_printed(cq, platform_h(v))
+        plat = _platform_printed(cq, platform_h(v), v)
         addw(plat, f"platform_{i}", cq.Location(cq.Vector(v * _cs, u + T, T)))
     # representative loopy_pedal_main board on standoffs, rear clear zone (visual stand-in;
     # the fully-detailed KiCad model is rendered in the 3D viewer, not the STEP)
@@ -1519,7 +1555,7 @@ def _render_parts(cq, explode=0.0):
     add(cq.Workplane("XY").box(LID_REAR_LAP, LID_W, T, centered=False).val().moved(lap_loc), FACE)
     cuts,_=faceplate_holes()
     for label,u,v in PEDALS:
-        ph=platform_h(v); add(_platform_printed(cq,ph).val().moved(cq.Location(cq.Vector(v,u+T,T))), PLAT)
+        ph=platform_h(v); add(_platform_printed(cq,ph,v).val().moved(cq.Location(cq.Vector(v,u+T,T))), PLAT)
         add(cq.Workplane("XY").box(PEDAL_D,PEDAL_W,PEDAL_H,centered=(True,True,False)).translate((v,u+T,ph)).val(), PED)
         # pink/magenta bumper strip across the foot-plate (reference accent)
         add(cq.Workplane("XY").box(16,PEDAL_W-8,2,centered=(True,True,False)).translate((v-PEDAL_D*0.22,u+T,ph+PEDAL_H)).val(), STRIP)
