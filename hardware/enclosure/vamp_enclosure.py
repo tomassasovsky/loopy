@@ -1300,32 +1300,35 @@ def build_platform_steps():
         outp.append(base + ".step")
     return outp
 
-def build_fit_test():
-    """Fully 3D-printable FIT-TEST article: the console's lower-right corner
-    around the TRACK3 + TRACK4 pedals, full enclosure cross-section, to verify
-    the Cherub WTB-006 drop-in before cutting metal. Two pieces, replicating
-    the real assembly:
-      TRAY -- base floor + front/right REAL walls + left/rear section-cut
-      walls (tops follow the faceplate underside incl. the row-1 seating
-      drift), with both pedestal TUBS integrated into the floor (pocket, boss
-      channels, cable notch).
-      LID  -- flat printable plate = the faceplate section (2 pedal slots +
-      2 LED pills) with corner registration tabs that drop just inside the
-      walls; rests on the wall tops at the real sloped height.
-    Frame: X = u - FIT_U0, Y = FLAT (projected) v, Z = world z."""
+def build_mini_console():
+    """Fully 3D-printable STANDALONE MINI CONSOLE (issue #362; evolved from the
+    #360 fit-test): 2 Cherub WTB-006 pedals (TRACK3/TRACK4 geometry, verbatim
+    console constants -- so it doubles as the metal-order fit test) in a
+    closed, openable wedge enclosure with a Pro Micro bay -- a working
+    2-switch USB desk unit.
+      TRAY -- floor + four REAL walls (tops follow the faceplate underside,
+      row-1 drift incl.), both pedestal TUBS integrated (pocket, boss
+      channels, cable notches facing the rear board bay), a Pro Micro POCKET
+      boss against the rear wall with a USB cutout through it, and two rear
+      screw BOSSES (M3 heat-set, vertical) the lid closes onto.
+      LID  -- prints FLAT: the faceplate section (2 pedal slots + 2 LED
+      pills), four registration tabs, two rear M3 through-holes. Open/close =
+      two screws; the tabs + slope keep it located.
+    Frame: X = u - MINI_U0, Y = FLAT (projected) v, Z = world z."""
     import cadquery as cq
     cs = math.cos(math.radians(SLOPE_ANGLE))
     tn = math.tan(math.radians(SLOPE_ANGLE))
-    U0 = 625.3                       # cut mid-gap between pedals 6 and 7
-    PEDS = [_row1_u(6), _row1_u(7)]  # TRACK3, TRACK4
-    V1S = 160.0                      # section depth, on-slope (past the LED pills)
-    D = V1S * cs                     # flat depth
-    Wt = (FP_W + 2*T) - (U0 + T)     # to the right wall OUTER face = 222.7
-    CUT_T = 2.4                      # section-cut wall thickness
-    # Wall-top plane = the real faceplate underside, anchored at the PEDAL ROW
-    # LINE (lid_top_z is not purely linear near the front lip, so anchoring at
-    # v=0 sits ~0.35 low and the lid would press into the tub crowns).
+    U0 = 625.3
+    PEDS = [_row1_u(6), _row1_u(7)]  # the TRACK3/TRACK4 pair, pitch preserved
+    V1S = 160.0                      # depth on-slope (pedals + pills + board bay)
+    D = V1S * cs
+    WALL_T = 2.4
+    # right wall hugs TRACK4's tub (+0.5); left wall is the print's own edge
+    Wt = (PEDS[1] - U0) + SKIRT_OUT_W/2.0 + 0.5 + WALL_T   # = 199.0
     C0 = (lid_top_z(PEDAL_ROW1_V) + SKIRT_DRIFT_ROW1 - T) - tn * (PEDAL_ROW1_V * cs)
+    BOSS_XS = (40.0, 165.0)          # rear lid-screw bosses (clear of tubs/bay/tabs)
+    BOARD_W, BOARD_D = 34.2, 18.8    # Pro Micro pocket (33 x 18 board + clearance)
+    BOARD_XC = (PEDS[0] + PEDS[1])/2.0 - U0   # centred between the tubs
 
     def slope_cut(sol, z0):
         cutter = (cq.Workplane("XY").box(900.0, 900.0, 300.0, centered=(True, True, False))
@@ -1334,14 +1337,24 @@ def build_fit_test():
         return sol.cut(cutter)
 
     # --- tray -------------------------------------------------------------
-    tray = cq.Workplane("XY").box(Wt, D, T, centered=False)          # floor
-    walls = (cq.Workplane("XY").box(Wt, T, 60.0, centered=False)     # front (real)
-             .union(cq.Workplane("XY").box(T, D, 60.0, centered=False)
-                    .translate((Wt - T, 0, 0)))                      # right (real)
-             .union(cq.Workplane("XY").box(CUT_T, D, 60.0, centered=False))  # left cut
-             .union(cq.Workplane("XY").box(Wt, CUT_T, 60.0, centered=False)
-                    .translate((0, D - CUT_T, 0))))                  # rear cut
+    tray = cq.Workplane("XY").box(Wt, D, T, centered=False)              # floor
+    walls = (cq.Workplane("XY").box(Wt, WALL_T, 60.0, centered=False)    # front
+             .union(cq.Workplane("XY").box(WALL_T, D, 60.0, centered=False))   # left
+             .union(cq.Workplane("XY").box(WALL_T, D, 60.0, centered=False)
+                    .translate((Wt - WALL_T, 0, 0)))                     # right
+             .union(cq.Workplane("XY").box(Wt, WALL_T, 60.0, centered=False)
+                    .translate((0, D - WALL_T, 0))))                     # rear
+    # rear lid-screw bosses: 12x12, tops on the wall-top plane, M3 insert pilots
+    for bx in BOSS_XS:
+        walls = walls.union(cq.Workplane("XY").box(12.0, 12.0, 60.0, centered=False)
+                            .translate((bx - 6.0, D - WALL_T - 12.0, 0)))
     walls = slope_cut(walls.translate((0, 0, T)), C0)
+    for bx in BOSS_XS:
+        by = D - WALL_T - 6.0
+        top = C0 + tn * by + 1.0     # bore from above the sloped boss top
+        walls = walls.cut(cq.Workplane("XY").circle(INSERT_PILOT_D/2.0)
+                          .extrude(-(INSERT_DEPTH + 1.0))
+                          .translate((bx, by, top)))
     tray = tray.union(walls)
     yc = PEDAL_ROW1_V * cs
     for u in PEDS:
@@ -1349,8 +1362,19 @@ def build_fit_test():
                .rotate((0, 0, 0), (0, 0, 1), 90)
                .translate((u - U0, yc, T)))
         tray = tray.union(ped)
+    # Pro Micro bay: raised boss against the rear wall, open-top pocket, and a
+    # USB cutout through the rear wall (board slides in from above; the USB
+    # lead + pocket friction retain it -- PROVISIONAL, fine for the mini)
+    boss = cq.Workplane("XY").box(BOARD_W + 8.0, BOARD_D + 4.0, 4.0, centered=False)\
+        .translate((BOARD_XC - BOARD_W/2.0 - 4.0, D - WALL_T - BOARD_D - 4.0, T))
+    pocket = cq.Workplane("XY").box(BOARD_W, BOARD_D, 3.0, centered=False)\
+        .translate((BOARD_XC - BOARD_W/2.0, D - WALL_T - BOARD_D, T + 1.8))
+    tray = tray.union(boss).cut(pocket)
+    usb = cq.Workplane("XY").box(12.0, WALL_T + 2.0, 5.0, centered=False)\
+        .translate((BOARD_XC - 6.0, D - WALL_T - 1.0, T + 2.6))
+    tray = tray.cut(usb)
 
-    # --- lid (prints FLAT; sits on the wall tops at the real slope) -------
+    # --- lid (prints FLAT; seats on the wall tops at the real slope) ------
     lid = cq.Workplane("XY").box(Wt, V1S, T, centered=False)
     for u in PEDS:
         x = u - U0
@@ -1359,25 +1383,29 @@ def build_fit_test():
         vc = PEDAL_ROW1_V + FSW_SLOT_D/2 + LED_GAP
         lid = lid.cut(cq.Workplane("XY").slot2D(LED_SLOT_W, LED_SLOT_H).extrude(3*T)
                       .translate((x, vc, -T)))
-    # registration tabs: drop just inside the front/rear walls, in the corridors
-    # CLEAR of the tub outer walls (mid gap between the tubs + right of TRACK4).
-    # 2.0 y-clearance covers the ~1.1mm rearward shift the 12.5deg tilt gives
-    # the tab bottoms.
-    tx_mid = (PEDS[0] + PEDS[1])/2.0 - U0 - 5.0        # between the tubs
-    tx_right = (PEDS[1] - U0) + SKIRT_OUT_W/2.0 + 4.0  # right of TRACK4's tub
-    tabs = ((tx_mid, T/cs + 2.0), (tx_right, T/cs + 2.0),
-            (tx_mid, (D - CUT_T)/cs - 12.0), (tx_right, (D - CUT_T)/cs - 12.0))
-    for (tx, tv) in tabs:
+    # rear screw through-holes over the bosses (3.6 clearance)
+    for bx in BOSS_XS:
+        by_l = (D - WALL_T - 6.0) / cs
+        lid = lid.cut(cq.Workplane("XY").circle(1.8).extrude(3*T)
+                      .translate((bx, by_l, -T)))
+    # registration tabs. FRONT: shallow (3.5 deep) hugging the wall -- they must
+    # stay inside the y<8.5 strip before the tub front walls (the 12.5deg tilt
+    # shifts tab bottoms ~1.1 rearward, accounted). REAR: full 10x10 in the
+    # corridors clear of the bosses and the board bay.
+    for tx in (40.0, 165.0):
+        lid = lid.union(cq.Workplane("XY").box(10.0, 3.5, 5.0, centered=False)
+                        .translate((tx - 5.0, WALL_T/cs + 0.8, -5.0)))
+    for tx in (60.0, 176.0):
         lid = lid.union(cq.Workplane("XY").box(10.0, 10.0, 5.0, centered=False)
-                        .translate((tx, tv, -5.0)))
+                        .translate((tx, (D - WALL_T)/cs - 12.0, -5.0)))
 
     outp = []
     for tag, sol in (("tray", tray), ("lid", lid)):
-        base = os.path.join(OUT, f"vamp_fit_test_{tag}")
+        base = os.path.join(OUT, f"vamp_mini_console_{tag}")
         cq.exporters.export(sol.val(), base + ".step")
         cq.exporters.export(sol, base + ".stl", tolerance=0.05)
         bb = sol.val().BoundingBox()
-        print(f"Fit test {tag}: {base}.step/.stl  footprint "
+        print(f"Mini console {tag}: {base}.step/.stl  footprint "
               f"{bb.xmax-bb.xmin:.1f} x {bb.ymax-bb.ymin:.1f} x {bb.zmax-bb.zmin:.1f} mm")
         outp.append(base + ".step")
     return outp
@@ -1827,7 +1855,7 @@ def main(argv):
             print("Faceplate support post (base-anchored, x2): out/" + os.path.basename(s))
             for pp in build_platform_steps():
                 print("Printed platform: out/" + os.path.basename(pp) + " (+ .stl)")
-            build_fit_test()
+            build_mini_console()
             p = build_step()
             print("\n3D STEP:\n  " + os.path.relpath(p, HERE) + " (+ per-part .step)")
         except Exception as e:  # pragma: no cover
