@@ -1300,6 +1300,80 @@ def build_platform_steps():
         outp.append(base + ".step")
     return outp
 
+def build_fit_test():
+    """Fully 3D-printable FIT-TEST article: the console's lower-right corner
+    around the TRACK3 + TRACK4 pedals, full enclosure cross-section, to verify
+    the Cherub WTB-006 drop-in before cutting metal. Two pieces, replicating
+    the real assembly:
+      TRAY -- base floor + front/right REAL walls + left/rear section-cut
+      walls (tops follow the faceplate underside incl. the row-1 seating
+      drift), with both pedestal TUBS integrated into the floor (pocket, boss
+      channels, cable notch).
+      LID  -- flat printable plate = the faceplate section (2 pedal slots +
+      2 LED pills) with corner registration tabs that drop just inside the
+      walls; rests on the wall tops at the real sloped height.
+    Frame: X = u - FIT_U0, Y = FLAT (projected) v, Z = world z."""
+    import cadquery as cq
+    cs = math.cos(math.radians(SLOPE_ANGLE))
+    tn = math.tan(math.radians(SLOPE_ANGLE))
+    U0 = 625.3                       # cut mid-gap between pedals 6 and 7
+    PEDS = [_row1_u(6), _row1_u(7)]  # TRACK3, TRACK4
+    V1S = 160.0                      # section depth, on-slope (past the LED pills)
+    D = V1S * cs                     # flat depth
+    Wt = (FP_W + 2*T) - (U0 + T)     # to the right wall OUTER face = 222.7
+    CUT_T = 2.4                      # section-cut wall thickness
+    C0 = lid_top_z(0.0) + SKIRT_DRIFT_ROW1 - T   # real underside at y=0
+
+    def slope_cut(sol, z0):
+        cutter = (cq.Workplane("XY").box(900.0, 900.0, 300.0, centered=(True, True, False))
+                  .rotate((0, 0, 0), (1, 0, 0), SLOPE_ANGLE)
+                  .translate((0, 0, z0)))
+        return sol.cut(cutter)
+
+    # --- tray -------------------------------------------------------------
+    tray = cq.Workplane("XY").box(Wt, D, T, centered=False)          # floor
+    walls = (cq.Workplane("XY").box(Wt, T, 60.0, centered=False)     # front (real)
+             .union(cq.Workplane("XY").box(T, D, 60.0, centered=False)
+                    .translate((Wt - T, 0, 0)))                      # right (real)
+             .union(cq.Workplane("XY").box(CUT_T, D, 60.0, centered=False))  # left cut
+             .union(cq.Workplane("XY").box(Wt, CUT_T, 60.0, centered=False)
+                    .translate((0, D - CUT_T, 0))))                  # rear cut
+    walls = slope_cut(walls.translate((0, 0, T)), C0)
+    tray = tray.union(walls)
+    yc = PEDAL_ROW1_V * cs
+    for u in PEDS:
+        ped = (_platform_printed(cq, platform_h(PEDAL_ROW1_V), PEDAL_ROW1_V)
+               .rotate((0, 0, 0), (0, 0, 1), 90)
+               .translate((u - U0, yc, T)))
+        tray = tray.union(ped)
+
+    # --- lid (prints FLAT; sits on the wall tops at the real slope) -------
+    lid = cq.Workplane("XY").box(Wt, V1S, T, centered=False)
+    for u in PEDS:
+        x = u - U0
+        lid = lid.cut(cq.Workplane("XY").box(FSW_SLOT_W, FSW_SLOT_D, 3*T, centered=(True, True, False))
+                      .translate((x, PEDAL_ROW1_V, -T)))
+        vc = PEDAL_ROW1_V + FSW_SLOT_D/2 + LED_GAP
+        lid = lid.cut(cq.Workplane("XY").slot2D(LED_SLOT_W, LED_SLOT_H).extrude(3*T)
+                      .translate((x, vc, -T)))
+    # registration tabs: drop just inside the four walls (0.6 clearance)
+    tabs = ((T + 0.6, T/cs + 0.6), (Wt - T - 10.6, T/cs + 0.6),
+            (CUT_T + 0.6, (D - CUT_T)/cs - 10.6), (Wt - T - 10.6, (D - CUT_T)/cs - 10.6))
+    for (tx, tv) in tabs:
+        lid = lid.union(cq.Workplane("XY").box(10.0, 10.0, 5.0, centered=False)
+                        .translate((tx, tv, -5.0)))
+
+    outp = []
+    for tag, sol in (("tray", tray), ("lid", lid)):
+        base = os.path.join(OUT, f"vamp_fit_test_{tag}")
+        cq.exporters.export(sol.val(), base + ".step")
+        cq.exporters.export(sol, base + ".stl", tolerance=0.05)
+        bb = sol.val().BoundingBox()
+        print(f"Fit test {tag}: {base}.step/.stl  footprint "
+              f"{bb.xmax-bb.xmin:.1f} x {bb.ymax-bb.ymin:.1f} x {bb.zmax-bb.zmin:.1f} mm")
+        outp.append(base + ".step")
+    return outp
+
 def build_diffuser_step():
     """LED pill diffuser INSERT (3D-print in WHITE PLA, x6 per console):
     a stadium lens that pushes into the faceplate slot FROM THE INSIDE until its
@@ -1745,6 +1819,7 @@ def main(argv):
             print("Faceplate support post (base-anchored, x2): out/" + os.path.basename(s))
             for pp in build_platform_steps():
                 print("Printed platform: out/" + os.path.basename(pp) + " (+ .stl)")
+            build_fit_test()
             p = build_step()
             print("\n3D STEP:\n  " + os.path.relpath(p, HERE) + " (+ per-part .step)")
         except Exception as e:  # pragma: no cover
