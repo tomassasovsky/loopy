@@ -1322,7 +1322,10 @@ def build_fit_test():
     D = V1S * cs                     # flat depth
     Wt = (FP_W + 2*T) - (U0 + T)     # to the right wall OUTER face = 222.7
     CUT_T = 2.4                      # section-cut wall thickness
-    C0 = lid_top_z(0.0) + SKIRT_DRIFT_ROW1 - T   # real underside at y=0
+    # Wall-top plane = the real faceplate underside, anchored at the PEDAL ROW
+    # LINE (lid_top_z is not purely linear near the front lip, so anchoring at
+    # v=0 sits ~0.35 low and the lid would press into the tub crowns).
+    C0 = (lid_top_z(PEDAL_ROW1_V) + SKIRT_DRIFT_ROW1 - T) - tn * (PEDAL_ROW1_V * cs)
 
     def slope_cut(sol, z0):
         cutter = (cq.Workplane("XY").box(900.0, 900.0, 300.0, centered=(True, True, False))
@@ -1356,9 +1359,14 @@ def build_fit_test():
         vc = PEDAL_ROW1_V + FSW_SLOT_D/2 + LED_GAP
         lid = lid.cut(cq.Workplane("XY").slot2D(LED_SLOT_W, LED_SLOT_H).extrude(3*T)
                       .translate((x, vc, -T)))
-    # registration tabs: drop just inside the four walls (0.6 clearance)
-    tabs = ((T + 0.6, T/cs + 0.6), (Wt - T - 10.6, T/cs + 0.6),
-            (CUT_T + 0.6, (D - CUT_T)/cs - 10.6), (Wt - T - 10.6, (D - CUT_T)/cs - 10.6))
+    # registration tabs: drop just inside the front/rear walls, in the corridors
+    # CLEAR of the tub outer walls (mid gap between the tubs + right of TRACK4).
+    # 2.0 y-clearance covers the ~1.1mm rearward shift the 12.5deg tilt gives
+    # the tab bottoms.
+    tx_mid = (PEDS[0] + PEDS[1])/2.0 - U0 - 5.0        # between the tubs
+    tx_right = (PEDS[1] - U0) + SKIRT_OUT_W/2.0 + 4.0  # right of TRACK4's tub
+    tabs = ((tx_mid, T/cs + 2.0), (tx_right, T/cs + 2.0),
+            (tx_mid, (D - CUT_T)/cs - 12.0), (tx_right, (D - CUT_T)/cs - 12.0))
     for (tx, tv) in tabs:
         lid = lid.union(cq.Workplane("XY").box(10.0, 10.0, 5.0, centered=False)
                         .translate((tx, tv, -5.0)))
