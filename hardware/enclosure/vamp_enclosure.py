@@ -117,7 +117,12 @@ PEDAL_SCREW_SPAN   = 83.25    # overall width across both screw heads
 PEDAL_PAD_W          = 64.61  # bottom pad width
 PEDAL_PAD_D          = 90.0   # bottom pad length
 PEDAL_PAD_BACK_INSET = 16.43  # pad rear edge inset from the case back edge
-FSW_SLOT_W = PEDAL_W + 3.0    # slot clearance around the foot-plate (u) = 79.35
+FSW_SLOT_W = PEDAL_W + 2.0    # slot width (u) = 78.35, 1.0mm/side. The side screws DON'T
+                              # drive this: their bosses duck ~6.6mm under the faceplate
+                              # beside the slot (checked in 3b). The case governs, and its
+                              # taper means the widest section crossing the plate plane is
+                              # only ~76.05 -- real clearance is >=1.15mm/side. Floor is the
+                              # lid-drop alignment over 10 pedals (~0.6mm tolerance stack).
 FSW_SLOT_CLR_D = 3.0          # HORIZONTAL front+rear clearance target around the pedal.
 # FSW_SLOT_D is defined after SLOPE_ANGLE below: the slot lives in the SLOPED
 # faceplate but the pedal is HORIZONTAL, so the on-slope slot depth must be the
