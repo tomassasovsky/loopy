@@ -29,14 +29,15 @@ Send **`enclosure/out/vamp_3dprint.zip`** (STEP + STL for each part).
 
 | Part | Qty | Material | Notes |
 |---|---|---|---|
-| `vamp_platform_front` | 8 | PETG/ASA, ≥40% infill | Pedal pedestal, 104×79×8.6. Heat-set pilots Ø4.0 both faces — use **short M3×3 inserts** (8 per pedestal). |
-| `vamp_platform_mid` | 2 | PETG/ASA, ≥40% infill | Tall (45.9) CLEAR/BANK pedestal, hollow with boss columns — standard **M3×5.7×4.6 inserts** (8 per pedestal). |
+| `vamp_platform_front` | 8 | PETG/ASA, ≥40% infill | Pedal pedestal, 113.9×80.4×8.9. Heat-set pilots Ø4.0 from below — **short M3×3 inserts** (4 per pedestal). Deck has a 1.2-deep locating pocket for the pedal's bottom pad. |
+| `vamp_platform_mid` | 2 | PETG/ASA, ≥40% infill | Tall (46.2) CLEAR/BANK pedestal, hollow with boss columns — standard **M3×5.7×4.6 inserts** (4 per pedestal) + the same pad pocket. |
 | `vamp_led_diffuser` | 6 | **White PLA** | Pill lens, pushes into the faceplate slot from inside. |
 | `vamp_ring_diffuser` | 1 | **White PLA** | Annular lens for the encoder LED ring. |
-| `rc20_pad/out/asp1_pad` | 1 master | Resin/PLA master | Pedal pad master (96×71, ASP-1-sized) — print once, cast **10× silicone pads** via `asp1_pad_mould`/`asp1_pad_pourbox`. Footprint tracks the PROVISIONAL ASP-1 dims. |
 
-Platform top pedal-insert pattern (`ASP1_MOUNT` 55×80) is **PROVISIONAL** until
-a real ASP-1 base is measured — reprint or re-drill if it moves.
+The Cherub WTB-006 has **no base screws** (one horizontal through-screw per
+side): retention = the deck pocket + gravity + foot pressure, **PROVISIONAL**.
+The old `rc20_pad` `asp1_pad` casting master targeted the retired ASP-1 pedal
+and no longer matches any pedal in this design.
 
 ## 3. PCBs
 
@@ -58,7 +59,7 @@ silkscreen on the metal.
 Full lists with links: **`loopy_console_shopping_list.md`** (console) and
 **`loopy_pedal_shopping_list.md`** (board THT parts). Headlines:
 
-- 10× Artesia ASP-1 pedals; 15.6" 5V USB-C touch panel; APROTII 7" monitor
+- 10× Cherub WTB-006 footswitches; 15.6" 5V USB-C touch panel; APROTII 7" monitor
 - Raspberry Pi 5 + Active Cooler
 - 5V buck: **eleUniverse 8–36V→5V 10A IP67** (Amazon B0GGHN97TK) + 9V ≥5A brick
 - 1× NeoPixel Ring 16 (authentic Adafruit, 44.5 mm OD — clones are 68 mm and won't fit)

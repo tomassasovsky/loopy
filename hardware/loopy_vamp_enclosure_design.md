@@ -14,10 +14,13 @@ validated by an in-generator **assertion suite** (see §8). Decisions came from
 [research](../docs/research/2026-06-27-vamp-components-research.md) →
 [plan](../docs/plan/2026-06-27-feat-vamp-enclosure-rework-plan.md) → technical review.
 
-> **Integrated pedals.** The foot controls are ten **whole Artesia ASP-1 sustain
-> pedals** (100 × 75 × 25 mm), modded so their switch leads wire straight to the
-> board. Each **stands on a spot-welded inner platform**; its foot-plate protrudes
-> through a ~78 × 103 mm slot. **No top-face fasteners; no cables leave the box.**
+> **Integrated pedals.** The foot controls are ten **whole Cherub WTB-006
+> footswitches** (109.87 × 76.35, 29.3 mm tall incl. anti-slip pads, caliper-
+> measured — `hardware/cherub_wtb006_pedal/`), modded so their switch leads wire
+> straight to the board. Each **stands on a printed pedestal**; the pedal
+> protrudes through a ~79 × 116 mm slot (slot depth is slope-corrected: the slot
+> lives in the 12.5° faceplate but the pedal is horizontal). **No top-face
+> fasteners; no cables leave the box.**
 
 ---
 
@@ -63,19 +66,23 @@ surface.
 
 ---
 
-## 2. Foot pedals on welded inner platforms
+## 2. Foot pedals on printed pedestals
 
-Ten whole **Artesia ASP-1** pedals stand inside on spot-welded platforms, the
-foot-plates protruding through the top slots — giving the reference's piano-key
-look with no visible fasteners and the switch wiring fully internal.
+Ten whole **Cherub WTB-006** footswitches stand inside on printed pedestals,
+toe toward the player, protruding through the top slots — giving the
+reference's piano-key look with no visible fasteners and the switch wiring
+fully internal.
 
-- **Slot:** `FSW_SLOT_W` 78 (u) × `FSW_SLOT_D` 103 (v) mm — the ASP-1 footprint
-  (75 × 100) + 3 mm clearance. **No mounting holes** in the faceplate.
-- **Platform** (`vamp_platform`, ×10): a folded shelf + two downturned legs with
-  weld tabs, **spot-welded** to the front wall + an internal cross-rib. Shelf top
-  at **`PLATFORM_H` ≈ 31.5 mm** so the 25 mm pedal body lands the foot-plate flush
-  +2 mm proud at the slot. The `PLATFORM_HEADROOM` assertion enforces this against
-  the local lid height.
+- **Slot:** `FSW_SLOT_W` 79.35 (u) × `FSW_SLOT_D` 115.61 (v) mm — the WTB-006
+  envelope (76.35 × 109.87) + 3 mm clearance, with the slot depth divided by
+  cos(slope) because the slot lives in the sloped faceplate while the pedal is
+  horizontal. **No mounting holes** in the faceplate.
+- **Pedestal** (`vamp_platform_front`/`_mid`, 8+2, 3D-printed): deck at
+  `platform_h(v)` (front ≈ 10.9, mid ≈ 48.2 mm) so the pedal's top-pad surface
+  stands `FOOTPLATE_PROUD` = 12 mm above the sloped skin at the row line; a
+  1.2 mm deck pocket locates the pedal's bottom pad (the WTB-006 has no base
+  screws — side through-screws only; retention PROVISIONAL). The
+  `PLATFORM_HEADROOM` assertion enforces this against the local lid height.
 - **Layout (two rows, per the reference):** a front row of **8 evenly-spaced**
   pedals (REC/PLAY · STOP · UNDO · MODE · TRACK 1–4) and an upper pair **CLEAR /
   BANK aligned in `u` over UNDO and MODE**. **7 indicator LEDs sit aligned above
@@ -83,10 +90,10 @@ look with no visible fasteners and the switch wiring fully internal.
   `indicatorLeds[7]`; STOP/UNDO/MODE have none. The mid-row platforms are taller (the lid is higher there); the generator
   computes both heights and the depth assertions confirm the 16" screen fits behind.
 
-> **PROVISIONAL.** `FSW_SLOT_*` and `PLATFORM_H` are computed from the ASP-1's
-> published 100 × 75 × 25 mm. **Measure a real ASP-1** (foot-plate, body height,
-> how proud the plate sits) and set `ASP1_*` before cutting metal; the assertions
-> will re-validate the fit.
+> The `PEDAL_*` constants are **caliper-measured from a real WTB-006**
+> (2026-07-28, issues #358/#360) — unlike the earlier ASP-1 placeholder they are
+> no longer provisional. Pedestal **retention** is the remaining PROVISIONAL
+> piece (pocket + gravity; no fastener engages the pedal).
 
 ---
 
@@ -96,7 +103,7 @@ look with no visible fasteners and the switch wiring fully internal.
 
 | feature | qty | size (mm) | maps to |
 |---------|-----|-----------|---------|
-| ASP-1 pedal slot | 10 | 78 × 103 | 8 front (evenly spaced) + CLEAR/BANK over UNDO/MODE, no fasteners |
+| WTB-006 pedal slot | 10 | 79.35 × 115.61 | 8 front (evenly spaced) + CLEAR/BANK over UNDO/MODE, no fasteners |
 | indicator LED | 7 | Ø5.1 | aligned above REC/PLAY · CLEAR · BANK · TRACK 1–4 (= `indicatorLeds[7]`) |
 | 7" touchscreen | 1 | 156 × 88 aperture | waveform / loop view (left), top-aligned |
 | 16" touchscreen | 1 | 350 × 199 aperture | main loopy UI (right), top-aligned |
@@ -227,7 +234,7 @@ the electronics BOMs / `loopy_pedal_shopping_list.md`.
 
 ## 10. Confirm before cutting
 
-Two figures must come from the physical parts (both one-line param changes, then
-re-run — the assertions re-validate): **`ASP1_*`** (real pedal foot-plate + body,
-driving `FSW_SLOT_*` and `PLATFORM_H`) and the exact **`BIG_*`/`SMALL_*`** touch
-modules.
+The pedal figures (`PEDAL_*`) are now caliper-measured (2026-07-28); the one
+family still to confirm from physical parts is the exact **`BIG_*`/`SMALL_*`**
+touch modules (one-line param changes, then re-run — the assertions
+re-validate).

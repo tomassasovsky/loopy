@@ -118,7 +118,11 @@ PEDAL_PAD_W          = 64.61  # bottom pad width
 PEDAL_PAD_D          = 90.0   # bottom pad length
 PEDAL_PAD_BACK_INSET = 16.43  # pad rear edge inset from the case back edge
 FSW_SLOT_W = PEDAL_W + 3.0    # slot clearance around the foot-plate (u) = 79.35
-FSW_SLOT_D = PEDAL_D + 3.0    # slot clearance (v) = 112.87
+FSW_SLOT_CLR_D = 3.0          # HORIZONTAL front+rear clearance target around the pedal.
+# FSW_SLOT_D is defined after SLOPE_ANGLE below: the slot lives in the SLOPED
+# faceplate but the pedal is HORIZONTAL, so the on-slope slot depth must be the
+# horizontal envelope divided by cos(slope) -- without that the projected
+# opening was only 0.16mm/side for the WTB-006 (and 0.28mm/side for the ASP-1).
 FOOTPLATE_PROUD = 12.0        # top-pad surface stands this far above the sloped top.
                               # 12 (was 10 for the ASP-1): keeps the FRONT pedestal tall
                               # enough for M3x3 inserts now that PEDAL_H grew to 29.3.
@@ -231,6 +235,8 @@ PI_RISER_H  = REAR_WIN_Z - PI_STACK_MID
 SLOPE_DROP  = H_REAR - H_FRONT
 L_SLOPE     = math.hypot(FACE_RUN, SLOPE_DROP)            # Top-plate sloped length
 SLOPE_ANGLE = math.degrees(math.atan2(SLOPE_DROP, FACE_RUN))
+# Pedal slot depth ON THE SLOPE: horizontal envelope / cos(slope) (see pedal block).
+FSW_SLOT_D = (PEDAL_D + FSW_SLOT_CLR_D) / math.cos(math.radians(SLOPE_ANGLE))
 TRANS_LEN   = math.hypot(TRANS_RUN, TRANS_DROP)          # transition facet length
 TRANS_ANGLE = math.degrees(math.atan2(TRANS_DROP, TRANS_RUN))   # transition rake (from horizontal)
 
@@ -330,7 +336,7 @@ def lid_under_z(v):
 
 # Two pedal rows, faithful to the reference: a FRONT row of 8 (4 transport |
 # 4 tracks, with a centre gap) and an upper CENTRE pair (CLEAR/BANK). Each pedal
-# is a whole ASP-1 on a welded platform; a status LED sits directly ABOVE each
+# is a whole Cherub WTB-006 on a printed pedestal; a status LED sits directly ABOVE each
 # (aligned in u). CLEAR/BANK ride centre so the 16" screen still fits depth-wise.
 EDGE         = 30.0      # uniform edge margin (sides / rear)
 FRONT_PEDAL_MARGIN = 10.0 # front-row pedals sit this close to the front edge
@@ -389,9 +395,10 @@ def _silk_lines(label):
     return [label]
 
 def platform_h(v):
-    """Platform shelf height that lands the pedal's TOP-PAD surface ~flush with the
-    sloped top at depth v (FOOTPLATE_PROUD: 0 = flush, <0 = slightly recessed)."""
-    return lid_top_z(v) + FOOTPLATE_PROUD - PEDAL_H
+    """Platform shelf height that lands the pedal's TOP-PAD surface FOOTPLATE_PROUD
+    above the sloped top at depth v (0 = flush, <0 = recessed). The pedal sinks
+    POCKET_DEPTH into the deck's locating pocket, so the deck compensates."""
+    return lid_top_z(v) + FOOTPLATE_PROUD - PEDAL_H + POCKET_DEPTH
 
 # ---------------------------------------------------------------------------
 # FACEPLATE SUPPORT POSTS  (base-anchored props -- issue #292)
@@ -405,10 +412,10 @@ def platform_h(v):
 # zone -- load runs faceplate -> post -> base -> floor. The posts anchor to the
 # BASE only; the faceplate bears on their felt caps, so the lid still lifts off and
 # NOTHING shows on the top face. Cut+bend only.
-POST_V     = 145.0                 # web depth: COMPACT post in the narrow band between the deepened
-                                   # Cherub front-row slots (pad front must stay behind v~122.9) and the
-                                   # 15.6in body front (v~147.25) -- was 137 for the 103mm ASP-1 slot;
-                                   # re-verify against the populated Fusion doc before fabrication
+POST_V     = 146.5                 # web depth: COMPACT post in the (now very narrow) band between the
+                                   # slope-corrected Cherub front-row slots (pad front must stay behind
+                                   # v~125.6) and the 15.6in body front (v~147.25) -- was 137 for the
+                                   # 103mm ASP-1 slot; re-verify against the populated Fusion doc
 POST_U     = [625.0, 726.0]        # in the TRACK LED-slot GAPS (T2-T3 @625, T3-T4 @726) so the pad also
                                    # clears the LED slots; still under the 16in aperture, clear of the vent
 POST_PW    = 40.0                  # post width (u) -- lateral stability
@@ -430,9 +437,9 @@ POST_T     = 1.6                   # post sheet thickness (cold-rolled steel), N
 # a ~1.5 mm faceplate seating drift below lid_top_z's bare slope) was calibrated against
 # "VAMP console (populated)" (the MANUFACTURING source of truth) at POST_V=158, giving
 # web 40.9 mm -> foot on the floor, flush pad, 1.01 mm felt gap, no base interference.
-# POST_V has since moved to 137 (post pulled forward, issue #296), which changes the
-# computed web height to ~36.3 mm -- NOT yet re-checked against that doc at this new
-# position; re-verify there before fabrication.
+# POST_V has since moved twice: to 137 (post pulled forward, issue #296) and then to
+# 146.5 (Cherub slope-corrected slots, issue #360; web now ~38.3 mm) -- NOT re-checked
+# against that doc at this position; re-verify there before fabrication.
 POST_FACEDRIFT = 1.5
 POST_H     = lid_top_z(POST_V) - T - POST_T - POST_FELT - POST_FACEDRIFT
 _POST_VP   = POST_V * math.cos(math.radians(SLOPE_ANGLE))   # projected web depth on the flat base
@@ -655,6 +662,9 @@ def _check():
         # heat-set pilots need >= 3mm even in the LOW front pedestal (M3 x 3 shorts)
         pil = min(INSERT_DEPTH, (ph - T - 1.0) / 2.0)
         assert pil >= 3.0, f"PLATFORM_INSERTS: pilot depth {pil:.1f} mm < 3 at v={v:.0f} -- raise FOOTPLATE_PROUD"
+        # pocket floor must keep a solid web above the toe-side pilot bores
+        assert (ph - T) - POCKET_DEPTH - pil >= 2.0, \
+            f"PLATFORM_POCKET: web {(ph-T)-POCKET_DEPTH-pil:.1f} mm under the pocket at v={v:.0f}"
 
     # 3b. Cherub side-screw bosses pass UNDER the faceplate beside the slot: the
     # boss top must clear the underside where the sheet is solid. Pedal mounts
@@ -1171,8 +1181,8 @@ def _platform_printed(cq, ph):
     sw = PEDAL_W + 2*PLATFORM_MARGIN
     sd = PEDAL_D + 2*PLATFORM_MARGIN
     h = ph - T
-    # opposing pilots must keep a >=1mm web in the LOW front pedestal --
-    # cap the depth there and fit SHORT inserts (M3 x 3) instead of 5.7s
+    # cap the pilot depth in the LOW front pedestal (keeps a solid mid web and
+    # clears the pad pocket above) and fit SHORT inserts (M3 x 3) instead of 5.7s
     pil = min(INSERT_DEPTH, (h - 1.0) / 2.0)
     body = cq.Workplane("XY").box(sd, sw, h, centered=(True, True, False))
     cav_h = h - PLAT_DECK
@@ -1464,7 +1474,7 @@ def layout_svg(path):
             e.append(f'<rect x="{X(c["u"]):.1f}" y="{Yr(c["v"]+c["h"]):.1f}" width="{c["w"]:.1f}" height="{c["h"]:.1f}" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.3"/>')
     fy = rear_base + REAR_WALL_H + 28
     e.append(f'<text x="{M}" y="{fy:.1f}" fill="#7c8aa3" font-size="10.5">9V · power · fuse · USB-A x2 · earth stud · vents   |   service: back out the front-lip + rear-lap screws, lift the lid (side wings just locate)</text>')
-    e.append(f'<text x="{M}" y="{fy+18:.1f}" fill="#7c8aa3" font-size="10.5">10x ASP-1 pedals on welded inner platforms (PROVISIONAL) · 7 indicator LEDs (REC/PLAY · CLEAR · BANK · TRACK 1-4) · Pi+board mount on the rear bottom plate</text>')
+    e.append(f'<text x="{M}" y="{fy+18:.1f}" fill="#7c8aa3" font-size="10.5">10x Cherub WTB-006 pedals on printed pedestals (PROVISIONAL) · 7 indicator LEDs (REC/PLAY · CLEAR · BANK · TRACK 1-4) · Pi+board mount on the rear bottom plate</text>')
     e.append('</svg>')
     with open(path, "w") as f:
         f.write("\n".join(e) + "\n")
