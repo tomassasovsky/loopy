@@ -17,8 +17,9 @@ Construction (see ../loopy_vamp_enclosure_design.md and
   - bottom plate (welded, vented, Pi/board) - 2x screen-retention bracket
   - 10x inner pedal platform (welded)
 
-Foot controls = ten WHOLE Artesia ASP-1 pedals (100x75x25 mm) standing on the
-welded inner platforms, foot-plates protruding through ~75x100 mm slots. No
+Foot controls = ten Cherub WTB-006 footswitches (109.87x76.35, 29.3 mm tall with
+anti-slip pads; caliper-measured, see hardware/cherub_wtb006_pedal/) standing
+toe-forward on printed pedestals, protruding through ~79x113 mm slots. No
 top-face fasteners; pedal wiring stays internal. Service = back out the side +
 front-lip screws and lift the lid (screens + ring PCB + LEDs go with it; pedals
 stay on their platforms).
@@ -94,27 +95,47 @@ LID_SIDE_LIP = 16.0  # inward lip at the bottom of each lid side wall (screws to
 #   SIDES  : the Top plate has down-turned WINGS that tuck INSIDE the Side panels
 #            for repeatable lateral alignment (locating only, no screws).
 
-# --- foot pedals: whole Artesia ASP-1 (100 x 75 x 25 mm), PROVISIONAL ---------
-# Measure a real ASP-1 before cutting metal. Mounted 75 across the panel (u),
-# 100 front-to-back (v), 25 body height into -Z.
-ASP1_W, ASP1_D, ASP1_H = 75.0, 100.0, 25.0    # pedal footprint W(u) x D(v) x H(z)
-FSW_SLOT_W = ASP1_W + 3.0     # slot clearance around the foot-plate (u)
-FSW_SLOT_D = ASP1_D + 3.0     # slot clearance (v)
-FSW_V      = 80.0             # front-row centre line (v)
-FSW_PITCH  = 80.0             # centre-to-centre across the row
-FOOTPLATE_PROUD = 10.0        # foot-plate stands this far above the sloped top (so the
-                              # pedals sit at a good height even with the low front lip)
+# --- foot pedals: Cherub WTB-006, caliper-measured 2026-07-28 (issues #358/#360)
+# Reference CAD: hardware/cherub_wtb006_pedal/ + the "Cherub WTB-006 Footswitch"
+# Fusion doc. The pedal is a WEDGE: wider + taller at the back (cable end),
+# mounted toe toward the player (back = rear/high v). Box model uses the MAX
+# cross-section; the taper only ever adds clearance.
+PEDAL_W      = 76.35          # case width at the back (tapers to 73.08 at the toe)
+PEDAL_D      = 109.87         # case length, back to front
+PEDAL_BODY_H = 24.9           # case height at the back (slopes to 22.1 at the toe)
+PEDAL_PAD_T  = 2.2            # anti-slip pad thickness, bottom AND top
+PEDAL_H      = PEDAL_BODY_H + 2*PEDAL_PAD_T   # 29.3 overall standing height
+# One horizontal through-screw per side pins the shell halves; each end has a
+# 10mm-dia boss + head protruding 3.45mm from the case wall. The bosses pass
+# UNDER the faceplate beside the slot -- checked in _check() 3b.
+PEDAL_SCREW_BACK   = 23.24    # boss axis, distance from the case BACK edge (v)
+PEDAL_SCREW_Z      = 10.10    # boss axis height above the case bottom (excl. pad)
+PEDAL_SCREW_BOSS_D = 10.0     # boss/sleeve outer dia at the wall
+PEDAL_SCREW_SPAN   = 83.25    # overall width across both screw heads
+# Bottom anti-slip pad footprint (from the user-refined Fusion model 2026-07-28):
+# inset from the case back edge, used for the pedestal locating pocket.
+PEDAL_PAD_W          = 64.61  # bottom pad width
+PEDAL_PAD_D          = 90.0   # bottom pad length
+PEDAL_PAD_BACK_INSET = 16.43  # pad rear edge inset from the case back edge
+FSW_SLOT_W = PEDAL_W + 3.0    # slot clearance around the foot-plate (u) = 79.35
+FSW_SLOT_D = PEDAL_D + 3.0    # slot clearance (v) = 112.87
+FOOTPLATE_PROUD = 12.0        # top-pad surface stands this far above the sloped top.
+                              # 12 (was 10 for the ASP-1): keeps the FRONT pedestal tall
+                              # enough for M3x3 inserts now that PEDAL_H grew to 29.3.
 PLATFORM_MARGIN = 2.0         # platform shelf overhang past the pedal footprint (stay within the slot)
 PLATFORM_FOOT   = 18.0        # base screw inset band (holes ff/2 from the platform edge)
 # The pedal platforms are 3D-PRINTED pedestals (they replaced the folded sheet
 # boxes): PETG/ASA, solid walls, >=40% infill. M3 brass heat-set inserts
 # (~M3 x 5.7 long x 4.6 OD) melt in from BELOW at the base's PLAT_SCR holes
-# (bolted from under the floor) and from ABOVE at the ASP-1 base-screw pattern.
+# (bolted from under the floor). The WTB-006 has NO base screws (side screws
+# only), so the deck instead gets a shallow LOCATING POCKET for the bottom
+# anti-slip pad -- PROVISIONAL retention: gravity + pocket + foot pressure.
 INSERT_PILOT_D  = 4.0         # heat-set pilot bore
 INSERT_DEPTH    = 6.4         # pilot depth (5.7 insert + melt allowance)
 PLAT_WALL       = 3.0         # printed perimeter wall
 PLAT_DECK       = 8.0         # printed top deck (full insert engagement)
-ASP1_MOUNT      = (55.0, 80.0)  # ASP-1 base-screw rectangle (W x D) -- PROVISIONAL until measured
+POCKET_DEPTH    = 1.2         # bottom-pad locating pocket depth (< PEDAL_PAD_T)
+POCKET_CLR      = 0.6         # pocket clearance over the pad footprint (total)
 
 # --- screens (capacitive touch, mounted from BEHIND; aperture < bezel) --------
 BIG_BEZEL  = (359.5, 223.75)  # 15.6" panel BODY (measured): glass 359.5x206.5 edge-to-edge + a
@@ -302,9 +323,6 @@ def lid_under_z(v):
     """Z of the faceplate UNDERSIDE at depth v."""
     return lid_top_z(v) - T
 
-# Platform height that lands the foot-plate flush+proud at the front row.
-PLATFORM_H = lid_top_z(FSW_V) + FOOTPLATE_PROUD - ASP1_H
-
 # ===========================================================================
 # CUTOUT SCHEDULE  (faceplate local: u=0..FP_W L->R = player's left->right,
 #                   v=0..FP_V front->rear)
@@ -319,23 +337,31 @@ FRONT_PEDAL_MARGIN = 10.0 # front-row pedals sit this close to the front edge
 LED_GAP      = 12.0      # status-LED offset behind a pedal (toward rear)
 SILK_H       = 25.0      # silkscreen cap height -- SAME for every label (a too-wide word
 SILK_CW      = 0.66      # gets squished horizontally). bold char advance / cap height.
-FRONT_GAP    = 65.0      # gap between the front-row rear edge and the screen block
 PEDAL_ROW1_V = FRONT_PEDAL_MARGIN + FSW_SLOT_D / 2.0   # front row pulled to the edge
 # 7" screen, LED ring and encoder share ONE vertical centre-line (COL_U, defined
 # with the pedal layout below): the gap between pedals 1 and 2.
-# The screen block sits FRONT_GAP behind the front row; its TOP edge is the rearmost
-# control. D is chosen so FP_V - SCREEN_TOP_V (rear margin) also equals EDGE.
-SCREEN_TOP_V = PEDAL_ROW1_V + FSW_SLOT_D / 2.0 + FRONT_GAP + BIG_H
+# SCREEN_TOP_V is FROZEN at the value the console was built around (the screens,
+# decals and the Fusion "VAMP console (populated)" doc all embody it). When the
+# pedal slot deepened for the Cherub WTB-006 (103 -> 112.87), the front gap
+# absorbed the change instead of growing the console: FRONT_GAP is now DERIVED
+# and asserted >= 40 in _check().
+SCREEN_TOP_V = 371.0
+FRONT_GAP    = SCREEN_TOP_V - BIG_H - (PEDAL_ROW1_V + FSW_SLOT_D / 2.0)
 # CLEAR/BANK sit so their BOTTOM (front) edge aligns with the 16" screen's bottom.
 PEDAL_ROW2_V = (SCREEN_TOP_V - BIG_H) + FSW_SLOT_D / 2.0
 
 # Front row of 8, EVENLY spaced across the faceplate (no 4+4 grouping).
 _ROW1 = ["REC/PLAY", "STOP", "UNDO", "MODE", "TRACK1", "TRACK2", "TRACK3", "TRACK4"]
+# Pedal centres are FROZEN at the layout the console was built around (originally
+# EDGE + slot/2 .. FP_W - EDGE - slot/2 with the 78mm ASP-1 slot). Everything
+# downstream hangs off these: COL_U (7" screen/ring/encoder), the 16" aperture
+# centre, LED slots, LED-strip PCBs and the Fusion doc. The wider Cherub slot
+# (79.35) just eats 0.675mm of the side margin instead of shifting all of that.
+ROW1_U_FIRST = 69.0
+ROW1_U_LAST  = 777.0
 def _row1_u(i):
-    """Evenly spaced across the faceplate inside the EDGE margin."""
-    first = EDGE + FSW_SLOT_W / 2.0
-    last  = FP_W - EDGE - FSW_SLOT_W / 2.0
-    return first + (last - first) * i / (len(_ROW1) - 1)
+    """Evenly spaced across the faceplate (frozen span, see above)."""
+    return ROW1_U_FIRST + (ROW1_U_LAST - ROW1_U_FIRST) * i / (len(_ROW1) - 1)
 
 # Shared vertical centre-line for the LEFT control column (7" screen + LED ring +
 # encoder): the gap between pedals 1 and 2, so the whole column sits above that gap.
@@ -363,9 +389,9 @@ def _silk_lines(label):
     return [label]
 
 def platform_h(v):
-    """Platform shelf height that lands the ASP-1 foot-plate ~flush with the sloped
-    top at depth v (FOOTPLATE_PROUD: 0 = flush, <0 = slightly recessed)."""
-    return lid_top_z(v) + FOOTPLATE_PROUD - ASP1_H
+    """Platform shelf height that lands the pedal's TOP-PAD surface ~flush with the
+    sloped top at depth v (FOOTPLATE_PROUD: 0 = flush, <0 = slightly recessed)."""
+    return lid_top_z(v) + FOOTPLATE_PROUD - PEDAL_H
 
 # ---------------------------------------------------------------------------
 # FACEPLATE SUPPORT POSTS  (base-anchored props -- issue #292)
@@ -379,8 +405,10 @@ def platform_h(v):
 # zone -- load runs faceplate -> post -> base -> floor. The posts anchor to the
 # BASE only; the faceplate bears on their felt caps, so the lid still lifts off and
 # NOTHING shows on the top face. Cut+bend only.
-POST_V     = 137.0                 # web depth: COMPACT post pulled forward of the 15.6in body (front ~v142
-                                   # in the manufacturing doc) -- pad+foot fit the pedals(v113)->body band
+POST_V     = 145.0                 # web depth: COMPACT post in the narrow band between the deepened
+                                   # Cherub front-row slots (pad front must stay behind v~122.9) and the
+                                   # 15.6in body front (v~147.25) -- was 137 for the 103mm ASP-1 slot;
+                                   # re-verify against the populated Fusion doc before fabrication
 POST_U     = [625.0, 726.0]        # in the TRACK LED-slot GAPS (T2-T3 @625, T3-T4 @726) so the pad also
                                    # clears the LED slots; still under the 16in aperture, clear of the vent
 POST_PW    = 40.0                  # post width (u) -- lateral stability
@@ -618,12 +646,28 @@ def _check():
             assert not (vu0 <= u+du <= vu1 and vv0-3 <= _POST_FOOT_VP <= vv1+3), \
                 f"POST foot ({u+du:.0f},{_POST_FOOT_VP:.0f}) collides with the intake vent"
 
-    # 3. platform head-room for BOTH rows: foot-plate flush+proud at each depth
+    # 3. platform head-room for BOTH rows: top pad flush+proud at each depth
     for v in (PEDAL_ROW1_V, PEDAL_ROW2_V):
         ph = platform_h(v)
         assert ph > T + 2.0, f"PLATFORM_HEADROOM: platform {ph:.1f} mm too low at v={v:.0f}"
-        proud = ph + ASP1_H - lid_top_z(v)         # how far the pedal stands proud
-        assert -8.0 <= proud <= ASP1_H, f"PLATFORM_HEADROOM: pedal proud {proud:.1f} mm at v={v:.0f}"
+        proud = ph + PEDAL_H - lid_top_z(v)        # how far the pedal stands proud
+        assert -8.0 <= proud <= PEDAL_H, f"PLATFORM_HEADROOM: pedal proud {proud:.1f} mm at v={v:.0f}"
+        # heat-set pilots need >= 3mm even in the LOW front pedestal (M3 x 3 shorts)
+        pil = min(INSERT_DEPTH, (ph - T - 1.0) / 2.0)
+        assert pil >= 3.0, f"PLATFORM_INSERTS: pilot depth {pil:.1f} mm < 3 at v={v:.0f} -- raise FOOTPLATE_PROUD"
+
+    # 3b. Cherub side-screw bosses pass UNDER the faceplate beside the slot: the
+    # boss top must clear the underside where the sheet is solid. Pedal mounts
+    # toe-forward, so its back edge sits at v + PEDAL_D/2 and the boss axis at
+    # PEDAL_SCREW_BACK forward of it.
+    for v in (PEDAL_ROW1_V, PEDAL_ROW2_V):
+        v_screw = v + PEDAL_D / 2.0 - PEDAL_SCREW_BACK
+        boss_top = platform_h(v) + PEDAL_PAD_T + PEDAL_SCREW_Z + PEDAL_SCREW_BOSS_D / 2.0
+        clr = lid_under_z(v_screw) - boss_top
+        assert clr >= 1.5, f"SCREW_BOSS: only {clr:.1f} mm under the faceplate at v={v_screw:.0f}"
+
+    # 3c. the front gap absorbed the deeper Cherub slot; keep it usable
+    assert FRONT_GAP >= 40.0, f"FRONT_GAP: {FRONT_GAP:.1f} mm < 40 -- pedals crowd the screen block"
 
     # 4. screen depth: each module clears the interior under the lid (read positions)
     for ref, dep in (("SCREEN_16IN", BIG_DEPTH), ("SCREEN_7IN", SMALL_DEPTH)):
@@ -1022,7 +1066,7 @@ def platform_foot_holes():
     pass UP through the floor into the heat-set inserts in each pedestal's
     underside (4 per platform), projected from each pedal onto the flat bottom."""
     cs = math.cos(math.radians(SLOPE_ANGLE))
-    sw = ASP1_W + 2*PLATFORM_MARGIN; sd = ASP1_D + 2*PLATFORM_MARGIN; ff = PLATFORM_FOOT
+    sw = PEDAL_W + 2*PLATFORM_MARGIN; sd = PEDAL_D + 2*PLATFORM_MARGIN; ff = PLATFORM_FOOT
     out = []
     for _label, u, v in PEDALS:
         vb = v * cs                                # pedal depth projected onto the flat bottom
@@ -1118,12 +1162,14 @@ def _transition_face(cq):
 def _platform_printed(cq, ph):
     """3D-printed pedal pedestal: solid deck + perimeter wall, hollowed below
     (tall MID parts) with boss columns at the insert stations. M3 heat-set
-    inserts press in from BELOW at the base PLAT_SCR pattern and from ABOVE at
-    the ASP1_MOUNT pedal pattern (PROVISIONAL). Origin: pedal centre, z=0 at
-    the BASE PLATE TOP; height ph - T puts the deck at the pedal standing
-    plane. Assembly frame: X = depth (v), Y = width (u)."""
-    sw = ASP1_W + 2*PLATFORM_MARGIN
-    sd = ASP1_D + 2*PLATFORM_MARGIN
+    inserts press in from BELOW at the base PLAT_SCR pattern; the deck top gets
+    a shallow LOCATING POCKET for the Cherub's bottom anti-slip pad (the WTB-006
+    has no base screws -- side screws only; retention PROVISIONAL). Origin:
+    pedal centre, z=0 at the BASE PLATE TOP; height ph - T puts the deck at the
+    pedal standing plane. Assembly frame: X = depth (v), Y = width (u); the
+    pedal mounts TOE-FORWARD (back/cable end at +X)."""
+    sw = PEDAL_W + 2*PLATFORM_MARGIN
+    sd = PEDAL_D + 2*PLATFORM_MARGIN
     h = ph - T
     # opposing pilots must keep a >=1mm web in the LOW front pedestal --
     # cap the depth there and fit SHORT inserts (M3 x 3) instead of 5.7s
@@ -1143,12 +1189,13 @@ def _platform_printed(cq, ph):
             body = body.cut(cq.Workplane("XY").cylinder(
                 pil, INSERT_PILOT_D/2,
                 centered=(True, True, False)).translate((dx, dy, 0)))
-    mw, md = ASP1_MOUNT                        # pedal inserts, from above (PROVISIONAL)
-    for dx in (-md/2, md/2):
-        for dy in (-mw/2, mw/2):
-            body = body.cut(cq.Workplane("XY").cylinder(
-                pil, INSERT_PILOT_D/2,
-                centered=(True, True, False)).translate((dx, dy, h - pil)))
+    # bottom-pad locating pocket, from above. The pad is inset from the case
+    # back edge, so its centre sits forward (toe-ward, -X) of the pedal centre:
+    # pad centre from back = INSET + PAD_D/2; pedal centre from back = PEDAL_D/2.
+    pocket_dx = (PEDAL_PAD_BACK_INSET + PEDAL_PAD_D/2.0) - PEDAL_D/2.0   # +X = rearward
+    body = body.cut(cq.Workplane("XY").box(
+        PEDAL_PAD_D + POCKET_CLR, PEDAL_PAD_W + POCKET_CLR, POCKET_DEPTH,
+        centered=(True, True, False)).translate((-pocket_dx, 0, h - POCKET_DEPTH)))
     return body
 
 def build_platform_steps():
@@ -1344,7 +1391,7 @@ def report():
     P(f"                  screens + encoder/ring PCB + LEDs; pedals stay on platforms)")
     P("-"*68)
     n1 = sum(1 for _, _, v in PEDALS if v == PEDAL_ROW1_V)
-    P(f"Foot pedals     : {len(PEDALS)}x WHOLE Artesia ASP-1 ({ASP1_W:.0f}x{ASP1_D:.0f}x{ASP1_H:.0f}mm)")
+    P(f"Foot pedals     : {len(PEDALS)}x Cherub WTB-006 ({PEDAL_W:.1f}x{PEDAL_D:.1f}x{PEDAL_H:.1f}mm incl. pads, toe-forward)")
     P(f"  layout        : {n1} front row + {len(PEDALS)-n1} centre (CLEAR/BANK), LEDs aligned above")
     P(f"  slot          : {FSW_SLOT_W:.0f}(u) x {FSW_SLOT_D:.0f}(v) mm  [PROVISIONAL]")
     P(f"  platform H    : front {platform_h(PEDAL_ROW1_V):.1f} / mid {platform_h(PEDAL_ROW2_V):.1f} mm "
@@ -1458,9 +1505,9 @@ def _render_parts(cq, explode=0.0):
     cuts,_=faceplate_holes()
     for label,u,v in PEDALS:
         ph=platform_h(v); add(_platform_printed(cq,ph).val().moved(cq.Location(cq.Vector(v,u+T,T))), PLAT)
-        add(cq.Workplane("XY").box(ASP1_D,ASP1_W,ASP1_H,centered=(True,True,False)).translate((v,u+T,ph)).val(), PED)
+        add(cq.Workplane("XY").box(PEDAL_D,PEDAL_W,PEDAL_H,centered=(True,True,False)).translate((v,u+T,ph)).val(), PED)
         # pink/magenta bumper strip across the foot-plate (reference accent)
-        add(cq.Workplane("XY").box(16,ASP1_W-8,2,centered=(True,True,False)).translate((v-ASP1_D*0.22,u+T,ph+ASP1_H)).val(), STRIP)
+        add(cq.Workplane("XY").box(16,PEDAL_W-8,2,centered=(True,True,False)).translate((v-PEDAL_D*0.22,u+T,ph+PEDAL_H)).val(), STRIP)
     for c in cuts:
         if c["kind"]=="rect" and c["ref"].startswith("SCREEN"):
             vm=c["v"]+c["h"]/2; um=c["u"]+c["w"]/2; tint=(0.18,0.62,0.55) if "7" in c["ref"] else (0.28,0.40,0.70)
