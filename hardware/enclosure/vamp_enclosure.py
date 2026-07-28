@@ -1326,7 +1326,9 @@ def build_mini_console():
     # right wall hugs TRACK4's tub (+0.5); left wall is the print's own edge
     Wt = (PEDS[1] - U0) + SKIRT_OUT_W/2.0 + 0.5 + WALL_T   # = 199.0
     C0 = (lid_top_z(PEDAL_ROW1_V) + SKIRT_DRIFT_ROW1 - T) - tn * (PEDAL_ROW1_V * cs)
-    BOSS_XS = (40.0, 165.0)          # rear lid-screw bosses (clear of tubs/bay/tabs)
+    # under-base lid anchors: two at the rear wall + one forward in the only
+    # full-depth corridor (between the tubs) -- triangle clamp, nothing on top
+    ANCHORS = ((40.0, None), (165.0, None), (101.13, 20.0))   # (x, y or None=rear)
     BOARD_W, BOARD_D = 34.2, 18.8    # Pro Micro pocket (33 x 18 board + clearance)
     BOARD_XC = (PEDS[0] + PEDS[1])/2.0 - U0   # centred between the tubs
 
@@ -1344,18 +1346,39 @@ def build_mini_console():
                     .translate((Wt - WALL_T, 0, 0)))                     # right
              .union(cq.Workplane("XY").box(Wt, WALL_T, 60.0, centered=False)
                     .translate((0, D - WALL_T, 0))))                     # rear
-    # rear lid-screw bosses: 12x12, tops on the wall-top plane, M3 insert pilots
-    for bx in BOSS_XS:
-        walls = walls.union(cq.Workplane("XY").box(12.0, 12.0, 60.0, centered=False)
-                            .translate((bx - 6.0, D - WALL_T - 12.0, 0)))
+    # NO top-face fasteners (same language as the big console): the lid clamps
+    # from BELOW. Anchor pillars stop LID_BOSS_H short of the wall-top plane;
+    # the lid carries insert bosses that land on them, and M3 screws come up
+    # through the floor along the LID NORMAL (12.5deg from vertical), heads
+    # recessed in angled pockets under the base, hidden by the feet.
+    LID_BOSS_H = 6.0
     walls = slope_cut(walls.translate((0, 0, T)), C0)
-    for bx in BOSS_XS:
-        by = D - WALL_T - 6.0
-        top = C0 + tn * by + 1.0     # bore from above the sloped boss top
-        walls = walls.cut(cq.Workplane("XY").circle(INSERT_PILOT_D/2.0)
-                          .extrude(-(INSERT_DEPTH + 1.0))
-                          .translate((bx, by, top)))
     tray = tray.union(walls)
+    ncs, nsn = math.cos(math.radians(SLOPE_ANGLE)), math.sin(math.radians(SLOPE_ANGLE))
+    for (bx, byy) in ANCHORS:
+        by = (D - WALL_T - 6.8) if byy is None else byy
+        pillar = cq.Workplane("XY").box(10.0, 12.0, 60.0, centered=False)\
+            .translate((bx - 5.0, by - 6.0, T))
+        # vertical drop of the boss bottom = LID_BOSS_H / cos(slope), +0.2 so the
+        # WALLS stay the seating datum and the screws preload across the gap
+        pillar = slope_cut(pillar, C0 - (LID_BOSS_H / ncs + 0.2))
+        tray = tray.union(pillar)
+        top = C0 - (LID_BOSS_H / ncs + 0.2) + tn * by
+        # 3.6 clearance bore along the lid normal, full length
+        bore = (cq.Workplane("XY").circle(1.8).extrude(90.0)
+                .rotate((0, 0, 0), (1, 0, 0), SLOPE_ANGLE)
+                .translate((bx, by + nsn * 45.0, top - ncs * 45.0)))
+        # 8.5 head/driver pocket from below, seat ~3.5 above the floor bottom
+        t_seat = (top - 3.5) / ncs
+        pocket = (cq.Workplane("XY").circle(4.25).extrude(40.0)
+                  .rotate((0, 0, 0), (1, 0, 0), SLOPE_ANGLE)
+                  .translate((bx, by + nsn * (t_seat + 40.0), top - ncs * (t_seat + 40.0))))
+        tray = tray.cut(bore).cut(pocket)
+    # feet: four pads so the unit stands clear of the recessed screw heads
+    for fx in (8.0, Wt - 22.0):
+        for fy in (8.0, D - 22.0):
+            tray = tray.union(cq.Workplane("XY").box(14.0, 14.0, 2.0, centered=False)
+                              .translate((fx, fy, -2.0)))
     yc = PEDAL_ROW1_V * cs
     for u in PEDS:
         ped = (_platform_printed(cq, platform_h(PEDAL_ROW1_V), PEDAL_ROW1_V)
@@ -1383,15 +1406,17 @@ def build_mini_console():
         vc = PEDAL_ROW1_V + FSW_SLOT_D/2 + LED_GAP
         lid = lid.cut(cq.Workplane("XY").slot2D(LED_SLOT_W, LED_SLOT_H).extrude(3*T)
                       .translate((x, vc, -T)))
-    # rear screw through-holes over the bosses (3.6 clearance)
-    for bx in BOSS_XS:
-        by_l = (D - WALL_T - 6.0) / cs
-        lid = lid.cut(cq.Workplane("XY").circle(1.8).extrude(3*T)
-                      .translate((bx, by_l, -T)))
-    # registration tabs. FRONT: shallow (3.5 deep) hugging the wall -- they must
-    # stay inside the y<8.5 strip before the tub front walls (the 12.5deg tilt
-    # shifts tab bottoms ~1.1 rearward, accounted). REAR: full 10x10 in the
-    # corridors clear of the bosses and the board bay.
+    # insert bosses on the UNDERSIDE over each anchor pillar: take the M3
+    # heat-set inserts the under-base screws thread into. Nothing on top.
+    for (bx, byy) in ANCHORS:
+        by_l = ((D - WALL_T - 6.8) if byy is None else byy) / cs
+        lid = lid.union(cq.Workplane("XY").box(10.0, 10.0, 6.0, centered=False)
+                        .translate((bx - 5.0, by_l - 5.0, -6.0)))
+        lid = lid.cut(cq.Workplane("XY").circle(INSERT_PILOT_D/2.0)
+                      .extrude(INSERT_DEPTH + 0.4)
+                      .translate((bx, by_l, -6.0)))
+    # registration tabs (pure locators; the anchors do the clamping).
+    # FRONT pair: shallow, inside the y<8.5 strip before the tub front walls.
     for tx in (40.0, 165.0):
         lid = lid.union(cq.Workplane("XY").box(10.0, 3.5, 5.0, centered=False)
                         .translate((tx - 5.0, WALL_T/cs + 0.8, -5.0)))
