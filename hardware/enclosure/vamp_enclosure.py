@@ -208,7 +208,9 @@ LED_INS_POCKET = (6.0, 6.0, 0.8)  # LED nest recess in the shoulder's back face
 D_ENC     = 7.0      # EC11 encoder bush
 RING_OD   = 58.0     # diffused-annulus ring window OD (12 THT LEDs behind)
 RING_ID   = 40.0     # ring window ID
-N_IND     = 7        # indicator LEDs (loopy indicatorLeds[7])
+N_IND     = 10       # indicator LED pills -- ALL 10 pedals (issue #366). Firmware
+                     # chain contract is still indicatorLeds[7]; widening it to 10
+                     # is an open firmware change, flagged on the issue.
 IND_PITCH = 50.0     # indicator LED pitch
 
 # --- rear I/O -----------------------------------------------------------------
@@ -392,8 +394,16 @@ PEDAL_ROW1_V = FRONT_PEDAL_MARGIN + FSW_SLOT_D / 2.0   # front row pulled to the
 # and asserted >= 40 in _check().
 SCREEN_TOP_V = 371.0
 FRONT_GAP    = SCREEN_TOP_V - BIG_H - (PEDAL_ROW1_V + FSW_SLOT_D / 2.0)
-# CLEAR/BANK sit so their BOTTOM (front) edge aligns with the 16" screen's bottom.
-PEDAL_ROW2_V = (SCREEN_TOP_V - BIG_H) + FSW_SLOT_D / 2.0
+# CLEAR/BANK sit so their LABEL TOP aligns with the screens' shared top line
+# (SCREEN_TOP_V) -- the layout the user approved in the LED trial (issue #366).
+# SILK_CAP is the cap-height/em ratio of the label font as it actually renders
+# (measured in the "VAMP console (populated)" doc; Arial-class bold ~0.717): the
+# silk `h` parameter is an em size, so glyph caps top out at v_lbl + SILK_H*SILK_CAP.
+SILK_CAP     = 0.7168
+PEDAL_ROW2_V = SCREEN_TOP_V - SILK_H * SILK_CAP - (LED_GAP + 12.0) - FSW_SLOT_D / 2.0
+# The encoder + LED ring do NOT follow the pedals rearward: the ring would hit the
+# 7" screen. It stays on the OLD row-2 centre (the 16"-screen-bottom line).
+ENC_V        = (SCREEN_TOP_V - BIG_H) + FSW_SLOT_D / 2.0
 
 # Front row of 8, EVENLY spaced across the faceplate (no 4+4 grouping).
 _ROW1 = ["REC/PLAY", "STOP", "UNDO", "MODE", "TRACK1", "TRACK2", "TRACK3", "TRACK4"]
@@ -420,10 +430,10 @@ PEDALS = [(_ROW1[i], _row1_u(i), PEDAL_ROW1_V) for i in range(8)] + [
 # every foot-plate), the middle one on centre. Shared by the lid lip and the front wall.
 FRONT_SCREW_U = [COL_U, FP_W / 2.0, (_row1_u(6) + _row1_u(7)) / 2.0]
 
-# Status-LED pedals: the 4 tracks + CLEAR + BANK (REC/PLAY has no LED -- the encoder
-# ring serves it; it's the first LED position in row 1, removed).
+# Status-LED pedals: ALL of them (issue #366 -- the LED trial added pills over
+# REC/PLAY, STOP, UNDO and MODE; the encoder ring stays as well).
 def _has_led(label):
-    return label in ("CLEAR", "BANK") or label.startswith("TRACK")
+    return True
 
 # Silkscreen label text per control (REC/PLAY stacks on two lines; tracks show the number).
 def _silk_lines(label):
@@ -488,7 +498,7 @@ def faceplate_holes():
     """All faceplate features. Pedal slots have NO mounting holes (the pedals
     stand on internal welded platforms). u=player L->R, v=front->rear."""
     cuts, engr = [], []
-    # --- 10 pedal slots (two rows); a status LED above the TRACK pedals only -
+    # --- 10 pedal slots (two rows); a status LED pill above EVERY pedal --------
     for label, u, v in PEDALS:
         cuts.append({"kind": "rect", "u": u - FSW_SLOT_W/2, "v": v - FSW_SLOT_D/2,
                      "w": FSW_SLOT_W, "h": FSW_SLOT_D, "r": 0.0, "ref": label})  # square: max corner clearance
@@ -507,7 +517,7 @@ def faceplate_holes():
             infos.append((ln, LED_SLOT_W / est_w, LED_SLOT_W))
         left_x = u - max(d for _, _, d in infos) / 2.0   # multiline: flush-left, block centred
         for k, (ln, wf, disp_w) in enumerate(infos):
-            vpos = v_lbl + (len(lines)-1-k)*(SILK_H*1.15)
+            vpos = v_lbl + (len(lines)-1-k)*(SILK_H*0.95)   # tight 2-line stack (issue #366)
             if len(lines) > 1:                         # multiline (REC/PLAY) -> left-aligned
                 engr.append({"u": left_x, "v": vpos, "h": SILK_H, "s": ln, "wf": wf, "halign": "left"})
             else:                                      # single line -> centred on the pedal
@@ -527,14 +537,15 @@ def faceplate_holes():
     cuts.append({"kind": "rect", "u": COL_U - SMALL_W/2.0, "v": SCREEN_TOP_V - SMALL_H, "w": SMALL_W, "h": SMALL_H, "ref": "SCREEN_7IN"})
     s16_uc = (_row1_u(4) + _row1_u(7)) / 2.0    # centre over the 4 track pedals (row-1 right group)
     cuts.append({"kind": "rect", "u": s16_uc - BIG_W/2.0, "v": SCREEN_TOP_V - BIG_H, "w": BIG_W, "h": BIG_H, "ref": "SCREEN_16IN"})
-    # --- encoder + diffused ring: on the CLEAR/BANK height centre line, and on
+    # --- encoder + diffused ring: on the OLD row-2 centre line (ENC_V -- it does
+    #     NOT follow CLEAR/BANK rearward, see the PEDAL_ROW2_V note), and on
     #     COL_U -- the SAME vertical centre-line as the 7" screen (pedal 1/2 gap) -
-    enc_v = PEDAL_ROW2_V                 # CLEAR/BANK height centre
+    enc_v = ENC_V
     enc_u = COL_U                        # shared left-column centre-line (7" screen + ring)
     cuts.append({"kind": "ring",   "u": enc_u, "v": enc_v, "od": RING_OD, "id": RING_ID, "ref": "RING"})
     cuts.append({"kind": "circle", "u": enc_u, "v": enc_v, "d": D_ENC, "ref": "ENCODER"})
-    # NOTE: no LEDs flank the encoder -- like the reference, the ring stands alone
-    # (it is also the REC/PLAY indicator). Power state shows on the rear power button.
+    # NOTE: no LEDs flank the encoder -- like the reference, the ring stands alone.
+    # Power state shows on the rear power button.
     # The lid bolts to the body through its DOWN-TURNED SKIRT FLANGES (front lip +
     # sides + rear), NOT through this top face -- those screw holes live on the
     # flanges, added in dxf_faceplate / the render. So nothing more on the top here.
@@ -1454,7 +1465,7 @@ def build_mini_console():
     return outp
 
 def build_diffuser_step():
-    """LED pill diffuser INSERT (3D-print in WHITE PLA, x6 per console):
+    """LED pill diffuser INSERT (3D-print in WHITE PLA, x10 per console):
     a stadium lens that pushes into the faceplate slot FROM THE INSIDE until its
     shoulder flange seats on the sheet's underside; the lens stands LED_INS_PROUD
     above the outer skin. The single-LED module (hardware/led_strip/ puck or an
@@ -1707,7 +1718,7 @@ def layout_svg(path):
             e.append(f'<rect x="{X(c["u"]):.1f}" y="{Yr(c["v"]+c["h"]):.1f}" width="{c["w"]:.1f}" height="{c["h"]:.1f}" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.3"/>')
     fy = rear_base + REAR_WALL_H + 28
     e.append(f'<text x="{M}" y="{fy:.1f}" fill="#7c8aa3" font-size="10.5">9V · power · fuse · USB-A x2 · earth stud · vents   |   service: back out the front-lip + rear-lap screws, lift the lid (side wings just locate)</text>')
-    e.append(f'<text x="{M}" y="{fy+18:.1f}" fill="#7c8aa3" font-size="10.5">10x Cherub WTB-006 pedals on printed pedestals (PROVISIONAL) · 7 indicator LEDs (REC/PLAY · CLEAR · BANK · TRACK 1-4) · Pi+board mount on the rear bottom plate</text>')
+    e.append(f'<text x="{M}" y="{fy+18:.1f}" fill="#7c8aa3" font-size="10.5">10x Cherub WTB-006 pedals on printed pedestals (PROVISIONAL) · 10 indicator LED pills (one per pedal) + encoder ring · Pi+board mount on the rear bottom plate</text>')
     e.append('</svg>')
     with open(path, "w") as f:
         f.write("\n".join(e) + "\n")
@@ -1891,7 +1902,7 @@ def main(argv):
     if "--no-step" not in argv:
         try:
             d = build_diffuser_step()
-            print("\nLED diffuser insert (3D print, x6): out/" + os.path.basename(d) + " (+ .stl)")
+            print("\nLED diffuser insert (3D print, x10): out/" + os.path.basename(d) + " (+ .stl)")
             r = build_ring_diffuser_step()
             print("Ring diffuser insert (3D print, x1): out/" + os.path.basename(r) + " (+ .stl)")
             s = build_post_step()

@@ -30,8 +30,8 @@ Send **`enclosure/out/vamp_3dprint.zip`** (STEP + STL for each part).
 | Part | Qty | Material | Notes |
 |---|---|---|---|
 | `vamp_platform_front` | 8 | **BLACK** PETG/ASA, ≥40% infill | Pedal pedestal TUB, 115.4×88.8 (deck 8.9, walls to 36.4 with sloped top ~1mm under the faceplate). Wall inner faces tucked 0.4 behind the slot cut line, so from above only faceplate shows and the reveal reads as a dark channel. Full-height boss drop-in channels in the side walls; 12-wide rear cable notch. Heat-set pilots Ø4.5 from below — **short M3×3 inserts** (4 per pedestal; the deck is too shallow for 5-long); 1.2-deep pad pocket in the deck. |
-| `vamp_platform_mid` | 2 | **BLACK** PETG/ASA, ≥40% infill | Tall CLEAR/BANK tub (deck 46.2, walls to 72.8), hollow with boss columns — standard **M3 5×5 inserts** (4 per pedestal) + the same pocket, channels and notch. |
-| `vamp_led_diffuser` | 6 | **White PLA** | Pill lens, pushes into the faceplate slot from inside. |
+| `vamp_platform_mid` | 2 | **BLACK** PETG/ASA, ≥40% infill | Tall CLEAR/BANK tub (deck 54.0, walls to 81.3 — row 2 moved rearward for label-top alignment, issue #366), hollow with boss columns — standard **M3 5×5 inserts** (4 per pedestal) + the same pocket, channels and notch. |
+| `vamp_led_diffuser` | 10 | **White PLA** | Pill lens, pushes into the faceplate slot from inside. One per pedal (#366). |
 | `vamp_ring_diffuser` | 1 | **White PLA** | Annular lens for the encoder LED ring. |
 
 The Cherub WTB-006 has **no base screws** (one horizontal through-screw per
@@ -45,7 +45,7 @@ and no longer matches any pedal in this design.
 |---|---|---|---|
 | Main board (`loopy_pedal_main`, THT) | `kicad/fab/loopy_pedal_main_gerbers.zip` + `_bom.csv` + `_cpl.csv` | 1 | The manufactured V1. LCSC part map: `kicad/fab/loopy_combined_bom_lcsc.csv`. |
 | Encoder ring PCB | `kicad/fab/loopy_pedal_ring_gerbers.zip` | 1 | |
-| LED puck (single WS2812B) | `led_strip/loopy_led_strip_gerbers.zip` | 6 | 16×8 mm, castellated; or buy off-the-shelf WS2812B modules instead (see `led_strip/README.md`). |
+| LED puck (single WS2812B) | `led_strip/loopy_led_strip_gerbers.zip` | 10 | 16×8 mm, castellated; or buy off-the-shelf WS2812B modules instead (see `led_strip/README.md`). One per pedal (#366). |
 
 
 ## 4. Printed overlay

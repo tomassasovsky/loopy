@@ -50,7 +50,7 @@ Carried by the `loopy_pedal_main` USB-MIDI board — fab + BOM in
 
 - [ ] **RP2040** board — Adafruit QT Py RP2040 or a Pi Pico ×1 (the LED driver)
 - [ ] WS2812 **ring**, 12 LEDs (loop-position ring) ×1
-- [ ] WS2812 **strip/indicators**, ≥8 LEDs (per-track indicators) ×1
+- [ ] WS2812 **strip/indicators**, ≥10 LEDs (one pill per pedal, issue #366) ×1
 - [ ] 3.3 V → 5 V level shifter (e.g. 74AHCT125N, **DIP-14**) ×1 — for the
       WS2812 data line off the RP2040
 - [ ] 1000 µF electrolytic, 6.3 V+ ×1 — across the WS2812 5 V rail

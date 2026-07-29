@@ -78,16 +78,17 @@ fully internal.
   cos(slope) because the slot lives in the sloped faceplate while the pedal is
   horizontal. **No mounting holes** in the faceplate.
 - **Pedestal** (`vamp_platform_front`/`_mid`, 8+2, 3D-printed): deck at
-  `platform_h(v)` (front ≈ 10.9, mid ≈ 48.2 mm) so the pedal's top-pad surface
+  `platform_h(v)` (front ≈ 10.9, mid ≈ 56.0 mm) so the pedal's top-pad surface
   stands `FOOTPLATE_PROUD` = 12 mm above the sloped skin at the row line; a
   1.2 mm deck pocket locates the pedal's bottom pad (the WTB-006 has no base
   screws — side through-screws only; retention PROVISIONAL). The
   `PLATFORM_HEADROOM` assertion enforces this against the local lid height.
 - **Layout (two rows, per the reference):** a front row of **8 evenly-spaced**
   pedals (REC/PLAY · STOP · UNDO · MODE · TRACK 1–4) and an upper pair **CLEAR /
-  BANK aligned in `u` over UNDO and MODE**. **7 indicator LEDs sit aligned above
-  REC/PLAY · CLEAR · BANK · TRACK 1–4** (Ø5.1 THT) — matching the board's
-  `indicatorLeds[7]`; STOP/UNDO/MODE have none. The mid-row platforms are taller (the lid is higher there); the generator
+  BANK aligned in `u` over UNDO and MODE**, placed so their **label tops align
+  with the screens' shared top line** (issue #366). **An LED pill indicator sits
+  above EVERY pedal (10 total)** — the board's `indicatorLeds[7]` chain contract
+  must widen to 10 (open firmware follow-up). The mid-row platforms are taller (the lid is higher there); the generator
   computes both heights and the depth assertions confirm the 16" screen fits behind.
 
 > The `PEDAL_*` constants are **caliper-measured from a real WTB-006**
@@ -104,10 +105,10 @@ fully internal.
 | feature | qty | size (mm) | maps to |
 |---------|-----|-----------|---------|
 | WTB-006 pedal slot | 10 | 79.35 × 115.61 | 8 front (evenly spaced) + CLEAR/BANK over UNDO/MODE, no fasteners |
-| indicator LED | 7 | Ø5.1 | aligned above REC/PLAY · CLEAR · BANK · TRACK 1–4 (= `indicatorLeds[7]`) |
+| indicator LED pill | 10 | 60 × 6 slot | one above every pedal (#366; `indicatorLeds` chain must widen 7 → 10) |
 | 7" touchscreen | 1 | 156 × 88 aperture | waveform / loop view (left), top-aligned |
 | 16" touchscreen | 1 | 350 × 199 aperture | main loopy UI (right), top-aligned |
-| encoder + diffused ring | 1 | Ø7 + Ø58/40 | centred under the 7" screen, on the CLEAR/BANK height line; EC11 + 12 THT LEDs |
+| encoder + diffused ring | 1 | Ø7 + Ø58/40 | centred under the 7" screen at `ENC_V` (does NOT follow CLEAR/BANK rearward — it would hit the 7" screen); EC11 + 12 THT LEDs |
 | power / mode LED | 2 | Ø8 | bezel, flanking the encoder |
 
 - **Screens mount from behind**; the aperture is **smaller than the bezel** so the
