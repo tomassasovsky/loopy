@@ -30,12 +30,13 @@ issue: 351
 
 ## Status
 
-**Next up:** part 1a (no dependencies; head of the 1a → 1b → 2 chain).
+**Next up:** part 1b once 1a (in review, PR #379) merges; 4a / 5a / 6a have no
+in-epic dependencies and can slot in meanwhile.
 
 | Part | Scope | Model / effort | Autonomy | Depends on | Status |
 |------|-------|----------------|----------|------------|--------|
 | 0 | arm() fix (standalone bug) | Opus · medium | `auto` | — | merged (#375) |
-| 1a | engine bypass + ramp | **Fable · high** | `merge-gate` | — | pending |
+| 1a | engine bypass + ramp | **Fable · high** | `merge-gate` | — | in-review (#379) |
 | 1b | track bus + master insert | **Fable · high** | `merge-gate` | 1a | pending |
 | 2 | loop-stage wet cache | **Fable · extra-high** | `merge-gate` | 1a, 1b | pending |
 | 3a | domain model + shared types + CI jobs | **Fable · high** | `merge-gate` | 1a, 1b | pending |
