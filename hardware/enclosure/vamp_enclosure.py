@@ -1424,10 +1424,13 @@ def build_mini_console():
         y_pl = (by - LID_BOSS_H * sn) / cs
         lid = lid.union(cq.Workplane("XY").box(10.0, 10.0, LID_BOSS_H, centered=False)
                         .translate((bx - 5.0, y_pl - 4.25, -LID_BOSS_H)))
+        # start the cutter 2mm BELOW the boss face: a tilted cylinder starting
+        # AT the face leaves its tilted base disc proud on the forward side --
+        # a wedge half-covering the mouth (the user's "half-hole")
         lid = lid.cut(cq.Workplane("XY").circle(INSERT_PILOT_D/2.0)
-                      .extrude(INSERT_DEPTH + 0.4)
+                      .extrude(INSERT_DEPTH + 0.4 + 2.0)
                       .rotate((0, 0, 0), (1, 0, 0), -SLOPE_ANGLE)
-                      .translate((bx, y_pl, -LID_BOSS_H)))
+                      .translate((bx, y_pl - 2.0*sn, -LID_BOSS_H - 2.0*cs)))
     # registration tabs (pure locators; the anchors do the clamping).
     # FRONT pair: shallow, inside the y<8.5 strip before the tub front walls.
     for tx in (40.0, 165.0):
