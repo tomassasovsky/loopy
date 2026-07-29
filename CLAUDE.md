@@ -8,6 +8,16 @@ Canonical build, test, and environment gotchas live in **`docs/PROGRESS.md`** �
 read its "How to build / test" section first (test runner, hand-authored FFI
 plugin, macOS dylib loading, flavor schemes). They will bite otherwise.
 
+### Verify loop — run these before declaring any change done
+
+- Dart/Flutter tests: `/Users/Tomas/development/flutter/bin/flutter test`
+  (bare `flutter test`/`dart test` are hook-blocked; the very_good MCP test
+  tool is broken in this env)
+- Native engine tests: `bash packages/loopy_engine/src/test/run_native_tests.sh`
+- Static analysis: `dart analyze` must come back clean
+- Formatting is automatic — a PostToolUse hook runs `dart format` on every
+  edited `.dart` file, so never hand-format or commit format-only churn
+
 ## Work tracking (required)
 
 Work is tracked as **GitHub Issues on a pipeline board**. Full contract:
