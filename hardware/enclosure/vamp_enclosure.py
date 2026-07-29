@@ -1326,9 +1326,13 @@ def build_mini_console():
     # right wall hugs TRACK4's tub (+0.5); left wall is the print's own edge
     Wt = (PEDS[1] - U0) + SKIRT_OUT_W/2.0 + 0.5 + WALL_T   # = 199.0
     C0 = (lid_top_z(PEDAL_ROW1_V) + SKIRT_DRIFT_ROW1 - T) - tn * (PEDAL_ROW1_V * cs)
-    # under-base lid anchors: two at the rear wall + one forward in the only
-    # full-depth corridor (between the tubs) -- triangle clamp, nothing on top
-    ANCHORS = ((40.0, None), (165.0, None), (101.13, 20.0))   # (x, y or None=rear)
+    # under-base lid anchors: triangle clamp, nothing on top. The screws lean
+    # REARWARD going down (they follow the lid normal), so each bottom exit
+    # lands ~(pillar-top z)*tan(slope) behind the pillar -- the rear pair
+    # therefore sits at y=140 in the side strips (x 8.5 / 190.4, clear of the
+    # diffuser flanges and the board bay) so the exits stay in open floor
+    # instead of breaking through the rear wall footprint.
+    ANCHORS = ((8.5, 140.0), (190.4, 140.0), (101.13, 20.0))
     BOARD_W, BOARD_D = 34.2, 18.8    # Pro Micro pocket (33 x 18 board + clearance)
     BOARD_XC = (PEDS[0] + PEDS[1])/2.0 - U0   # centred between the tubs
 
@@ -1375,10 +1379,10 @@ def build_mini_console():
                   .translate((bx, by + nsn * (t_seat + 40.0), top - ncs * (t_seat + 40.0))))
         tray = tray.cut(bore).cut(pocket)
     # feet: four pads so the unit stands clear of the recessed screw heads
-    for fx in (8.0, Wt - 22.0):
-        for fy in (8.0, D - 22.0):
-            tray = tray.union(cq.Workplane("XY").box(14.0, 14.0, 2.0, centered=False)
-                              .translate((fx, fy, -2.0)))
+    # (rear pair inboard, clear of the rear anchors' angled exit pockets)
+    for (fx, fy) in ((8.0, 8.0), (Wt - 22.0, 8.0), (30.0, D - 16.0), (155.0, D - 16.0)):
+        tray = tray.union(cq.Workplane("XY").box(14.0, 14.0, 2.0, centered=False)
+                          .translate((fx, fy, -2.0)))
     yc = PEDAL_ROW1_V * cs
     for u in PEDS:
         ped = (_platform_printed(cq, platform_h(PEDAL_ROW1_V), PEDAL_ROW1_V)
@@ -1420,7 +1424,7 @@ def build_mini_console():
     for tx in (40.0, 165.0):
         lid = lid.union(cq.Workplane("XY").box(10.0, 3.5, 5.0, centered=False)
                         .translate((tx - 5.0, WALL_T/cs + 0.8, -5.0)))
-    for tx in (60.0, 176.0):
+    for tx in (60.0, 168.0):
         lid = lid.union(cq.Workplane("XY").box(10.0, 10.0, 5.0, centered=False)
                         .translate((tx, (D - WALL_T)/cs - 12.0, -5.0)))
 
