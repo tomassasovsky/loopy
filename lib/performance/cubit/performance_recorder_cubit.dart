@@ -49,6 +49,15 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// this scope) — correct for the common case of exporting right after a
   /// capture finalizes, since D6 locks tempo/signature while any
   /// grid-recorded content exists.
+  ///
+  /// [currentChains] resolves the REAL lane/monitor effect chains and
+  /// master-limiter state to stamp into the arm snapshot
+  /// ([PerformanceRepository.arm]'s `chains`), read fresh at each arm — the
+  /// same narrow function dependency as [currentTempoBpm], since the mapping
+  /// from the live rig lives in the session feature rather than in this cubit.
+  /// Defaults to the empty snapshot (what every call site passed before this
+  /// was wired); the composition root (`lib/app/view/app.dart`) supplies
+  /// `performanceChainsFromLooper` over the live `LooperRepository`.
   PerformanceRecorderCubit({
     required PerformanceRepository performance,
     Duration armedTickInterval = const Duration(milliseconds: 250),
@@ -56,12 +65,14 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     DateTime Function() now = DateTime.now,
     Future<int?> Function(String path)? freeSpaceBytes,
     double Function() currentTempoBpm = _unknownTempoBpm,
+    PerformanceChains Function() currentChains = _noChains,
   }) : _performance = performance,
        _armedTickInterval = armedTickInterval,
        _renderPollInterval = renderPollInterval,
        _now = now,
        _freeSpaceBytes = freeSpaceBytes ?? _dfFreeSpaceBytes,
        _currentTempoBpm = currentTempoBpm,
+       _currentChains = currentChains,
        super(const PerformanceRecorderIdle()) {
     _statusSubscription = _performance.captureStatus.listen(_onStatus);
   }
@@ -71,6 +82,10 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// any caller that does not wire a real tempo source.
   static double _unknownTempoBpm() => 0;
 
+  /// The default `currentChains`: an empty rig, which is what
+  /// [PerformanceRepository.arm] already assumes when given nothing.
+  static PerformanceChains _noChains() => const PerformanceChains();
+
   /// Below this, [PerformanceRecorderArmed.lowDiskWarning] is set (D-FAIL).
   static const int lowDiskThresholdBytes = 500 * 1024 * 1024;
 
@@ -78,6 +93,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   final DateTime Function() _now;
   final Future<int?> Function(String path) _freeSpaceBytes;
   final double Function() _currentTempoBpm;
+  final PerformanceChains Function() _currentChains;
 
   /// How often [PerformanceRecorderArmed.elapsed] refreshes while armed.
   final Duration _armedTickInterval;
@@ -198,7 +214,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     switch (state) {
       case PerformanceRecorderIdle(recoveryDirectory: null):
       case PerformanceRecorderCompleted():
-        await _performance.arm();
+        await _performance.arm(chains: _currentChains());
       case PerformanceRecorderArmed():
         await _performance.disarm();
       case PerformanceRecorderIdle():

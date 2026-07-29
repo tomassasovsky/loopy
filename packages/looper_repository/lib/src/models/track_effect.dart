@@ -303,6 +303,19 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
     ),
 };
 
+/// Maps an ordered domain chain to its engine counterpart, for callers that
+/// must hand a chain to another engine-facing repository verbatim rather than
+/// persist it (`performance_repository`'s `PerformanceChains`, which embeds
+/// the engine models as canonical JSON in the arm snapshot).
+///
+/// The one public boundary mapper: every other domain↔engine conversion stays
+/// private behind [encodeTrackEffects] / [decodeTrackEffects]. Callers never
+/// need to name the engine types — and must not re-derive this mapping
+/// themselves, or the domain and engine models would silently drift.
+List<engine.TrackEffect> trackEffectsToEngine(List<TrackEffect> effects) => [
+  for (final e in effects) _trackEffectToEngine(e),
+];
+
 /// Maps an engine [TrackEffect] to its domain mirror (boundary; internal).
 TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
     switch (effect) {

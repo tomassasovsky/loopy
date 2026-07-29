@@ -44,7 +44,10 @@ export 'src/models/plugin_descriptor.dart'
 export 'src/models/session_rig.dart';
 export 'src/models/track.dart';
 // Domain effect models replace the engine's raw effect types in the UI. The
-// engine-typed boundary mappers stay package-internal (not shown here).
+// engine-typed boundary mappers stay package-internal, with one exception:
+// `trackEffectsToEngine`, for callers handing a live chain to another
+// engine-facing repository (performance_repository's arm snapshot) instead of
+// persisting it — see its doc.
 export 'src/models/track_effect.dart'
     show
         BuiltInEffect,
@@ -56,7 +59,8 @@ export 'src/models/track_effect.dart'
         TrackEffectType,
         decodeTrackEffects,
         encodeTrackEffects,
-        trackChainFingerprint;
+        trackChainFingerprint,
+        trackEffectsToEngine;
 export 'src/models/transport_state.dart';
 // Plugin discovery: the async scan driver + its cache. PluginDescriptor itself
 // is exported above with the other domain models.

@@ -30,11 +30,11 @@ issue: 351
 
 ## Status
 
-**Next up:** part 0 (no dependencies; docs PR #367 must merge first).
+**Next up:** part 1a (part 0 is in review as PR #375; 1a has no dependencies).
 
 | Part | Scope | Model / effort | Autonomy | Depends on | Status |
 |------|-------|----------------|----------|------------|--------|
-| 0 | arm() fix (standalone bug) | Opus · medium | `auto` | — | pending |
+| 0 | arm() fix (standalone bug) | Opus · medium | `auto` | — | in-review (#375) |
 | 1a | engine bypass + ramp | **Fable · high** | `merge-gate` | — | pending |
 | 1b | track bus + master insert | **Fable · high** | `merge-gate` | 1a | pending |
 | 2 | loop-stage wet cache | **Fable · extra-high** | `merge-gate` | 1a, 1b | pending |

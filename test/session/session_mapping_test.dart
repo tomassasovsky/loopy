@@ -3,6 +3,12 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/session/session_mapping.dart';
+// The chains a performance arm records cross the boundary as ENGINE models
+// (the manifest embeds them as canonical JSON), so the assertions on them name
+// the engine types under an `le` prefix — everything else here is domain.
+import 'package:loopy_engine/loopy_engine.dart'
+    as le
+    show BuiltInEffect, PluginEffect, PluginFormat, TrackEffectType;
 import 'package:mocktail/mocktail.dart';
 import 'package:session_repository/session_repository.dart';
 
@@ -55,6 +61,132 @@ void main() {
 
     test('emits no monitors when none are configured', () {
       expect(chainsFromLooper(looper).monitors, isEmpty);
+    });
+  });
+
+  group('performanceChainsFromLooper', () {
+    late LooperRepository looper;
+
+    setUp(() {
+      looper = _MockLooperRepository();
+      when(looper.allLaneEffects).thenReturn(const {});
+      when(looper.allMonitors).thenReturn(const {});
+      when(() => looper.limiterEnabled).thenReturn(true);
+      when(() => looper.limiterCeiling).thenReturn(0.99);
+    });
+
+    test('maps every lane chain to its (channel, lane) address', () {
+      when(looper.allLaneEffects).thenReturn({
+        (0, 1): [BuiltInEffect(type: TrackEffectType.reverb)],
+        (2, 0): [BuiltInEffect(type: TrackEffectType.delay)],
+      });
+
+      final chains = performanceChainsFromLooper(looper);
+
+      expect(
+        chains.laneChains.map((c) => (c.channel, c.lane)),
+        containsAll(<(int, int)>[(0, 1), (2, 0)]),
+      );
+    });
+
+    test('carries built-in effect params across the engine boundary', () {
+      // The manifest embeds the ENGINE models as canonical JSON, so the
+      // per-effect params must survive the domain → engine conversion intact.
+      when(looper.allLaneEffects).thenReturn({
+        (0, 0): [
+          BuiltInEffect(
+            type: TrackEffectType.octaver,
+            params: const [7, 0.5],
+          ),
+        ],
+      });
+
+      final effects = performanceChainsFromLooper(
+        looper,
+      ).laneChains.single.effects;
+
+      final effect = effects.single as le.BuiltInEffect;
+      expect(effect.type, le.TrackEffectType.octaver);
+      expect(effect.params, [7, 0.5]);
+    });
+
+    test('carries a plugin entry ref, state and name across the boundary', () {
+      when(looper.allLaneEffects).thenReturn({
+        (1, 0): [
+          const PluginEffect(
+            ref: PluginRef(
+              format: PluginFormat.vst3,
+              id: 'com.example.chorus',
+              version: 0x00020100,
+            ),
+            paramValues: {3: 0.25},
+            state: 'YmFzZTY0',
+            name: 'Chorus',
+          ),
+        ],
+      });
+
+      final effects = performanceChainsFromLooper(
+        looper,
+      ).laneChains.single.effects;
+
+      final effect = effects.single as le.PluginEffect;
+      expect(effect.ref.format, le.PluginFormat.vst3);
+      expect(effect.ref.id, 'com.example.chorus');
+      expect(effect.ref.version, 0x00020100);
+      expect(effect.paramValues, {3: 0.25});
+      expect(effect.state, 'YmFzZTY0');
+      expect(effect.name, 'Chorus');
+    });
+
+    test('captures a monitor routing/mix and its chain', () {
+      when(looper.allMonitors).thenReturn({
+        1: InputMonitor(
+          input: 1,
+          enabled: true,
+          outputMask: 0x2,
+          volume: 0.75,
+          muted: true,
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        ),
+      });
+
+      final monitor = performanceChainsFromLooper(looper).monitors.single;
+
+      expect(monitor.input, 1);
+      expect(monitor.enabled, isTrue);
+      expect(monitor.outputMask, 0x2);
+      expect(monitor.volume, 0.75);
+      expect(monitor.muted, isTrue);
+      expect(
+        (monitor.effects.single as le.BuiltInEffect).type,
+        le.TrackEffectType.reverb,
+      );
+    });
+
+    test('captures an enabled DRY monitor (no FX)', () {
+      // Same rule as the session save: the capture documents every configured
+      // monitor, not just the ones carrying an FX chain.
+      when(looper.allMonitors).thenReturn(const {
+        0: InputMonitor(input: 0, enabled: true),
+      });
+
+      final monitor = performanceChainsFromLooper(looper).monitors.single;
+
+      expect(monitor.input, 0);
+      expect(monitor.enabled, isTrue);
+      expect(monitor.effects, isEmpty);
+    });
+
+    test('reads the real master-limiter state, even for an empty rig', () {
+      final chains = performanceChainsFromLooper(looper);
+
+      expect(chains.laneChains, isEmpty);
+      expect(chains.monitors, isEmpty);
+      // The bug this part fixes: an empty rig is fine, an empty LIMITER is
+      // not — the engine cannot report it, so it comes from the repository.
+      expect(chains.limiterEnabled, isTrue);
+      expect(chains.limiterCeiling, 0.99);
     });
   });
 

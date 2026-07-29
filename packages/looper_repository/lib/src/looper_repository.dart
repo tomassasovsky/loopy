@@ -151,6 +151,14 @@ class LooperRepository {
   /// reconnects. Unity (`1.0`) until set.
   double _masterGain = 1;
 
+  /// The desired master peak-limiter state, re-applied to the engine on every
+  /// successful (re)start (a fresh start resets the limiter to off). `final`
+  /// only because nothing writes the limiter yet — it is the state the engine
+  /// is actually driven with, not a constant callers may assume; see
+  /// [limiterEnabled] for why it is cached at all.
+  final bool _limiterEnabled = true;
+  final double _limiterCeiling = 0.99;
+
   /// The record-latency compensation offset (frames), last set explicitly or
   /// captured from an engine measurement. Remembered and re-applied on every
   /// (re)start so a device change / reconnect keeps the round-trip compensation
@@ -577,9 +585,10 @@ class LooperRepository {
         ..setDefaultMultiple(multiple: _defaultMultiple)
         ..setMasterGain(_masterGain)
         // Master peak limiter on by default: a fresh start resets it to off, so
-        // re-assert it here (like the rest) to guard the summed output against
-        // driver clipping. No UI yet — this is a safety default.
-        ..setLimiter(enabled: true);
+        // re-assert the cached state here (like the rest) to guard the summed
+        // output against driver clipping. No UI yet — the cache holds the
+        // safety default.
+        ..setLimiter(enabled: _limiterEnabled, ceiling: _limiterCeiling);
       // Re-apply the remembered record offset only when there IS compensation
       // to restore: a fresh start already defaults to 0, so pushing 0 is a
       // no-op that also clobbers the auto-measure boot path (which measures
@@ -2252,6 +2261,20 @@ class LooperRepository {
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setMasterGain(_masterGain);
   }
+
+  /// Whether the master peak limiter is engaged.
+  ///
+  /// The engine's limiter surface is write-only (no snapshot read-back), so
+  /// this cached copy of what the repository last pushed is the only truth a
+  /// caller can read — a performance-capture arm records it into the arm
+  /// snapshot, since the engine cannot report it. There is no setter yet:
+  /// nothing writes the limiter, so this reads the safety default the engine
+  /// is started with on every (re)start.
+  bool get limiterEnabled => _limiterEnabled;
+
+  /// The master peak limiter's ceiling (`0..1`), meaningful only while
+  /// [limiterEnabled]. Cached for the same write-only reason.
+  double get limiterCeiling => _limiterCeiling;
 
   /// Enables global sound-activated recording. Remembered and re-applied on
   /// every (re)start.

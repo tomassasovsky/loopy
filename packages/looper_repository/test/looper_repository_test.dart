@@ -649,6 +649,32 @@ void main() {
       expect(engine.lastMasterGain, 0.0);
     });
 
+    test('limiter getters expose the cached state the engine cannot read', () {
+      // The engine's limiter surface is write-only, so these getters are the
+      // only truth a caller (a performance-capture arm) can read.
+      final repo = buildRepo();
+      expect(repo.limiterEnabled, isTrue);
+      expect(repo.limiterCeiling, 0.99);
+    });
+
+    test('the limiter cache is what start pushes, on every restart', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      expect(engine.lastLimiterEnabled, isTrue);
+      expect(engine.lastLimiterCeiling, 0.99);
+
+      // A restart resets the engine's limiter to off, so the cached state must
+      // be pushed again — the getters keep reporting what the engine is
+      // actually driven with.
+      engine
+        ..lastLimiterEnabled = null
+        ..lastLimiterCeiling = null;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.lastLimiterEnabled, repo.limiterEnabled);
+      expect(engine.lastLimiterCeiling, repo.limiterCeiling);
+    });
+
     test('setRecordOffset is deferred until running, then re-applied', () {
       final repo = buildRepo();
       expect(repo.setRecordOffset(240), EngineResult.ok);

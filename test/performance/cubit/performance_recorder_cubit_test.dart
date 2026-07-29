@@ -99,6 +99,7 @@ void main() {
     DateTime Function()? now,
     Future<int?> Function(String path)? freeSpaceBytes,
     double Function()? currentTempoBpm,
+    PerformanceChains Function()? currentChains,
   }) => PerformanceRecorderCubit(
     performance: performance,
     armedTickInterval: const Duration(milliseconds: 10),
@@ -106,6 +107,7 @@ void main() {
     now: now ?? (() => clock),
     freeSpaceBytes: freeSpaceBytes ?? (_) async => null,
     currentTempoBpm: currentTempoBpm ?? () => 0,
+    currentChains: currentChains ?? PerformanceChains.new,
   );
 
   /// Arms via the repository directly and seeds a real `events.log` +
@@ -260,6 +262,63 @@ void main() {
       await pumpEventQueue();
 
       expect(cubit.state, isA<PerformanceRecorderArmed>());
+    });
+
+    test('stamps the provider chains into the arm snapshot', () async {
+      // The bug this guards: every call site used to arm with no chains at
+      // all, so the snapshot documented an empty rig and a wet stem exported
+      // identical to its dry source.
+      final cubit = build(
+        currentChains: () => const PerformanceChains(
+          monitors: [
+            PerformanceMonitorState(
+              input: 1,
+              enabled: true,
+              outputMask: 0x2,
+              volume: 0.5,
+              muted: false,
+              effects: [],
+            ),
+          ],
+          limiterEnabled: true,
+          limiterCeiling: 0.8,
+        ),
+      );
+      addTearDown(cubit.close);
+
+      await cubit.toggleArm();
+      await pumpEventQueue();
+
+      final snapshot =
+          jsonDecode(
+                File(
+                  '${performance.armedDirectory}/arm-snapshot.json',
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      expect(snapshot['limiterOn'], isTrue);
+      expect(snapshot['limiterCeiling'], 0.8);
+      expect(snapshot['monitors'], hasLength(1));
+      expect((snapshot['monitors'] as List).single, containsPair('input', 1));
+    });
+
+    test('reads the chains at arm time, not at construction', () async {
+      // The rig changes between captures, so the provider is called per arm
+      // rather than resolved once when the cubit is built.
+      var calls = 0;
+      final cubit = build(
+        currentChains: () {
+          calls++;
+          return const PerformanceChains();
+        },
+      );
+      addTearDown(cubit.close);
+      expect(calls, 0);
+
+      await cubit.toggleArm();
+      await pumpEventQueue();
+
+      expect(calls, 1);
     });
 
     test(
