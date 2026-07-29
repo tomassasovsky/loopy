@@ -1145,6 +1145,14 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
       log_index++;
       for (int s = 0; s < LE_FX_MAX; ++s) {
         effective[s] = chain.chain_enabled && chain.enabled[s];
+        /* Mirror of the live snapshots' gap rule (snapshot_lane_fx): a slot
+         * the chain no longer processes settles at bypass while its
+         * effective bit is 0, so a later re-entry goes through the clean
+         * settled-edge reset exactly as it does live. */
+        if ((s >= chain.count || chain.type[s] == LE_FX_NONE) &&
+            !effective[s]) {
+          le_fx_enable_force_bypass(fx, s);
+        }
       }
     }
 

@@ -152,6 +152,14 @@ The replayed lane chain seeds all enable bits to 1 at arm: the arm manifest
 carries no arm-time enabled state until part 3 of the FX-v3 epic adds it (a
 pre-arm disable is invisible to the offline render until then).
 
+Ordering caveat (same accepted tolerance class as the control-side param
+events): enable flips are stamped with the control thread's buffer-base
+`a_perf_frames` snapshot, while `LE_CMD_SET_LANE_FX`/`_FX_COUNT` are stamped
+at audio-thread apply time — so an enable flip and a type/count change issued
+within the same buffer can sort into the opposite order from the live engine,
+and the replay's D-ENSEED re-seed then lands on the other side of the flip.
+Bounded by one buffer, like the documented `LE_PLOG_SET_LANE_FX_PARAM` skew.
+
 ### Why record start/end are separate from the raw `LE_CMD_RECORD`/`LE_CMD_STOP` entries
 
 Both the raw command *and* the transport fact are logged, deliberately: the

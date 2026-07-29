@@ -151,7 +151,17 @@ int32_t le_engine_set_lane_plugin(le_engine* engine, int32_t channel,
   _Atomic int32_t* type = NULL;
   le_fx_state* fx = lane_fx(engine, channel, lane, index, &type);
   if (!fx || !plugin_id) return LE_ERR_INVALID;
-  return install(engine, fx, type, index, plugin_id, out_slot);
+  const int32_t rc = install(engine, fx, type, index, plugin_id, out_slot);
+  if (rc == LE_OK) {
+    /* D-ENSEED for the plugin path: installing publishes a type change the
+     * command setters never see, so the freshly placed plugin must start
+     * enabled here (a stale disabled flag would silently mute it) and the
+     * control-side pushed-type shadow must follow the published type. */
+    le_lane* ln = &engine->tracks[channel].lanes[lane];
+    store_i32(&ln->a_fx_enabled[index], 1);
+    ln->fx_type_pushed[index] = LE_FX_PLUGIN;
+  }
+  return rc;
 }
 
 int32_t le_engine_set_monitor_plugin(le_engine* engine, int32_t input,
@@ -160,7 +170,13 @@ int32_t le_engine_set_monitor_plugin(le_engine* engine, int32_t input,
   _Atomic int32_t* type = NULL;
   le_fx_state* fx = monitor_fx(engine, input, index, &type);
   if (!fx || !plugin_id) return LE_ERR_INVALID;
-  return install(engine, fx, type, index, plugin_id, out_slot);
+  const int32_t rc = install(engine, fx, type, index, plugin_id, out_slot);
+  if (rc == LE_OK) {
+    le_monitor_input* m = &engine->monitors[input];
+    store_i32(&m->a_fx_enabled[index], 1);
+    m->fx_type_pushed[index] = LE_FX_PLUGIN;
+  }
+  return rc;
 }
 
 int32_t le_engine_clear_lane_plugin(le_engine* engine, int32_t channel,
@@ -171,6 +187,7 @@ int32_t le_engine_clear_lane_plugin(le_engine* engine, int32_t channel,
   /* The slot is always retracted + emptied; a deferred reclaim (stalled
    * callback) is still a successful clear from the caller's view. */
   (void)clear_slot(engine, fx, type, index);
+  engine->tracks[channel].lanes[lane].fx_type_pushed[index] = LE_FX_NONE;
   return LE_OK;
 }
 
@@ -180,5 +197,6 @@ int32_t le_engine_clear_monitor_plugin(le_engine* engine, int32_t input,
   le_fx_state* fx = monitor_fx(engine, input, index, &type);
   if (!fx) return LE_ERR_INVALID;
   (void)clear_slot(engine, fx, type, index);
+  engine->monitors[input].fx_type_pushed[index] = LE_FX_NONE;
   return LE_OK;
 }

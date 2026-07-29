@@ -34,6 +34,14 @@ Must be merged before this part starts:
   `enabled=1` until this part carries the real field** [R4][R16]. This part
   switches the mirror to the real bit and must fold **exactly the layout 1a
   landed** — the agreement test is the tripwire.
+  **Obligation from 1a's review:** the engine keys `a_fx_enabled` by SLOT
+  INDEX, so a reorder/deletion re-pushed index-by-index migrates disabled
+  state onto the wrong effect (type-changed indices re-seed to enabled,
+  unchanged-type indices keep a flag that now belongs to another effect).
+  This part's repository apply MUST push the per-effect `enabled` flag for
+  EVERY slot on every chain apply (making the domain — keyed by effect, not
+  index — the single source of truth), and the arm manifest must carry the
+  bits so pre-arm disables reach the offline render.
 - `docs/plan/2026-07-28-feat-fx-system-v3-part-1b-plan.md` — track stereo bus
   + Master insert and the track/master setter families
   (`le_engine_set_{track,master}_fx_enabled` / `..._fx_chain_enabled` + full

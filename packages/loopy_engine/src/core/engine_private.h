@@ -210,10 +210,20 @@ typedef struct le_fx_state {
    * owner (le_lane / le_monitor_input a_fx_enabled / a_fx_chain_enabled).
    * enable_mix is the dry/wet crossfade position (1.0 = fully wet, 0.0 =
    * fully bypassed); enable_target is the last-observed effective enabled bit
-   * for edge detection. Seeded SETTLED at the current target by
-   * le_lane_reset / le_monitor_input_reset so fresh chains do not fade in. */
+   * for edge detection; enable_warmup counts the samples a just-re-enabled
+   * latency-bearing slot (the octaver) is fed input while its output is
+   * still discarded, so its delay-matched dry tap is warm before the ramp-in
+   * (no silence hole); enable_clear_cooldown spaces the re-enable ring
+   * clears so a whole-chain stomp never memsets every ring in one callback.
+   * Seeded SETTLED at the current target by le_lane_reset /
+   * le_monitor_input_reset so fresh chains do not fade in; a slot the chain
+   * is not processing is settled to bypass by the per-buffer snapshot when
+   * its effective bit is 0 (see snapshot_lane_fx), so a processing gap can
+   * never strand a ramp mid-fade. */
   float enable_mix[LE_FX_MAX];
   int32_t enable_target[LE_FX_MAX];
+  int32_t enable_warmup[LE_FX_MAX];
+  int32_t enable_clear_cooldown;
   /* For an LE_FX_PLUGIN slot: the hosted-plugin slot handle the audio thread
    * forwards to, or NULL. The control thread publishes/retracts it
    * (engine_plugin.c); the audio thread only loads it (fx_plugin_process). A
@@ -279,6 +289,14 @@ typedef struct le_lane {
   _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
   _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
   _Atomic int32_t a_fx_chain_enabled;      /* whole-chain enable (default 1) */
+  /* Control-thread-owned shadows of the last successfully PUSHED count/types.
+   * a_fx_count / a_fx_type are published by the AUDIO thread when it drains
+   * the ring, so the control thread must not read them to decide D-ENSEED
+   * re-seeding — with undrained commands they are stale and the seed would
+   * clobber user disables or miss recycled slots. The setters read and write
+   * these instead (engine_commands.c); never touched by the audio thread. */
+  int32_t fx_count_pushed;
+  int32_t fx_type_pushed[LE_FX_MAX];
   le_fx_state fx;
 } le_lane;
 
@@ -308,6 +326,9 @@ typedef struct le_monitor_input {
   _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
   _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
   _Atomic int32_t a_fx_chain_enabled;      /* whole-chain enable (default 1) */
+  /* Control-thread-owned pushed-count/type shadows (see le_lane). */
+  int32_t fx_count_pushed;
+  int32_t fx_type_pushed[LE_FX_MAX];
   le_fx_state fx;
 } le_monitor_input;
 

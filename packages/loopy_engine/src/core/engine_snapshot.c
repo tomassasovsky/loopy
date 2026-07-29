@@ -68,7 +68,13 @@ static int32_t le_max_fx_latency(le_engine* engine) {
       le_lane* ln = &tr->lanes[l];
       int32_t n = load_i32(&ln->a_fx_count);
       if (n > LE_FX_MAX) n = LE_FX_MAX;
+      /* A bypassed slot settles into a full skip (fx_apply_chain) and adds
+       * no real delay, so disabled slots must not keep the monitoring-lag
+       * warning alive. Granularity: the ~5 ms ramp is far below this
+       * render-rate poll's resolution. */
+      const int32_t chain_on = load_i32(&ln->a_fx_chain_enabled);
       for (int32_t s = 0; s < n; ++s) {
+        if (!(chain_on && load_i32(&ln->a_fx_enabled[s]))) continue;
         const int32_t lat =
             le_fx_added_latency(&ln->fx, s, load_i32(&ln->a_fx_type[s]));
         if (lat > max_lat) max_lat = lat;
@@ -79,7 +85,9 @@ static int32_t le_max_fx_latency(le_engine* engine) {
     le_monitor_input* m = &engine->monitors[c];
     int32_t n = load_i32(&m->a_fx_count);
     if (n > LE_FX_MAX) n = LE_FX_MAX;
+    const int32_t chain_on = load_i32(&m->a_fx_chain_enabled);
     for (int32_t s = 0; s < n; ++s) {
+      if (!(chain_on && load_i32(&m->a_fx_enabled[s]))) continue;
       const int32_t lat =
           le_fx_added_latency(&m->fx, s, load_i32(&m->a_fx_type[s]));
       if (lat > max_lat) max_lat = lat;

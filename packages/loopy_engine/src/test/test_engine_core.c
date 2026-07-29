@@ -11975,6 +11975,24 @@ static void test_octaver_added_latency(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.fx_added_latency_frames == 0);
 
+  /* A BYPASSED octaver settles into a full skip and adds no real delay, so
+   * the reported latency must clear on a slot disable, a chain disable, and
+   * come back on re-enable. */
+  le_engine_set_lane_fx_count(e, 0, 0, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.fx_added_latency_frames == 1024);
+  CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 0, 0) == LE_OK);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.fx_added_latency_frames == 0);
+  CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_chain_enabled(e, 0, 0, 0) == LE_OK);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.fx_added_latency_frames == 0);
+  CHECK(le_engine_set_lane_fx_chain_enabled(e, 0, 0, 1) == LE_OK);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.fx_added_latency_frames == 1024);
+
   le_engine_destroy(e);
 }
 
@@ -16952,7 +16970,11 @@ static void test_fx_enable_midfade_reenable_keeps_state(void) {
 
 /* D-ENSEED's count half (le_fx_seed_entering_slots): remove-then-re-add of
  * the SAME type — count shrink then regrow, no type change anywhere — must
- * not inherit a stale disabled flag on the recycled slot. */
+ * not inherit a stale disabled flag on the recycled slot. All count/type
+ * pushes here deliberately run WITHOUT intervening drains: the seed reads
+ * the control-side pushed-count/type shadows, so queued (undrained) ring
+ * commands can neither fool it into missing a recycled slot nor into
+ * clobbering a user disable on an already-active slot. */
 static void test_fx_enable_count_regrow_reseeds(void) {
   printf("test_fx_enable_count_regrow_reseeds\n");
   le_engine* e = make_configured_engine();
@@ -16964,14 +16986,31 @@ static void test_fx_enable_count_regrow_reseeds(void) {
   CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 0, 0) == LE_OK);
   CHECK(le_engine_lane_fx_fingerprint(e, 0, 0) != fp_enabled);
 
+  /* Same-type remove/re-add, no drain between the three pushes. */
   CHECK(le_engine_set_lane_fx_count(e, 0, 0, 0) == LE_OK);
-  drain(e);
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK); /* same ty */
   CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
   drain(e);
   CHECK(le_engine_lane_fx_fingerprint(e, 0, 0) == fp_enabled);
 
-  /* Monitor twin. */
+  /* A disable between two count growths survives even with every push
+   * queued: growing 1 -> 2 seeds only the ENTERING slot 1, never the
+   * already-active slot 0 (the stale-published-count over-seed would wipe
+   * it). Track 2 builds the identical end state as the reference. */
+  CHECK(le_engine_set_lane_fx(e, 1, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 1, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_enabled(e, 1, 0, 0, 0) == LE_OK);
+  CHECK(le_engine_set_lane_fx(e, 1, 0, 1, LE_FX_FILTER) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 1, 0, 2) == LE_OK);
+  CHECK(le_engine_set_lane_fx(e, 2, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx(e, 2, 0, 1, LE_FX_FILTER) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 2, 0, 2) == LE_OK);
+  CHECK(le_engine_set_lane_fx_enabled(e, 2, 0, 0, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_lane_fx_fingerprint(e, 1, 0) ==
+        le_engine_lane_fx_fingerprint(e, 2, 0));
+
+  /* Monitor twin, no drains between the count pushes. */
   CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
   CHECK(le_engine_set_monitor_input_fx_count(e, 0, 1) == LE_OK);
   drain(e);
@@ -16979,10 +17018,120 @@ static void test_fx_enable_count_regrow_reseeds(void) {
   CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 0) == LE_OK);
   CHECK(le_engine_monitor_fx_fingerprint(e, 0) != mfp);
   CHECK(le_engine_set_monitor_input_fx_count(e, 0, 0) == LE_OK);
-  drain(e);
   CHECK(le_engine_set_monitor_input_fx_count(e, 0, 1) == LE_OK);
   drain(e);
   CHECK(le_engine_monitor_fx_fingerprint(e, 0) == mfp);
+
+  le_engine_destroy(e);
+}
+
+/* A processing GAP must not strand an enable ramp mid-fade: disable a slot,
+ * then mute the monitor inside the ramp window — the per-buffer snapshot
+ * settles the unprocessed disabled slot to bypass, so the later unmute +
+ * re-enable goes through the clean settled-edge reset and the pre-gap echo
+ * tail NEVER resumes (the stranded-mix bug replayed it at ~50%% wet). */
+static void test_fx_enable_gap_settles_disabled_ramp(void) {
+  printf("test_fx_enable_gap_settles_disabled_ramp\n");
+  le_engine* e = make_configured_engine();
+  static float cap[1024];
+
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_ECHO) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 0.01f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 0.6f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 2, 1.0f) == LE_OK);
+  drain(e);
+
+  /* Load the ring, disable mid-decay, then MUTE inside the 240-frame ramp
+   * so the chain stops running with the fade stranded at ~0.87. */
+  process_n(e, 1.0f, 64, cap);
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 0) == LE_OK);
+  process_n(e, 0.0f, 32, cap);
+  CHECK(le_engine_set_monitor_input_mute(e, 0, 1) == LE_OK);
+  process_n(e, 0.0f, 512, cap); /* the gap: snapshot settles the slot */
+
+  /* Unmute + re-enable: clean settled-edge reset — exact silence, no
+   * resumed tail from before the gap. */
+  CHECK(le_engine_set_monitor_input_mute(e, 0, 0) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 1) == LE_OK);
+  process_n(e, 0.0f, 1024, cap);
+  for (int i = 0; i < 1024; ++i) CHECK(cap[i] == 0.0f);
+
+  le_engine_destroy(e);
+}
+
+/* A whole-chain stomp re-enable staggers its ring clears (one per
+ * LE_FX_ENABLE_CLEAR_SPACING samples) instead of memsetting every ring in a
+ * single callback — and the stagger must not weaken the guarantee: every
+ * slot's pending repeats still die, none of the burst ever sounds. */
+static void test_fx_enable_chain_stomp_staggered_clear(void) {
+  printf("test_fx_enable_chain_stomp_staggered_clear\n");
+  le_engine* e = make_configured_engine();
+  static float cap[1024];
+
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 1) == LE_OK);
+  for (int s = 0; s < 2; ++s) {
+    CHECK(le_engine_set_monitor_input_fx(e, 0, s, LE_FX_ECHO) == LE_OK);
+    CHECK(le_engine_set_monitor_input_fx_param(e, 0, s, 0, 0.01f) == LE_OK);
+    CHECK(le_engine_set_monitor_input_fx_param(e, 0, s, 1, 0.6f) == LE_OK);
+    CHECK(le_engine_set_monitor_input_fx_param(e, 0, s, 2, 1.0f) == LE_OK);
+  }
+  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 2) == LE_OK);
+  drain(e);
+
+  /* Load both rings, bypass the chain, settle, stomp it back on. */
+  process_n(e, 1.0f, 64, cap);
+  CHECK(le_engine_set_monitor_input_fx_chain_enabled(e, 0, 0) == LE_OK);
+  process_n(e, 0.0f, FX_EN_SETTLE, cap);
+  CHECK(le_engine_set_monitor_input_fx_chain_enabled(e, 0, 1) == LE_OK);
+  process_n(e, 0.0f, 1024, cap);
+  /* Deferred slots stay bypassed (dry silence) until their spaced clear;
+   * cleared slots ramp in over zeroed rings — exact silence throughout. */
+  for (int i = 0; i < 1024; ++i) CHECK(cap[i] == 0.0f);
+
+  le_engine_destroy(e);
+}
+
+/* Octaver re-enable warmup: the ring clear also zeroes the octaver's
+ * delay-matched DRY tap, so without warmup a re-enable rendered a ~LE_PV_N
+ * (~21 ms) hole of silence. The warmup feeds the FIFO while the output stays
+ * bit-exact dry, then ramps — the output never dips. p2 (mix) = 0 makes the
+ * settled wet path exactly the dry tap, so any hole is a hard dip to ~0. */
+static void test_fx_enable_octaver_warmup_no_hole(void) {
+  printf("test_fx_enable_octaver_warmup_no_hole\n");
+  le_engine* e = make_configured_engine();
+  static float cap[4096];
+
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_OCTAVER) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 0.5f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 2, 0.0f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 3, 0.0f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 1) == LE_OK);
+  drain(e);
+
+  /* Settle on a constant: past the PV latency the dry tap reads 0.5. */
+  process_n(e, 0.5f, 4096, cap);
+  CHECK(cap[4095] == 0.5f);
+
+  /* Bypass and settle: bit-exact passthrough of the same constant. */
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 0) == LE_OK);
+  process_n(e, 0.5f, FX_EN_SETTLE, cap);
+  CHECK(cap[FX_EN_SETTLE - 1] == 0.5f);
+
+  /* Re-enable: warmup passthrough, then a crossfade between two ~0.5
+   * signals — never the silence hole. */
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 1) == LE_OK);
+  process_n(e, 0.5f, 4096, cap);
+  float min = 1e9f;
+  for (int i = 0; i < 4096; ++i) {
+    if (cap[i] < min) min = cap[i];
+  }
+  CHECK(min > 0.25f);
 
   le_engine_destroy(e);
 }
@@ -17743,6 +17892,9 @@ int main(void) {
   test_fx_enable_defaults_bitexact();
   test_fx_enable_enseed_type_change();
   test_fx_enable_count_regrow_reseeds();
+  test_fx_enable_gap_settles_disabled_ramp();
+  test_fx_enable_chain_stomp_staggered_clear();
+  test_fx_enable_octaver_warmup_no_hole();
   test_fx_enable_works_while_stopped();
   test_fx_enable_monitor_twins();
   test_fx_enable_fingerprint();

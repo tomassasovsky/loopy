@@ -79,6 +79,13 @@ void le_fx_entry_reset(le_fx_state* fx, int slot);
  * offline render, VST3 plugin processors, test harnesses). */
 void le_fx_enable_seed_settled(le_fx_state* fx, int slot);
 
+/* Settles chain slot [slot]'s enable-crossfade runtime at fully BYPASSED.
+ * For a slot the chain will NOT process while its effective enabled bit is 0
+ * (per-buffer snapshots, le_engine_stop, the offline render's count/type
+ * mirror): guarantees a processing gap never strands a ramp mid-fade, so
+ * resumption always re-enters through the settled-edge reset (B7). */
+void le_fx_enable_force_bypass(le_fx_state* fx, int slot);
+
 /* Frees a chain slot's octaver phase-vocoder heap buffers (both channels) and
  * nulls them. Control-thread only (lane/monitor reset, engine destroy). */
 void le_fx_free_octaver(le_fx_state* fx, int slot);

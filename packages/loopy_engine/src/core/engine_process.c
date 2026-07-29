@@ -2967,6 +2967,20 @@ static inline void snapshot_lane_fx(
           fx_params[t][l][s][p] = load_f32(&ln->a_fx_param[s][p]);
         }
       }
+      /* A slot the chain will NOT process this buffer (chain skipped, beyond
+       * the active count, or LE_FX_NONE) cannot advance its enable ramp; if
+       * its effective bit is 0, settle it to bypass now so a processing gap
+       * never strands a ramp mid-fade — resumption then always re-enters
+       * through fx_apply_chain's clean settled-edge reset [B7]. Enabled
+       * slots keep their state (engaged effects have always persisted
+       * across gaps). Audio-thread write to audio-owned DSP state. */
+      for (int s = 0; s < LE_FX_MAX; ++s) {
+        const int unprocessed =
+            !has_fx[t][l] || s >= n || fx_type[t][l][s] == LE_FX_NONE;
+        if (unprocessed && !(chain_on && load_i32(&ln->a_fx_enabled[s]))) {
+          le_fx_enable_force_bypass(&ln->fx, s);
+        }
+      }
     }
   }
 }
@@ -3000,6 +3014,16 @@ static inline void snapshot_monitor_fx(
       mon_fx_enabled[c][s] = chain_on && load_i32(&m->a_fx_enabled[s]);
       for (int p = 0; p < LE_FX_PARAMS; ++p) {
         mon_fx_params[c][s][p] = load_f32(&m->a_fx_param[s][p]);
+      }
+    }
+    /* Settle unprocessed disabled slots (see snapshot_lane_fx). The monitor
+     * chain additionally stops running while the input is off or muted
+     * (mix_monitors_frame), so those gaps are covered here too. */
+    for (int s = 0; s < LE_FX_MAX; ++s) {
+      const int unprocessed = !mon_on[c] || mon_mut[c] || !mon_has_fx[c] ||
+                              s >= n || mon_fx_type[c][s] == LE_FX_NONE;
+      if (unprocessed && !(chain_on && load_i32(&m->a_fx_enabled[s]))) {
+        le_fx_enable_force_bypass(&m->fx, s);
       }
     }
   }

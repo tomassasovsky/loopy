@@ -1496,27 +1496,33 @@ int32_t le_engine_set_overdub_feedback(le_engine* engine, float feedback) {
 
 /* Prepares a chain entry for [type]: lazily allocates its heap buffers and,
  * only when the type ACTUALLY changes (so a reorder does not wipe the user's
- * tweaks), seeds the type's default params and re-seeds the entry's enabled
- * flag to 1 (D-ENSEED: a freshly placed effect starts enabled — a stale
- * disabled flag must never silently mute a recycled slot; the same-type
- * remove-then-re-add path is covered by le_fx_seed_entering_slots in the
- * count setters below). The per-type allocation and defaults live behind the
- * effect vtable (engine_fx.c: le_fx_prepare / le_fx_defaults), so this stays
- * generic — adding an effect needs no edit here. Returns LE_OK, or
- * LE_ERR_INVALID on allocation failure (buffers left as they were). */
-static int32_t le_fx_prepare_entry(le_fx_state* fx, _Atomic int32_t* a_type,
+ * tweaks), seeds the type's default params. "Actually changes" is judged
+ * against [type_pushed] — the control thread's shadow of the last
+ * successfully pushed type — NOT the audio-published a_fx_type, which is
+ * stale whenever the ring has not drained (device stopped, or two pushes in
+ * one buffer) and would make a same-type re-push read as a change. The
+ * change verdict is returned via [out_changed] so the caller can apply the
+ * D-ENSEED enabled re-seed AFTER its ring push succeeds (a freshly placed
+ * effect starts enabled — a stale disabled flag must never silently mute a
+ * recycled slot; the same-type remove-then-re-add path is covered by
+ * le_fx_seed_entering_slots in the count setters below). The per-type
+ * allocation and defaults live behind the effect vtable (engine_fx.c:
+ * le_fx_prepare / le_fx_defaults), so this stays generic — adding an effect
+ * needs no edit here. Returns LE_OK, or LE_ERR_INVALID on allocation failure
+ * (buffers left as they were). */
+static int32_t le_fx_prepare_entry(le_fx_state* fx, const int32_t* type_pushed,
                                    _Atomic uint32_t a_param[][LE_FX_PARAMS],
-                                   _Atomic int32_t* a_enabled, int32_t index,
-                                   int32_t type, int32_t delay_cap) {
+                                   int32_t index, int32_t type,
+                                   int32_t delay_cap, int32_t* out_changed) {
   const int32_t cap = delay_cap > 0 ? delay_cap : 48000;
   if (le_fx_prepare(fx, index, type, cap) != LE_OK) return LE_ERR_INVALID;
-  if (load_i32(a_type + index) != type) {
+  *out_changed = type_pushed[index] != type;
+  if (*out_changed) {
     float defaults[LE_FX_PARAMS];
     le_fx_defaults(type, defaults);
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       store_f32(&a_param[index][p], defaults[p]);
     }
-    store_i32(a_enabled + index, 1);
   }
   return LE_OK;
 }
@@ -1529,32 +1535,45 @@ int32_t le_engine_set_lane_fx(le_engine* engine, int32_t channel, int32_t lane,
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
   if (type < LE_FX_NONE || type > LE_FX_REVERB) return LE_ERR_INVALID;
   le_lane* ln = &engine->tracks[channel].lanes[lane];
-  if (le_fx_prepare_entry(&ln->fx, ln->a_fx_type, ln->a_fx_param,
-                          ln->a_fx_enabled, index, type,
-                          engine->fx_delay_frames) != LE_OK) {
+  int32_t changed = 0;
+  if (le_fx_prepare_entry(&ln->fx, ln->fx_type_pushed, ln->a_fx_param, index,
+                          type, engine->fx_delay_frames, &changed) != LE_OK) {
     return LE_ERR_INVALID;
   }
   /* Publish the type via the ring so the audio thread resets the entry's DSP
    * state in lockstep. The delay pointer written above is made visible to the
-   * audio thread by the ring's release/acquire pairing. */
-  return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_LANE_FX,
-                                          .fx = {channel, lane, index, type}});
+   * audio thread by the ring's release/acquire pairing. The pushed-type
+   * shadow and the D-ENSEED enabled re-seed apply only on a SUCCESSFUL push
+   * — a rejected command must not leave a durable flag mutation behind. */
+  const int32_t rc =
+      le_push_cmd(engine, (le_command){.code = LE_CMD_SET_LANE_FX,
+                                       .fx = {channel, lane, index, type}});
+  if (rc == LE_OK) {
+    ln->fx_type_pushed[index] = type;
+    if (changed) store_i32(&ln->a_fx_enabled[index], 1);
+  }
+  return rc;
 }
 
 /* D-ENSEED's second half: a slot ENTERING the active window starts enabled.
  * The type-change re-seed (le_fx_prepare_entry) alone would leave a trap: a
  * remove-then-re-add of the SAME type only shrinks and regrows the count, so
- * a disabled flag left on the recycled slot would silently mute it. Seeded
- * control-side from the published count (the same direct-store pattern as
- * the flags themselves); the offline replay mirrors this on its replayed
- * count (perf_render.c). */
-static void le_fx_seed_entering_slots(_Atomic int32_t* a_count,
+ * a disabled flag left on the recycled slot would silently mute it. The
+ * entering range comes from [count_pushed] — the control thread's shadow of
+ * the last successfully pushed count — NOT the audio-published a_fx_count,
+ * which is stale on an undrained ring and would make the seed clobber user
+ * disables or miss recycled slots. Called only AFTER the count command was
+ * accepted by the ring, so a rejected push mutates nothing; the offline
+ * replay mirrors this on its strictly ordered replayed count
+ * (perf_render.c). */
+static void le_fx_seed_entering_slots(int32_t* count_pushed,
                                       _Atomic int32_t* a_enabled,
                                       int32_t new_count) {
-  int32_t cur = load_i32(a_count);
+  int32_t cur = *count_pushed;
   if (cur < 0) cur = 0;
   if (cur > LE_FX_MAX) cur = LE_FX_MAX;
   for (int32_t s = cur; s < new_count; ++s) store_i32(a_enabled + s, 1);
+  *count_pushed = new_count;
 }
 
 int32_t le_engine_set_lane_fx_count(le_engine* engine, int32_t channel,
@@ -1565,10 +1584,13 @@ int32_t le_engine_set_lane_fx_count(le_engine* engine, int32_t channel,
   if (count < 0) count = 0;
   if (count > LE_FX_MAX) count = LE_FX_MAX;
   le_lane* ln = &engine->tracks[channel].lanes[lane];
-  le_fx_seed_entering_slots(&ln->a_fx_count, ln->a_fx_enabled, count);
-  return le_push_cmd(engine,
-                     (le_command){.code = LE_CMD_SET_LANE_FX_COUNT,
-                                  .fxcount = {channel, lane, count}});
+  const int32_t rc =
+      le_push_cmd(engine, (le_command){.code = LE_CMD_SET_LANE_FX_COUNT,
+                                       .fxcount = {channel, lane, count}});
+  if (rc == LE_OK) {
+    le_fx_seed_entering_slots(&ln->fx_count_pushed, ln->a_fx_enabled, count);
+  }
+  return rc;
 }
 
 int32_t le_engine_set_lane_fx_param(le_engine* engine, int32_t channel,
@@ -1666,12 +1688,19 @@ int32_t le_engine_set_monitor_input_fx(le_engine* engine, int32_t input,
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
   if (type < LE_FX_NONE || type > LE_FX_REVERB) return LE_ERR_INVALID;
   le_monitor_input* m = &engine->monitors[input];
-  if (le_fx_prepare_entry(&m->fx, m->a_fx_type, m->a_fx_param, m->a_fx_enabled,
-                          index, type, engine->fx_delay_frames) != LE_OK) {
+  int32_t changed = 0;
+  if (le_fx_prepare_entry(&m->fx, m->fx_type_pushed, m->a_fx_param, index,
+                          type, engine->fx_delay_frames, &changed) != LE_OK) {
     return LE_ERR_INVALID;
   }
-  return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_MONITOR_INPUT_FX,
-                                          .fx = {input, 0, index, type}});
+  const int32_t rc =
+      le_push_cmd(engine, (le_command){.code = LE_CMD_SET_MONITOR_INPUT_FX,
+                                       .fx = {input, 0, index, type}});
+  if (rc == LE_OK) {
+    m->fx_type_pushed[index] = type;
+    if (changed) store_i32(&m->a_fx_enabled[index], 1);
+  }
+  return rc;
 }
 
 int32_t le_engine_set_monitor_input_fx_count(le_engine* engine, int32_t input,
@@ -1681,10 +1710,13 @@ int32_t le_engine_set_monitor_input_fx_count(le_engine* engine, int32_t input,
   if (count < 0) count = 0;
   if (count > LE_FX_MAX) count = LE_FX_MAX;
   le_monitor_input* m = &engine->monitors[input];
-  le_fx_seed_entering_slots(&m->a_fx_count, m->a_fx_enabled, count);
-  return le_push_cmd(engine,
-                     (le_command){.code = LE_CMD_SET_MONITOR_INPUT_FX_COUNT,
-                                  .fxcount = {input, 0, count}});
+  const int32_t rc =
+      le_push_cmd(engine, (le_command){.code = LE_CMD_SET_MONITOR_INPUT_FX_COUNT,
+                                       .fxcount = {input, 0, count}});
+  if (rc == LE_OK) {
+    le_fx_seed_entering_slots(&m->fx_count_pushed, m->a_fx_enabled, count);
+  }
+  return rc;
 }
 
 int32_t le_engine_set_monitor_input_fx_param(le_engine* engine, int32_t input,
