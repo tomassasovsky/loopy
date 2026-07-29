@@ -1361,39 +1361,22 @@ def build_mini_console():
     ncs, nsn = math.cos(math.radians(SLOPE_ANGLE)), math.sin(math.radians(SLOPE_ANGLE))
     for (bx, byy) in ANCHORS:
         by = (D - WALL_T - 6.8) if byy is None else byy
-        # the screw axis leans rearward going down -- the pillar must CONTAIN it
-        # for the full run (no open-air gap in the support channel): rear pillars
-        # extend back into the rear wall as buttresses, the front one deepens to
-        # swallow its own exit + head pocket
-        rear = by > 100.0
-        y0 = by - 6.0
-        y1 = (D - WALL_T + 0.1) if rear else (by + 9.0)
-        pillar = cq.Workplane("XY").box(10.0, y1 - y0, 60.0, centered=False)\
-            .translate((bx - 5.0, y0, T))
+        # VERTICAL screw (user call): the bore drops straight through pillar and
+        # floor -- no drift, exit directly under the pillar, flat head seat.
+        # The 12.5deg lives in the LID's insert pilot instead (pressed tilted).
+        pillar = cq.Workplane("XY").box(10.0, 12.0, 60.0, centered=False)\
+            .translate((bx - 5.0, by - 6.0, T))
         # vertical drop of the boss bottom = LID_BOSS_H / cos(slope), +0.2 so the
         # WALLS stay the seating datum and the screws preload across the gap
         pillar = slope_cut(pillar, C0 - (LID_BOSS_H / ncs + 0.2))
         tray = tray.union(pillar)
-        top = C0 - (LID_BOSS_H / ncs + 0.2) + tn * by
-        # bore + pocket anchored to the INSERT AXIS: through the underside point
-        # (bx, by, C0+tan*by) along the lid normal -- NOT the pillar-top centre
-        # (that sat 1.41mm off-axis and the screw missed the insert)
-        z0ax = C0 + tn * by
-        # the angled exit pocket must land whole in the floor, clear of walls
-        exit_rim = by + z0ax * tn + 4.25
+        # exit pocket sits concentric under the pillar: keep it whole in the floor
+        exit_rim = by + 4.25
         assert exit_rim <= (D - WALL_T) - 0.8, \
             f"MINI_ANCHOR: exit pocket rim y{exit_rim:.1f} too close to the rear wall"
-        assert exit_rim <= y1 - 0.8, \
-            f"MINI_ANCHOR: exit pocket rim y{exit_rim:.1f} outside its pillar (y1={y1:.1f})"
-        # 3.6 clearance bore along the lid normal, full length
-        bore = (cq.Workplane("XY").circle(1.8).extrude(90.0)
-                .rotate((0, 0, 0), (1, 0, 0), SLOPE_ANGLE)
-                .translate((bx, by + nsn * 45.0, z0ax - ncs * 45.0)))
-        # 8.5 head/driver pocket from below, seat ~3.5 above the floor bottom
-        t_seat = (z0ax - 3.5) / ncs
-        pocket = (cq.Workplane("XY").circle(4.25).extrude(40.0)
-                  .rotate((0, 0, 0), (1, 0, 0), SLOPE_ANGLE)
-                  .translate((bx, by + nsn * (t_seat + 40.0), z0ax - ncs * (t_seat + 40.0))))
+        bore = cq.Workplane("XY").circle(1.8).extrude(90.0).translate((bx, by, -5.0))
+        # 8.5 head/driver pocket from below, flat seat 3.5 above the floor bottom
+        pocket = cq.Workplane("XY").circle(4.25).extrude(40.0).translate((bx, by, 3.5 - 40.0))
         tray = tray.cut(bore).cut(pocket)
     # feet: four pads so the unit stands clear of the recessed screw heads
     # (rear pair inboard, clear of the rear anchors' angled exit pockets)
@@ -1429,13 +1412,20 @@ def build_mini_console():
                       .translate((x, vc, -T)))
     # insert bosses on the UNDERSIDE over each anchor pillar: take the M3
     # heat-set inserts the under-base screws thread into. Nothing on top.
+    sn = math.sin(math.radians(SLOPE_ANGLE))
     for (bx, byy) in ANCHORS:
-        by_l = ((D - WALL_T - 6.8) if byy is None else byy) / cs
+        by = (D - WALL_T - 6.8) if byy is None else byy
+        # pilot axis VERTICAL in the assembled (tilted) state -> drilled at
+        # SLOPE_ANGLE in the flat print, leaning rearward (+y_l) going up.
+        # Entry point on the boss bottom chosen so the assembled axis passes
+        # through (bx, by): y_l = (by - LID_BOSS_H*sin)/cos.
+        y_pl = (by - 6.0 * sn) / cs
         lid = lid.union(cq.Workplane("XY").box(10.0, 10.0, 6.0, centered=False)
-                        .translate((bx - 5.0, by_l - 5.0, -6.0)))
+                        .translate((bx - 5.0, y_pl - 4.25, -6.0)))
         lid = lid.cut(cq.Workplane("XY").circle(INSERT_PILOT_D/2.0)
                       .extrude(INSERT_DEPTH + 0.4)
-                      .translate((bx, by_l, -6.0)))
+                      .rotate((0, 0, 0), (1, 0, 0), -SLOPE_ANGLE)
+                      .translate((bx, y_pl, -6.0)))
     # registration tabs (pure locators; the anchors do the clamping).
     # FRONT pair: shallow, inside the y<8.5 strip before the tub front walls.
     for tx in (40.0, 165.0):
