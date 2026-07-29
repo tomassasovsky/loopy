@@ -594,5 +594,74 @@ void main() {
       final fpBa = engine.laneFxFingerprint(channel: 0, lane: 0);
       expect(fpAb, isNot(fpBa));
     });
+
+    test('flipping a slot enabled flag changes the fingerprint and back', () {
+      applyLaneChain([TrackEffectType.drive]);
+      final enabled = engine.laneFxFingerprint(channel: 0, lane: 0);
+
+      expect(
+        engine.setLaneFxEnabled(channel: 0, lane: 0, index: 0, enabled: false),
+        EngineResult.ok,
+      );
+      expect(engine.laneFxFingerprint(channel: 0, lane: 0), isNot(enabled));
+
+      expect(
+        engine.setLaneFxEnabled(channel: 0, lane: 0, index: 0, enabled: true),
+        EngineResult.ok,
+      );
+      expect(engine.laneFxFingerprint(channel: 0, lane: 0), enabled);
+    });
+
+    test('flipping the chain enabled flag changes the fingerprint', () {
+      applyLaneChain([TrackEffectType.drive]);
+      final enabled = engine.laneFxFingerprint(channel: 0, lane: 0);
+
+      expect(
+        engine.setLaneFxChainEnabled(channel: 0, lane: 0, enabled: false),
+        EngineResult.ok,
+      );
+      expect(engine.laneFxFingerprint(channel: 0, lane: 0), isNot(enabled));
+    });
+
+    test(
+      'an EMPTY chain keeps the offset basis even with the chain disabled '
+      '(D-FPEMPTY)',
+      () {
+        expect(
+          engine.setLaneFxChainEnabled(channel: 0, lane: 0, enabled: false),
+          EngineResult.ok,
+        );
+        expect(
+          engine.laneFxFingerprint(channel: 0, lane: 0),
+          FxFingerprint.offset,
+        );
+      },
+    );
+
+    test('monitor fingerprint reacts to its enable flags (twin)', () {
+      engine
+        ..setMonitorInputFx(input: 0, index: 0, type: TrackEffectType.delay)
+        ..setMonitorInputFxCount(input: 0, count: 1)
+        ..pump(frames: 0);
+      final enabled = engine.monitorFxFingerprint(input: 0);
+
+      expect(
+        engine.setMonitorInputFxEnabled(input: 0, index: 0, enabled: false),
+        EngineResult.ok,
+      );
+      expect(engine.monitorFxFingerprint(input: 0), isNot(enabled));
+
+      expect(
+        engine.setMonitorInputFxEnabled(input: 0, index: 0, enabled: true),
+        EngineResult.ok,
+      );
+      expect(engine.monitorFxFingerprint(input: 0), enabled);
+
+      expect(
+        engine.setMonitorInputFxChainEnabled(input: 0, enabled: false),
+        EngineResult.ok,
+      );
+      expect(engine.monitorFxFingerprint(input: 0), isNot(enabled));
+    });
   }, skip: skip);
 }

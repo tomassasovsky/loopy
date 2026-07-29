@@ -147,11 +147,17 @@ void le_lane_reset(le_lane* ln, int32_t input_channel) {
   store_f32(&ln->a_rms_bits, 0.0f);
   store_f32(&ln->a_peak_bits, 0.0f);
   store_i32(&ln->a_fx_count, 0);
+  store_i32(&ln->a_fx_chain_enabled, 1);
   for (int s = 0; s < LE_FX_MAX; ++s) {
     store_i32(&ln->a_fx_type[s], LE_FX_NONE);
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       store_f32(&ln->a_fx_param[s][p], 0.0f);
     }
+    /* Enable flags default 1 with the crossfade runtime SETTLED at that
+     * target, so a fresh chain does not fade in on first use. */
+    store_i32(&ln->a_fx_enabled[s], 1);
+    ln->fx.enable_mix[s] = 1.0f;
+    ln->fx.enable_target[s] = 1;
     free(ln->fx.delay[s][0]);
     ln->fx.delay[s][0] = NULL;
     free(ln->fx.delay[s][1]);
@@ -177,11 +183,16 @@ static void le_monitor_input_reset(le_monitor_input* m) {
   store_f32(&m->a_vol_bits, 1.0f);
   store_i32(&m->a_muted, 0);
   store_i32(&m->a_fx_count, 0);
+  store_i32(&m->a_fx_chain_enabled, 1);
   for (int s = 0; s < LE_FX_MAX; ++s) {
     store_i32(&m->a_fx_type[s], LE_FX_NONE);
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       store_f32(&m->a_fx_param[s][p], 0.0f);
     }
+    /* Enable flags default 1, crossfade runtime settled (see le_lane_reset). */
+    store_i32(&m->a_fx_enabled[s], 1);
+    m->fx.enable_mix[s] = 1.0f;
+    m->fx.enable_target[s] = 1;
     free(m->fx.delay[s][0]);
     m->fx.delay[s][0] = NULL;
     free(m->fx.delay[s][1]);
@@ -512,14 +523,17 @@ void le_engine_lane_fx_chain_for_test(le_engine* engine, int32_t channel,
   if (count > LE_FX_MAX) count = LE_FX_MAX;
   int32_t types[LE_FX_MAX];
   float params[LE_FX_MAX][LE_FX_PARAMS];
+  int32_t enabled[LE_FX_MAX];
+  const int32_t chain_on = load_i32(&ln->a_fx_chain_enabled);
   for (int s = 0; s < count; ++s) {
     types[s] = load_i32(&ln->a_fx_type[s]);
+    enabled[s] = chain_on && load_i32(&ln->a_fx_enabled[s]);
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       params[s][p] = load_f32(&ln->a_fx_param[s][p]);
     }
   }
   fx_apply_chain(&ln->fx, engine->sample_rate, engine->fx_delay_frames, l, r,
-                 count, types, params);
+                 count, types, params, enabled);
 }
 
 /* Loopback detection, device enumeration / id resolution, and backend selection

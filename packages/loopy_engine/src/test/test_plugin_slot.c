@@ -38,17 +38,22 @@ static int g_failures = 0;
 #define SLOT_BLOCK 128
 
 /* Drives `n` input samples through a one-entry LE_FX_PLUGIN chain on `fx`,
- * writing the wet output into `out`. Runs the real fx_apply_chain per sample. */
+ * writing the wet output into `out`. Runs the real fx_apply_chain per sample.
+ * Seeds the enable-crossfade runtime SETTLED at enabled first (idempotent),
+ * exactly as le_lane_reset seeds a real lane — the tests memset their
+ * le_fx_state to zero, which would otherwise read as a mid-ramp bypass. */
 static void drive(le_fx_state* fx, const float* in, float* out, int n) {
   int32_t types[LE_FX_MAX];
   float params[LE_FX_MAX][LE_FX_PARAMS];
   memset(types, 0, sizeof(types));
   memset(params, 0, sizeof(params));
   types[0] = LE_FX_PLUGIN;
+  fx->enable_mix[0] = 1.0f;
+  fx->enable_target[0] = 1;
   for (int i = 0; i < n; ++i) {
     float l = in[i];
     float r = in[i];
-    fx_apply_chain(fx, 48000, 48000, &l, &r, 1, types, params);
+    fx_apply_chain(fx, 48000, 48000, &l, &r, 1, types, params, NULL);
     out[i] = l;
   }
 }
@@ -74,6 +79,68 @@ static void test_adapter_latency(void) {
   for (int i = 0; i < SLOT_BLOCK; ++i) CHECK(out[i] == 0.0f);
   CHECK(out[SLOT_BLOCK] == 1.0f);
   for (int i = SLOT_BLOCK + 1; i < n; ++i) CHECK(out[i] == 0.0f);
+
+  atomic_store(&fx.plugin[0], (le_plugin_slot*)NULL);
+  le_plugin_slot_destroy(slot);
+}
+
+/* Drives `n` samples like drive(), but with an explicit per-slot enabled bit
+ * (drive() passes NULL = always enabled) and WITHOUT re-seeding the ramp
+ * runtime, so enable transitions play out across calls. */
+static void drive_enabled(le_fx_state* fx, const float* in, float* out, int n,
+                          int32_t enabled_bit) {
+  int32_t types[LE_FX_MAX];
+  float params[LE_FX_MAX][LE_FX_PARAMS];
+  int32_t enabled[LE_FX_MAX];
+  memset(types, 0, sizeof(types));
+  memset(params, 0, sizeof(params));
+  memset(enabled, 0, sizeof(enabled));
+  types[0] = LE_FX_PLUGIN;
+  enabled[0] = enabled_bit;
+  for (int i = 0; i < n; ++i) {
+    float l = in[i];
+    float r = in[i];
+    fx_apply_chain(fx, 48000, 48000, &l, &r, 1, types, params, enabled);
+    out[i] = l;
+  }
+}
+
+/* An LE_FX_PLUGIN slot through the enable machinery: a settled bypass is
+ * bit-exact passthrough (no adapter latency, no host call), and a re-enable
+ * is safe — the built-in reset on the 0->1 edge must NOT touch the published
+ * plugin pointer or crash; the host's own state persists (documented
+ * limitation: plugins have no flush seam, their tail resumes). */
+static void test_enable_bypass_and_reenable(void) {
+  printf("test_enable_bypass_and_reenable\n");
+  le_fx_state fx;
+  memset(&fx, 0, sizeof(fx));
+  le_plugin_slot* slot =
+      le_plugin_slot_create_stub(LE_PLUGIN_STUB_IDENTITY, 48000, NULL);
+  CHECK(slot != NULL);
+  atomic_store(&fx.plugin[0], slot);
+  le_plugin_slot_set_ready(slot, 1);
+  fx.enable_mix[0] = 1.0f;
+  fx.enable_target[0] = 1;
+
+  /* Settle the identity host on a constant (one block of adapter latency). */
+  const int n = SLOT_BLOCK * 4;
+  float in[SLOT_BLOCK * 4];
+  float out[SLOT_BLOCK * 4];
+  for (int i = 0; i < n; ++i) in[i] = 0.25f;
+  drive_enabled(&fx, in, out, n, 1);
+  CHECK(out[n - 1] == 0.25f);
+
+  /* Disable: after the 5 ms ramp (240 frames at 48 kHz) the slot is skipped
+   * — bit-exact input, no one-block latency. */
+  drive_enabled(&fx, in, out, n, 0);
+  CHECK(out[n - 1] == 0.25f);
+  CHECK(fx.enable_mix[0] == 0.0f); /* settled bypassed */
+
+  /* Re-enable: no crash, the plugin pointer survives the edge reset, and the
+   * identity host resumes (its FIFO still holds the pre-bypass constant). */
+  drive_enabled(&fx, in, out, n, 1);
+  CHECK(atomic_load(&fx.plugin[0]) == slot);
+  CHECK(out[n - 1] == 0.25f);
 
   atomic_store(&fx.plugin[0], (le_plugin_slot*)NULL);
   le_plugin_slot_destroy(slot);
@@ -374,6 +441,7 @@ static void test_plugin_state(void) {
 
 int main(void) {
   test_adapter_latency();
+  test_enable_bypass_and_reenable();
   test_dry_when_not_ready();
   test_sanitize_nan();
   test_sanitize_denormal();

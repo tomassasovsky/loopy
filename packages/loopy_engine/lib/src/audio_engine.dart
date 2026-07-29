@@ -498,6 +498,35 @@ abstract interface class EffectsControl {
     required double value,
   });
 
+  /// Enables/disables chain entry [index] on lane [lane] of track [channel]
+  /// without losing its type or parameters. A direct atomic publish (no ring
+  /// command), so it works whether or not the device is running. On the
+  /// running audio thread the transition is a click-free ~5 ms dry/wet
+  /// crossfade with NO tail spill on bypass: the disabled entry's wet output —
+  /// tail included — fades out over the ramp, then the entry renders bit-exact
+  /// passthrough. Re-enabling resets a built-in entry's DSP state, so stale
+  /// tails never sound (a hosted plugin keeps its own state and its tail
+  /// resumes). Entries default to enabled; an actual type change via
+  /// [setLaneFx] re-seeds the flag to enabled, and a slot entering the active
+  /// window via [setLaneFxCount] starts enabled.
+  EngineResult setLaneFxEnabled({
+    required int channel,
+    required int lane,
+    required int index,
+    required bool enabled,
+  });
+
+  /// Enables/disables lane [lane] of track [channel]'s WHOLE effect chain in
+  /// one atomic flip, without touching the per-entry flags (re-enabling
+  /// restores them). Same contract as [setLaneFxEnabled]: works while stopped,
+  /// click-free ~5 ms ramp, no tail spill on bypass, built-in DSP reset on
+  /// re-enable.
+  EngineResult setLaneFxChainEnabled({
+    required int channel,
+    required int lane,
+    required bool enabled,
+  });
+
   /// An order-sensitive 64-bit fingerprint of lane [lane] of track [channel]'s
   /// PUBLISHED effect chain — its active entries' types plus (for built-ins)
   /// their parameter bits. For divergence detection only: the repository owns
@@ -558,6 +587,26 @@ abstract interface class MonitorControl {
     required int index,
     required int param,
     required double value,
+  });
+
+  /// Enables/disables monitor input [input]'s chain entry [index] — the
+  /// monitor twin of [EffectsControl.setLaneFxEnabled], with the identical
+  /// contract: works while stopped, click-free ~5 ms crossfade, no tail spill
+  /// on bypass, built-in DSP reset on re-enable, default enabled, and an
+  /// actual type
+  /// change via [setMonitorInputFx] re-seeds the flag to enabled.
+  EngineResult setMonitorInputFxEnabled({
+    required int input,
+    required int index,
+    required bool enabled,
+  });
+
+  /// Enables/disables monitor input [input]'s WHOLE chain in one atomic flip
+  /// without touching the per-entry flags — the monitor twin of
+  /// [EffectsControl.setLaneFxChainEnabled], same contract.
+  EngineResult setMonitorInputFxChainEnabled({
+    required int input,
+    required bool enabled,
   });
 
   /// An order-sensitive 64-bit fingerprint of monitor input [input]'s PUBLISHED

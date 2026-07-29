@@ -361,21 +361,32 @@ List<TrackEffect> decodeTrackEffects(String? encoded) => [
 /// the repository's cache hash can be compared to the engine's published-chain
 /// hash for divergence detection (F6).
 ///
-/// Each entry folds in its type code; a built-in additionally folds its
-/// `kTrackEffectParams` parameter float-bits (padding a short param list with
-/// the type's defaults, matching the tail the engine seeds on a type set). A
-/// plugin entry contributes its type only — the engine's `a_fx_param` holds no
-/// plugin params (they live in the plugin host). An empty chain yields the
-/// FNV-1a offset basis.
+/// Fold order (D-FPEMPTY, pinned in lockstep with the C
+/// `le_fx_chain_fingerprint`): the chain-enabled bit first, but only for a
+/// NON-empty chain — an empty chain still yields the FNV-1a offset basis (a
+/// chain-disabled empty chain and an enabled empty chain are both dry). Then
+/// each entry folds its type code, then its slot-enabled bit, then (built-ins
+/// only) its `kTrackEffectParams` parameter float-bits (padding a short param
+/// list with the type's defaults, matching the tail the engine seeds on a type
+/// set). A plugin entry contributes its type + enabled bit only — the engine's
+/// `a_fx_param` holds no plugin params (they live in the plugin host).
+///
+/// The domain model carries no `enabled` field until part 3 of the FX-v3 epic
+/// (#351), so both enable bits fold the engine's default of `1` here; part 3
+/// replaces the constants with the real per-effect/chain fields.
 int trackChainFingerprint(List<TrackEffect> chain) {
   var h = engine.FxFingerprint.offset;
   final n = chain.length > engine.kTrackEffectMax
       ? engine.kTrackEffectMax
       : chain.length;
+  if (n > 0) {
+    h = engine.FxFingerprint.mixU32(h, 1); // chain-enabled (part-3 handoff)
+  }
   for (var i = 0; i < n; i++) {
     final fx = chain[i];
     h = engine.FxFingerprint.mixU32(h, fx.typeCode);
-    if (fx is! BuiltInEffect) continue; // plugin: type only
+    h = engine.FxFingerprint.mixU32(h, 1); // slot-enabled (part-3 handoff)
+    if (fx is! BuiltInEffect) continue; // plugin: type + enabled bit only
     final defaults = fx.type.defaultParams;
     for (var p = 0; p < engine.kTrackEffectParams; p++) {
       final value = p < fx.params.length ? fx.params[p] : defaults[p];

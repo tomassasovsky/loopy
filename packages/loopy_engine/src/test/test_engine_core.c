@@ -24,6 +24,7 @@
 
 #include "audio_ring.h"       /* le_audio_ring (performance-recording capture) */
 #include "engine_core.h"      /* le_push (raw ring pushes for the tempo tests) */
+#include "engine_fx.h" /* LE_FX_ENABLE_RAMP_MS (FX enable-flag tests) */
 #include "engine_internal.h"
 #include "engine_private.h"   /* LE_POOL_SLOTS (per-pass undo pool cap) */
 #include "engine_miniaudio.h" /* le_miniaudio_backend (le_select_backend target) */
@@ -16727,6 +16728,607 @@ static void test_clock_start_not_at_count_in_start(void) {
   le_engine_destroy(e);
 }
 
+/* ---- FX enable flags (FX v3 part 1a): per-slot + per-chain enable with the
+ * click-free ~LE_FX_ENABLE_RAMP_MS dry/wet crossfade, no-tail-spill bypass
+ * [B7], D-BITEXACT settled passthrough, D-ENSEED type-change re-seed, plog
+ * codes 310-313, replay, and the fingerprint fold (D-FPEMPTY). ---- */
+
+/* The per-sample crossfade step at the test rate (48 kHz): full swing in
+ * LE_FX_ENABLE_RAMP_MS. Mirrors fx_apply_chain's own derivation, sharing the
+ * constant so a ramp retune re-tightens the bound automatically. */
+#define FX_EN_RAMP_STEP (1000.0f / ((float)LE_FX_ENABLE_RAMP_MS * 48000.0f))
+/* Frames that guarantee any in-flight enable ramp has fully settled. */
+#define FX_EN_SETTLE 512
+
+/* Processes `frames` mono frames of constant `value` in <= 64-frame chunks,
+ * capturing the contiguous output into `out` (caller sizes it). */
+static void process_n(le_engine* e, float value, int frames, float* out) {
+  int done = 0;
+  while (done < frames) {
+    int n = frames - done;
+    if (n > 64) n = 64;
+    process_const(e, value, n, out + done);
+    done += n;
+  }
+}
+
+/* Records a LOOP_N-frame constant loop of `value` on track 0 and engages a
+ * unity DRIVE (p0 = 0 -> 1x pre-gain, p1 = 1 -> unity level) on lane 0 slot
+ * 0, so the settled wet output is exactly tanhf(value) — hand-computable and
+ * stateless. */
+static void fx_en_setup_drive_loop(le_engine* e, float value) {
+  float out[64];
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, value, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.0f) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 1.0f) == LE_OK);
+  drain(e);
+}
+
+/* Ramp continuity: a mid-render toggle must never step the output by more
+ * than the 5 ms linear ramp implies — for a constant signal the ideal
+ * sample-to-sample delta is |wet - dry| * step, and a click would be the
+ * whole |wet - dry| in one sample. Covers disable, re-enable, and the
+ * chain-level flag. */
+static void test_fx_enable_ramp_continuity(void) {
+  printf("test_fx_enable_ramp_continuity\n");
+  le_engine* e = make_configured_engine();
+  fx_en_setup_drive_loop(e, 0.5f);
+  static float cap[FX_EN_SETTLE];
+
+  process_n(e, 0.0f, FX_EN_SETTLE, cap); /* settle fully wet */
+  const float wet = cap[FX_EN_SETTLE - 1];
+  const float dry = 0.5f;
+  CHECK(fabsf(wet - tanhf(0.5f)) < 1e-5f);
+  const float bound = fabsf(wet - dry) * FX_EN_RAMP_STEP * 1.5f + 1e-7f;
+
+  /* One toggle leg: flip, render across the transition, and bound every
+   * sample-to-sample delta including the seam from the pre-toggle value. */
+  float prev = wet;
+  for (int leg = 0; leg < 3; ++leg) {
+    if (leg == 0) {
+      CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 0, 0) == LE_OK);
+    } else if (leg == 1) {
+      CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 0, 1) == LE_OK);
+    } else {
+      CHECK(le_engine_set_lane_fx_chain_enabled(e, 0, 0, 0) == LE_OK);
+    }
+    process_n(e, 0.0f, FX_EN_SETTLE, cap);
+    float maxd = 0.0f;
+    for (int i = 0; i < FX_EN_SETTLE; ++i) {
+      const float d = fabsf(cap[i] - prev);
+      if (d > maxd) maxd = d;
+      prev = cap[i];
+    }
+    CHECK(maxd <= bound);
+    /* Settled exactly at the leg's target — dry is bit-exact 0.5. */
+    if (leg == 1) {
+      CHECK(fabsf(cap[FX_EN_SETTLE - 1] - wet) < 1e-6f);
+    } else {
+      CHECK(cap[FX_EN_SETTLE - 1] == dry);
+    }
+  }
+  le_engine_destroy(e);
+}
+
+/* D-BITEXACT: a slot whose ramp has settled fully bypassed is skipped
+ * entirely, so the output is memcmp-identical to an engine that never had
+ * the effect — at both flag levels. Non-constant loop content so a
+ * near-passthrough approximation would fail loudly. */
+static void test_fx_enable_bitexact_passthrough(void) {
+  printf("test_fx_enable_bitexact_passthrough\n");
+  static const float pat[LOOP_N] = {0.3f, -0.4f, 0.7f, -0.2f};
+  float out[64];
+  static float cap_a[256];
+  static float cap_b[256];
+  static float scratch[FX_EN_SETTLE];
+
+  le_engine* a = make_configured_engine();
+  le_engine* b = make_configured_engine();
+  le_engine* engines[2] = {a, b};
+  for (int i = 0; i < 2; ++i) {
+    le_engine* e = engines[i];
+    CHECK(le_engine_record(e, 0) == LE_OK);
+    process_seq(e, pat, LOOP_N, out);
+    CHECK(le_engine_record(e, 0) == LE_OK);
+    drain(e);
+  }
+  /* Only A carries the (disabled) effect; B never has one. */
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(a, 0, 0, 0, 1, 1.0f) == LE_OK);
+  CHECK(le_engine_set_lane_fx_enabled(a, 0, 0, 0, 0) == LE_OK);
+  drain(a);
+
+  /* Slot level: settle A's ramp, then capture both over the same frames. */
+  process_n(a, 0.0f, FX_EN_SETTLE, scratch);
+  process_n(b, 0.0f, FX_EN_SETTLE, scratch);
+  process_n(a, 0.0f, 256, cap_a);
+  process_n(b, 0.0f, 256, cap_b);
+  CHECK(memcmp(cap_a, cap_b, sizeof(cap_a)) == 0);
+
+  /* Chain level: slot flag back on, chain flag off. */
+  CHECK(le_engine_set_lane_fx_enabled(a, 0, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_chain_enabled(a, 0, 0, 0) == LE_OK);
+  process_n(a, 0.0f, FX_EN_SETTLE, scratch);
+  process_n(b, 0.0f, FX_EN_SETTLE, scratch);
+  process_n(a, 0.0f, 256, cap_a);
+  process_n(b, 0.0f, 256, cap_b);
+  CHECK(memcmp(cap_a, cap_b, sizeof(cap_a)) == 0);
+
+  le_engine_destroy(a);
+  le_engine_destroy(b);
+}
+
+/* No tail spill [B7] + re-enable resets DSP state: an ECHO's pending repeats
+ * die with the bypass instead of ringing on, and a re-enable never sounds
+ * the stale ring content the bypass froze. Monitor path (live input drives
+ * the chain directly). */
+static void test_fx_enable_no_tail_spill_and_reenable_reset(void) {
+  printf("test_fx_enable_no_tail_spill_and_reenable_reset\n");
+  le_engine* e = make_configured_engine();
+  static float cap[1024];
+
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_ECHO) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 1) == LE_OK);
+  /* ~480-sample repeats (p0 = 0.01 of the 1 s ring), audible feedback, all
+   * wet so the repeats are unmistakable. */
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 0.01f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 0.6f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 2, 1.0f) == LE_OK);
+  drain(e);
+
+  /* Phase A (control): a burst's repeats DO ring while enabled. */
+  process_n(e, 1.0f, 64, cap);
+  process_n(e, 0.0f, 1024, cap);
+  float peak = 0.0f;
+  for (int i = 0; i < 1024; ++i) {
+    if (fabsf(cap[i]) > peak) peak = fabsf(cap[i]);
+  }
+  CHECK(peak > 1e-3f); /* the tail exists — the bypass has something to kill */
+
+  /* Phase B: reload the ring, then disable mid-decay. After the ramp window
+   * the output is EXACT silence — the pending repeats never sound. */
+  process_n(e, 1.0f, 64, cap);
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 0) == LE_OK);
+  process_n(e, 0.0f, 1024, cap);
+  for (int i = FX_EN_SETTLE; i < 1024; ++i) CHECK(cap[i] == 0.0f);
+
+  /* Phase C: re-enable over silence. The ring still physically holds the
+   * phase-B burst; the reset + ring clear on the 0->1 edge means it NEVER
+   * sounds. */
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 1) == LE_OK);
+  process_n(e, 0.0f, 1024, cap);
+  for (int i = 0; i < 1024; ++i) CHECK(cap[i] == 0.0f);
+
+  le_engine_destroy(e);
+}
+
+/* Mid-fade re-enable KEEPS state: a re-enable that lands before the
+ * fade-out settles must NOT reset the slot (the slot never stopped
+ * processing, and a reset would discontinue a still-audible tail). Proven by
+ * the tail surviving a fast disable/re-enable — the counterpart of the
+ * settled-edge reset covered above. */
+static void test_fx_enable_midfade_reenable_keeps_state(void) {
+  printf("test_fx_enable_midfade_reenable_keeps_state\n");
+  le_engine* e = make_configured_engine();
+  static float cap[1408];
+
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_ECHO) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 0.01f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 0.6f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 2, 1.0f) == LE_OK);
+  drain(e);
+
+  /* Load the ring with a burst, then toggle off and back on well inside the
+   * 240-frame ramp (64 frames each). The ~480-frame repeat has not arrived
+   * yet at either edge. */
+  process_n(e, 1.0f, 64, cap);
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 0) == LE_OK);
+  process_n(e, 0.0f, 64, cap); /* mid-fade: mix is still well above 0 */
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 1) == LE_OK);
+
+  /* The burst's delayed repeat must still sound: the ring was NOT cleared by
+   * the mid-fade re-enable (a settled-edge re-enable renders exact silence —
+   * see test_fx_enable_no_tail_spill_and_reenable_reset phase C). */
+  process_n(e, 0.0f, 1408, cap);
+  float peak = 0.0f;
+  for (int i = 0; i < 1408; ++i) {
+    if (fabsf(cap[i]) > peak) peak = fabsf(cap[i]);
+  }
+  CHECK(peak > 1e-3f);
+
+  le_engine_destroy(e);
+}
+
+/* D-ENSEED's count half (le_fx_seed_entering_slots): remove-then-re-add of
+ * the SAME type — count shrink then regrow, no type change anywhere — must
+ * not inherit a stale disabled flag on the recycled slot. */
+static void test_fx_enable_count_regrow_reseeds(void) {
+  printf("test_fx_enable_count_regrow_reseeds\n");
+  le_engine* e = make_configured_engine();
+
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  drain(e);
+  const uint64_t fp_enabled = le_engine_lane_fx_fingerprint(e, 0, 0);
+  CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 0, 0) == LE_OK);
+  CHECK(le_engine_lane_fx_fingerprint(e, 0, 0) != fp_enabled);
+
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK); /* same ty */
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_lane_fx_fingerprint(e, 0, 0) == fp_enabled);
+
+  /* Monitor twin. */
+  CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 1) == LE_OK);
+  drain(e);
+  const uint64_t mfp = le_engine_monitor_fx_fingerprint(e, 0);
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 0) == LE_OK);
+  CHECK(le_engine_monitor_fx_fingerprint(e, 0) != mfp);
+  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_monitor_fx_fingerprint(e, 0) == mfp);
+
+  le_engine_destroy(e);
+}
+
+/* Defaults / old sessions: a chain pushed only through the PRE-EXISTING
+ * setters (no enabled calls anywhere) renders fully wet from the first
+ * sample — bit-identical to the pre-enable-flag engine (no ramp-in, no
+ * crossfade arithmetic: settled wet takes the kernel output verbatim). */
+static void test_fx_enable_defaults_bitexact(void) {
+  printf("test_fx_enable_defaults_bitexact\n");
+  le_engine* e = make_configured_engine();
+  fx_en_setup_drive_loop(e, 0.5f);
+  static float cap[64];
+  process_n(e, 0.0f, 64, cap);
+  const float expected = tanhf(0.5f) * 1.0f; /* fx_drive at p0=0, p1=1 */
+  for (int i = 0; i < 64; ++i) CHECK(cap[i] == expected);
+  le_engine_destroy(e);
+}
+
+/* D-ENSEED: an ACTUAL type change re-seeds the slot's enabled flag to 1
+ * (fresh effects start enabled; a stale disabled flag never silently mutes a
+ * recycled slot); a same-type re-set touches nothing. Observed through the
+ * fingerprint, which folds the flag. */
+static void test_fx_enable_enseed_type_change(void) {
+  printf("test_fx_enable_enseed_type_change\n");
+  le_engine* e = make_configured_engine();
+
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  drain(e);
+  const uint64_t fp_enabled = le_engine_lane_fx_fingerprint(e, 0, 0);
+  CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 0, 0) == LE_OK);
+  CHECK(le_engine_lane_fx_fingerprint(e, 0, 0) != fp_enabled);
+
+  /* ACTUAL type change -> flag reads 1 again: the chain fingerprints
+   * identically to a NEVER-disabled lane running the same chain. */
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_FILTER) == LE_OK);
+  CHECK(le_engine_set_lane_fx(e, 1, 0, 0, LE_FX_FILTER) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 1, 0, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_lane_fx_fingerprint(e, 0, 0) ==
+        le_engine_lane_fx_fingerprint(e, 1, 0));
+
+  /* Same-type re-set (a reorder writing the type back): flag stays 0. */
+  CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 0, 0) == LE_OK);
+  const uint64_t fp_disabled = le_engine_lane_fx_fingerprint(e, 0, 0);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_FILTER) == LE_OK);
+  drain(e);
+  CHECK(le_engine_lane_fx_fingerprint(e, 0, 0) == fp_disabled);
+  CHECK(fp_disabled != le_engine_lane_fx_fingerprint(e, 1, 0));
+
+  le_engine_destroy(e);
+}
+
+/* Works while stopped: the direct-atomic setters return LE_OK on a
+ * configured-but-never-processed engine, validate their ranges, and the
+ * flags are honored by the first rendered buffers. */
+static void test_fx_enable_works_while_stopped(void) {
+  printf("test_fx_enable_works_while_stopped\n");
+  le_engine* e = make_configured_engine();
+
+  /* Accepted before any audio has ever been processed. */
+  CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 0, 0) == LE_OK);
+  CHECK(le_engine_set_lane_fx_chain_enabled(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_chain_enabled(e, 0, 1) == LE_OK);
+
+  /* Range validation. */
+  CHECK(le_engine_set_lane_fx_enabled(NULL, 0, 0, 0, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_lane_fx_enabled(e, -1, 0, 0, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_lane_fx_enabled(e, 0, -1, 0, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, LE_FX_MAX, 1) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_lane_fx_chain_enabled(e, LE_MAX_TRACKS + 1, 0, 1) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_lane_fx_chain_enabled(e, 0, LE_MAX_LANES, 1) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, LE_MAX_INPUTS, 0, 1) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, LE_FX_MAX, 1) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_input_fx_chain_enabled(e, -1, 1) ==
+        LE_ERR_INVALID);
+
+  /* Configure a DRIVE chain and disable its slot — all control-side, still
+   * before ANY processing. The disable comes AFTER the type set: an actual
+   * type change re-seeds the flag to enabled (D-ENSEED), so the reverse
+   * order would silently re-enable the slot. */
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 1.0f) == LE_OK);
+  CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 0, 0) == LE_OK);
+
+  /* First-ever processing: the pre-set disable is honored — once the ramp
+   * settles the DRIVE slot is bit-exact passthrough. */
+  float out[64];
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.5f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  static float cap[FX_EN_SETTLE];
+  process_n(e, 0.0f, FX_EN_SETTLE, cap);
+  CHECK(cap[FX_EN_SETTLE - 1] == 0.5f);
+
+  le_engine_destroy(e);
+}
+
+/* Monitor twins: the monitor chain honors both flag levels exactly like the
+ * lane chain — settled bypass is clean passthrough, re-enable restores the
+ * wet path. */
+static void test_fx_enable_monitor_twins(void) {
+  printf("test_fx_enable_monitor_twins\n");
+  le_engine* e = make_configured_engine();
+  static float cap[FX_EN_SETTLE];
+
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 0.0f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 1.0f) == LE_OK);
+  drain(e);
+
+  process_n(e, 0.5f, FX_EN_SETTLE, cap);
+  const float wet = tanhf(0.5f) * 1.0f;
+  CHECK(cap[FX_EN_SETTLE - 1] == wet);
+
+  /* Slot disable -> clean passthrough. */
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 0) == LE_OK);
+  process_n(e, 0.5f, FX_EN_SETTLE, cap);
+  CHECK(cap[FX_EN_SETTLE - 1] == 0.5f);
+
+  /* Slot back on but the CHAIN off -> still passthrough. */
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_chain_enabled(e, 0, 0) == LE_OK);
+  process_n(e, 0.5f, FX_EN_SETTLE, cap);
+  CHECK(cap[FX_EN_SETTLE - 1] == 0.5f);
+
+  /* Chain re-enabled -> wet again. */
+  CHECK(le_engine_set_monitor_input_fx_chain_enabled(e, 0, 1) == LE_OK);
+  process_n(e, 0.5f, FX_EN_SETTLE, cap);
+  CHECK(cap[FX_EN_SETTLE - 1] == wet);
+
+  le_engine_destroy(e);
+}
+
+/* Fingerprint fold (D-FPEMPTY): both flag levels change the hash of a
+ * non-empty chain and restore exactly; an EMPTY chain keeps the FNV offset
+ * basis even with its chain flag down. Lane + monitor entry points. */
+static void test_fx_enable_fingerprint(void) {
+  printf("test_fx_enable_fingerprint\n");
+  le_engine* e = make_configured_engine();
+  const uint64_t basis = 0xcbf29ce484222325ULL;
+
+  CHECK(le_engine_lane_fx_fingerprint(e, 0, 0) == basis);
+  CHECK(le_engine_set_lane_fx_chain_enabled(e, 0, 0, 0) == LE_OK);
+  CHECK(le_engine_lane_fx_fingerprint(e, 0, 0) == basis); /* empty: D-FPEMPTY */
+  CHECK(le_engine_set_lane_fx_chain_enabled(e, 0, 0, 1) == LE_OK);
+
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  drain(e);
+  const uint64_t fp = le_engine_lane_fx_fingerprint(e, 0, 0);
+  CHECK(fp != basis);
+
+  CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 0, 0) == LE_OK);
+  const uint64_t fp_slot_off = le_engine_lane_fx_fingerprint(e, 0, 0);
+  CHECK(fp_slot_off != fp);
+  CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_lane_fx_fingerprint(e, 0, 0) == fp);
+
+  CHECK(le_engine_set_lane_fx_chain_enabled(e, 0, 0, 0) == LE_OK);
+  const uint64_t fp_chain_off = le_engine_lane_fx_fingerprint(e, 0, 0);
+  CHECK(fp_chain_off != fp);
+  CHECK(fp_chain_off != fp_slot_off);
+  CHECK(le_engine_set_lane_fx_chain_enabled(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_lane_fx_fingerprint(e, 0, 0) == fp);
+
+  /* Monitor twin. */
+  CHECK(le_engine_monitor_fx_fingerprint(e, 0) == basis);
+  CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 1) == LE_OK);
+  drain(e);
+  const uint64_t mfp = le_engine_monitor_fx_fingerprint(e, 0);
+  CHECK(mfp != basis);
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 0) == LE_OK);
+  CHECK(le_engine_monitor_fx_fingerprint(e, 0) != mfp);
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_chain_enabled(e, 0, 0) == LE_OK);
+  CHECK(le_engine_monitor_fx_fingerprint(e, 0) != mfp);
+  CHECK(le_engine_set_monitor_input_fx_chain_enabled(e, 0, 1) == LE_OK);
+  CHECK(le_engine_monitor_fx_fingerprint(e, 0) == mfp);
+
+  le_engine_destroy(e);
+}
+
+/* Plog emission [R3]: all four enable setters push their pinned payloads
+ * (codes 310-313) through the control-side ring into events.log during an
+ * armed capture, tagged with the current capture frame. */
+static void test_fx_enable_plog_events(void) {
+  printf("test_fx_enable_plog_events\n");
+  le_engine* e = make_configured_engine();
+  float out[LOOP_N];
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  process_const(e, 0.0f, LOOP_N, out);
+  const uint64_t expected_frame =
+      atomic_load_explicit(&e->a_perf_frames, memory_order_relaxed);
+
+  CHECK(le_engine_set_lane_fx_enabled(e, 0, 0, 2, 0) == LE_OK);
+  CHECK(le_engine_set_lane_fx_chain_enabled(e, 0, 0, 0) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 3, 1, 0) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_chain_enabled(e, 3, 1) == LE_OK);
+  CHECK(atomic_load_explicit(&e->a_perf_log_ctrl_overruns,
+                            memory_order_relaxed) == 0u);
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  static unsigned char buf[16384];
+  const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
+  CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
+  const size_t count = log_entry_count(n);
+  le_perf_log_entry entry;
+
+  CHECK(find_log_entry(buf, count, 0, LE_PLOG_SET_LANE_FX_ENABLED, &entry) >=
+        0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.fx.channel == 0 && entry.cmd.fx.lane == 0 &&
+        entry.cmd.fx.index == 2 && entry.cmd.fx.type == 0);
+
+  CHECK(find_log_entry(buf, count, 0, LE_PLOG_SET_LANE_FX_CHAIN_ENABLED,
+                       &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.lanef.channel == 0 && entry.cmd.lanef.lane == 0 &&
+        entry.cmd.lanef.value == 0.0f);
+
+  CHECK(find_log_entry(buf, count, 0, LE_PLOG_SET_MONITOR_FX_ENABLED,
+                       &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.fx.channel == 3 && entry.cmd.fx.lane == -1 &&
+        entry.cmd.fx.index == 1 && entry.cmd.fx.type == 0);
+
+  CHECK(find_log_entry(buf, count, 0, LE_PLOG_SET_MONITOR_FX_CHAIN_ENABLED,
+                       &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.arg_i == 3 && entry.cmd.arg_f == 1.0f);
+
+  le_engine_destroy(e);
+}
+
+/* Shared body for the offline-replay coverage [R3]: a scripted events.log
+ * disables (at `code` level) a DRIVE chain at frame 16 and re-enables it at
+ * frame 56; the rendered wet stem must be wet before, dry after the ramp
+ * settles, and wet again after the re-enable ramp — flipping at the logged
+ * frames. sr = 4800 -> the 5 ms ramp is 24 frames. */
+static void run_perf_render_fx_enable_case(const char* name, int32_t code) {
+  const char* dir = render_test_dir(name);
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+  const uint64_t capture_frames = 96;
+  const int32_t ramp = 24; /* 5 ms at 4800 Hz */
+  const float dry_value = 0.5f;
+  const float drive0 = 0.2f, level0 = 0.6f;
+
+  char loops_dir[700];
+  snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
+  test_render_mkdir(loops_dir);
+  const float base[4] = {dry_value, dry_value, dry_value, dry_value};
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", loops_dir);
+  test_write_wav_mono(wav_path, base, loop_len, sr);
+
+  char manifest[2048];
+  snprintf(manifest, sizeof(manifest),
+          "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+          "\"armSnapshot\": {\"masterGain\": 1.0, \"limiterOn\": false, "
+          "\"limiterCeiling\": 0.99, \"tracks\": [{\"channel\": 0, "
+          "\"volume\": 1.0, \"muted\": false, \"lanes\": [{\"lane\": 0, "
+          "\"deferred\": false, \"pcmRef\": \"loops/track0-lane0.wav\", "
+          "\"effects\": [{\"type\": 1, \"params\": [%f, %f, 0.0, 0.0]}]}]}]}, "
+          "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []}",
+          sr, (unsigned long long)capture_frames, (double)drive0,
+          (double)level0);
+  test_write_manifest(dir, manifest);
+
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  FILE* lf = fopen(log_path, "wb");
+  CHECK(lf != NULL);
+  if (lf != NULL) {
+    test_write_log_header(lf, sr);
+    if (code == LE_PLOG_SET_LANE_FX_ENABLED) {
+      test_write_log_entry(lf, 16,
+                          (le_command){.code = LE_PLOG_SET_LANE_FX_ENABLED,
+                                       .fx = {0, 0, 0, 0}});
+      test_write_log_entry(lf, 56,
+                          (le_command){.code = LE_PLOG_SET_LANE_FX_ENABLED,
+                                       .fx = {0, 0, 0, 1}});
+    } else {
+      test_write_log_entry(
+          lf, 16, (le_command){.code = LE_PLOG_SET_LANE_FX_CHAIN_ENABLED,
+                               .lanef = {0, 0, 0.0f}});
+      test_write_log_entry(
+          lf, 56, (le_command){.code = LE_PLOG_SET_LANE_FX_CHAIN_ENABLED,
+                               .lanef = {0, 0, 1.0f}});
+    }
+    fclose(lf);
+  }
+
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 2000);
+  int32_t done = 0;
+  CHECK(le_perf_render_poll(e, &done, NULL, NULL) == LE_OK);
+  CHECK(done == 1);
+
+  float wet[96];
+  const int32_t got = test_read_wet_stem(dir, 0, wet, 96);
+  CHECK(got == (int32_t)capture_frames);
+  const float w = tanhf(dry_value * (1.0f + drive0 * 29.0f)) * level0;
+  for (int32_t i = 0; i < 16 && i < got; ++i) {
+    CHECK(fabsf(wet[i] - w) < 1e-5f); /* wet before the disable */
+  }
+  for (int32_t i = 16 + ramp; i < 56 && i < got; ++i) {
+    CHECK(fabsf(wet[i] - dry_value) < 1e-6f); /* settled dry */
+  }
+  for (int32_t i = 56 + ramp; i < got; ++i) {
+    CHECK(fabsf(wet[i] - w) < 1e-5f); /* wet again after the re-enable */
+  }
+
+  le_engine_destroy(e);
+}
+
+static void test_perf_render_replays_fx_slot_enable(void) {
+  printf("test_perf_render_replays_fx_slot_enable\n");
+  run_perf_render_fx_enable_case("fx-en-slot", LE_PLOG_SET_LANE_FX_ENABLED);
+}
+
+static void test_perf_render_replays_fx_chain_enable(void) {
+  printf("test_perf_render_replays_fx_chain_enable\n");
+  run_perf_render_fx_enable_case("fx-en-chain",
+                                 LE_PLOG_SET_LANE_FX_CHAIN_ENABLED);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_lane_setters_reject_invalid_args();
@@ -17133,6 +17735,20 @@ int main(void) {
   test_clock_silent_in_song_and_free_modes();
   test_clock_multi_sync_band_emit_start_ticks_stop();
   test_clock_start_not_at_count_in_start();
+
+  test_fx_enable_ramp_continuity();
+  test_fx_enable_bitexact_passthrough();
+  test_fx_enable_no_tail_spill_and_reenable_reset();
+  test_fx_enable_midfade_reenable_keeps_state();
+  test_fx_enable_defaults_bitexact();
+  test_fx_enable_enseed_type_change();
+  test_fx_enable_count_regrow_reseeds();
+  test_fx_enable_works_while_stopped();
+  test_fx_enable_monitor_twins();
+  test_fx_enable_fingerprint();
+  test_fx_enable_plog_events();
+  test_perf_render_replays_fx_slot_enable();
+  test_perf_render_replays_fx_chain_enable();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");

@@ -204,6 +204,16 @@ typedef struct le_fx_state {
   int32_t rev_comb_pos[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
   float rev_comb_lp[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
   int32_t rev_ap_pos[LE_FX_MAX][LE_REV_APS * LE_REV_BANKS];
+  /* Per-slot enable-crossfade runtime (fx_apply_chain). DSP state — owned by
+   * whichever thread runs the chain (the audio thread live; the render thread
+   * offline), NOT published config: the published flags live on the chain
+   * owner (le_lane / le_monitor_input a_fx_enabled / a_fx_chain_enabled).
+   * enable_mix is the dry/wet crossfade position (1.0 = fully wet, 0.0 =
+   * fully bypassed); enable_target is the last-observed effective enabled bit
+   * for edge detection. Seeded SETTLED at the current target by
+   * le_lane_reset / le_monitor_input_reset so fresh chains do not fade in. */
+  float enable_mix[LE_FX_MAX];
+  int32_t enable_target[LE_FX_MAX];
   /* For an LE_FX_PLUGIN slot: the hosted-plugin slot handle the audio thread
    * forwards to, or NULL. The control thread publishes/retracts it
    * (engine_plugin.c); the audio thread only loads it (fx_plugin_process). A
@@ -253,10 +263,22 @@ typedef struct le_lane {
    * per buffer): an ordered array of LE_FX_MAX entries, of which a_fx_count are
    * active, each with a type and LE_FX_PARAMS normalized parameters. The chain
    * is stageless — every active entry colors playback in order — and runs on
-   * the lane's own `fx` DSP state. */
+   * the lane's own `fx` DSP state.
+   *
+   * Enable flags (two levels, both default 1): a_fx_enabled[s] bypasses one
+   * slot, a_fx_chain_enabled bypasses the whole chain. The audio thread
+   * consumes one EFFECTIVE bit per slot (chain && slot, snapshot_lane_fx) and
+   * crossfades each transition over ~LE_FX_ENABLE_RAMP_MS inside
+   * fx_apply_chain — no clicks, and NO tail spill on bypass [B7]: a disabled
+   * slot's wet output (tail included) fades out over the ramp, then the slot
+   * is skipped entirely (bit-exact passthrough). Re-enable resets a built-in
+   * slot's DSP state so stale tails never sound (a hosted plugin keeps its
+   * own state — no flush seam yet). */
   _Atomic int32_t a_fx_count;
   _Atomic int32_t a_fx_type[LE_FX_MAX];
   _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
+  _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
+  _Atomic int32_t a_fx_chain_enabled;      /* whole-chain enable (default 1) */
   le_fx_state fx;
 } le_lane;
 
@@ -269,8 +291,13 @@ typedef struct le_lane {
  * signal is NEVER recorded and is independent of all track state, so an input can
  * be monitored whether or not any track records or plays it. Input-level enable
  * gates the whole input (and honours loopback exclusion + the latency-measurement
- * suppress/restore). This single chain is what le_engine_record deep-copies onto a
- * recording lane (snapshot-on-record). */
+ * suppress/restore). The engine takes NO record-time snapshot of this chain —
+ * the host (LooperRepository) is the sole record-time snapshot authority and
+ * pushes lane FX through the command ring itself (see le_engine_set_lane_fx).
+ *
+ * Enable flags: the same two-level pair as le_lane's (per-slot a_fx_enabled +
+ * a_fx_chain_enabled, both default 1), with the same effective-bit snapshot,
+ * ~LE_FX_ENABLE_RAMP_MS crossfade, and no-tail-spill bypass contract [B7]. */
 typedef struct le_monitor_input {
   _Atomic int32_t a_enabled;      /* 0/1 live monitoring on for this input */
   _Atomic uint32_t a_output_mask; /* output channels the monitor plays to */
@@ -279,6 +306,8 @@ typedef struct le_monitor_input {
   _Atomic int32_t a_fx_count;
   _Atomic int32_t a_fx_type[LE_FX_MAX];
   _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
+  _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
+  _Atomic int32_t a_fx_chain_enabled;      /* whole-chain enable (default 1) */
   le_fx_state fx;
 } le_monitor_input;
 

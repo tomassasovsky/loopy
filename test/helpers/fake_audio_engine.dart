@@ -445,6 +445,33 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Per-(channel, lane, index) flag passed to [setLaneFxEnabled].
+  final Map<(int, int, int), bool> laneFxEnabled = {};
+
+  /// Per-(channel, lane) flag passed to [setLaneFxChainEnabled].
+  final Map<(int, int), bool> laneFxChainEnabled = {};
+
+  @override
+  EngineResult setLaneFxEnabled({
+    required int channel,
+    required int lane,
+    required int index,
+    required bool enabled,
+  }) {
+    laneFxEnabled[(channel, lane, index)] = enabled;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setLaneFxChainEnabled({
+    required int channel,
+    required int lane,
+    required bool enabled,
+  }) {
+    laneFxChainEnabled[(channel, lane)] = enabled;
+    return EngineResult.ok;
+  }
+
   /// Per-input enabled flag passed to [setMonitorInputEnabled].
   final Map<int, bool> monitorInputEnabled = {};
 
@@ -523,6 +550,31 @@ class FakeAudioEngine implements AudioEngine {
     required double value,
   }) {
     monitorFxParam[(input, index, param)] = value;
+    return EngineResult.ok;
+  }
+
+  /// Per-(input, index) flag passed to [setMonitorInputFxEnabled].
+  final Map<(int, int), bool> monitorFxEnabled = {};
+
+  /// Per-input flag passed to [setMonitorInputFxChainEnabled].
+  final Map<int, bool> monitorFxChainEnabled = {};
+
+  @override
+  EngineResult setMonitorInputFxEnabled({
+    required int input,
+    required int index,
+    required bool enabled,
+  }) {
+    monitorFxEnabled[(input, index)] = enabled;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setMonitorInputFxChainEnabled({
+    required int input,
+    required bool enabled,
+  }) {
+    monitorFxChainEnabled[input] = enabled;
     return EngineResult.ok;
   }
 

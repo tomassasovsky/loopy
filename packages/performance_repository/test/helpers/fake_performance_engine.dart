@@ -346,6 +346,30 @@ class FakePerformanceEngine implements AudioEngine {
     required double value,
   }) => EngineResult.ok;
   @override
+  EngineResult setLaneFxEnabled({
+    required int channel,
+    required int lane,
+    required int index,
+    required bool enabled,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setLaneFxChainEnabled({
+    required int channel,
+    required int lane,
+    required bool enabled,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setMonitorInputFxEnabled({
+    required int input,
+    required int index,
+    required bool enabled,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setMonitorInputFxChainEnabled({
+    required int input,
+    required bool enabled,
+  }) => EngineResult.ok;
+  @override
   EngineResult setMonitorInputEnabled({
     required int input,
     required bool enabled,

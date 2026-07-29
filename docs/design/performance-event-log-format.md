@@ -143,6 +143,14 @@ control-side-only concepts:
 | `LE_PLOG_SET_MONITOR_FX_PARAM`    | 307   | fx      | Same packing; `channel` = input index, `lane` = -1. |
 | `LE_PLOG_SET_LIMITER`             | 308   | generic | `arg_i` = enabled (0/1), `arg_f` = ceiling. |
 | `LE_PLOG_SET_OVERDUB_FEEDBACK`    | 309   | generic | `arg_f` = feedback (0..1). |
+| `LE_PLOG_SET_LANE_FX_ENABLED`     | 310   | fx      | `channel`, `lane`, `index` = fx slot, `type` = enabled (0/1). Control-side emission (direct-atomic setter, no ring). **Replayed in the lane wet pass** (`perf_render`, channel + lane-0 filter). |
+| `LE_PLOG_SET_LANE_FX_CHAIN_ENABLED` | 311 | lanef   | `channel`, `lane`, `value` = enabled (0.0/1.0) — `LE_CMD_SET_LANE_MUTE`'s shape. Control-side emission. **Replayed in the lane wet pass.** |
+| `LE_PLOG_SET_MONITOR_FX_ENABLED`  | 312   | fx      | `channel` = input index, `lane` = -1, `index` = fx slot, `type` = enabled (0/1) — 307's addressing convention. Logged for the manifest/reader, **not replayed in the lane pass** (mirrors `LE_PLOG_SET_MONITOR_FX_PARAM`'s treatment). |
+| `LE_PLOG_SET_MONITOR_FX_CHAIN_ENABLED` | 313 | generic | `arg_i` = input index, `arg_f` = enabled (0.0/1.0) — the monitor volume/mute shape. Logged for the manifest/reader, **not replayed in the lane pass**. |
+
+The replayed lane chain seeds all enable bits to 1 at arm: the arm manifest
+carries no arm-time enabled state until part 3 of the FX-v3 epic adds it (a
+pre-arm disable is invisible to the offline render until then).
 
 ### Why record start/end are separate from the raw `LE_CMD_RECORD`/`LE_CMD_STOP` entries
 

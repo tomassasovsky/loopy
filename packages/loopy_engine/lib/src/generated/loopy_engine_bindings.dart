@@ -2240,6 +2240,81 @@ class LoopyEngineBindings {
         int Function(ffi.Pointer<le_engine>, int, int, int, int, double)
       >();
 
+  /// Enables/disables chain entry [index] on lane [lane] of track [channel]
+  /// without losing its type or parameters. Direct atomic publish (no ring
+  /// command), so it works whether or not the device is running. On the running
+  /// audio thread the transition is a click-free ~5 ms dry/wet crossfade with NO
+  /// tail spill on bypass: the disabled entry's wet output — tail included —
+  /// fades out over the ramp, then the entry renders bit-exact passthrough.
+  /// Re-enabling resets the entry's DSP state, so stale tails never sound.
+  /// Entries default to enabled; an ACTUAL type change via le_engine_set_lane_fx
+  /// re-seeds the flag to 1 (a same-type re-set leaves it untouched).
+  int le_engine_set_lane_fx_enabled(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    int index,
+    int enabled,
+  ) {
+    return _le_engine_set_lane_fx_enabled(
+      engine,
+      channel,
+      lane,
+      index,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_lane_fx_enabledPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_set_lane_fx_enabled');
+  late final _le_engine_set_lane_fx_enabled = _le_engine_set_lane_fx_enabledPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int, int)>();
+
+  /// Enables/disables lane [lane] of track [channel]'s WHOLE effect chain in one
+  /// atomic flip, without touching the per-entry flags (re-enabling restores
+  /// them). Same contract as le_engine_set_lane_fx_enabled: direct atomic
+  /// publish, works while stopped, click-free ~5 ms ramp on the running audio
+  /// thread, no tail spill on bypass, DSP state reset on re-enable. Default
+  /// enabled.
+  int le_engine_set_lane_fx_chain_enabled(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    int enabled,
+  ) {
+    return _le_engine_set_lane_fx_chain_enabled(
+      engine,
+      channel,
+      lane,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_lane_fx_chain_enabledPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_set_lane_fx_chain_enabled');
+  late final _le_engine_set_lane_fx_chain_enabled =
+      _le_engine_set_lane_fx_chain_enabledPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+
   /// Enables or disables live monitoring of hardware input [input]. When enabled,
   /// the input routes per its own output mask; a loopback-excluded input is never
   /// monitored regardless of [enabled].
@@ -2430,6 +2505,66 @@ class LoopyEngineBindings {
           .asFunction<
             int Function(ffi.Pointer<le_engine>, int, int, int, double)
           >();
+
+  /// Enables/disables hardware input [input]'s monitor chain entry [index] — the
+  /// monitor twin of le_engine_set_lane_fx_enabled, with the identical contract:
+  /// direct atomic publish (no ring, works while stopped), click-free ~5 ms
+  /// dry/wet crossfade on the running audio thread, no tail spill on bypass,
+  /// DSP state reset on re-enable, default enabled, and an ACTUAL type change
+  /// via le_engine_set_monitor_input_fx re-seeds the flag to 1.
+  int le_engine_set_monitor_input_fx_enabled(
+    ffi.Pointer<le_engine> engine,
+    int input,
+    int index,
+    int enabled,
+  ) {
+    return _le_engine_set_monitor_input_fx_enabled(
+      engine,
+      input,
+      index,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_monitor_input_fx_enabledPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_set_monitor_input_fx_enabled');
+  late final _le_engine_set_monitor_input_fx_enabled =
+      _le_engine_set_monitor_input_fx_enabledPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+
+  /// Enables/disables hardware input [input]'s WHOLE monitor chain in one atomic
+  /// flip without touching the per-entry flags — the monitor twin of
+  /// le_engine_set_lane_fx_chain_enabled, same contract. Default enabled.
+  int le_engine_set_monitor_input_fx_chain_enabled(
+    ffi.Pointer<le_engine> engine,
+    int input,
+    int enabled,
+  ) {
+    return _le_engine_set_monitor_input_fx_chain_enabled(
+      engine,
+      input,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_monitor_input_fx_chain_enabledPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_monitor_input_fx_chain_enabled');
+  late final _le_engine_set_monitor_input_fx_chain_enabled =
+      _le_engine_set_monitor_input_fx_chain_enabledPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
   /// ---- structural output gate ---- *
   /// Turns hardware output [output] on/off as a routing target. A disabled output is

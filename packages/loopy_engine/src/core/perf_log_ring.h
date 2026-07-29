@@ -85,6 +85,21 @@ typedef enum le_perf_log_code {
   LE_PLOG_SET_LIMITER = 308, /* generic arm: arg_i = enabled (0/1), arg_f =
                              * ceiling. */
   LE_PLOG_SET_OVERDUB_FEEDBACK = 309, /* generic arm: arg_f = feedback (0..1). */
+  /* FX enable flips (control-side emission — the setters are direct atomic
+   * stores that bypass the command ring, like the FX params above). The
+   * per-slot codes reuse the `fx` arm with `type` carrying the enabled bit;
+   * the monitor variant mirrors 307's convention (`channel` = input,
+   * `lane` = -1). The chain-level lane code rides the `lanef` arm (matching
+   * LE_CMD_SET_LANE_MUTE's shape); the chain-level monitor code rides the
+   * generic arm (matching monitor volume/mute). */
+  LE_PLOG_SET_LANE_FX_ENABLED = 310,    /* fx arm: channel, lane, index,
+                                        * type = enabled (0/1). */
+  LE_PLOG_SET_LANE_FX_CHAIN_ENABLED = 311, /* lanef arm: channel, lane,
+                                           * value = enabled (0.0/1.0). */
+  LE_PLOG_SET_MONITOR_FX_ENABLED = 312, /* fx arm: channel = input, lane = -1,
+                                        * index, type = enabled (0/1). */
+  LE_PLOG_SET_MONITOR_FX_CHAIN_ENABLED = 313, /* generic arm: arg_i = input,
+                                              * arg_f = enabled (0.0/1.0). */
 } le_perf_log_code;
 
 /* Pack/unpack helpers for LE_PLOG_SET_LANE_FX_PARAM / _MONITOR_FX_PARAM's

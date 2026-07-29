@@ -698,6 +698,47 @@ class MockAudioEngine implements AudioEngine {
     required double value,
   }) => _requireRunning();
 
+  /// Recorded [setLaneFxEnabled] calls, in order, for test assertions.
+  final laneFxEnabledCalls =
+      <({int channel, int lane, int index, bool enabled})>[];
+
+  /// Recorded [setLaneFxChainEnabled] calls, in order, for test assertions.
+  final laneFxChainEnabledCalls = <({int channel, int lane, bool enabled})>[];
+
+  // The enable setters mirror the native works-while-stopped contract
+  // (direct atomic stores, no ring): they validate ranges and succeed whether
+  // or not the mock is running — unlike the ring-backed FX setters above,
+  // which keep the mock's running gate.
+  @override
+  EngineResult setLaneFxEnabled({
+    required int channel,
+    required int lane,
+    required int index,
+    required bool enabled,
+  }) {
+    if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
+    if (lane < 0 || lane >= LE_MAX_LANES) return EngineResult.invalid;
+    if (index < 0 || index >= LE_FX_MAX) return EngineResult.invalid;
+    laneFxEnabledCalls.add(
+      (channel: channel, lane: lane, index: index, enabled: enabled),
+    );
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setLaneFxChainEnabled({
+    required int channel,
+    required int lane,
+    required bool enabled,
+  }) {
+    if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
+    if (lane < 0 || lane >= LE_MAX_LANES) return EngineResult.invalid;
+    laneFxChainEnabledCalls.add(
+      (channel: channel, lane: lane, enabled: enabled),
+    );
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setMonitorInputEnabled({
     required int input,
@@ -742,6 +783,39 @@ class MockAudioEngine implements AudioEngine {
     required int param,
     required double value,
   }) => _requireRunning();
+
+  /// Recorded [setMonitorInputFxEnabled] calls, in order, for test assertions.
+  final monitorInputFxEnabledCalls = <({int input, int index, bool enabled})>[];
+
+  /// Recorded [setMonitorInputFxChainEnabled] calls, in order, for test
+  /// assertions.
+  final monitorInputFxChainEnabledCalls = <({int input, bool enabled})>[];
+
+  // Monitor twins of the lane enable setters: same works-while-stopped
+  // contract (see setLaneFxEnabled above).
+  @override
+  EngineResult setMonitorInputFxEnabled({
+    required int input,
+    required int index,
+    required bool enabled,
+  }) {
+    if (input < 0 || input >= LE_MAX_INPUTS) return EngineResult.invalid;
+    if (index < 0 || index >= LE_FX_MAX) return EngineResult.invalid;
+    monitorInputFxEnabledCalls.add(
+      (input: input, index: index, enabled: enabled),
+    );
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setMonitorInputFxChainEnabled({
+    required int input,
+    required bool enabled,
+  }) {
+    if (input < 0 || input >= LE_MAX_INPUTS) return EngineResult.invalid;
+    monitorInputFxChainEnabledCalls.add((input: input, enabled: enabled));
+    return EngineResult.ok;
+  }
 
   // The mock runs no DSP and holds no engine-side chain, so every chain
   // fingerprints to the empty-chain basis (the repository owns the real cache).

@@ -965,8 +965,9 @@ static const le_fx_vtable LE_FX[] = {
 
 /* Applies a chain to one stereo sample, in chain order, carrying the (l, r) pair
  * in place. The chain is stageless: every active entry processes both channels.
- * [count] is the active chain length; [types]/[params] are the per-buffer
- * snapshot.
+ * [count] is the active chain length; [types]/[params]/[enabled] are the
+ * per-buffer snapshot ([enabled] is per-slot EFFECTIVE bits — chain && slot —
+ * or NULL for all-enabled).
  *
  * Every effect runs in full stereo — each colours l and r through its own
  * per-channel DSP state, so there is no mono/stereo distinction and no ordering
@@ -974,21 +975,85 @@ static const le_fx_vtable LE_FX[] = {
  * chain and every later effect still processes both channels. A mono source
  * seeds l == r, so a symmetric chain leaves l == r and is audibly unchanged.
  * Dispatch is table-driven (LE_FX); an out-of-range or no-op (LE_FX_NONE) slot is
- * skipped. */
+ * skipped.
+ *
+ * Enable crossfade: each slot tracks its effective bit in enable_target and
+ * ramps enable_mix linearly over ~LE_FX_ENABLE_RAMP_MS on a transition. While
+ * ramping OUT the slot keeps processing and its wet output — tail included —
+ * fades into the dry signal; once settled at 0 the slot is skipped entirely,
+ * the same shape as the LE_FX_NONE skip, so a bypassed slot is bit-exact
+ * passthrough by construction (D-BITEXACT) and a bypassed tail never spills
+ * [B7]. On the re-enable edge from a settled bypass, a BUILT-IN slot's DSP
+ * state is reset (le_fx_entry_reset) AND its delay-ring content zeroed
+ * before the ramp-in, so stale integrators or ring content never sound. An
+ * LE_FX_PLUGIN slot has no reset seam — the host owns its internal state
+ * (D-LIFE), so a bypassed plugin's frozen tail resumes and fades back in on
+ * re-enable; a flush seam is future work. RT note: the ring memset is [cap]
+ * floats per allocated channel — cap == sample_rate, so ~190 KB/channel at
+ * 48 kHz and ~750 KB/channel at 192 kHz, well beyond le_fx_entry_reset's
+ * ~16 KB octaver memset — but it fires only on the discrete settled-bypass
+ * -> enabled edge (a user stomp, never per sample). Revisit (chunk across
+ * callbacks) if the part-9 soak measures dropouts on weak hardware. A fully
+ * settled ENABLED slot takes the wet result verbatim (no crossfade
+ * arithmetic), keeping default-enabled output bit-identical to the
+ * pre-enable-flag engine. */
 void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
                     int count, const int32_t* types,
-                    const float params[LE_FX_MAX][LE_FX_PARAMS]) {
+                    const float params[LE_FX_MAX][LE_FX_PARAMS],
+                    const int32_t* enabled) {
   float xl = *l;
   float xr = *r;
+  /* Per-sample linear ramp step: full dry<->wet swing in the ramp window. */
+  const float step =
+      sr > 0 ? 1000.0f / ((float)LE_FX_ENABLE_RAMP_MS * (float)sr) : 1.0f;
   for (int s = 0; s < count; ++s) {
     const int32_t ty = types[s];
     if (ty > LE_FX_NONE && ty < LE_FX_TYPE_COUNT && LE_FX[ty].process) {
-      LE_FX[ty].process(fx, s, sr, cap, &xl, &xr, params[s]);
+      const int32_t want = enabled == NULL || enabled[s] != 0;
+      if (want != fx->enable_target[s]) {
+        if (want && fx->enable_mix[s] <= 0.0f) {
+          /* Re-enable edge from a SETTLED bypass: start clean so nothing
+           * stale ever sounds. A re-enable that lands mid-fade-out keeps the
+           * state instead — the slot never stopped processing, so nothing is
+           * stale, and resetting would discontinue a still-audible tail. */
+          le_fx_entry_reset(fx, s);
+          for (int chan = 0; chan < 2; ++chan) {
+            if (fx->delay[s][chan] != NULL) {
+              memset(fx->delay[s][chan], 0, (size_t)cap * sizeof(float));
+            }
+          }
+        }
+        fx->enable_target[s] = want;
+      }
+      float mix = fx->enable_mix[s];
+      if (want) {
+        if (mix < 1.0f) {
+          mix += step;
+          if (mix > 1.0f) mix = 1.0f;
+          fx->enable_mix[s] = mix;
+        }
+      } else {
+        if (mix <= 0.0f) continue; /* settled bypassed: skip (D-BITEXACT) */
+        mix -= step;
+        if (mix < 0.0f) mix = 0.0f;
+        fx->enable_mix[s] = mix;
+      }
+      float wl = xl;
+      float wr = xr;
+      LE_FX[ty].process(fx, s, sr, cap, &wl, &wr, params[s]);
       /* Sanitize a plugin slot's output before it re-enters the chain (D-RT).
        * Built-ins are already bounded, so only the plugin row pays this. */
       if (ty == LE_FX_PLUGIN) {
-        xl = fx_sanitize(xl);
-        xr = fx_sanitize(xr);
+        wl = fx_sanitize(wl);
+        wr = fx_sanitize(wr);
+      }
+      if (mix >= 1.0f) {
+        /* Settled wet: verbatim, not via the crossfade arithmetic. */
+        xl = wl;
+        xr = wr;
+      } else {
+        xl = xl * (1.0f - mix) + wl * mix;
+        xr = xr * (1.0f - mix) + wr * mix;
       }
     }
   }
