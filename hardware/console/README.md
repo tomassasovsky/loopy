@@ -5,7 +5,10 @@ the enclosure. The BOM is
 [`hardware/loopy_console_shopping_list.md`](../loopy_console_shopping_list.md).
 Footswitches and the encoder connect through the USB-MIDI pedal board
 (`loopy_pedal_main`) — the Pi reads no controls directly. The status LEDs
-(WS2812 ring + strip) are driven by the RP2040 LED driver over UART, as before.
+(WS2812 ring + strip) are designed to be driven by the RP2040 LED driver over
+UART ([`firmware/led_driver`](../../firmware/led_driver/README.md)); the
+firmware exists, but the Pi-side sender was removed in PR #98 and must be
+rebuilt for console integration.
 
 > **Status: design + budget only.** This documents the budgets; the enclosure
 > CAD/fab files and the assembled-unit gates (latency soak, stage-abuse) are

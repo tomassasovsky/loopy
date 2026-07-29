@@ -5,13 +5,15 @@ offloading the hard-real-time WS2812 timing from the Raspberry Pi. The Pi pushes
 compact transport-state frames over UART; the RP2040 renders them and animates
 the loop-position ring locally between frames.
 
-The Pi side is [`packages/led_client`](../../packages/led_client); the projection
-from looper state lives in `lib/led/cubit/led_cubit.dart`.
-
-> **Status: unverified on hardware.** The firmware and the Pi-side
-> `UartLedTransport` are written from this spec but have not been brought up on a
-> real RP2040 + ring. Flash and bench-test before relying on them. The LED-vs-
-> audio skew (below) must be **measured** on the assembled console.
+> **Status: firmware only, unverified on hardware.** There is currently **no
+> Pi-side sender** — the full client (`packages/led_client` with
+> `UartLedTransport`/`LedRepository`, plus a `LedCubit` projection from looper
+> state) landed alongside this firmware in PR #89 but was removed as unused in
+> PR #98. Recover it from git history (`git show 94699e89`) or rewrite it
+> against the wire format below when console integration lands. The firmware
+> itself has also never been brought up on a real RP2040 + ring — flash and
+> bench-test before relying on it. The LED-vs-audio skew (below) must be
+> **measured** on the assembled console.
 
 ## Hardware / wiring
 
@@ -52,18 +54,18 @@ off, so the ring is never dark mid-loop.
 
 The driver animates the ring head from `loopLengthUs` + its own clock and
 resyncs on each frame, so the Pi sends a STATE frame only on a **state change**
-(transport cadence), never at audio rate. Unchanged frames are diffed away on the
-Pi (`LedRepository.pushFrame`).
+(transport cadence), never at audio rate. The Pi-side sender should diff frames
+and skip unchanged ones (the removed `LedRepository.pushFrame` did this).
 
 ### PING / ACK  (health handshake)
 
 - **PING** (Pi → driver, `type = 0x02`, no payload): `A5 02 00 02`.
 - **ACK** (driver → Pi, `type = 0x82`, no payload): `A5 82 00 82`.
 
-At boot the Pi sends one PING and waits up to 2 s for an ACK
-(`LedRepository.start`). No ACK → the app shows a persistent "LED driver not
-responding" banner. The handshake is intentionally stateless — no sequence
-numbers, no keep-alive.
+At boot the Pi sends one PING and waits up to 2 s for an ACK. No ACK means the
+driver is absent or unhealthy — the removed client surfaced this as a
+persistent "LED driver not responding" banner. The handshake is intentionally
+stateless — no sequence numbers, no keep-alive.
 
 ## Flashing
 
