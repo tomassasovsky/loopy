@@ -1355,7 +1355,9 @@ def build_mini_console():
     # the lid carries insert bosses that land on them, and M3 screws come up
     # through the floor along the LID NORMAL (12.5deg from vertical), heads
     # recessed in angled pockets under the base, hidden by the feet.
-    LID_BOSS_H = 6.0
+    LID_BOSS_H = 8.0   # boss deep enough that the insert pilot NEVER enters the
+                       # 2mm plate (tilted pilot tip rim stays below it) -- the
+                       # top face stays pristine
     walls = slope_cut(walls.translate((0, 0, T)), C0)
     tray = tray.union(walls)
     ncs, nsn = math.cos(math.radians(SLOPE_ANGLE)), math.sin(math.radians(SLOPE_ANGLE))
@@ -1419,13 +1421,13 @@ def build_mini_console():
         # SLOPE_ANGLE in the flat print, leaning rearward (+y_l) going up.
         # Entry point on the boss bottom chosen so the assembled axis passes
         # through (bx, by): y_l = (by - LID_BOSS_H*sin)/cos.
-        y_pl = (by - 6.0 * sn) / cs
-        lid = lid.union(cq.Workplane("XY").box(10.0, 10.0, 6.0, centered=False)
-                        .translate((bx - 5.0, y_pl - 4.25, -6.0)))
+        y_pl = (by - LID_BOSS_H * sn) / cs
+        lid = lid.union(cq.Workplane("XY").box(10.0, 10.0, LID_BOSS_H, centered=False)
+                        .translate((bx - 5.0, y_pl - 4.25, -LID_BOSS_H)))
         lid = lid.cut(cq.Workplane("XY").circle(INSERT_PILOT_D/2.0)
                       .extrude(INSERT_DEPTH + 0.4)
                       .rotate((0, 0, 0), (1, 0, 0), -SLOPE_ANGLE)
-                      .translate((bx, y_pl, -6.0)))
+                      .translate((bx, y_pl, -LID_BOSS_H)))
     # registration tabs (pure locators; the anchors do the clamping).
     # FRONT pair: shallow, inside the y<8.5 strip before the tub front walls.
     for tx in (40.0, 165.0):
