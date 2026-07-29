@@ -139,8 +139,10 @@ PLATFORM_FOOT   = 18.0        # base screw inset band (holes ff/2 from the platf
 # (bolted from under the floor). The WTB-006 has NO base screws (side screws
 # only), so the deck instead gets a shallow LOCATING POCKET for the bottom
 # anti-slip pad -- PROVISIONAL retention: gravity + pocket + foot pressure.
-INSERT_PILOT_D  = 4.0         # heat-set pilot bore
-INSERT_DEPTH    = 6.4         # pilot depth (5.7 insert + melt allowance)
+INSERT_PILOT_D  = 4.5         # heat-set pilot bore -- sized for M3 5x5 inserts
+                              # (5.0 OD knurled, ~0.5mm interference; the old 4.0
+                              # suited the 4.6-OD x 5.7 type)
+INSERT_DEPTH    = 6.0         # pilot depth (5.0 insert + 1.0 melt allowance)
 PLAT_WALL       = 3.0         # printed perimeter wall (cavity hollowing)
 PLAT_DECK       = 8.0         # printed top deck (full insert engagement)
 POCKET_DEPTH    = 1.2         # bottom-pad locating pocket depth (< PEDAL_PAD_T)
