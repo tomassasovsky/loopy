@@ -24,10 +24,11 @@ writes v4) brought to v5 with a full history section.
 
 Must be merged before this part starts:
 
-- `docs/plan/2026-07-28-feat-fx-system-v3-part-0-plan.md` — CI package gates:
-  per-package CI jobs for `looper_repository` / `session_repository` /
-  `performance_repository` (among others) so this part's suites are genuinely
-  CI-gated [VGV-critical].
+- `docs/plan/2026-07-28-feat-fx-system-v3-part-0-plan.md` — the
+  `PerformanceRepository.arm()` wiring fix: `performanceChainsFromLooper`
+  (in `lib/session/session_mapping.dart`) + the `LooperRepository` limiter
+  state cache/getter [R14] that this part's performance-manifest extensions
+  build on.
 - `docs/plan/2026-07-28-feat-fx-system-v3-part-3a-plan.md` — the domain half
   of Part 3 this part persists: `FxAddress` + canonical JSON serialization +
   stable slotIds [A9]; `TrackEffect` gains `enabled` + `slotId` in both
@@ -37,8 +38,9 @@ Must be merged before this part starts:
   [A6][R13]; four-stage chain APIs + enabled setters + caches in
   `looper_repository`; `LooperBloc` events for Track/Master [VGV];
   `fxChainFingerprint` (renamed from `trackChainFingerprint`) folding real
-  enabled bits [R16]; the `PerformanceRepository.arm()` wiring fix +
-  `performanceChainsFromLooper` + limiter state cache [R14].
+  enabled bits [R16]; and the CI package gates — per-package CI jobs for the
+  five domain packages so this part's suites are genuinely CI-gated
+  [VGV-critical].
 
 ## Context
 
@@ -190,7 +192,7 @@ Constraints pinned by the epic index (do not re-litigate):
       `PerformanceMonitorState` gain `chainEnabled`. Per-slot `enabled` +
       `slotId` arrive for free via `TrackEffect.toJson` (part 3a) — the
       manifest keeps its structured-JSON (not opaque-string) convention.
-- [ ] `performanceChainsFromLooper` (part 3a, in
+- [ ] `performanceChainsFromLooper` (part 0, in
       `lib/session/session_mapping.dart`) fills the new fields from the
       four-stage caches.
 - [ ] `PerformanceArmSnapshot` (`models/performance_manifest.dart:129`) gains
@@ -235,7 +237,7 @@ NON-GOALS:
 - daw_export reader for the new manifest stages + the stomp export-replay test (part 9 [R20][R3])
 - Any UI: Signal-page stages, enable toggles, badges (part 4)
 - Pedal protocol/mode (part 5), remap/momentary (part 6), expression mapping persistence (part 7)
-- CI package-gate jobs (part 0)
+- CI package-gate jobs (part 3a)
 
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test packages/session_repository packages/looper_repository packages/performance_repository
 ```

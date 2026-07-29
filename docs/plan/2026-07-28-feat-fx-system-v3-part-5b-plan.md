@@ -33,9 +33,11 @@ Must be merged before this part starts:
   Track/Master chain state ownership [VGV]. FX-mode stomps call these
   setters; LED projection reads this chain-enabled state.
 - `docs/plan/2026-07-28-feat-fx-system-v3-part-1a-plan.md` — engine universal
-  bypass: per-slot/per-chain atomic enabled flags, click-free ~5 ms crossfade,
-  `le_engine_set_track_fx_chain_enabled` family. Stomps are audible only
-  because these exist.
+  bypass: per-slot/per-chain atomic enabled flags + click-free ~5 ms
+  crossfade on lane/monitor owners. The
+  `le_engine_set_track_fx_chain_enabled` family this part's stomps
+  ultimately drive lands in **part 1b** (reached transitively via part 3a's
+  repository setters). Stomps are audible only because these exist.
 
 ## Context
 
@@ -147,8 +149,12 @@ Constraints lifted from the index (pinned — do not change):
 - [ ] **Part-wide l10n** [R24][VGV]: every string this part introduces —
       mode chip FX label, `a11yModeFx`, per-mode LED labels, shortcuts-help
       rows, panic/restore descriptions, settings copy — lands in **both**
-      ARBs (`app_en.arb` + `app_es.arb`). (The firmware-update banner and
-      manual firmware-version setting strings ship with part 5a.)
+      ARBs (`app_en.arb` + `app_es.arb`). (The manual firmware-version
+      setting strings ship with part 5a; the firmware-update banner is
+      **this part's** — next bullet.)
+- [ ] **"Pedal firmware update available" banner** [flow err-4]: when the
+      connected pedal negotiates below v3, surface the banner wired to the
+      #331 auto-detect/OTA flow; strings in both ARBs + Semantics.
 - [ ] **Simulator/faceplate mirror**: the on-screen pedal simulator and
       faceplate render the mode indicator and FX-mode chain LEDs identically
       to the projection spec — simulator taps in FX mode dispatch the same
