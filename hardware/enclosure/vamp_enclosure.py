@@ -1332,7 +1332,7 @@ def build_mini_console():
     # therefore sits at y=140 in the side strips (x 8.5 / 190.4, clear of the
     # diffuser flanges and the board bay) so the exits stay in open floor
     # instead of breaking through the rear wall footprint.
-    ANCHORS = ((8.5, 140.0), (190.4, 140.0), (101.13, 20.0))
+    ANCHORS = ((8.5, 139.0), (190.4, 139.0), (101.13, 20.0))
     BOARD_W, BOARD_D = 34.2, 18.8    # Pro Micro pocket (33 x 18 board + clearance)
     BOARD_XC = (PEDS[0] + PEDS[1])/2.0 - U0   # centred between the tubs
 
@@ -1375,15 +1375,25 @@ def build_mini_console():
         pillar = slope_cut(pillar, C0 - (LID_BOSS_H / ncs + 0.2))
         tray = tray.union(pillar)
         top = C0 - (LID_BOSS_H / ncs + 0.2) + tn * by
+        # bore + pocket anchored to the INSERT AXIS: through the underside point
+        # (bx, by, C0+tan*by) along the lid normal -- NOT the pillar-top centre
+        # (that sat 1.41mm off-axis and the screw missed the insert)
+        z0ax = C0 + tn * by
+        # the angled exit pocket must land whole in the floor, clear of walls
+        exit_rim = by + z0ax * tn + 4.25
+        assert exit_rim <= (D - WALL_T) - 0.8, \
+            f"MINI_ANCHOR: exit pocket rim y{exit_rim:.1f} too close to the rear wall"
+        assert exit_rim <= y1 - 0.8, \
+            f"MINI_ANCHOR: exit pocket rim y{exit_rim:.1f} outside its pillar (y1={y1:.1f})"
         # 3.6 clearance bore along the lid normal, full length
         bore = (cq.Workplane("XY").circle(1.8).extrude(90.0)
                 .rotate((0, 0, 0), (1, 0, 0), SLOPE_ANGLE)
-                .translate((bx, by + nsn * 45.0, top - ncs * 45.0)))
+                .translate((bx, by + nsn * 45.0, z0ax - ncs * 45.0)))
         # 8.5 head/driver pocket from below, seat ~3.5 above the floor bottom
-        t_seat = (top - 3.5) / ncs
+        t_seat = (z0ax - 3.5) / ncs
         pocket = (cq.Workplane("XY").circle(4.25).extrude(40.0)
                   .rotate((0, 0, 0), (1, 0, 0), SLOPE_ANGLE)
-                  .translate((bx, by + nsn * (t_seat + 40.0), top - ncs * (t_seat + 40.0))))
+                  .translate((bx, by + nsn * (t_seat + 40.0), z0ax - ncs * (t_seat + 40.0))))
         tray = tray.cut(bore).cut(pocket)
     # feet: four pads so the unit stands clear of the recessed screw heads
     # (rear pair inboard, clear of the rear anchors' angled exit pockets)
