@@ -30,13 +30,13 @@ issue: 351
 
 ## Status
 
-**Next up:** part 1b once 1a (in review, PR #379) merges; 4a / 5a / 6a have no
-in-epic dependencies and can slot in meanwhile.
+**Next up:** part 1b (1a merged — branch off fresh master, no stacked rebase
+needed); 4a / 5a / 6a have no in-epic dependencies and can run in parallel.
 
 | Part | Scope | Model / effort | Autonomy | Depends on | Status |
 |------|-------|----------------|----------|------------|--------|
 | 0 | arm() fix (standalone bug) | Opus · medium | `auto` | — | merged (#375) |
-| 1a | engine bypass + ramp | **Fable · high** | `merge-gate` | — | in-review (#379) |
+| 1a | engine bypass + ramp | **Fable · high** | `merge-gate` | — | merged (#379) |
 | 1b | track bus + master insert | **Fable · high** | `merge-gate` | 1a | pending |
 | 2 | loop-stage wet cache | **Fable · extra-high** | `merge-gate` | 1a, 1b | pending |
 | 3a | domain model + shared types + CI jobs | **Fable · high** | `merge-gate` | 1a, 1b | pending |
