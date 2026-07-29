@@ -29,8 +29,8 @@ Send **`enclosure/out/vamp_3dprint.zip`** (STEP + STL for each part).
 
 | Part | Qty | Material | Notes |
 |---|---|---|---|
-| `vamp_platform_front` | 8 | **BLACK** PETG/ASA, ≥40% infill | Pedal pedestal TUB, 115.4×88.8 (deck 8.9, walls to 36.4 with sloped top ~1mm under the faceplate). Wall inner faces tucked 0.4 behind the slot cut line, so from above only faceplate shows and the reveal reads as a dark channel. Full-height boss drop-in channels in the side walls; 12-wide rear cable notch. Heat-set pilots Ø4.5 from below — **short M3×3 inserts** (4 per pedestal; the deck is too shallow for 5-long); 1.2-deep pad pocket in the deck. |
-| `vamp_platform_mid` | 2 | **BLACK** PETG/ASA, ≥40% infill | Tall CLEAR/BANK tub (deck 54.0, walls to 81.3 — row 2 moved rearward for label-top alignment, issue #366), hollow with boss columns — standard **M3 5×5 inserts** (4 per pedestal) + the same pocket, channels and notch. |
+| `vamp_platform_front` | 8 | **BLACK** PETG/ASA, ≥40% infill | Pedal pedestal TUB, 115.4×88.8 (deck 13.2, walls to ~37 with sloped top ~0.3 under the faceplate; deck raised for flush-at-rim seating, issue #373 — pedal case top flush with the slot's upper rim, pad above the metal). Perimeter strips outside the slot opening are relief-shaved to the same under-plate plane. Wall inner faces tucked 0.4 behind the slot cut line, so from above only faceplate shows and the reveal reads as a dark channel. Full-height boss drop-in channels in the side walls; 12-wide rear cable notch. Heat-set pilots Ø4.5 from below — the taller deck now takes the standard **M3 5×5 inserts** (4 per pedestal; short M3×3 no longer needed); 1.2-deep pad pocket in the deck. |
+| `vamp_platform_mid` | 2 | **BLACK** PETG/ASA, ≥40% infill | Tall CLEAR/BANK tub (deck 57.3, walls to 81.1 — row 2 rearward for label-top alignment #366, deck raised for flush-at-rim seating #373), hollow with boss columns — standard **M3 5×5 inserts** (4 per pedestal) + the same pocket, channels, notch and perimeter relief. |
 | `vamp_led_diffuser` | 10 | **White PLA** | Pill lens, pushes into the faceplate slot from inside. One per pedal (#366). |
 | `vamp_ring_diffuser` | 1 | **White PLA** | Annular lens for the encoder LED ring. |
 
@@ -63,8 +63,9 @@ Full lists with links: **`loopy_console_shopping_list.md`** (console) and
 - Raspberry Pi 5 + Active Cooler
 - 5V buck: **eleUniverse 8–36V→5V 10A IP67** (Amazon B0GGHN97TK) + 9V ≥5A brick
 - 1× NeoPixel Ring 16 (authentic Adafruit, 44.5 mm OD — clones are 68 mm and won't fit)
-- Heat-set inserts: 64× M3×3 (short) + 16× M3 5×5 (5.0 long × 5.0 OD, pilots Ø4.5), brass;
-  the mini console's lid takes 3× M3 5×5 as well
+- Heat-set inserts: **M3 5×5 throughout** (5.0 long × 5.0 OD, pilots Ø4.5), brass —
+  40× console pedestals (4 per pedestal) + 8× mini-console pedestals + 3× mini lid.
+  (Short M3×3 obsolete since the #373 deck raise gave the front pedestals full pilot depth.)
 - Fasteners: 40× M3×8 (platform bolts, from below), 6× M4 (front lip + rear lap),
   10× Ø3.2 pop rivets (corner brackets), 4× M2.5×35.3 Pi risers (stack or turn —
   35.3 mm is derived, see `PI_RISER_H`), 4× M3×12 + standoffs 15 mm (main board),

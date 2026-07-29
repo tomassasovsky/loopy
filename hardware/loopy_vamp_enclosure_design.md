@@ -78,11 +78,15 @@ fully internal.
   cos(slope) because the slot lives in the sloped faceplate while the pedal is
   horizontal. **No mounting holes** in the faceplate.
 - **Pedestal** (`vamp_platform_front`/`_mid`, 8+2, 3D-printed): deck at
-  `platform_h(v)` (front ≈ 10.9, mid ≈ 56.0 mm) so the pedal's top-pad surface
-  stands `FOOTPLATE_PROUD` = 12 mm above the sloped skin at the row line; a
-  1.2 mm deck pocket locates the pedal's bottom pad (the WTB-006 has no base
-  screws — side through-screws only; retention PROVISIONAL). The
-  `PLATFORM_HEADROOM` assertion enforces this against the local lid height.
+  `platform_h(v)` (front ≈ 15.2, mid ≈ 59.3 mm) so the pedal's CASE TOP sits
+  **flush with the slot's upper (rear) rim** and only the pad stands above the
+  metal (issue #373 — the old +12 rule left the pedals reading sunken against
+  the rising slope). Perimeter strips outside the opening are relief-shaved to
+  ~0.3 under the real plate (drift-calibrated); side-screw bosses keep ~1 mm
+  under the faceplate. A 1.2 mm deck pocket locates the pedal's bottom pad
+  (the WTB-006 has no base screws — side through-screws only; retention
+  PROVISIONAL). The `PLATFORM_HEADROOM` assertion enforces this against the
+  local lid height.
 - **Layout (two rows, per the reference):** a front row of **8 evenly-spaced**
   pedals (REC/PLAY · STOP · UNDO · MODE · TRACK 1–4) and an upper pair **CLEAR /
   BANK aligned in `u` over UNDO and MODE**, placed so their **label tops align
