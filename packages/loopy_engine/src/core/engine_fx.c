@@ -622,6 +622,18 @@ void le_fx_entry_reset(le_fx_state* fx, int slot) {
   le_fx_clear_reverb(fx, slot);
 }
 
+/* Seeds chain slot [slot]'s enable-crossfade runtime SETTLED at enabled, so a
+ * freshly created (zeroed) le_fx_state does not read as a mid-ramp bypass and
+ * fade in on first use. Every standalone le_fx_state owner calls this after
+ * creating/zeroing its state: le_lane_reset / le_monitor_input_reset, the
+ * offline render (perf_render), the VST3 plugin processors, and the test
+ * harnesses. Deliberately NOT part of le_fx_entry_reset: a type change must
+ * not touch an in-flight enable ramp. */
+void le_fx_enable_seed_settled(le_fx_state* fx, int slot) {
+  fx->enable_mix[slot] = 1.0f;
+  fx->enable_target[slot] = 1;
+}
+
 /* Frees a chain slot's octaver phase-vocoder heap buffers (both channels) and
  * nulls them. Control-thread only (lane/monitor reset and engine destroy), where
  * the audio thread is no longer reading the slot — mirroring how the delay rings

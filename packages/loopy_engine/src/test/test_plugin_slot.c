@@ -48,8 +48,7 @@ static void drive(le_fx_state* fx, const float* in, float* out, int n) {
   memset(types, 0, sizeof(types));
   memset(params, 0, sizeof(params));
   types[0] = LE_FX_PLUGIN;
-  fx->enable_mix[0] = 1.0f;
-  fx->enable_target[0] = 1;
+  le_fx_enable_seed_settled(fx, 0);
   for (int i = 0; i < n; ++i) {
     float l = in[i];
     float r = in[i];
@@ -119,8 +118,7 @@ static void test_enable_bypass_and_reenable(void) {
   CHECK(slot != NULL);
   atomic_store(&fx.plugin[0], slot);
   le_plugin_slot_set_ready(slot, 1);
-  fx.enable_mix[0] = 1.0f;
-  fx.enable_target[0] = 1;
+  le_fx_enable_seed_settled(&fx, 0);
 
   /* Settle the identity host on a constant (one block of adapter latency). */
   const int n = SLOT_BLOCK * 4;

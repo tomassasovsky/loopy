@@ -1014,10 +1014,7 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
   /* Seed the enable-crossfade runtime SETTLED at enabled, mirroring
    * le_lane_reset — a calloc'd zero state would fade the whole chain in over
    * the ramp window at frame 0 and break golden parity. */
-  for (int s = 0; s < LE_FX_MAX; ++s) {
-    fx->enable_mix[s] = 1.0f;
-    fx->enable_target[s] = 1;
-  }
+  for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
   /* A prepare failure (OOM on a delay ring / octaver's phase-vocoder heap)
    * is NOT let through as a silent dry-passthrough degradation: fx_delay/
    * fx_octaver already handle a NULL buffer gracefully at the DSP level

@@ -2246,9 +2246,12 @@ class LoopyEngineBindings {
   /// audio thread the transition is a click-free ~5 ms dry/wet crossfade with NO
   /// tail spill on bypass: the disabled entry's wet output — tail included —
   /// fades out over the ramp, then the entry renders bit-exact passthrough.
-  /// Re-enabling resets the entry's DSP state, so stale tails never sound.
+  /// Re-enabling resets a built-in entry's DSP state, so stale tails never
+  /// sound (a hosted plugin keeps its own state and its tail resumes).
   /// Entries default to enabled; an ACTUAL type change via le_engine_set_lane_fx
-  /// re-seeds the flag to 1 (a same-type re-set leaves it untouched).
+  /// re-seeds the flag to 1 (a same-type re-set leaves it untouched), and a
+  /// slot entering the active window via le_engine_set_lane_fx_count starts
+  /// enabled.
   int le_engine_set_lane_fx_enabled(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -2284,8 +2287,8 @@ class LoopyEngineBindings {
   /// atomic flip, without touching the per-entry flags (re-enabling restores
   /// them). Same contract as le_engine_set_lane_fx_enabled: direct atomic
   /// publish, works while stopped, click-free ~5 ms ramp on the running audio
-  /// thread, no tail spill on bypass, DSP state reset on re-enable. Default
-  /// enabled.
+  /// thread, no tail spill on bypass, built-in DSP state reset on re-enable.
+  /// Default enabled.
   int le_engine_set_lane_fx_chain_enabled(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -2510,8 +2513,8 @@ class LoopyEngineBindings {
   /// monitor twin of le_engine_set_lane_fx_enabled, with the identical contract:
   /// direct atomic publish (no ring, works while stopped), click-free ~5 ms
   /// dry/wet crossfade on the running audio thread, no tail spill on bypass,
-  /// DSP state reset on re-enable, default enabled, and an ACTUAL type change
-  /// via le_engine_set_monitor_input_fx re-seeds the flag to 1.
+  /// built-in DSP state reset on re-enable, default enabled, and an ACTUAL type
+  /// change via le_engine_set_monitor_input_fx re-seeds the flag to 1.
   int le_engine_set_monitor_input_fx_enabled(
     ffi.Pointer<le_engine> engine,
     int input,

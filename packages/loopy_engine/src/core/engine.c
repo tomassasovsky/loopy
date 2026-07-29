@@ -156,8 +156,7 @@ void le_lane_reset(le_lane* ln, int32_t input_channel) {
     /* Enable flags default 1 with the crossfade runtime SETTLED at that
      * target, so a fresh chain does not fade in on first use. */
     store_i32(&ln->a_fx_enabled[s], 1);
-    ln->fx.enable_mix[s] = 1.0f;
-    ln->fx.enable_target[s] = 1;
+    le_fx_enable_seed_settled(&ln->fx, s);
     free(ln->fx.delay[s][0]);
     ln->fx.delay[s][0] = NULL;
     free(ln->fx.delay[s][1]);
@@ -191,8 +190,7 @@ static void le_monitor_input_reset(le_monitor_input* m) {
     }
     /* Enable flags default 1, crossfade runtime settled (see le_lane_reset). */
     store_i32(&m->a_fx_enabled[s], 1);
-    m->fx.enable_mix[s] = 1.0f;
-    m->fx.enable_target[s] = 1;
+    le_fx_enable_seed_settled(&m->fx, s);
     free(m->fx.delay[s][0]);
     m->fx.delay[s][0] = NULL;
     free(m->fx.delay[s][1]);

@@ -67,9 +67,17 @@ void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
 /* Clears chain slot [slot]'s audio-thread DSP state (filter integrators, LFO
  * phase, delay heads, one-pole memory, octaver runtime, reverb lines) so a
  * freshly engaged effect starts clean. Does NOT allocate/free the delay ring or
- * octaver heap buffers (the control thread owns those). Runs on the audio thread
+ * octaver heap buffers (the control thread owns those), and does NOT touch the
+ * enable-crossfade runtime (a type change must not disturb an in-flight enable
+ * ramp — see le_fx_enable_seed_settled). Runs on the audio thread
  * (SET_*_FX ring handlers) and the control thread (lane/monitor reset). */
 void le_fx_entry_reset(le_fx_state* fx, int slot);
+
+/* Seeds chain slot [slot]'s enable-crossfade runtime SETTLED at enabled so a
+ * freshly created (zeroed) le_fx_state does not fade in on first use. Call
+ * once after creating/zeroing a standalone le_fx_state (lane/monitor reset,
+ * offline render, VST3 plugin processors, test harnesses). */
+void le_fx_enable_seed_settled(le_fx_state* fx, int slot);
 
 /* Frees a chain slot's octaver phase-vocoder heap buffers (both channels) and
  * nulls them. Control-thread only (lane/monitor reset, engine destroy). */

@@ -70,7 +70,13 @@ tresult PLUGIN_API Processor::terminate() {
 }
 
 tresult PLUGIN_API Processor::setActive(TBool state) {
-  if (state) le_fx_entry_reset(&fx_, 0);
+  if (state) {
+    le_fx_entry_reset(&fx_, 0);
+    // Enable-crossfade runtime settled at enabled: this standalone slot has
+    // no bypass flags (the host does its own bypassing), so it must never
+    // read as a mid-ramp bypass and fade in.
+    le_fx_enable_seed_settled(&fx_, 0);
+  }
   return AudioEffect::setActive(state);
 }
 
@@ -127,7 +133,8 @@ tresult PLUGIN_API Processor::process(ProcessData& data) {
   for (int32 i = 0; i < data.numSamples; ++i) {
     float l = inL[i];
     float r = inR[i];
-    fx_apply_chain(&fx_, sr, cap_, &l, &r, 1, types_, params_);
+    fx_apply_chain(&fx_, sr, cap_, &l, &r, 1, types_, params_,
+                   /*enabled=*/nullptr);
     outL[i] = l;
     if (outR != outL) outR[i] = r;
   }

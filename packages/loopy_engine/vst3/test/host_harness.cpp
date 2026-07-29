@@ -192,6 +192,9 @@ bool runDirect(int32_t fxType, const ParamCombo& combo, int cap, double sr,
   memset(&fx, 0, sizeof(fx));
   const bool prepared = le_fx_prepare(&fx, 0, fxType, cap) == LE_OK;
   le_fx_entry_reset(&fx, 0);
+  // A zeroed state would read as a mid-ramp bypass and fade the direct path
+  // in, breaking parity with the hosted path (which seeds at setActive).
+  le_fx_enable_seed_settled(&fx, 0);
 
   int32_t types[LE_FX_MAX] = {};
   types[0] = fxType;
@@ -209,7 +212,8 @@ bool runDirect(int32_t fxType, const ParamCombo& combo, int cap, double sr,
     for (int i = 0; i < n; ++i) {
       float l = inLSignal[i];
       float r = inRSignal[i];
-      fx_apply_chain(&fx, static_cast<int>(sr), cap, &l, &r, 1, types, params);
+      fx_apply_chain(&fx, static_cast<int>(sr), cap, &l, &r, 1, types, params,
+                     nullptr);
       outL[i] = l;
       outR[i] = r;
     }
