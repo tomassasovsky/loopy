@@ -30,14 +30,15 @@ issue: 351
 
 ## Status
 
-**Next up:** part 1b (1a merged — branch off fresh master, no stacked rebase
-needed); 4a / 5a / 6a have no in-epic dependencies and can run in parallel.
+**Next up:** merge gate on part 1b (PR #382, build green — human merges);
+then 2 and 3a in parallel. 4a / 5a / 6a have no in-epic dependencies and can
+run in parallel any time.
 
 | Part | Scope | Model / effort | Autonomy | Depends on | Status |
 |------|-------|----------------|----------|------------|--------|
 | 0 | arm() fix (standalone bug) | Opus · medium | `auto` | — | merged (#375) |
 | 1a | engine bypass + ramp | **Fable · high** | `merge-gate` | — | merged (#379) |
-| 1b | track bus + master insert | **Fable · high** | `merge-gate` | 1a | pending |
+| 1b | track bus + master insert | **Fable · high** | `merge-gate` | 1a | in review (#382) |
 | 2 | loop-stage wet cache | **Fable · extra-high** | `merge-gate` | 1a, 1b | pending |
 | 3a | domain model + shared types + CI jobs | **Fable · high** | `merge-gate` | 1a, 1b | pending |
 | 3b | session v5 migration + manifest stages | Opus · medium | `merge-gate` | 3a, 0 | pending |
