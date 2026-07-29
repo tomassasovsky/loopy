@@ -6,6 +6,8 @@ issue: 351
 parent-plan: 2026-07-28-feat-fx-system-v3-plan.md
 ---
 
+> **Session setup:** Fable at high effort · `autonomy:merge-gate` · check the status table in [the execution guide](2026-07-28-feat-fx-system-v3-execution-guide.md) before starting, and update it before ending.
+
 ## Overview
 
 Land the domain half of FX v3's data model in `looper_repository`: the
@@ -25,16 +27,18 @@ they build on.
 Must be merged before this part starts:
 
 - `docs/plan/2026-07-28-feat-fx-system-v3-part-1a-plan.md` — engine universal
-  bypass + track bus + Track/Master inserts: the
-  `le_engine_set_{lane,monitor,track,master}_fx_enabled` /
-  `..._fx_chain_enabled` setters and full track/master chain setters (plus
-  their Dart bindings) that this part's repository APIs call.
-- `docs/plan/2026-07-28-feat-fx-system-v3-part-1b-plan.md` — chain
-  fingerprint folds enabled bits natively, with the Dart mirror
-  (`trackChainFingerprint`) folding the default `enabled=1` until this part
-  carries the real field [R4][R16]. This part switches the mirror to the real
-  bit and must fold **exactly the layout 1b landed** — the agreement test is
-  the tripwire.
+  bypass on lane + monitor owners: the
+  `le_engine_set_{lane,monitor_input}_fx_enabled` / `..._fx_chain_enabled`
+  setters (plus their Dart bindings), the native fingerprint enabled-bit
+  fold, **and the Dart mirror (`trackChainFingerprint`) folding the default
+  `enabled=1` until this part carries the real field** [R4][R16]. This part
+  switches the mirror to the real bit and must fold **exactly the layout 1a
+  landed** — the agreement test is the tripwire.
+- `docs/plan/2026-07-28-feat-fx-system-v3-part-1b-plan.md` — track stereo bus
+  + Master insert and the track/master setter families
+  (`le_engine_set_{track,master}_fx_enabled` / `..._fx_chain_enabled` + full
+  chain setters, plus Dart bindings) that this part's Track/Master repository
+  APIs call; extends 1a's fingerprint machinery to the new owners.
 
 ## Context
 
@@ -187,8 +191,8 @@ Constraints lifted from the index (pinned decisions — do not change):
       (`track_effect_test.dart`, `fx_fingerprint_agreement_test.dart`).
       After the rename `grep -rn trackChainFingerprint` over `lib`,
       `packages`, `test` returns nothing.
-- [ ] Switch the fold from the part-1b hard-coded `enabled=1` default to the
-      real per-effect bit — folding **exactly the native layout part 1b
+- [ ] Switch the fold from the part-1a hard-coded `enabled=1` default to the
+      real per-effect bit — folding **exactly the native layout part 1a
       landed** (do not re-derive the fold; read 1b's landed code).
       `slotId` must NOT fold into the fingerprint (fingerprint = sound
       identity; ids are entry identity — folding them would break part 2's
@@ -237,9 +241,12 @@ Constraints lifted from the index (pinned decisions — do not change):
       - `lib/audio_setup/cubit/monitor_cubit.dart:84`
       - `lib/session/session_mapping.dart:47,57`
 - [ ] **Write-side sequencing (explicit seam):** with every reader now
-      envelope-aware, flip the **settings** write twins in the same file as
-      the named :84 site (`monitor_cubit.dart:143,210,261,283,345`) to
-      envelope encode in this part. Leave the **session** write twins
+      envelope-aware, flip the **settings** write twins to envelope encode in
+      this part: the monitor sites in the same file as the named :84 site
+      (`monitor_cubit.dart:143,210,261,283,345`) **and the lane sites in
+      `lib/looper/bloc/looper_bloc.dart:151,171,194,368,382`** (the
+      `saveLaneEffects` persistence writes — same settings-persistence
+      category as the monitor twins). Leave the **session** write twins
       (`session_mapping.dart:19,33`) to part 3b, landing together with the
       formatVersion 4→5 bump so the session format changes move as one
       reviewed unit. After this part, the only direct
@@ -402,7 +409,8 @@ SUCCESS CRITERIA:
 - CI gates exist for all five domain packages with deliberate coverage floors, and the agreement test runs in CI via the fuzz job [VGV-critical] | verify: for p in looper_repository session_repository performance_repository pedal_repository controller_repository; do grep -q "packages/$p" .github/workflows/main.yaml || echo "MISSING $p"; done
 
 NON-GOALS:
-- Part 3b owns: session formatVersion 4→5 migration + SessionRig trackEffects/masterEffects + leftover reset [R17]; the PerformanceRepository.arm() fix + performanceChainsFromLooper + limiter cache [R14]; PerformanceChains/armSnapshot version marker [R20]; flipping the session write sites (session_mapping.dart:19,33) to envelope encode; docs/design/session-bundle-format.md v5 history.
+- Part 0 owns the PerformanceRepository.arm() fix + performanceChainsFromLooper + limiter cache [R14] (already standalone).
+- Part 3b owns: session formatVersion 4→5 migration + SessionRig trackEffects/masterEffects + leftover reset [R17]; PerformanceChains/armSnapshot track+master fields + version marker [R20]; flipping the session write sites (session_mapping.dart:19,33) to envelope encode; docs/design/session-bundle-format.md v5 history.
 - Parts 1a/1b own everything native: engine flags, track bus, inserts, plog, native fingerprint folding, ffigen bindings.
 - Part 2 owns the wet cache (this part only guarantees fingerprints it can key on).
 - Part 4 owns all UI: Signal-page stages, power controls, inherited badge + detach action, dead-code deletion, goldens.
