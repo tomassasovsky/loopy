@@ -55,7 +55,7 @@ jobs:
       channel: ${{ steps.meta.outputs.channel }}
       version: ${{ steps.meta.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Determine channel + version
         id: meta
@@ -95,7 +95,7 @@ jobs:
     needs: determine-meta
     runs-on: ubuntu-24.04-arm      # native aarch64 — always, see header note
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build the aarch64 app bundle
         run: |
@@ -115,7 +115,7 @@ jobs:
     # the free GitHub-hosted runner for them.
     runs-on: ${{ inputs.runner == 'self-hosted' && fromJson('["self-hosted","linux","x64","proxmox","yocto"]') || 'ubuntu-24.04-arm' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/download-artifact@v8
         with:
