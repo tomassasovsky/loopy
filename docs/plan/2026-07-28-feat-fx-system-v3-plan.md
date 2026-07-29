@@ -17,6 +17,8 @@ issue: 351
 
 > **Note:** This plan has been split into parts. See the `-part-N` files in
 > this directory. `/build` targets a part file, never this index.
+> **Session setup + live status:** [execution guide](2026-07-28-feat-fx-system-v3-execution-guide.md)
+> — per-part model/effort/autonomy and the status table every session updates.
 >
 > | Part | Scope | Depends on |
 > |------|-------|------------|

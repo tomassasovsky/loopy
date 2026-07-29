@@ -6,6 +6,8 @@ issue: 351
 parent-plan: 2026-07-28-feat-fx-system-v3-plan.md
 ---
 
+> **Session setup:** Fable at high effort · `autonomy:merge-gate` · check the status table in [the execution guide](2026-07-28-feat-fx-system-v3-execution-guide.md) before starting, and update it before ending.
+
 ## Overview
 
 Bump the pedal wire protocol to v3: widen the state-frame mode field to 2 bits

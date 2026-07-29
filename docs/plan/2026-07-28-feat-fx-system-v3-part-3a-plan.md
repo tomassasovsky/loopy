@@ -6,6 +6,8 @@ issue: 351
 parent-plan: 2026-07-28-feat-fx-system-v3-plan.md
 ---
 
+> **Session setup:** Fable at high effort · `autonomy:merge-gate` · check the status table in [the execution guide](2026-07-28-feat-fx-system-v3-execution-guide.md) before starting, and update it before ending.
+
 ## Overview
 
 Land the domain half of FX v3's data model in `looper_repository`: the

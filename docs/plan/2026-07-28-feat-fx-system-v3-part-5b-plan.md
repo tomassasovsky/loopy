@@ -6,6 +6,8 @@ issue: 351
 parent-plan: 2026-07-28-feat-fx-system-v3-plan.md
 ---
 
+> **Session setup:** Opus at high effort · `autonomy:merge-gate (physical slice blocked-verify)` · check the status table in [the execution guide](2026-07-28-feat-fx-system-v3-execution-guide.md) before starting, and update it before ending.
+
 ## Overview
 
 Add the third interaction mode — `InteractionMode.fx` — to the app's control

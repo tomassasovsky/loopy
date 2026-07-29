@@ -6,6 +6,8 @@ issue: 351
 parent-plan: 2026-07-28-feat-fx-system-v3-plan.md
 ---
 
+> **Session setup:** Opus at medium effort · `autonomy:blocked-verify` · check the status table in [the execution guide](2026-07-28-feat-fx-system-v3-execution-guide.md) before starting, and update it before ending.
+
 ## Overview
 
 Close out FX system v3: teach `daw_export`'s reader side the new Track/Master
