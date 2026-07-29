@@ -117,6 +117,114 @@ void main() {
       },
     );
 
+    group('FX enable flags', () {
+      test('records lane slot and chain enable calls while running', () {
+        engine.start(engine.defaultConfig);
+
+        expect(
+          engine.setLaneFxEnabled(
+            channel: 0,
+            lane: 0,
+            index: 2,
+            enabled: false,
+          ),
+          EngineResult.ok,
+        );
+        expect(
+          engine.setLaneFxChainEnabled(channel: 1, lane: 0, enabled: false),
+          EngineResult.ok,
+        );
+
+        expect(engine.laneFxEnabledCalls, [
+          (channel: 0, lane: 0, index: 2, enabled: false),
+        ]);
+        expect(engine.laneFxChainEnabledCalls, [
+          (channel: 1, lane: 0, enabled: false),
+        ]);
+      });
+
+      test('records monitor slot and chain enable calls while running', () {
+        engine.start(engine.defaultConfig);
+
+        expect(
+          engine.setMonitorInputFxEnabled(input: 3, index: 1, enabled: false),
+          EngineResult.ok,
+        );
+        expect(
+          engine.setMonitorInputFxChainEnabled(input: 3, enabled: true),
+          EngineResult.ok,
+        );
+
+        expect(engine.monitorInputFxEnabledCalls, [
+          (input: 3, index: 1, enabled: false),
+        ]);
+        expect(engine.monitorInputFxChainEnabledCalls, [
+          (input: 3, enabled: true),
+        ]);
+      });
+
+      test(
+        'accepts enable calls while stopped (works-while-stopped contract)',
+        () {
+          // The native setters are direct atomic stores that succeed whether
+          // or not the device runs; the mock mirrors that contract.
+          expect(
+            engine.setLaneFxEnabled(
+              channel: 0,
+              lane: 0,
+              index: 0,
+              enabled: false,
+            ),
+            EngineResult.ok,
+          );
+          expect(
+            engine.setLaneFxChainEnabled(channel: 0, lane: 0, enabled: false),
+            EngineResult.ok,
+          );
+          expect(
+            engine.setMonitorInputFxEnabled(input: 0, index: 0, enabled: false),
+            EngineResult.ok,
+          );
+          expect(
+            engine.setMonitorInputFxChainEnabled(input: 0, enabled: false),
+            EngineResult.ok,
+          );
+          expect(engine.laneFxEnabledCalls, hasLength(1));
+          expect(engine.laneFxChainEnabledCalls, hasLength(1));
+          expect(engine.monitorInputFxEnabledCalls, hasLength(1));
+          expect(engine.monitorInputFxChainEnabledCalls, hasLength(1));
+        },
+      );
+
+      test('rejects out-of-range arguments, recording nothing', () {
+        expect(
+          engine.setLaneFxEnabled(
+            channel: -1,
+            lane: 0,
+            index: 0,
+            enabled: false,
+          ),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setLaneFxChainEnabled(channel: 0, lane: 99, enabled: false),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setMonitorInputFxEnabled(input: 0, index: 99, enabled: false),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setMonitorInputFxChainEnabled(input: -1, enabled: false),
+          EngineResult.invalid,
+        );
+        expect(engine.laneFxEnabledCalls, isEmpty);
+        expect(engine.laneFxChainEnabledCalls, isEmpty);
+        expect(engine.monitorInputFxEnabledCalls, isEmpty);
+        expect(engine.monitorInputFxChainEnabledCalls, isEmpty);
+      });
+    });
+
     group('performance recording capture', () {
       test('requires the engine to be running', () {
         expect(engine.perfArm('test-capture'), EngineResult.notRunning);

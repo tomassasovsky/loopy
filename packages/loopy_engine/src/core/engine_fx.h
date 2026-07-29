@@ -38,20 +38,53 @@ extern "C" {
 #define LE_PSOLA_THRESH 0.15f /* YIN absolute threshold for the first dip */
 #define LE_PSOLA_THMAX 300   /* grain half-width cap: 2*THMAX < LE_PV_N (fits OLA) */
 
+/* Enable-crossfade length: a slot's dry/wet ramp on an effective-enabled
+ * transition, in milliseconds. Short enough to feel instant on a pedal stomp,
+ * long enough to be click-free. */
+#define LE_FX_ENABLE_RAMP_MS 5
+
 /* Applies a lane/monitor chain to one stereo sample in place, in chain order.
  * Stageless: every active entry processes both channels on the lane's own `fx`
- * DSP state. [count] is the active length; [types]/[params] are the per-buffer
- * snapshot. Audio thread (le_engine_process) and the FX chain test. */
+ * DSP state. [count] is the active length; [types]/[params]/[enabled] are the
+ * per-buffer snapshot — [enabled] carries one EFFECTIVE bit per slot
+ * (chain-enabled && slot-enabled; NULL = all enabled).
+ *
+ * An enabled transition crossfades dry/wet over ~LE_FX_ENABLE_RAMP_MS per
+ * slot. Disable fades the slot's wet output — tail included — to dry, then
+ * skips the slot entirely once settled (bit-exact passthrough, NO tail spill
+ * on bypass [B7]: the tail never keeps ringing into the dry signal).
+ * Re-enable resets a built-in slot's DSP state (le_fx_entry_reset + a
+ * ring-content clear) at the edge, then ramps in from dry — stale tails
+ * never sound. A hosted plugin slot keeps its own internal state (no flush
+ * seam yet); its frozen tail fades back in. Audio thread
+ * (le_engine_process), the offline render (perf_render), and the FX chain
+ * test. */
 void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
                     int count, const int32_t* types,
-                    const float params[LE_FX_MAX][LE_FX_PARAMS]);
+                    const float params[LE_FX_MAX][LE_FX_PARAMS],
+                    const int32_t* enabled);
 
 /* Clears chain slot [slot]'s audio-thread DSP state (filter integrators, LFO
  * phase, delay heads, one-pole memory, octaver runtime, reverb lines) so a
  * freshly engaged effect starts clean. Does NOT allocate/free the delay ring or
- * octaver heap buffers (the control thread owns those). Runs on the audio thread
+ * octaver heap buffers (the control thread owns those), and does NOT touch the
+ * enable-crossfade runtime (a type change must not disturb an in-flight enable
+ * ramp — see le_fx_enable_seed_settled). Runs on the audio thread
  * (SET_*_FX ring handlers) and the control thread (lane/monitor reset). */
 void le_fx_entry_reset(le_fx_state* fx, int slot);
+
+/* Seeds chain slot [slot]'s enable-crossfade runtime SETTLED at enabled so a
+ * freshly created (zeroed) le_fx_state does not fade in on first use. Call
+ * once after creating/zeroing a standalone le_fx_state (lane/monitor reset,
+ * offline render, VST3 plugin processors, test harnesses). */
+void le_fx_enable_seed_settled(le_fx_state* fx, int slot);
+
+/* Settles chain slot [slot]'s enable-crossfade runtime at fully BYPASSED.
+ * For a slot the chain will NOT process while its effective enabled bit is 0
+ * (per-buffer snapshots, le_engine_stop, the offline render's count/type
+ * mirror): guarantees a processing gap never strands a ramp mid-fade, so
+ * resumption always re-enters through the settled-edge reset (B7). */
+void le_fx_enable_force_bypass(le_fx_state* fx, int slot);
 
 /* Frees a chain slot's octaver phase-vocoder heap buffers (both channels) and
  * nulls them. Control-thread only (lane/monitor reset, engine destroy). */

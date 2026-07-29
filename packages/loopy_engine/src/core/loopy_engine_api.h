@@ -1455,6 +1455,33 @@ LE_EXPORT int32_t le_engine_set_lane_fx_param(le_engine* engine, int32_t channel
                                               int32_t lane, int32_t index,
                                               int32_t param, float value);
 
+/* Enables/disables chain entry [index] on lane [lane] of track [channel]
+ * without losing its type or parameters. Direct atomic publish (no ring
+ * command), so it works whether or not the device is running. On the running
+ * audio thread the transition is a click-free ~5 ms dry/wet crossfade with NO
+ * tail spill on bypass: the disabled entry's wet output — tail included —
+ * fades out over the ramp, then the entry renders bit-exact passthrough.
+ * Re-enabling resets a built-in entry's DSP state, so stale tails never
+ * sound (a hosted plugin keeps its own state and its tail resumes).
+ * Entries default to enabled; an ACTUAL type change via le_engine_set_lane_fx
+ * re-seeds the flag to 1 (a same-type re-set leaves it untouched), and a
+ * slot entering the active window via le_engine_set_lane_fx_count starts
+ * enabled. */
+LE_EXPORT int32_t le_engine_set_lane_fx_enabled(le_engine* engine,
+                                                int32_t channel, int32_t lane,
+                                                int32_t index, int32_t enabled);
+
+/* Enables/disables lane [lane] of track [channel]'s WHOLE effect chain in one
+ * atomic flip, without touching the per-entry flags (re-enabling restores
+ * them). Same contract as le_engine_set_lane_fx_enabled: direct atomic
+ * publish, works while stopped, click-free ~5 ms ramp on the running audio
+ * thread, no tail spill on bypass, built-in DSP state reset on re-enable.
+ * Default enabled. */
+LE_EXPORT int32_t le_engine_set_lane_fx_chain_enabled(le_engine* engine,
+                                                      int32_t channel,
+                                                      int32_t lane,
+                                                      int32_t enabled);
+
 /* ---- per-input live monitor ---- *
  * Each hardware input has a SINGLE live-monitor chain: input-level enable gates
  * the whole input, then the live signal runs through one effect chain / routing /
@@ -1509,6 +1536,24 @@ LE_EXPORT int32_t le_engine_set_monitor_input_fx_param(le_engine* engine,
                                                        int32_t input,
                                                        int32_t index,
                                                        int32_t param, float value);
+
+/* Enables/disables hardware input [input]'s monitor chain entry [index] — the
+ * monitor twin of le_engine_set_lane_fx_enabled, with the identical contract:
+ * direct atomic publish (no ring, works while stopped), click-free ~5 ms
+ * dry/wet crossfade on the running audio thread, no tail spill on bypass,
+ * built-in DSP state reset on re-enable, default enabled, and an ACTUAL type
+ * change via le_engine_set_monitor_input_fx re-seeds the flag to 1. */
+LE_EXPORT int32_t le_engine_set_monitor_input_fx_enabled(le_engine* engine,
+                                                         int32_t input,
+                                                         int32_t index,
+                                                         int32_t enabled);
+
+/* Enables/disables hardware input [input]'s WHOLE monitor chain in one atomic
+ * flip without touching the per-entry flags — the monitor twin of
+ * le_engine_set_lane_fx_chain_enabled, same contract. Default enabled. */
+LE_EXPORT int32_t le_engine_set_monitor_input_fx_chain_enabled(le_engine* engine,
+                                                               int32_t input,
+                                                               int32_t enabled);
 
 /* ---- structural output gate ---- *
  * Turns hardware output [output] on/off as a routing target. A disabled output is

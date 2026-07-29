@@ -1089,6 +1089,42 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setLaneFxEnabled({
+    required int channel,
+    required int lane,
+    required int index,
+    required bool enabled,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_lane_fx_enabled(
+        _engine,
+        channel,
+        lane,
+        index,
+        enabled ? 1 : 0,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setLaneFxChainEnabled({
+    required int channel,
+    required int lane,
+    required bool enabled,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_lane_fx_chain_enabled(
+        _engine,
+        channel,
+        lane,
+        enabled ? 1 : 0,
+      ),
+    );
+  }
+
+  @override
   int laneFxFingerprint({required int channel, required int lane}) =>
       _bindings.le_engine_lane_fx_fingerprint(_engine, channel, lane);
 
@@ -1181,6 +1217,38 @@ class NativeAudioEngine implements AudioEngine {
         index,
         param,
         value,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setMonitorInputFxEnabled({
+    required int input,
+    required int index,
+    required bool enabled,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_monitor_input_fx_enabled(
+        _engine,
+        input,
+        index,
+        enabled ? 1 : 0,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setMonitorInputFxChainEnabled({
+    required int input,
+    required bool enabled,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_monitor_input_fx_chain_enabled(
+        _engine,
+        input,
+        enabled ? 1 : 0,
       ),
     );
   }

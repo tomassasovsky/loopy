@@ -905,18 +905,26 @@ static float le_pr_bits_to_f32(uint32_t bits) {
 }
 
 /* One channel's lane-0 effects chain, mirroring `le_lane`'s
- * a_fx_count/a_fx_type/a_fx_param fields closely enough to drive
- * fx_apply_chain directly. */
+ * a_fx_count/a_fx_type/a_fx_param fields — plus the two enable-flag levels
+ * (a_fx_enabled / a_fx_chain_enabled) — closely enough to drive
+ * fx_apply_chain directly. The enable bits seed all-1 at arm: the manifest
+ * carries no arm-time enabled state until part 3, so a pre-arm disable is
+ * invisible to this render (matching the fixed golden-parity protocol, which
+ * arms from a default-enabled engine). */
 typedef struct le_pr_fx_chain {
   int32_t count;
   int32_t type[LE_FX_MAX];
   float params[LE_FX_MAX][LE_FX_PARAMS];
+  int32_t enabled[LE_FX_MAX];
+  int32_t chain_enabled;
 } le_pr_fx_chain;
 
 static void le_pr_fx_chain_init_empty(le_pr_fx_chain* c) {
   c->count = 0;
+  c->chain_enabled = 1;
   for (int i = 0; i < LE_FX_MAX; ++i) {
     c->type[i] = LE_FX_NONE;
+    c->enabled[i] = 1;
     for (int p = 0; p < LE_FX_PARAMS; ++p) c->params[i][p] = 0.0f;
   }
 }
@@ -1003,6 +1011,10 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
     *out_failed = 1;
     return NULL;
   }
+  /* Seed the enable-crossfade runtime SETTLED at enabled, mirroring
+   * le_lane_reset — a calloc'd zero state would fade the whole chain in over
+   * the ramp window at frame 0 and break golden parity. */
+  for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
   /* A prepare failure (OOM on a delay ring / octaver's phase-vocoder heap)
    * is NOT let through as a silent dry-passthrough degradation: fx_delay/
    * fx_octaver already handle a NULL buffer gracefully at the DSP level
@@ -1025,6 +1037,14 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
     free(fx);
     *out_failed = 1;
     return NULL;
+  }
+
+  /* Per-slot EFFECTIVE enable bits (D-EFFBITS), exactly as snapshot_lane_fx
+   * computes them live. Recomputed only when a replayed log entry lands —
+   * the bits cannot change between log entries. */
+  int32_t effective[LE_FX_MAX];
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    effective[s] = chain.chain_enabled && chain.enabled[s];
   }
 
   int log_index = 0;
@@ -1053,6 +1073,10 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
              * the same type must not wipe a listener's tweaks). */
             if (chain.type[cmd->fx.index] != cmd->fx.type) {
               le_fx_defaults(cmd->fx.type, chain.params[cmd->fx.index]);
+              /* D-ENSEED mirror: an ACTUAL type change also re-seeds the
+               * slot's enabled flag to 1 on the control side (silently, like
+               * the defaults — no events.log entry of its own). */
+              chain.enabled[cmd->fx.index] = 1;
             }
             chain.type[cmd->fx.index] = cmd->fx.type;
             le_fx_entry_reset(fx, cmd->fx.index);
@@ -1068,6 +1092,12 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
             int32_t count = cmd->fxcount.count;
             if (count < 0) count = 0;
             if (count > LE_FX_MAX) count = LE_FX_MAX;
+            /* D-ENSEED mirror (le_fx_seed_entering_slots): a slot entering
+             * the active window re-seeds enabled=1, silently, like the
+             * defaults above. */
+            for (int32_t s = chain.count; s < count; ++s) {
+              chain.enabled[s] = 1;
+            }
             chain.count = count;
           }
           break;
@@ -1080,6 +1110,17 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
               chain.params[index][param] =
                   le_pr_bits_to_f32((uint32_t)cmd->fx.type);
             }
+          }
+          break;
+        case LE_PLOG_SET_LANE_FX_ENABLED:
+          if (cmd->fx.channel == channel && cmd->fx.lane == 0 &&
+              cmd->fx.index >= 0 && cmd->fx.index < LE_FX_MAX) {
+            chain.enabled[cmd->fx.index] = cmd->fx.type != 0;
+          }
+          break;
+        case LE_PLOG_SET_LANE_FX_CHAIN_ENABLED:
+          if (cmd->lanef.channel == channel && cmd->lanef.lane == 0) {
+            chain.chain_enabled = cmd->lanef.value != 0.0f;
           }
           break;
         case LE_CMD_SET_LANE_VOLUME:
@@ -1102,13 +1143,24 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
           break;
       }
       log_index++;
+      for (int s = 0; s < LE_FX_MAX; ++s) {
+        effective[s] = chain.chain_enabled && chain.enabled[s];
+        /* Mirror of the live snapshots' gap rule (snapshot_lane_fx): a slot
+         * the chain no longer processes settles at bypass while its
+         * effective bit is 0, so a later re-entry goes through the clean
+         * settled-edge reset exactly as it does live. */
+        if ((s >= chain.count || chain.type[s] == LE_FX_NONE) &&
+            !effective[s]) {
+          le_fx_enable_force_bypass(fx, s);
+        }
+      }
     }
 
     const float in = muted ? 0.0f : dry[f] * volume;
     float l = in;
     float r = in;
     fx_apply_chain(fx, m->sample_rate, m->sample_rate, &l, &r, chain.count,
-                   chain.type, chain.params);
+                   chain.type, chain.params, effective);
     wet[f] = l;
   }
 

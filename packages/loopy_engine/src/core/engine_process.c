@@ -2937,12 +2937,18 @@ static inline void advance_transport_frame(le_engine* e, int tc,
  * chain so a lane with no effects skips it. `static inline` so these fold into
  * le_engine_process; out-params are the caller's stack arrays. */
 
-/* Snapshots every active track lane's effect chain into the caller's arrays. */
-static inline void snapshot_track_fx(
+/* Snapshots every active track LANE's effect chain into the caller's arrays.
+ * fx_enabled carries the per-slot EFFECTIVE enable bit (D-EFFBITS:
+ * chain-enabled && slot-enabled) — the only enable view the audio thread ever
+ * consumes; fx_apply_chain never distinguishes chain from slot. has_fx gating
+ * is UNCHANGED by the enable flags: a lane with a disabled chain still enters
+ * fx_apply_chain so in-flight enable ramps can settle — only settled slots
+ * are skipped, inside the chain (D-BITEXACT). */
+static inline void snapshot_lane_fx(
     le_engine* e, int tc, const int32_t* lane_n,
     int32_t fx_count[][LE_MAX_LANES], int32_t fx_type[][LE_MAX_LANES][LE_FX_MAX],
     float fx_params[][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS],
-    int has_fx[][LE_MAX_LANES]) {
+    int32_t fx_enabled[][LE_MAX_LANES][LE_FX_MAX], int has_fx[][LE_MAX_LANES]) {
   for (int t = 0; t < tc; ++t) {
     for (int l = 0; l < lane_n[t]; ++l) {
       le_lane* ln = &e->tracks[t].lanes[l];
@@ -2951,12 +2957,28 @@ static inline void snapshot_track_fx(
       if (n < 0) n = 0;
       if (n > LE_FX_MAX) n = LE_FX_MAX;
       fx_count[t][l] = n;
+      const int32_t chain_on = load_i32(&ln->a_fx_chain_enabled);
       for (int s = 0; s < n; ++s) {
         const int32_t ty = load_i32(&ln->a_fx_type[s]);
         fx_type[t][l][s] = ty;
         if (ty != LE_FX_NONE) has_fx[t][l] = 1;
+        fx_enabled[t][l][s] = chain_on && load_i32(&ln->a_fx_enabled[s]);
         for (int p = 0; p < LE_FX_PARAMS; ++p) {
           fx_params[t][l][s][p] = load_f32(&ln->a_fx_param[s][p]);
+        }
+      }
+      /* A slot the chain will NOT process this buffer (chain skipped, beyond
+       * the active count, or LE_FX_NONE) cannot advance its enable ramp; if
+       * its effective bit is 0, settle it to bypass now so a processing gap
+       * never strands a ramp mid-fade — resumption then always re-enters
+       * through fx_apply_chain's clean settled-edge reset [B7]. Enabled
+       * slots keep their state (engaged effects have always persisted
+       * across gaps). Audio-thread write to audio-owned DSP state. */
+      for (int s = 0; s < LE_FX_MAX; ++s) {
+        const int unprocessed =
+            !has_fx[t][l] || s >= n || fx_type[t][l][s] == LE_FX_NONE;
+        if (unprocessed && !(chain_on && load_i32(&ln->a_fx_enabled[s]))) {
+          le_fx_enable_force_bypass(&ln->fx, s);
         }
       }
     }
@@ -2965,12 +2987,14 @@ static inline void snapshot_track_fx(
 
 /* Snapshots each hardware input's single live-monitor chain: the input-level
  * enable (gated by loopback exclusion) plus the chain's output mask / volume /
- * mute / effects — the monitor mirror of snapshot_track_fx, one chain per input. */
+ * mute / effects — the monitor mirror of snapshot_lane_fx, one chain per input,
+ * including the per-slot effective enable bits (D-EFFBITS). */
 static inline void snapshot_monitor_fx(
     le_engine* e, int ch_in, uint32_t excluded, int* mon_on, uint32_t* mon_out,
     float* mon_vol, int* mon_mut, int32_t* mon_fx_count,
     int32_t mon_fx_type[][LE_FX_MAX],
-    float mon_fx_params[][LE_FX_MAX][LE_FX_PARAMS], int* mon_has_fx) {
+    float mon_fx_params[][LE_FX_MAX][LE_FX_PARAMS],
+    int32_t mon_fx_enabled[][LE_FX_MAX], int* mon_has_fx) {
   for (int c = 0; c < ch_in && c < LE_MAX_INPUTS; ++c) {
     le_monitor_input* m = &e->monitors[c];
     mon_on[c] = load_i32(&m->a_enabled) && !(excluded & (1u << c));
@@ -2982,12 +3006,24 @@ static inline void snapshot_monitor_fx(
     if (n < 0) n = 0;
     if (n > LE_FX_MAX) n = LE_FX_MAX;
     mon_fx_count[c] = n;
+    const int32_t chain_on = load_i32(&m->a_fx_chain_enabled);
     for (int s = 0; s < n; ++s) {
       const int32_t ty = load_i32(&m->a_fx_type[s]);
       mon_fx_type[c][s] = ty;
       if (ty != LE_FX_NONE) mon_has_fx[c] = 1;
+      mon_fx_enabled[c][s] = chain_on && load_i32(&m->a_fx_enabled[s]);
       for (int p = 0; p < LE_FX_PARAMS; ++p) {
         mon_fx_params[c][s][p] = load_f32(&m->a_fx_param[s][p]);
+      }
+    }
+    /* Settle unprocessed disabled slots (see snapshot_lane_fx). The monitor
+     * chain additionally stops running while the input is off or muted
+     * (mix_monitors_frame), so those gaps are covered here too. */
+    for (int s = 0; s < LE_FX_MAX; ++s) {
+      const int unprocessed = !mon_on[c] || mon_mut[c] || !mon_has_fx[c] ||
+                              s >= n || mon_fx_type[c][s] == LE_FX_NONE;
+      if (unprocessed && !(chain_on && load_i32(&m->a_fx_enabled[s]))) {
+        le_fx_enable_force_bypass(&m->fx, s);
       }
     }
   }
@@ -3100,7 +3136,8 @@ static inline void mix_monitors_frame(
     int sr, int fx_cap, uint32_t out_enabled, const int* mon_on,
     const int* mon_mut, const int* mon_has_fx, const int32_t* mon_fx_count,
     int32_t mon_fx_type[][LE_FX_MAX],
-    float mon_fx_params[][LE_FX_MAX][LE_FX_PARAMS], const float* mon_vol,
+    float mon_fx_params[][LE_FX_MAX][LE_FX_PARAMS],
+    int32_t mon_fx_enabled[][LE_FX_MAX], const float* mon_vol,
     const uint32_t* mon_out) {
   if (in) {
     for (int c = 0; c < ch_in && c < LE_MAX_INPUTS; ++c) {
@@ -3115,7 +3152,7 @@ static inline void mix_monitors_frame(
       float mr = clean;
       if (mon_has_fx[c]) {
         fx_apply_chain(&e->monitors[c].fx, sr, fx_cap, &ml, &mr, mon_fx_count[c],
-                       mon_fx_type[c], mon_fx_params[c]);
+                       mon_fx_type[c], mon_fx_params[c], mon_fx_enabled[c]);
       }
       const float g = mon_vol[c];
       if (captured) perf_tap_monitor_frame(e, c, ml * g, mr * g);
@@ -3224,6 +3261,7 @@ static inline void mix_tracks_frame(
     int has_fx[][LE_MAX_LANES], int32_t fx_count[][LE_MAX_LANES],
     int32_t fx_type[][LE_MAX_LANES][LE_FX_MAX],
     float fx_params[][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS],
+    int32_t fx_enabled[][LE_MAX_LANES][LE_FX_MAX],
     float lane_sumsq[][LE_MAX_LANES], float lane_peak[][LE_MAX_LANES],
     int32_t* st, float* frame_trk_peak, uint64_t perf_frame_base) {
   /* Snapshot per-lane playback state once per frame. The track state can flip
@@ -3434,7 +3472,7 @@ static inline void mix_tracks_frame(
       le_lane* ln = &e->tracks[t].lanes[l];
       if (has_fx[t][l]) {
         fx_apply_chain(&ln->fx, sr, fx_cap, &wl, &wr, fx_count[t][l],
-                       fx_type[t][l], fx_params[t][l]);
+                       fx_type[t][l], fx_params[t][l], fx_enabled[t][l]);
       }
       if (audible) {
         le_fx_route(out, f, ch_out, out_mask[t][l] & out_enabled, wl, wr);
@@ -3557,13 +3595,16 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   int32_t lane_n[LE_MAX_TRACKS];
   for (int t = 0; t < tc; ++t) lane_n[t] = le_lanes_active(&e->tracks[t]);
 
-  /* Per-lane effect chains, snapshotted once per buffer (see snapshot_track_fx).
-   * has_fx gates the playback pass so lanes with no effects skip the chain. */
+  /* Per-lane effect chains, snapshotted once per buffer (see snapshot_lane_fx).
+   * has_fx gates the playback pass so lanes with no effects skip the chain;
+   * fx_enabled carries the per-slot effective enable bits (D-EFFBITS). */
   int32_t fx_count[LE_MAX_TRACKS][LE_MAX_LANES];
   int32_t fx_type[LE_MAX_TRACKS][LE_MAX_LANES][LE_FX_MAX];
   float fx_params[LE_MAX_TRACKS][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS];
+  int32_t fx_enabled[LE_MAX_TRACKS][LE_MAX_LANES][LE_FX_MAX];
   int has_fx[LE_MAX_TRACKS][LE_MAX_LANES];
-  snapshot_track_fx(e, tc, lane_n, fx_count, fx_type, fx_params, has_fx);
+  snapshot_lane_fx(e, tc, lane_n, fx_count, fx_type, fx_params, fx_enabled,
+                   has_fx);
 
   /* Per-input live monitor chain, snapshotted once per buffer (see
    * snapshot_monitor_fx). mon_on gates the whole input (loopback exclusion +
@@ -3575,9 +3616,11 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   int32_t mon_fx_count[LE_MAX_INPUTS];
   int32_t mon_fx_type[LE_MAX_INPUTS][LE_FX_MAX];
   float mon_fx_params[LE_MAX_INPUTS][LE_FX_MAX][LE_FX_PARAMS];
+  int32_t mon_fx_enabled[LE_MAX_INPUTS][LE_FX_MAX];
   int mon_has_fx[LE_MAX_INPUTS];
   snapshot_monitor_fx(e, ch_in, excluded, mon_on, mon_out, mon_vol, mon_mut,
-                      mon_fx_count, mon_fx_type, mon_fx_params, mon_has_fx);
+                      mon_fx_count, mon_fx_type, mon_fx_params, mon_fx_enabled,
+                      mon_has_fx);
 
   /* Structural output gate, read once per block (a mid-block toggle applies from
    * the next block — RT-safe, no mid-buffer artifact). Intersected into every
@@ -3608,13 +3651,14 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     /* Per-lane capture + additive playback mix (see mix_tracks_frame). */
     mix_tracks_frame(e, in, out, f, ch_in, ch_out, tc, sr, fx_cap, excluded,
                      out_enabled, overdub_fb, od_step, od_fade_frames, pos,
-                     lane_n, has_fx, fx_count, fx_type, fx_params, lane_sumsq,
-                     lane_peak, st, frame_trk_peak, perf_frame_base);
+                     lane_n, has_fx, fx_count, fx_type, fx_params, fx_enabled,
+                     lane_sumsq, lane_peak, st, frame_trk_peak,
+                     perf_frame_base);
 
     /* Per-input live monitoring (see mix_monitors_frame). */
     mix_monitors_frame(e, in, out, f, ch_in, ch_out, sr, fx_cap, out_enabled,
                        mon_on, mon_mut, mon_has_fx, mon_fx_count, mon_fx_type,
-                       mon_fx_params, mon_vol, mon_out);
+                       mon_fx_params, mon_fx_enabled, mon_vol, mon_out);
 
     /* Master bus (gain + limiter + output metering), then the perf tap, THEN
      * the click bus (Architecture §3: after the tap so captures/exports never

@@ -68,7 +68,13 @@ static int32_t le_max_fx_latency(le_engine* engine) {
       le_lane* ln = &tr->lanes[l];
       int32_t n = load_i32(&ln->a_fx_count);
       if (n > LE_FX_MAX) n = LE_FX_MAX;
+      /* A bypassed slot settles into a full skip (fx_apply_chain) and adds
+       * no real delay, so disabled slots must not keep the monitoring-lag
+       * warning alive. Granularity: the ~5 ms ramp is far below this
+       * render-rate poll's resolution. */
+      const int32_t chain_on = load_i32(&ln->a_fx_chain_enabled);
       for (int32_t s = 0; s < n; ++s) {
+        if (!(chain_on && load_i32(&ln->a_fx_enabled[s]))) continue;
         const int32_t lat =
             le_fx_added_latency(&ln->fx, s, load_i32(&ln->a_fx_type[s]));
         if (lat > max_lat) max_lat = lat;
@@ -79,7 +85,9 @@ static int32_t le_max_fx_latency(le_engine* engine) {
     le_monitor_input* m = &engine->monitors[c];
     int32_t n = load_i32(&m->a_fx_count);
     if (n > LE_FX_MAX) n = LE_FX_MAX;
+    const int32_t chain_on = load_i32(&m->a_fx_chain_enabled);
     for (int32_t s = 0; s < n; ++s) {
+      if (!(chain_on && load_i32(&m->a_fx_enabled[s]))) continue;
       const int32_t lat =
           le_fx_added_latency(&m->fx, s, load_i32(&m->a_fx_type[s]));
       if (lat > max_lat) max_lat = lat;
@@ -100,19 +108,29 @@ static uint64_t le_fx_fp_u32(uint64_t h, uint32_t v) {
 }
 
 /* Order-sensitive fingerprint of a published fx chain (a_fx_count active of the
- * a_fx_type / a_fx_param arrays). Built-ins fold in their type + LE_FX_PARAMS
- * float-bit params; a plugin entry (LE_FX_PLUGIN) folds in its type only. The
- * Dart repository computes the identical hash over its cache. */
+ * a_fx_type / a_fx_param arrays plus the two enable-flag levels). Fold order
+ * (D-FPEMPTY, pinned — the Dart mirror trackChainFingerprint folds the same
+ * positions): the chain-enabled bit first, but only for a NON-empty chain, so
+ * an empty chain still hashes to the FNV offset basis (chain-disabled empty ≡
+ * enabled empty ≡ dry — the documented empty-chain invariant); then per entry
+ * its type, its slot-enabled bit, and (built-ins only) its LE_FX_PARAMS
+ * float-bit params — a plugin entry (LE_FX_PLUGIN) folds type + enabled bit
+ * only. The Dart repository computes the identical hash over its cache. */
 static uint64_t le_fx_chain_fingerprint(
     _Atomic int32_t* a_count, _Atomic int32_t* a_type,
-    _Atomic uint32_t (*a_param)[LE_FX_PARAMS]) {
+    _Atomic uint32_t (*a_param)[LE_FX_PARAMS], _Atomic int32_t* a_enabled,
+    _Atomic int32_t* a_chain_enabled) {
   uint64_t h = 0xcbf29ce484222325ULL; /* FNV-1a 64-bit offset basis */
   int32_t n = load_i32(a_count);
   if (n < 0) n = 0;
   if (n > LE_FX_MAX) n = LE_FX_MAX;
+  if (n > 0) {
+    h = le_fx_fp_u32(h, load_i32(a_chain_enabled) ? 1u : 0u);
+  }
   for (int32_t i = 0; i < n; ++i) {
     const int32_t type = load_i32(&a_type[i]);
     h = le_fx_fp_u32(h, (uint32_t)type);
+    h = le_fx_fp_u32(h, load_i32(&a_enabled[i]) ? 1u : 0u);
     if (type == LE_FX_PLUGIN) continue; /* plugin params live in the host */
     for (int32_t p = 0; p < LE_FX_PARAMS; ++p) {
       h = le_fx_fp_u32(
@@ -129,13 +147,15 @@ uint64_t le_engine_lane_fx_fingerprint(le_engine* engine, int32_t channel,
     return 0;
   }
   le_lane* ln = &engine->tracks[channel].lanes[lane];
-  return le_fx_chain_fingerprint(&ln->a_fx_count, ln->a_fx_type, ln->a_fx_param);
+  return le_fx_chain_fingerprint(&ln->a_fx_count, ln->a_fx_type, ln->a_fx_param,
+                                 ln->a_fx_enabled, &ln->a_fx_chain_enabled);
 }
 
 uint64_t le_engine_monitor_fx_fingerprint(le_engine* engine, int32_t input) {
   if (engine == NULL || input < 0 || input >= LE_MAX_INPUTS) return 0;
   le_monitor_input* m = &engine->monitors[input];
-  return le_fx_chain_fingerprint(&m->a_fx_count, m->a_fx_type, m->a_fx_param);
+  return le_fx_chain_fingerprint(&m->a_fx_count, m->a_fx_type, m->a_fx_param,
+                                 m->a_fx_enabled, &m->a_fx_chain_enabled);
 }
 
 void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {

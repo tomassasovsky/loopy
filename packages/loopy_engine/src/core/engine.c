@@ -147,11 +147,19 @@ void le_lane_reset(le_lane* ln, int32_t input_channel) {
   store_f32(&ln->a_rms_bits, 0.0f);
   store_f32(&ln->a_peak_bits, 0.0f);
   store_i32(&ln->a_fx_count, 0);
+  store_i32(&ln->a_fx_chain_enabled, 1);
+  ln->fx_count_pushed = 0;
+  ln->fx.enable_clear_cooldown = 0;
   for (int s = 0; s < LE_FX_MAX; ++s) {
+    ln->fx_type_pushed[s] = LE_FX_NONE;
     store_i32(&ln->a_fx_type[s], LE_FX_NONE);
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       store_f32(&ln->a_fx_param[s][p], 0.0f);
     }
+    /* Enable flags default 1 with the crossfade runtime SETTLED at that
+     * target, so a fresh chain does not fade in on first use. */
+    store_i32(&ln->a_fx_enabled[s], 1);
+    le_fx_enable_seed_settled(&ln->fx, s);
     free(ln->fx.delay[s][0]);
     ln->fx.delay[s][0] = NULL;
     free(ln->fx.delay[s][1]);
@@ -177,11 +185,18 @@ static void le_monitor_input_reset(le_monitor_input* m) {
   store_f32(&m->a_vol_bits, 1.0f);
   store_i32(&m->a_muted, 0);
   store_i32(&m->a_fx_count, 0);
+  store_i32(&m->a_fx_chain_enabled, 1);
+  m->fx_count_pushed = 0;
+  m->fx.enable_clear_cooldown = 0;
   for (int s = 0; s < LE_FX_MAX; ++s) {
+    m->fx_type_pushed[s] = LE_FX_NONE;
     store_i32(&m->a_fx_type[s], LE_FX_NONE);
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       store_f32(&m->a_fx_param[s][p], 0.0f);
     }
+    /* Enable flags default 1, crossfade runtime settled (see le_lane_reset). */
+    store_i32(&m->a_fx_enabled[s], 1);
+    le_fx_enable_seed_settled(&m->fx, s);
     free(m->fx.delay[s][0]);
     m->fx.delay[s][0] = NULL;
     free(m->fx.delay[s][1]);
@@ -512,14 +527,17 @@ void le_engine_lane_fx_chain_for_test(le_engine* engine, int32_t channel,
   if (count > LE_FX_MAX) count = LE_FX_MAX;
   int32_t types[LE_FX_MAX];
   float params[LE_FX_MAX][LE_FX_PARAMS];
+  int32_t enabled[LE_FX_MAX];
+  const int32_t chain_on = load_i32(&ln->a_fx_chain_enabled);
   for (int s = 0; s < count; ++s) {
     types[s] = load_i32(&ln->a_fx_type[s]);
+    enabled[s] = chain_on && load_i32(&ln->a_fx_enabled[s]);
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       params[s][p] = load_f32(&ln->a_fx_param[s][p]);
     }
   }
   fx_apply_chain(&ln->fx, engine->sample_rate, engine->fx_delay_frames, l, r,
-                 count, types, params);
+                 count, types, params, enabled);
 }
 
 /* Loopback detection, device enumeration / id resolution, and backend selection
@@ -768,6 +786,32 @@ int32_t le_engine_stop(le_engine* engine) {
   engine->device_name[0] = '\0';
   atomic_store_explicit(&engine->a_device_present, 0, memory_order_release);
   atomic_store_explicit(&engine->a_running, 0, memory_order_release);
+  /* Settle every DISABLED fx slot's enable ramp at bypass now that the audio
+   * thread is gone: a disable landing just before the stop could otherwise
+   * strand its crossfade mid-fade, and a restart would resume a stale tail
+   * without the settled-edge reset [B7]. Enabled slots keep their DSP state
+   * across stop/start, as they always have. Safe: the device (and its
+   * callback) is stopped, so the control thread owns the fx state here. */
+  for (int t = 0; t < engine->track_count; ++t) {
+    for (int l = 0; l < LE_MAX_LANES; ++l) {
+      le_lane* ln = &engine->tracks[t].lanes[l];
+      const int32_t chain_on = load_i32(&ln->a_fx_chain_enabled);
+      for (int s = 0; s < LE_FX_MAX; ++s) {
+        if (!(chain_on && load_i32(&ln->a_fx_enabled[s]))) {
+          le_fx_enable_force_bypass(&ln->fx, s);
+        }
+      }
+    }
+  }
+  for (int c = 0; c < LE_MAX_INPUTS; ++c) {
+    le_monitor_input* m = &engine->monitors[c];
+    const int32_t chain_on = load_i32(&m->a_fx_chain_enabled);
+    for (int s = 0; s < LE_FX_MAX; ++s) {
+      if (!(chain_on && load_i32(&m->a_fx_enabled[s]))) {
+        le_fx_enable_force_bypass(&m->fx, s);
+      }
+    }
+  }
   /* Per-OS teardown on stop (not only destroy) so a forced quantum doesn't
    * outlive a running engine for other PipeWire clients. No-op off Linux. */
   le_platform_on_engine_teardown();
