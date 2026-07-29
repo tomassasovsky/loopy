@@ -42,16 +42,26 @@ class ControlCubit extends Cubit<ControlState> {
   /// through `PerformanceRecorderCubit`, since cubits never call cubits;
   /// that cubit observes this repository's own status stream, so it reflects
   /// a pedal-triggered arm/disarm too.
+  ///
+  /// [currentChains] resolves the live lane/monitor chains + master-limiter
+  /// state to stamp into the arm snapshot, read fresh at each arm — the same
+  /// narrow function dependency `PerformanceRecorderCubit` takes for the
+  /// toolbar path, so both arm gestures record the same rig. It is injected
+  /// rather than mapped here: the mapping lives in the session feature, and a
+  /// feature never imports another feature. Defaults to the empty snapshot
+  /// (what this call site passed before it was wired).
   ControlCubit({
     required LooperRepository looper,
     required PedalRepository pedal,
     required SettingsRepository settings,
     required PerformanceRepository performance,
     Duration keepAliveInterval = const Duration(seconds: 1),
+    PerformanceChains Function() currentChains = _noChains,
   }) : _looper = looper,
        _pedal = pedal,
        _settings = settings,
        _performance = performance,
+       _currentChains = currentChains,
        super(const ControlState()) {
     _looperSub = _looper.looperState.listen(_onLooperState);
     _eventsSub = _pedal.events.listen(_handleEvent);
@@ -70,10 +80,15 @@ class ControlCubit extends Cubit<ControlState> {
     }
   }
 
+  /// The default `currentChains`: an empty rig, which is what
+  /// [PerformanceRepository.arm] already assumes when given nothing.
+  static PerformanceChains _noChains() => const PerformanceChains();
+
   final LooperRepository _looper;
   final PedalRepository _pedal;
   final SettingsRepository _settings;
   final PerformanceRepository _performance;
+  final PerformanceChains Function() _currentChains;
 
   late final StreamSubscription<LooperState> _looperSub;
   late final StreamSubscription<PedalEvent> _eventsSub;
@@ -650,7 +665,7 @@ class ControlCubit extends Cubit<ControlState> {
     if (_performanceArmed) {
       unawaited(_performance.disarm());
     } else {
-      unawaited(_performance.arm());
+      unawaited(_performance.arm(chains: _currentChains()));
     }
   }
 

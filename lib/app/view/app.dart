@@ -14,6 +14,7 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/performance/performance.dart';
+import 'package:loopy/session/session_mapping.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/update/cubit/update_cubit.dart';
 import 'package:loopy/visualizer/visualizer.dart';
@@ -291,6 +292,12 @@ class App extends StatelessWidget {
                 pedal: pedalRepo,
                 settings: context.read<SettingsRepository>(),
                 performance: context.read<PerformanceRepository>(),
+                // The live rig a pedal-triggered arm snapshots, read fresh at
+                // each arm — same source the toolbar path below is wired to,
+                // so both gestures record identical chains.
+                currentChains: () => performanceChainsFromLooper(
+                  context.read<LooperRepository>(),
+                ),
               );
               unawaited(cubit.load()); // boot-default mode restore
               return cubit;
@@ -342,6 +349,13 @@ class App extends StatelessWidget {
                 // falls through to daw_export's own 120 BPM fallback.
                 currentTempoBpm: () =>
                     context.read<LooperRepository>().state.transport.tempoBpm,
+                // The live lane/monitor chains + limiter state to stamp into
+                // the arm snapshot, read fresh at each arm — without this the
+                // capture records an empty rig, so exported wet stems come out
+                // identical to the dry ones.
+                currentChains: () => performanceChainsFromLooper(
+                  context.read<LooperRepository>(),
+                ),
               );
               unawaited(cubit.load());
               return cubit;

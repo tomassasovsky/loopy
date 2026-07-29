@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:fake_async/fake_async.dart';
@@ -696,6 +697,55 @@ void main() {
           cubit.togglePerformanceRecord();
           await pumpEventQueue();
           expect(performance.armedDirectory, isNull);
+        },
+      );
+
+      test(
+        'the pedal arm stamps the provider chains into the snapshot',
+        () async {
+          // The pedal gesture must record the same rig the toolbar path does —
+          // before this was wired both armed with an empty chain set, so a
+          // capture documented no FX at all.
+          final wired = ControlCubit(
+            looper: looper,
+            pedal: pedal,
+            settings: settings,
+            performance: performance,
+            keepAliveInterval: Duration.zero,
+            currentChains: () => const PerformanceChains(
+              monitors: [
+                PerformanceMonitorState(
+                  input: 1,
+                  enabled: true,
+                  outputMask: 0x2,
+                  volume: 1,
+                  muted: false,
+                  effects: [],
+                ),
+              ],
+              limiterEnabled: true,
+              limiterCeiling: 0.8,
+            ),
+          );
+          addTearDown(wired.close);
+
+          wired.togglePerformanceRecord();
+
+          await pumpEventQueue();
+
+          final snapshot =
+              jsonDecode(
+                    File(
+                      '${performance.armedDirectory}/arm-snapshot.json',
+                    ).readAsStringSync(),
+                  )
+                  as Map<String, dynamic>;
+          expect(snapshot['limiterOn'], isTrue);
+          expect(snapshot['limiterCeiling'], 0.8);
+          expect(
+            (snapshot['monitors'] as List).single,
+            containsPair('input', 1),
+          );
         },
       );
 

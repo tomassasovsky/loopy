@@ -1,4 +1,5 @@
 import 'package:looper_repository/looper_repository.dart';
+import 'package:performance_repository/performance_repository.dart';
 import 'package:session_repository/session_repository.dart';
 
 /// Bloc-layer mapping between the session bundle (data) and the looper
@@ -34,6 +35,40 @@ SessionChains chainsFromLooper(LooperRepository looper) => SessionChains(
       ),
   ],
 );
+
+/// Gathers the same live lane + monitor chains into the models a
+/// performance-capture arm snapshot records, plus the master-limiter state the
+/// engine snapshot cannot read back. The rig — not settings — is the truth
+/// being captured, exactly as in [chainsFromLooper]; the manifest keeps the
+/// effects structured (canonical JSON `daw_export` reads directly) rather than
+/// encoded, so the chains cross the boundary as engine models.
+PerformanceChains performanceChainsFromLooper(LooperRepository looper) =>
+    PerformanceChains(
+      laneChains: [
+        for (final entry in looper.allLaneEffects().entries)
+          PerformanceLaneChain(
+            channel: entry.key.$1,
+            lane: entry.key.$2,
+            effects: trackEffectsToEngine(entry.value),
+          ),
+      ],
+      monitors: [
+        // Every CONFIGURED monitor, not just inputs carrying an FX chain —
+        // same rule as [chainsFromLooper]: a dry-but-enabled monitor is part of
+        // the rig the capture is documenting.
+        for (final monitor in looper.allMonitors().values)
+          PerformanceMonitorState(
+            input: monitor.input,
+            enabled: monitor.enabled,
+            outputMask: monitor.outputMask,
+            volume: monitor.volume,
+            muted: monitor.muted,
+            effects: trackEffectsToEngine(monitor.effects),
+          ),
+      ],
+      limiterEnabled: looper.limiterEnabled,
+      limiterCeiling: looper.limiterCeiling,
+    );
 
 /// Maps a decoded session [bundle] into the looper-domain [SessionRig] the
 /// looper repository applies, decoding the manifest's opaque chain strings back
