@@ -1361,8 +1361,15 @@ def build_mini_console():
     ncs, nsn = math.cos(math.radians(SLOPE_ANGLE)), math.sin(math.radians(SLOPE_ANGLE))
     for (bx, byy) in ANCHORS:
         by = (D - WALL_T - 6.8) if byy is None else byy
-        pillar = cq.Workplane("XY").box(10.0, 12.0, 60.0, centered=False)\
-            .translate((bx - 5.0, by - 6.0, T))
+        # the screw axis leans rearward going down -- the pillar must CONTAIN it
+        # for the full run (no open-air gap in the support channel): rear pillars
+        # extend back into the rear wall as buttresses, the front one deepens to
+        # swallow its own exit + head pocket
+        rear = by > 100.0
+        y0 = by - 6.0
+        y1 = (D - WALL_T + 0.1) if rear else (by + 9.0)
+        pillar = cq.Workplane("XY").box(10.0, y1 - y0, 60.0, centered=False)\
+            .translate((bx - 5.0, y0, T))
         # vertical drop of the boss bottom = LID_BOSS_H / cos(slope), +0.2 so the
         # WALLS stay the seating datum and the screws preload across the gap
         pillar = slope_cut(pillar, C0 - (LID_BOSS_H / ncs + 0.2))
