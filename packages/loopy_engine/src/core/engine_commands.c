@@ -1766,6 +1766,147 @@ int32_t le_engine_set_monitor_input_fx_chain_enabled(le_engine* engine,
   return LE_OK;
 }
 
+/* ---- Track-stage + Master insert chains (FX v3 part 1b) ----
+ * The bus twins of the lane/monitor setter families above, on the two
+ * le_fx_bus owners (le_track.bus / le_engine.master_fx): type/count via the
+ * ring (lockstep DSP reset on the audio thread), params + enable flags as
+ * direct atomic stores (work while stopped), le_fx_prepare_entry's
+ * control-thread allocation contract, and the same D-ENSEED pushed-shadow
+ * discipline. Deliberately NO le_plog_push_ctrl anywhere here [R3]:
+ * track/master chains are manifest-only per part 9's stems decision — the
+ * arm manifest carries them from part 3, nothing replays them. */
+
+int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel,
+                               int32_t index, int32_t type) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (type < LE_FX_NONE || type > LE_FX_REVERB) return LE_ERR_INVALID;
+  le_fx_bus* b = &engine->tracks[channel].bus;
+  int32_t changed = 0;
+  if (le_fx_prepare_entry(&b->fx, b->fx_type_pushed, b->a_fx_param, index,
+                          type, engine->fx_delay_frames, &changed) != LE_OK) {
+    return LE_ERR_INVALID;
+  }
+  const int32_t rc =
+      le_push_cmd(engine, (le_command){.code = LE_CMD_SET_TRACK_FX,
+                                       .fx = {channel, 0, index, type}});
+  if (rc == LE_OK) {
+    b->fx_type_pushed[index] = type;
+    if (changed) store_i32(&b->a_fx_enabled[index], 1);
+  }
+  return rc;
+}
+
+int32_t le_engine_set_track_fx_count(le_engine* engine, int32_t channel,
+                                     int32_t count) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (count < 0) count = 0;
+  if (count > LE_FX_MAX) count = LE_FX_MAX;
+  le_fx_bus* b = &engine->tracks[channel].bus;
+  const int32_t rc =
+      le_push_cmd(engine, (le_command){.code = LE_CMD_SET_TRACK_FX_COUNT,
+                                       .fxcount = {channel, 0, count}});
+  if (rc == LE_OK) {
+    le_fx_seed_entering_slots(&b->fx_count_pushed, b->a_fx_enabled, count);
+  }
+  return rc;
+}
+
+int32_t le_engine_set_track_fx_param(le_engine* engine, int32_t channel,
+                                     int32_t index, int32_t param,
+                                     float value) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (param < 0 || param >= LE_FX_PARAMS) return LE_ERR_INVALID;
+  if (value < 0.0f) value = 0.0f;
+  if (value > 1.0f) value = 1.0f;
+  store_f32(&engine->tracks[channel].bus.a_fx_param[index][param], value);
+  return LE_OK;
+}
+
+int32_t le_engine_set_track_fx_enabled(le_engine* engine, int32_t channel,
+                                       int32_t index, int32_t enabled) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  store_i32(&engine->tracks[channel].bus.a_fx_enabled[index],
+            enabled ? 1 : 0);
+  return LE_OK;
+}
+
+int32_t le_engine_set_track_fx_chain_enabled(le_engine* engine,
+                                             int32_t channel,
+                                             int32_t enabled) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  store_i32(&engine->tracks[channel].bus.a_fx_chain_enabled, enabled ? 1 : 0);
+  return LE_OK;
+}
+
+int32_t le_engine_set_master_fx(le_engine* engine, int32_t index,
+                                int32_t type) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (type < LE_FX_NONE || type > LE_FX_REVERB) return LE_ERR_INVALID;
+  le_fx_bus* b = &engine->master_fx;
+  int32_t changed = 0;
+  if (le_fx_prepare_entry(&b->fx, b->fx_type_pushed, b->a_fx_param, index,
+                          type, engine->fx_delay_frames, &changed) != LE_OK) {
+    return LE_ERR_INVALID;
+  }
+  const int32_t rc =
+      le_push_cmd(engine, (le_command){.code = LE_CMD_SET_MASTER_FX,
+                                       .fx = {0, 0, index, type}});
+  if (rc == LE_OK) {
+    b->fx_type_pushed[index] = type;
+    if (changed) store_i32(&b->a_fx_enabled[index], 1);
+  }
+  return rc;
+}
+
+int32_t le_engine_set_master_fx_count(le_engine* engine, int32_t count) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (count < 0) count = 0;
+  if (count > LE_FX_MAX) count = LE_FX_MAX;
+  le_fx_bus* b = &engine->master_fx;
+  const int32_t rc =
+      le_push_cmd(engine, (le_command){.code = LE_CMD_SET_MASTER_FX_COUNT,
+                                       .fxcount = {0, 0, count}});
+  if (rc == LE_OK) {
+    le_fx_seed_entering_slots(&b->fx_count_pushed, b->a_fx_enabled, count);
+  }
+  return rc;
+}
+
+int32_t le_engine_set_master_fx_param(le_engine* engine, int32_t index,
+                                      int32_t param, float value) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (param < 0 || param >= LE_FX_PARAMS) return LE_ERR_INVALID;
+  if (value < 0.0f) value = 0.0f;
+  if (value > 1.0f) value = 1.0f;
+  store_f32(&engine->master_fx.a_fx_param[index][param], value);
+  return LE_OK;
+}
+
+int32_t le_engine_set_master_fx_enabled(le_engine* engine, int32_t index,
+                                        int32_t enabled) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  store_i32(&engine->master_fx.a_fx_enabled[index], enabled ? 1 : 0);
+  return LE_OK;
+}
+
+int32_t le_engine_set_master_fx_chain_enabled(le_engine* engine,
+                                              int32_t enabled) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  store_i32(&engine->master_fx.a_fx_chain_enabled, enabled ? 1 : 0);
+  return LE_OK;
+}
+
 /* ---- structural output gate ---- */
 
 int32_t le_engine_set_output_enabled(le_engine* engine, int32_t output,

@@ -332,6 +332,45 @@ typedef struct le_monitor_input {
   le_fx_state fx;
 } le_monitor_input;
 
+/* A bus-stage effect chain owner (FX v3 part 1b): the exact chain block shape
+ * of le_lane / le_monitor_input — published config atomics, the two-level
+ * enable pair, the control-thread pushed shadows, and the chain's own DSP
+ * state — with no routing/volume/mute of its own (the owner's context supplies
+ * those). Two instances exist:
+ *
+ * - le_track.bus — the TRACK-stage chain (D-TRACKROUTE): when non-empty, the
+ *   track's audible lanes sum into one stereo pair, this chain runs ONCE per
+ *   frame on it, and the wet result routes via the union of those lanes'
+ *   enabled output masks. When EMPTY (a_fx_count == 0, the default and the
+ *   migration state) the per-lane routing path is bit-identical to the
+ *   pre-part-1b engine — the accumulator never engages. Topology keys off
+ *   EMPTINESS, not enabled: a non-empty but chain-disabled chain keeps the
+ *   bus topology (part 1a's bypass makes it dry), so a stomp toggles DSP,
+ *   never routing.
+ *
+ * - le_engine.master_fx — the engine-level Master insert (D-MASTER): runs on
+ *   the summed track mix between mix_tracks_frame and mix_monitors_frame, so
+ *   live monitor signals — summed after it — stay uncolored, and master
+ *   gain/limiter (master_bus_frame, unchanged) still applies to both.
+ *   D-MASTERCH: FX kernels are strict stereo, so for ch_out != 2 the chain
+ *   processes the FIRST ENABLED output pair and passes other channels through
+ *   bit-exact dry; ch_out == 1 processes mono as l == r.
+ *
+ * Both default empty with every enable flag 1, so old sessions and fresh
+ * engines behave identically (dry). Enable flips are direct atomic stores
+ * (work while stopped), exactly like the lane/monitor owners'. */
+typedef struct le_fx_bus {
+  _Atomic int32_t a_fx_count;
+  _Atomic int32_t a_fx_type[LE_FX_MAX];
+  _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
+  _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
+  _Atomic int32_t a_fx_chain_enabled;      /* whole-chain enable (default 1) */
+  /* Control-thread-owned pushed-count/type shadows (see le_lane). */
+  int32_t fx_count_pushed;
+  int32_t fx_type_pushed[LE_FX_MAX];
+  le_fx_state fx;
+} le_fx_bus;
+
 /* What one history entry represents. */
 typedef enum {
   LE_HIST_LAYER = 0, /* a retired overdub pass, named by its pool slot */
@@ -387,6 +426,13 @@ typedef struct le_track {
   int32_t lane_count; /* active lanes (1..LE_MAX_LANES); control-thread plain
                        * int, like track_count — not an atomic, not a ring
                        * command (set before the first record into a new lane). */
+
+  /* Track-stage chain (FX v3 part 1b): the chain all this track's audible
+   * lanes sum into when it is non-empty — see le_fx_bus's doc for the full
+   * D-TRACKROUTE semantics. Not the per-LANE record-route chains above
+   * (lanes[l].a_fx_*): those run per lane first; this runs once on their
+   * summed stereo bus. */
+  le_fx_bus bus;
 
   /* Control-thread-owned undo/redo stacks, shared by all lanes (the same slot
    * index names the snapshot in every lane). Layers arrive on the undo stack via
@@ -679,6 +725,13 @@ struct le_engine {
    * sounds iff its a_enabled is set (a loopback measurement clears them all to
    * break the cable feedback loop; a fresh start restores defaults). */
   le_monitor_input monitors[LE_MAX_INPUTS];
+
+  /* Master insert chain (FX v3 part 1b): runs on the summed track mix between
+   * mix_tracks_frame and mix_monitors_frame — see le_fx_bus's doc for the
+   * full D-MASTER / D-MASTERCH semantics. Live monitors (summed after it)
+   * stay uncolored; master gain/limiter (master_bus_frame) is unchanged and
+   * still applies to both. */
+  le_fx_bus master_fx;
 
   /* Looper transport (master). */
   _Atomic int32_t a_master_len;

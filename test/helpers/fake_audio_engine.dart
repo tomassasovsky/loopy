@@ -472,6 +472,59 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  // ---- Track-stage + Master insert chains (FX v3 part 1b): no repository
+  // consumes these yet (part 3 wires the domain model), so plain ok stubs. ----
+  @override
+  EngineResult setTrackFx({
+    required int channel,
+    required int index,
+    required TrackEffectType type,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setTrackFxCount({
+    required int channel,
+    required int count,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setTrackFxParam({
+    required int channel,
+    required int index,
+    required int param,
+    required double value,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setTrackFxEnabled({
+    required int channel,
+    required int index,
+    required bool enabled,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setTrackFxChainEnabled({
+    required int channel,
+    required bool enabled,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setMasterFx({
+    required int index,
+    required TrackEffectType type,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setMasterFxCount({required int count}) => EngineResult.ok;
+  @override
+  EngineResult setMasterFxParam({
+    required int index,
+    required int param,
+    required double value,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setMasterFxEnabled({
+    required int index,
+    required bool enabled,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setMasterFxChainEnabled({required bool enabled}) =>
+      EngineResult.ok;
+
   /// Per-input enabled flag passed to [setMonitorInputEnabled].
   final Map<int, bool> monitorInputEnabled = {};
 

@@ -739,6 +739,99 @@ class MockAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  // ---- Track-stage (per-track stereo bus) chain (FX v3 part 1b) ----
+  // Mirrors the lane family: ring-backed setters keep the running gate,
+  // enable flips record + succeed while stopped (direct-store contract).
+
+  @override
+  EngineResult setTrackFx({
+    required int channel,
+    required int index,
+    required TrackEffectType type,
+  }) => _requireRunning();
+
+  @override
+  EngineResult setTrackFxCount({
+    required int channel,
+    required int count,
+  }) => _requireRunning();
+
+  @override
+  EngineResult setTrackFxParam({
+    required int channel,
+    required int index,
+    required int param,
+    required double value,
+  }) => _requireRunning();
+
+  /// Recorded [setTrackFxEnabled] calls, in order, for test assertions.
+  final trackFxEnabledCalls = <({int channel, int index, bool enabled})>[];
+
+  /// Recorded [setTrackFxChainEnabled] calls, in order, for test assertions.
+  final trackFxChainEnabledCalls = <({int channel, bool enabled})>[];
+
+  @override
+  EngineResult setTrackFxEnabled({
+    required int channel,
+    required int index,
+    required bool enabled,
+  }) {
+    if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
+    if (index < 0 || index >= LE_FX_MAX) return EngineResult.invalid;
+    trackFxEnabledCalls.add(
+      (channel: channel, index: index, enabled: enabled),
+    );
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackFxChainEnabled({
+    required int channel,
+    required bool enabled,
+  }) {
+    if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
+    trackFxChainEnabledCalls.add((channel: channel, enabled: enabled));
+    return EngineResult.ok;
+  }
+
+  // ---- Master insert chain (FX v3 part 1b): same split as the track
+  // family above. ----
+
+  @override
+  EngineResult setMasterFx({
+    required int index,
+    required TrackEffectType type,
+  }) => _requireRunning();
+
+  @override
+  EngineResult setMasterFxCount({required int count}) => _requireRunning();
+
+  @override
+  EngineResult setMasterFxParam({
+    required int index,
+    required int param,
+    required double value,
+  }) => _requireRunning();
+
+  /// Recorded [setMasterFxEnabled] calls, in order, for test assertions.
+  final masterFxEnabledCalls = <({int index, bool enabled})>[];
+
+  /// Recorded [setMasterFxChainEnabled] calls, in order, for test assertions.
+  final masterFxChainEnabledCalls = <bool>[];
+
+  @override
+  EngineResult setMasterFxEnabled({required int index, required bool enabled}) {
+    if (index < 0 || index >= LE_FX_MAX) return EngineResult.invalid;
+    masterFxEnabledCalls.add((index: index, enabled: enabled));
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setMasterFxChainEnabled({required bool enabled}) {
+    masterFxChainEnabledCalls.add(enabled);
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setMonitorInputEnabled({
     required int input,

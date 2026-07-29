@@ -225,6 +225,95 @@ void main() {
       });
     });
 
+    group('Track-stage + Master insert chains (FX v3 part 1b)', () {
+      test('ring-backed setters require the engine to be running', () {
+        expect(
+          engine.setTrackFx(channel: 0, index: 0, type: TrackEffectType.drive),
+          EngineResult.notRunning,
+        );
+        expect(
+          engine.setTrackFxCount(channel: 0, count: 1),
+          EngineResult.notRunning,
+        );
+        expect(
+          engine.setTrackFxParam(channel: 0, index: 0, param: 0, value: 0.5),
+          EngineResult.notRunning,
+        );
+        expect(
+          engine.setMasterFx(index: 0, type: TrackEffectType.reverb),
+          EngineResult.notRunning,
+        );
+        expect(engine.setMasterFxCount(count: 1), EngineResult.notRunning);
+        expect(
+          engine.setMasterFxParam(index: 0, param: 0, value: 0.5),
+          EngineResult.notRunning,
+        );
+
+        engine.start(engine.defaultConfig);
+        expect(
+          engine.setTrackFx(channel: 0, index: 0, type: TrackEffectType.drive),
+          EngineResult.ok,
+        );
+        expect(engine.setTrackFxCount(channel: 0, count: 1), EngineResult.ok);
+        expect(
+          engine.setMasterFx(index: 0, type: TrackEffectType.reverb),
+          EngineResult.ok,
+        );
+        expect(engine.setMasterFxCount(count: 1), EngineResult.ok);
+      });
+
+      test('records enable calls, working while stopped', () {
+        // Direct-store contract: no start() needed, calls are recorded.
+        expect(
+          engine.setTrackFxEnabled(channel: 1, index: 2, enabled: false),
+          EngineResult.ok,
+        );
+        expect(
+          engine.setTrackFxChainEnabled(channel: 1, enabled: false),
+          EngineResult.ok,
+        );
+        expect(
+          engine.setMasterFxEnabled(index: 3, enabled: false),
+          EngineResult.ok,
+        );
+        expect(
+          engine.setMasterFxChainEnabled(enabled: true),
+          EngineResult.ok,
+        );
+
+        expect(engine.trackFxEnabledCalls, [
+          (channel: 1, index: 2, enabled: false),
+        ]);
+        expect(engine.trackFxChainEnabledCalls, [
+          (channel: 1, enabled: false),
+        ]);
+        expect(engine.masterFxEnabledCalls, [(index: 3, enabled: false)]);
+        expect(engine.masterFxChainEnabledCalls, [true]);
+      });
+
+      test('rejects out-of-range enable arguments, recording nothing', () {
+        expect(
+          engine.setTrackFxEnabled(channel: -1, index: 0, enabled: false),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setTrackFxEnabled(channel: 0, index: 99, enabled: false),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setTrackFxChainEnabled(channel: 99, enabled: false),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setMasterFxEnabled(index: -1, enabled: false),
+          EngineResult.invalid,
+        );
+        expect(engine.trackFxEnabledCalls, isEmpty);
+        expect(engine.trackFxChainEnabledCalls, isEmpty);
+        expect(engine.masterFxEnabledCalls, isEmpty);
+      });
+    });
+
     group('performance recording capture', () {
       test('requires the engine to be running', () {
         expect(engine.perfArm('test-capture'), EngineResult.notRunning);

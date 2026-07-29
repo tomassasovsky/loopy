@@ -116,6 +116,16 @@ bytes are that command's union, unchanged, so a reader already familiar with
 | `LE_CMD_UNDO_TO_EMPTY`                | 39    | —           | No*     | Logged as `LE_PLOG_UNDO` (the to-EMPTY edge case) |
 | `LE_CMD_REDO_FROM_EMPTY`              | 40    | —           | No*     | Logged as `LE_PLOG_REDO` (the from-EMPTY edge case) |
 | `LE_CMD_PERF_ARM` / `LE_CMD_PERF_DISARM` | 41/42 | —        | No      | Meta — arming/disarming the session isn't part of what it captures |
+| `LE_CMD_SET_TRACK_FX`                 | 49    | fx          | No      | No replay — manifest-only; stems stay per-stage dry-of-downstream (part 9), arm manifest carries track/master chains (part 3) |
+| `LE_CMD_SET_TRACK_FX_COUNT`           | 50    | fxcount     | No      | ” (same manifest-only verdict) |
+| `LE_CMD_SET_MASTER_FX`                | 51    | fx          | No      | ” |
+| `LE_CMD_SET_MASTER_FX_COUNT`          | 52    | fxcount     | No      | ” |
+
+The track/master FX **param and enabled setters** (direct-atomic, no ring
+command) push nothing either — deliberately NOT mirroring the lane family's
+306/310/311 control-side events: the whole track/master chain state is
+manifest-only per the same part-9 stems decision, so `perf_render` replays
+nothing from this family.
 
 \* Logged under a different, semantically unified code — see below.
 

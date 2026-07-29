@@ -211,6 +211,40 @@ static void le_monitor_input_reset(le_monitor_input* m) {
   }
 }
 
+/* Resets a bus-stage chain owner (a track's Track-stage chain or the engine's
+ * Master insert, le_fx_bus) to defaults: empty chain, every enable flag 1 —
+ * clearing its effect DSP state and releasing its delay lines, exactly the
+ * chain block of le_monitor_input_reset. An empty chain is the dry path, so a
+ * fresh engine and an old session behave bit-identically. Used at configure. */
+static void le_fx_bus_reset(le_fx_bus* b) {
+  store_i32(&b->a_fx_count, 0);
+  store_i32(&b->a_fx_chain_enabled, 1);
+  b->fx_count_pushed = 0;
+  b->fx.enable_clear_cooldown = 0;
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    b->fx_type_pushed[s] = LE_FX_NONE;
+    store_i32(&b->a_fx_type[s], LE_FX_NONE);
+    for (int p = 0; p < LE_FX_PARAMS; ++p) {
+      store_f32(&b->a_fx_param[s][p], 0.0f);
+    }
+    /* Enable flags default 1, crossfade runtime settled (see le_lane_reset). */
+    store_i32(&b->a_fx_enabled[s], 1);
+    le_fx_enable_seed_settled(&b->fx, s);
+    free(b->fx.delay[s][0]);
+    b->fx.delay[s][0] = NULL;
+    free(b->fx.delay[s][1]);
+    b->fx.delay[s][1] = NULL;
+    le_fx_free_octaver(&b->fx, s);
+    le_fx_entry_reset(&b->fx, s);
+    /* No plugin-slot loading targets the bus owners yet (built-in effects
+     * only through the track/master setters), but destroy defensively like
+     * the lane/monitor resets so a future seam cannot leak here. */
+    le_plugin_slot_destroy(
+        atomic_load_explicit(&b->fx.plugin[s], memory_order_relaxed));
+    atomic_store_explicit(&b->fx.plugin[s], NULL, memory_order_relaxed);
+  }
+}
+
 int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
                             int32_t input_channels, int32_t output_channels,
                             int32_t max_loop_frames) {
@@ -322,6 +356,10 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
        * stereo behaviour. */
       le_lane_reset(ln, l);
     }
+    /* Track-stage chain (part 1b): defaults empty/enabled alongside the
+     * lanes, so a reconfigured engine is dry at every stage. */
+    le_fx_bus_reset(&tr->bus);
+
     /* Only lane 0 is active by default; allocate its live buffer now at the
      * full recording cap (further lanes' buffers and all undo snapshots
      * allocate lazily, undo layers at the loop-length quantum). */
@@ -461,6 +499,10 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   for (int c = 0; c < LE_MAX_INPUTS; ++c) {
     le_monitor_input_reset(&engine->monitors[c]);
   }
+
+  /* Master insert chain (part 1b): defaults empty/enabled, same rationale as
+   * the per-track bus resets above. */
+  le_fx_bus_reset(&engine->master_fx);
 
   store_i32(&engine->a_master_len, 0);
   store_i32(&engine->a_master_pos, 0);
@@ -662,6 +704,14 @@ void le_engine_destroy(le_engine* engine) {
             atomic_load_explicit(&ln->fx.plugin[s], memory_order_relaxed));
       }
     }
+    /* Track-stage chain (part 1b): same per-slot teardown as the lanes. */
+    for (int s = 0; s < LE_FX_MAX; ++s) {
+      free(engine->tracks[t].bus.fx.delay[s][0]);
+      free(engine->tracks[t].bus.fx.delay[s][1]);
+      le_fx_free_octaver(&engine->tracks[t].bus.fx, s);
+      le_plugin_slot_destroy(atomic_load_explicit(
+          &engine->tracks[t].bus.fx.plugin[s], memory_order_relaxed));
+    }
   }
   for (int c = 0; c < LE_MAX_INPUTS; ++c) {
     for (int s = 0; s < LE_FX_MAX; ++s) {
@@ -671,6 +721,14 @@ void le_engine_destroy(le_engine* engine) {
       le_plugin_slot_destroy(atomic_load_explicit(
           &engine->monitors[c].fx.plugin[s], memory_order_relaxed));
     }
+  }
+  /* Master insert chain (part 1b). */
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    free(engine->master_fx.fx.delay[s][0]);
+    free(engine->master_fx.fx.delay[s][1]);
+    le_fx_free_octaver(&engine->master_fx.fx, s);
+    le_plugin_slot_destroy(atomic_load_explicit(
+        &engine->master_fx.fx.plugin[s], memory_order_relaxed));
   }
   free(engine->lat_buf);
   /* The device is already closed (no audio thread), so the performance-capture
@@ -773,6 +831,18 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
   return LE_OK;
 }
 
+/* Settles a bus-stage chain owner's DISABLED slots' enable ramps at bypass —
+ * the le_fx_bus twin of the per-lane/per-monitor settle loops in
+ * le_engine_stop below. Control-thread only, with the device stopped. */
+static void le_fx_bus_settle_bypass(le_fx_bus* b) {
+  const int32_t chain_on = load_i32(&b->a_fx_chain_enabled);
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    if (!(chain_on && load_i32(&b->a_fx_enabled[s]))) {
+      le_fx_enable_force_bypass(&b->fx, s);
+    }
+  }
+}
+
 int32_t le_engine_stop(le_engine* engine) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (!atomic_load_explicit(&engine->a_running, memory_order_acquire)) {
@@ -812,6 +882,12 @@ int32_t le_engine_stop(le_engine* engine) {
       }
     }
   }
+  /* Track-stage + Master chains (part 1b): same settle as the lane/monitor
+   * owners above. */
+  for (int t = 0; t < engine->track_count; ++t) {
+    le_fx_bus_settle_bypass(&engine->tracks[t].bus);
+  }
+  le_fx_bus_settle_bypass(&engine->master_fx);
   /* Per-OS teardown on stop (not only destroy) so a forced quantum doesn't
    * outlive a running engine for other PipeWire clients. No-op off Linux. */
   le_platform_on_engine_teardown();
