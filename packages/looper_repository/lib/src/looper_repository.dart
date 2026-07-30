@@ -2499,6 +2499,63 @@ class LooperRepository {
     return result;
   }
 
+  /// Sets built-in parameter [param] of entry [index] of track [channel]'s
+  /// Track-stage chain — the bus twin of [setLaneEffectParam].
+  ///
+  /// Granular ON PURPOSE: the whole-chain [setTrackEffects] path re-pushes
+  /// every slot's TYPE, and `LE_CMD_SET_TRACK_FX` unconditionally resets that
+  /// slot's DSP state on the audio thread. Routing a knob through it would
+  /// clear every reverb tail and delay line on the bus at pointer-move rate.
+  /// This writes the cached entry and pokes the one parameter, which is a
+  /// direct atomic store with no ring command and no reset.
+  EngineResult setTrackEffectParam({
+    required int channel,
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    final effects = _trackEffects[channel];
+    if (effects == null || index < 0 || index >= effects.length) {
+      return EngineResult.invalid;
+    }
+    final fx = effects[index];
+    if (fx is! BuiltInEffect) return EngineResult.invalid;
+    if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
+    final params = List<double>.of(fx.params)..[param] = value;
+    // A fresh list instance, not an in-place edit — see [setLaneEffectParam].
+    _trackEffects[channel] = List<TrackEffect>.of(effects)
+      ..[index] = fx.copyWith(params: params);
+    _reproject();
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setTrackFxParam(
+      channel: channel,
+      index: index,
+      param: param,
+      value: value,
+    );
+  }
+
+  /// Sets built-in parameter [param] of Master insert entry [index] (see
+  /// [setTrackEffectParam] for why this is granular).
+  EngineResult setMasterEffectParam({
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    if (index < 0 || index >= _masterEffects.length) {
+      return EngineResult.invalid;
+    }
+    final fx = _masterEffects[index];
+    if (fx is! BuiltInEffect) return EngineResult.invalid;
+    if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
+    final params = List<double>.of(fx.params)..[param] = value;
+    _masterEffects = List<TrackEffect>.of(_masterEffects)
+      ..[index] = fx.copyWith(params: params);
+    _reproject();
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setMasterFxParam(index: index, param: param, value: value);
+  }
+
   /// Pushes the remembered Master insert chain to the engine (see
   /// [_applyTrackEffects]).
   EngineResult _applyMasterEffects() {

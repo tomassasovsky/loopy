@@ -129,6 +129,11 @@ class _PaneShell extends StatelessWidget {
 
 /// Wraps a row so the whole row dims when a trace is active and it is not lit;
 /// the dimmed row stays focusable + in the semantics tree (visual only).
+///
+/// This nests OVER a row whose chips may carry their own disabled dim, so it
+/// deliberately uses a shallower factor than [SurfaceTheme.disabledOpacity]:
+/// the two multiply, and a powered-off chip inside an untraced row has to stay
+/// above the contrast floor.
 class _TraceDim extends StatelessWidget {
   const _TraceDim({
     required this.trace,
@@ -144,7 +149,7 @@ class _TraceDim extends StatelessWidget {
   Widget build(BuildContext context) {
     final dim = trace.active && !trace.lit(tags);
     return AnimatedOpacity(
-      opacity: dim ? 0.28 : 1,
+      opacity: dim ? context.surface.traceDimOpacity : 1,
       duration: Durations.short3,
       child: child,
     );
@@ -327,7 +332,10 @@ class _TracksPane extends _Pane {
       final controls = _LaneControls(
         track: g.track,
         canAdd: laneCount < kMaxLanes,
-        canRemove: laneCount > 1,
+        // Lanes are a stack, so removal always drops the LAST one — and the
+        // drill-in may be hiding it. Withhold the action when that lane holds
+        // audio rather than let one tap destroy a take the user cannot see.
+        canRemove: laneCount > 1 && !g.takes.last.lane.hasContent,
         onAddLane: onAddLane,
         onRemoveLane: onRemoveLane,
       );
@@ -620,22 +628,27 @@ class _AllLanesToggle extends StatelessWidget {
         : l10n.signalShowAllLanes;
     return Align(
       alignment: Alignment.centerLeft,
-      child: Semantics(
-        container: true,
-        button: true,
-        expanded: expanded,
-        child: TextButton.icon(
-          key: Key('signalAllLanes_$track'),
-          onPressed: onToggle,
-          icon: Icon(
-            expanded ? Icons.expand_less : Icons.expand_more,
-            size: 16,
-          ),
-          label: Text(label, style: signalLabel(color: surface.textSecondary)),
-          style: TextButton.styleFrom(
-            foregroundColor: surface.textSecondary,
-            visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+      // Merged, not wrapped: a boundary Semantics here would leave the
+      // focusable button announcing its label without the expanded state.
+      child: MergeSemantics(
+        child: Semantics(
+          expanded: expanded,
+          child: TextButton.icon(
+            key: Key('signalAllLanes_$track'),
+            onPressed: onToggle,
+            icon: Icon(
+              expanded ? Icons.expand_less : Icons.expand_more,
+              size: 16,
+            ),
+            label: Text(
+              label,
+              style: signalLabel(color: surface.textSecondary),
+            ),
+            style: TextButton.styleFrom(
+              foregroundColor: surface.textSecondary,
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
           ),
         ),
       ),

@@ -4949,6 +4949,80 @@ void main() {
     });
   });
 
+  group('bus-stage granular params', () {
+    test('a track param write pokes the one param, not the whole chain', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: [
+            BuiltInEffect(type: TrackEffectType.reverb),
+            BuiltInEffect(type: TrackEffectType.delay),
+          ],
+        );
+      addTearDown(repo.dispose);
+      engine.calls.clear();
+
+      expect(
+        repo.setTrackEffectParam(
+          channel: 0,
+          index: 1,
+          param: 0,
+          value: 0.75,
+        ),
+        EngineResult.ok,
+      );
+
+      // Re-pushing the chain would re-send every slot's TYPE, and the engine
+      // resets a slot's DSP state on every type push — the audible cost this
+      // setter exists to avoid.
+      expect(engine.calls, contains('setTrackFxParam'));
+      expect(engine.calls, isNot(contains('setTrackFx')));
+      expect(
+        (repo.trackEffects(0)[1] as BuiltInEffect).params[0],
+        0.75,
+      );
+      // The untouched sibling keeps its params.
+      expect(
+        (repo.trackEffects(0)[0] as BuiltInEffect).params,
+        BuiltInEffect(type: TrackEffectType.reverb).params,
+      );
+    });
+
+    test('a master param write behaves the same', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMasterEffects(
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        );
+      addTearDown(repo.dispose);
+      engine.calls.clear();
+
+      expect(
+        repo.setMasterEffectParam(index: 0, param: 0, value: 0.4),
+        EngineResult.ok,
+      );
+
+      expect(engine.calls, contains('setMasterFxParam'));
+      expect(engine.calls, isNot(contains('setMasterFx')));
+      expect((repo.masterEffects.single as BuiltInEffect).params[0], 0.4);
+    });
+
+    test('an out-of-range bus param write is rejected', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      expect(
+        repo.setTrackEffectParam(channel: 0, index: 0, param: 0, value: 1),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setMasterEffectParam(index: 4, param: 0, value: 1),
+        EngineResult.invalid,
+      );
+    });
+  });
+
   group('inheritance rules (R13/R18/A7/A8)', () {
     EngineSnapshot emptyTrackSnapshot() => const EngineSnapshot(
       isRunning: true,
@@ -5002,24 +5076,26 @@ void main() {
       );
     });
 
-    test('re-sync restores the chain flag of an intentionally silenced take',
-        () {
-      engine.nextSnapshot = emptyTrackSnapshot();
-      final repo = buildRepo()
-        ..startEngine(const EngineConfig())
-        ..setMonitorEffects(
-          input: 0,
-          effects: [BuiltInEffect(type: TrackEffectType.delay)],
-        )
-        ..record()
-        ..setLaneChainEnabled(channel: 0, lane: 0, enabled: false);
-      addTearDown(repo.dispose);
+    test(
+      're-sync restores the chain flag of an intentionally silenced take',
+      () {
+        engine.nextSnapshot = emptyTrackSnapshot();
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setMonitorEffects(
+            input: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.delay)],
+          )
+          ..record()
+          ..setLaneChainEnabled(channel: 0, lane: 0, enabled: false);
+        addTearDown(repo.dispose);
 
-      repo.resyncLaneChainFromInput(channel: 0, lane: 0);
+        repo.resyncLaneChainFromInput(channel: 0, lane: 0);
 
-      // The copy is by value, and the source chain was engaged.
-      expect(repo.laneChainEnabled(0, 0), isTrue);
-    });
+        // The copy is by value, and the source chain was engaged.
+        expect(repo.laneChainEnabled(0, 0), isTrue);
+      },
+    );
 
     test('re-sync declines on both dry input shapes, leaving the take alone '
         '(R18)', () {

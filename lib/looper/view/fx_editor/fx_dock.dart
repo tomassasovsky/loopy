@@ -92,6 +92,7 @@ class _FxDockState extends State<FxDock> {
       child: SignalFxRack(
         keyPrefix: 'fxDock',
         effects: _scope.effects,
+        chainEnabled: _scope.chainEnabled,
         onAddEffect: _scope.addEffectOfType,
         onAddPlugin: () => unawaited(_addPlugin()),
         onRemoveEffect: _scope.removeEffect,

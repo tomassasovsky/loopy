@@ -229,11 +229,10 @@ void main() {
   });
 
   group('StageFxScope', () {
-    StageFxScope trackScope(int channel) =>
-        StageFxScope(
-          looper: bloc,
-          address: FxAddress(stage: FxStage.track, index: channel),
-        );
+    StageFxScope trackScope(int channel) => StageFxScope(
+      looper: bloc,
+      address: FxAddress(stage: FxStage.track, index: channel),
+    );
 
     StageFxScope masterScope() => StageFxScope(
       looper: bloc,
@@ -451,7 +450,9 @@ void main() {
           tracks: [
             const Track(
               state: TrackState.overdubbing,
-              lanes: [Lane(inheritedFrom: [1], inputChainDiverges: true)],
+              lanes: [
+                Lane(inheritedFrom: [1], inputChainDiverges: true),
+              ],
             ),
           ],
         ),
@@ -495,7 +496,11 @@ void main() {
       whenListen(
         bloc,
         const Stream<LooperState>.empty(),
-        initialState: _state(tracks: const [Track(lanes: [Lane()])]),
+        initialState: _state(
+          tracks: const [
+            Track(lanes: [Lane()]),
+          ],
+        ),
       );
       final scope = LaneFxScope(
         looper: bloc,
@@ -520,7 +525,11 @@ void main() {
       whenListen(
         bloc,
         const Stream<LooperState>.empty(),
-        initialState: _state(tracks: const [Track(lanes: [Lane()])]),
+        initialState: _state(
+          tracks: const [
+            Track(lanes: [Lane()]),
+          ],
+        ),
       );
       LaneFxScope(
         looper: bloc,
@@ -538,14 +547,18 @@ void main() {
       whenListen(
         bloc,
         const Stream<LooperState>.empty(),
-        initialState: _state(tracks: const [Track(lanes: [Lane()])]),
+        initialState: _state(
+          tracks: const [
+            Track(lanes: [Lane()]),
+          ],
+        ),
       );
       LaneFxScope(
-        looper: bloc,
-        repository: repository,
-        track: 0,
-        lane: 0,
-      )
+          looper: bloc,
+          repository: repository,
+          track: 0,
+          lane: 0,
+        )
         ..setEffectEnabled(2, enabled: false)
         ..setChainEnabled(enabled: false);
 

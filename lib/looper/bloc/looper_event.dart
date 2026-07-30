@@ -235,8 +235,16 @@ final class LooperLaneMuteToggled extends LooperLaneEvent {
 /// chain. A structural edit — the bloc reads the current chain and pushes the
 /// grown one, so the view never computes the new list itself.
 final class LooperLaneEffectAdded extends LooperLaneEvent {
-  /// Creates a [LooperLaneEffectAdded].
-  const LooperLaneEffectAdded(super.channel, super.lane);
+  /// Creates a [LooperLaneEffectAdded]; [type] defaults to drive.
+  const LooperLaneEffectAdded(super.channel, super.lane, {this.type});
+
+  /// The device type to add, carried so add-of-type is ONE intent — the UI
+  /// never has to name the new entry's index, which it could only read from a
+  /// projection that lags this write.
+  final TrackEffectType? type;
+
+  @override
+  List<Object?> get props => [channel, lane, type];
 }
 
 /// Chain entry [index] was removed from lane [lane] of track [channel].

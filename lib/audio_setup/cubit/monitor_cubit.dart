@@ -23,6 +23,11 @@ class MonitorState extends Equatable {
   InputMonitor forInput(int input) =>
       inputs[input] ?? InputMonitor(input: input);
 
+  /// Whether [input] has a configured monitor, as opposed to the synthesized
+  /// default [forInput] hands back. Callers that WRITE must check this first,
+  /// or they materialize (and persist) a monitor the user never created.
+  bool hasInput(int input) => inputs.containsKey(input);
+
   /// Returns a copy with [monitor] replacing its input's entry.
   MonitorState withInput(InputMonitor monitor) =>
       MonitorState(inputs: {...inputs, monitor.input: monitor});
@@ -208,11 +213,11 @@ class MonitorCubit extends Cubit<MonitorState> {
   }
 
   /// Appends a default effect (drive) to monitor [input]'s chain.
-  void addEffect(int input) {
+  void addEffect(int input, {TrackEffectType? type}) {
     final effects = state.forInput(input).effects;
     _pushEffects(input, [
       ...effects,
-      BuiltInEffect(type: TrackEffectType.drive),
+      BuiltInEffect(type: type ?? TrackEffectType.drive),
     ]);
   }
 
@@ -327,7 +332,14 @@ class MonitorCubit extends Cubit<MonitorState> {
       index: index,
       enabled: enabled,
     );
-    final next = _repository.monitorEffects(input);
+    // Fall back to the optimistic chain when the repository reports nothing:
+    // it rejects the write (leaving its cache untouched) whenever it holds no
+    // chain for this input — engine not running yet, a session load that just
+    // cleared the key, or a unit-test fake. Emitting the empty read-back would
+    // wipe the user's chain from the UI *and* persist the wipe. Matches the
+    // guard [_pushEffects] and the restore path already carry.
+    final applied = _repository.monitorEffects(input);
+    final next = applied.isNotEmpty ? applied : monitor.effects;
     emit(state.withInput(monitor.copyWith(effects: next)));
     unawaited(_settings.saveMonitorEffects(input, _encodedChain(input, next)));
   }
@@ -336,6 +348,12 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// the per-entry flags intact (R15). A chain-disabled monitor sounds dry and
   /// stops being snapshot-copied onto recording lanes (D-CHAINDIS, R18).
   void setChainEnabled(int input, {required bool enabled}) {
+    // Only flip a monitor the user actually has. `forInput` synthesizes a
+    // default for an unknown input, so without this an input that exists on
+    // the device but was never configured would be materialized into state and
+    // persisted here — and the restore path counts a disabled chain as saved
+    // state, so the phantom would come back on every subsequent boot.
+    if (!state.hasInput(input)) return;
     final monitor = state.forInput(input);
     // Write, then emit — the same order as [setEffectEnabled].
     _repository.setMonitorChainEnabled(input: input, enabled: enabled);

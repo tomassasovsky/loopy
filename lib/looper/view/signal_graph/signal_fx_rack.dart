@@ -48,6 +48,7 @@ class SignalFxRack extends StatefulWidget {
     required this.onRelinkPlugin,
     required this.onReorder,
     required this.onSetEffectEnabled,
+    this.chainEnabled = true,
     this.onFormatPluginValue,
     super.key,
   });
@@ -57,6 +58,12 @@ class SignalFxRack extends StatefulWidget {
 
   /// The chain, in processing order.
   final List<TrackEffect> effects;
+
+  /// Whether the WHOLE chain is engaged (R15). A disabled chain silences every
+  /// card regardless of its own flag, so the cards read the same way the
+  /// surface's summary chips already do rather than staying lit while the
+  /// chain they belong to is off.
+  final bool chainEnabled;
 
   /// Appends a built-in effect of the picked type, as one action — the rack
   /// never composes an append with a retype of an index it had to guess.
@@ -104,17 +111,24 @@ class _SignalFxRackState extends State<SignalFxRack> {
   int? _landedAt;
   int _dropGen = 0;
 
+  /// What the user HEARS from slot [i]: its own power flag AND its chain's.
+  /// The power control still reflects the slot's own flag, so switching the
+  /// chain back on restores exactly the per-slot picture the user left.
+  bool _audible(int i) => widget.effects[i].enabled && widget.chainEnabled;
+
   /// A card is built up to three times by [_DraggableDevice] (in place, as the
   /// lifted feedback, and as the faded gap left behind) — one builder for all.
   Widget _card(int i) {
     final fx = widget.effects[i];
     void togglePower({required bool enabled}) =>
         widget.onSetEffectEnabled(i, enabled: enabled);
+    final audible = _audible(i);
     if (fx is PluginEffect) {
       return _PluginDeviceCard(
         cardKey: Key('${widget.keyPrefix}_device_$i'),
         keyPrefix: '${widget.keyPrefix}_device_$i',
         fx: fx,
+        audible: audible,
         onSetParam: (id, v) => widget.onSetPluginParam(i, id, v),
         onFormatValue: (paramId, value) =>
             widget.onFormatPluginValue?.call(i, paramId, value),
@@ -129,6 +143,7 @@ class _SignalFxRackState extends State<SignalFxRack> {
       cardKey: Key('${widget.keyPrefix}_device_$i'),
       keyPrefix: '${widget.keyPrefix}_device_$i',
       fx: fx,
+      audible: audible,
       onSetType: (t) => widget.onSetType(i, t),
       onSetParam: (p, v) => widget.onSetParam(i, p, v),
       onRemove: () => widget.onRemoveEffect(i),
@@ -182,6 +197,7 @@ class _SignalFxRackState extends State<SignalFxRack> {
                 index: i,
                 height: rackHeight,
                 card: _card(i),
+                dimmed: !_audible(i),
                 landingKey: i == _landedAt ? ValueKey(_dropGen) : null,
               ),
             ],
@@ -211,10 +227,15 @@ class _DraggableDevice extends StatelessWidget {
     required this.index,
     required this.height,
     required this.card,
+    required this.dimmed,
     this.landingKey,
   });
 
   final int index;
+
+  /// Whether [card] already renders dimmed (silenced), so the drag gap must not
+  /// dim it a second time.
+  final bool dimmed;
 
   /// The shared device-card height for this chain (the rack's resolved height).
   final double height;
@@ -231,7 +252,11 @@ class _DraggableDevice extends StatelessWidget {
       data: index,
       affinity: Axis.horizontal,
       feedback: _LiftedCard(height: height, child: card),
-      childWhenDragging: Opacity(opacity: 0.3, child: card),
+      // A card whose body already carries the disabled dim is left as-is: a
+      // second opacity layer here would multiply with it and sink its controls
+      // far below the disabled token (which the high-contrast variant raises
+      // precisely to stay legible).
+      childWhenDragging: dimmed ? card : Opacity(opacity: 0.3, child: card),
       child: inPlace,
     );
   }
@@ -348,6 +373,7 @@ class _DeviceCard extends StatelessWidget {
     required this.cardKey,
     required this.keyPrefix,
     required this.fx,
+    required this.audible,
     required this.onSetType,
     required this.onSetParam,
     required this.onRemove,
@@ -357,6 +383,9 @@ class _DeviceCard extends StatelessWidget {
   final Key cardKey;
   final String keyPrefix;
   final BuiltInEffect fx;
+
+  /// Whether this slot is heard — its own power flag AND its chain's.
+  final bool audible;
   final ValueChanged<TrackEffectType> onSetType;
   final void Function(int param, double value) onSetParam;
   final VoidCallback onRemove;
@@ -504,35 +533,41 @@ class _DeviceCard extends StatelessWidget {
           // The device's parameters as knobs — dimmed while powered off, with
           // the header above left at full strength (R26).
           Expanded(
-            child: FxDisabledDim(
-              enabled: fx.enabled,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 10,
-                ),
-                child: params.isEmpty
-                    ? Center(
-                        child: Text(
-                          l10n.emDash,
-                          style: signalMono(color: surface.textTertiary),
-                        ),
-                      )
-                    : Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          for (var p = 0; p < params.length; p++)
-                            SizedBox(
-                              width: _slotWidth(params[p]),
-                              child: _ParamControl(
-                                keyPrefix: keyPrefix,
-                                fx: fx,
-                                param: p,
-                                onSetParam: onSetParam,
+            // Inert while silenced, not merely dimmed: an opacity wrapper still
+            // hit-tests, so without this the knobs of a card the UI is showing
+            // as off would keep writing (and persisting) parameter changes.
+            child: IgnorePointer(
+              ignoring: !audible,
+              child: FxDisabledDim(
+                enabled: audible,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 10,
+                  ),
+                  child: params.isEmpty
+                      ? Center(
+                          child: Text(
+                            l10n.emDash,
+                            style: signalMono(color: surface.textTertiary),
+                          ),
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            for (var p = 0; p < params.length; p++)
+                              SizedBox(
+                                width: _slotWidth(params[p]),
+                                child: _ParamControl(
+                                  keyPrefix: keyPrefix,
+                                  fx: fx,
+                                  param: p,
+                                  onSetParam: onSetParam,
+                                ),
                               ),
-                            ),
-                        ],
-                      ),
+                          ],
+                        ),
+                ),
               ),
             ),
           ),
@@ -557,6 +592,7 @@ class _PluginDeviceCard extends StatelessWidget {
     required this.cardKey,
     required this.keyPrefix,
     required this.fx,
+    required this.audible,
     required this.onSetParam,
     required this.onOpenEditor,
     required this.onRelink,
@@ -568,6 +604,9 @@ class _PluginDeviceCard extends StatelessWidget {
   final Key cardKey;
   final String keyPrefix;
   final PluginEffect fx;
+
+  /// Whether this slot is heard — its own power flag AND its chain's.
+  final bool audible;
   final void Function(int paramId, double value) onSetParam;
 
   /// Formats a parameter's plain value to the plugin's own display string (e.g.
@@ -765,44 +804,53 @@ class _PluginDeviceCard extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: FxDisabledDim(
-              enabled: fx.enabled,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                child: controls.isEmpty
-                    ? Center(
-                        child: Text(
-                          l10n.emDash,
-                          style: signalMono(color: surface.textTertiary),
-                        ),
-                      )
-                    // Every control is shown: they wrap into rows and the rack
-                    // grew to fit. A very dense plugin scrolls vertically here
-                    // (the native editor stays the full-control surface).
-                    : SingleChildScrollView(
-                        key: Key('${keyPrefix}_params'),
-                        child: Wrap(
-                          alignment: WrapAlignment.center,
-                          runAlignment: WrapAlignment.center,
-                          children: [
-                            for (var k = 0; k < controls.length; k++)
-                              SizedBox(
-                                width: _slotWidth(controls[k]),
-                                height: _cellHeight,
-                                child: _PluginParamControl(
-                                  controlKey: Key('${keyPrefix}_param_$k'),
-                                  spec: controls[k],
-                                  value:
-                                      fx.paramValues[controls[k].id] ??
-                                      controls[k].def,
-                                  onChanged: (v) =>
-                                      onSetParam(controls[k].id, v),
-                                  onFormatValue: onFormatValue,
+            // Inert while silenced — see the built-in card for why dimming
+            // alone would still let the knobs write.
+            child: IgnorePointer(
+              ignoring: !audible,
+              child: FxDisabledDim(
+                enabled: audible,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 8,
+                  ),
+                  child: controls.isEmpty
+                      ? Center(
+                          child: Text(
+                            l10n.emDash,
+                            style: signalMono(color: surface.textTertiary),
+                          ),
+                        )
+                      // Every control is shown: they wrap into rows and the
+                      // rack grew to fit. A very dense plugin scrolls
+                      // vertically here (the native editor is the full
+                      // control surface).
+                      : SingleChildScrollView(
+                          key: Key('${keyPrefix}_params'),
+                          child: Wrap(
+                            alignment: WrapAlignment.center,
+                            runAlignment: WrapAlignment.center,
+                            children: [
+                              for (var k = 0; k < controls.length; k++)
+                                SizedBox(
+                                  width: _slotWidth(controls[k]),
+                                  height: _cellHeight,
+                                  child: _PluginParamControl(
+                                    controlKey: Key('${keyPrefix}_param_$k'),
+                                    spec: controls[k],
+                                    value:
+                                        fx.paramValues[controls[k].id] ??
+                                        controls[k].def,
+                                    onChanged: (v) =>
+                                        onSetParam(controls[k].id, v),
+                                    onFormatValue: onFormatValue,
+                                  ),
                                 ),
-                              ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
+                ),
               ),
             ),
           ),

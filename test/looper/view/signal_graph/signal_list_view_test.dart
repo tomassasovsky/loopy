@@ -348,8 +348,11 @@ void main() {
         // The lifecycle end to end, driven by real state EMISSIONS rather than
         // three static fixtures: a badge that stopped rebuilding when the
         // backing chain changed would pass the fixtures and fail here.
-        LooperState withLane(Lane lane) =>
-            stateWith(tracks: [Track(lanes: [lane])]);
+        LooperState withLane(Lane lane) => stateWith(
+          tracks: [
+            Track(lanes: [lane]),
+          ],
+        );
         final states = StreamController<LooperState>.broadcast();
         addTearDown(states.close);
         const inherited = Lane(
@@ -479,6 +482,44 @@ void main() {
       // A fresh lane holds no audio, so without this the button would read as
       // a no-op — the track expands so the new lane is visible.
       expect(find.byKey(const Key('signalTake_0_1')), findsOneWidget);
+    });
+
+    testWidgets('remove-lane is withheld when the last lane holds audio', (
+      tester,
+    ) async {
+      seed(
+        stateWith(
+          tracks: const [
+            Track(
+              lanes: [Lane(inputChannel: 0), Lane(lengthFrames: 1000)],
+            ),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      // Lanes are a stack, so removal drops the LAST one — and the drill-in
+      // may be hiding it. One tap must not destroy an unseen take.
+      expect(find.byKey(const Key('signalGraph_removeLane_0')), findsNothing);
+    });
+
+    testWidgets('remove-lane stays available when the last lane is empty', (
+      tester,
+    ) async {
+      seed(
+        stateWith(
+          tracks: const [
+            Track(
+              lanes: [Lane(lengthFrames: 1000), Lane(inputChannel: 1)],
+            ),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('signalGraph_removeLane_0')));
+      await tester.pump();
+      verify(() => bloc.add(const LooperLaneCountChanged(0, 1))).called(1);
     });
 
     testWidgets('a recording track shows every lane, even empty ones', (

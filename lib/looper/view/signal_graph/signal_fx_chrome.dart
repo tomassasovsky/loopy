@@ -13,8 +13,10 @@ import 'package:loopy/theme/surface_theme.dart';
 /// enable, identical for a built-in device, a hosted plugin, and a whole chain.
 /// A plugin's own bypass parameter never drives it.
 ///
-/// The key lands on the [Semantics] node rather than the button so the
-/// announced node is the one carrying the toggle state.
+/// The state rides the BUTTON's own semantics node (via [MergeSemantics]), not
+/// a wrapper around it: a wrapper that forms its own boundary leaves the
+/// focusable node announcing only the tooltip, so a screen-reader user hears
+/// the action and never the on/off state R23 exists to state out loud.
 class FxPowerToggle extends StatelessWidget {
   /// Creates an [FxPowerToggle].
   const FxPowerToggle({
@@ -48,20 +50,21 @@ class FxPowerToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    return Semantics(
-      key: toggleKey,
-      container: true,
-      toggled: enabled,
-      label: semanticLabel,
-      child: IconButton(
-        padding: EdgeInsets.zero,
-        visualDensity: VisualDensity.compact,
-        constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-        iconSize: iconSize,
-        color: enabled ? surface.accent : surface.textTertiary,
-        tooltip: tooltip,
-        icon: Icon(enabled ? Icons.power_settings_new : Icons.power_off),
-        onPressed: () => onChanged(enabled: !enabled),
+    return MergeSemantics(
+      child: Semantics(
+        key: toggleKey,
+        toggled: enabled,
+        label: semanticLabel,
+        child: IconButton(
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
+          constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+          iconSize: iconSize,
+          color: enabled ? surface.accent : surface.textTertiary,
+          tooltip: tooltip,
+          icon: Icon(enabled ? Icons.power_settings_new : Icons.power_off),
+          onPressed: () => onChanged(enabled: !enabled),
+        ),
       ),
     );
   }

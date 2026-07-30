@@ -41,6 +41,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     required this.knobFaceTop,
     required this.knobFaceBottom,
     required this.disabledOpacity,
+    required this.traceDimOpacity,
   });
 
   /// The neutral surface palette.
@@ -108,6 +109,13 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// dimmed text legible (WCAG 1.4.3).
   final double disabledOpacity;
 
+  /// The opacity a row renders at when a tap-to-trace is active and the row is
+  /// not lit. Separate from [disabledOpacity] and deliberately deeper: this
+  /// wraps whole rows whose contents may ALREADY carry the disabled dim, and
+  /// the two multiply — so the pair is chosen to keep a dimmed control inside
+  /// an untraced row legible rather than to be reused for disabled state.
+  final double traceDimOpacity;
+
   /// The display/body typeface — a geometric grotesque that gives the surfaces
   /// their instrument-panel character (bundled under `assets/fonts/`).
   static const String displayFont = 'Space Grotesk';
@@ -153,6 +161,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     Color? knobFaceTop,
     Color? knobFaceBottom,
     double? disabledOpacity,
+    double? traceDimOpacity,
   }) => SurfaceTheme(
     background: background ?? this.background,
     surface: surface ?? this.surface,
@@ -182,6 +191,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     knobFaceTop: knobFaceTop ?? this.knobFaceTop,
     knobFaceBottom: knobFaceBottom ?? this.knobFaceBottom,
     disabledOpacity: disabledOpacity ?? this.disabledOpacity,
+    traceDimOpacity: traceDimOpacity ?? this.traceDimOpacity,
   );
 
   @override
@@ -221,6 +231,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       disabledOpacity:
           lerpDouble(disabledOpacity, other.disabledOpacity, t) ??
           disabledOpacity,
+      traceDimOpacity:
+          lerpDouble(traceDimOpacity, other.traceDimOpacity, t) ??
+          traceDimOpacity,
       lanePalette: [
         for (var i = 0; i < lanePalette.length; i++)
           c(
@@ -278,6 +291,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     knobFaceTop: Color(0xFF23232B),
     knobFaceBottom: Color(0xFF121217),
     disabledOpacity: 0.4,
+    traceDimOpacity: 0.28,
   );
 
   /// High-contrast variant of [dark], selected automatically when the OS
@@ -325,6 +339,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     // Dim less than [dark]: a disabled control must still clear the contrast
     // floor under the high-contrast preference.
     disabledOpacity: 0.62,
+    // Lifted alongside [disabledOpacity]: an untraced row holding a disabled
+    // control multiplies the two, and high contrast must stay readable.
+    traceDimOpacity: 0.5,
   );
 }
 

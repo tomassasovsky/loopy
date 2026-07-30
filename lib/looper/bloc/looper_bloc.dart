@@ -102,7 +102,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     on<LooperLaneEffectAdded>((event, _) {
       _pushLaneEffects(event.channel, event.lane, [
         ..._repository.laneEffects(event.channel, event.lane),
-        BuiltInEffect(type: TrackEffectType.drive),
+        BuiltInEffect(type: event.type ?? TrackEffectType.drive),
       ]);
     });
     on<LooperLaneEffectRemoved>((event, _) {
@@ -209,6 +209,11 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       _persistLaneChain(event.channel, event.lane);
     });
     on<LooperLaneChainResyncedFromInput>((event, _) {
+      // A re-copy replaces every entry and reseats the lane's slots, so any
+      // editor-sync poll keyed by a now-stale chain index must be cancelled —
+      // otherwise it rebinds to whatever plugin lands at that index and the
+      // replaced instance is destroyed with its native window still open.
+      _cancelLaneEditorTimers(event.channel, event.lane);
       // The repository notifies `onLaneChainChanged` on a successful re-copy,
       // which persists the fresh envelope — nothing to persist here when it
       // declines (there was nothing inheritable to copy).
@@ -246,22 +251,40 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     on<LooperBusEffectTypeChanged>((event, _) {
       final chain = _busChain(event.address);
       if (event.index < 0 || event.index >= chain.length) return;
+      final old = chain[event.index];
       _pushBusChain(
         event.address,
-        [...chain]..[event.index] = BuiltInEffect(type: event.type),
+        [...chain]
+          ..[event.index] = BuiltInEffect(
+            type: event.type,
+            // A retype changes the DEVICE, not the user's power decision or the
+            // slot's identity: keeping both means a powered-off device stays
+            // off (D-POWER/R23) and bindings targeting the slot survive (A9).
+            enabled: old.enabled,
+            slotId: old.slotId,
+          ),
       );
     });
     on<LooperBusEffectParamChanged>((event, _) {
-      final chain = _busChain(event.address);
-      if (event.index < 0 || event.index >= chain.length) return;
-      final fx = chain[event.index];
-      if (fx is! BuiltInEffect) return;
-      if (event.param < 0 || event.param >= fx.params.length) return;
-      final params = List<double>.of(fx.params)..[event.param] = event.value;
-      _pushBusChain(
-        event.address,
-        [...chain]..[event.index] = fx.copyWith(params: params),
-      );
+      // Granular, NOT a whole-chain push: re-pushing the chain would re-send
+      // every slot's type, and the engine resets a slot's DSP state on every
+      // type push — so a knob drag would clear the bus's reverb tails and
+      // delay lines at pointer-move rate.
+      if (event.address.stage == FxStage.master) {
+        _repository.setMasterEffectParam(
+          index: event.index,
+          param: event.param,
+          value: event.value,
+        );
+      } else {
+        _repository.setTrackEffectParam(
+          channel: event.address.index,
+          index: event.index,
+          param: event.param,
+          value: event.value,
+        );
+      }
+      _persistBusChain(event.address);
     });
     on<LooperBusPluginInserted>((event, _) {
       final chain = _busChain(event.address);
@@ -283,12 +306,21 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     on<LooperBusPluginRelinked>((event, _) {
       final chain = _busChain(event.address);
       if (event.index < 0 || event.index >= chain.length) return;
-      if (chain[event.index] is! PluginEffect) return;
-      // A bus-stage plugin never instantiates (no slot ABI yet), so it holds no
-      // captured state to carry over — the relink is a re-identification.
+      final old = chain[event.index];
+      if (old is! PluginEffect) return;
+      // Re-identify the entry and clear the D-MISS placeholder flags, but keep
+      // everything the user owns: the persisted state blob, their parameter
+      // tweaks, the power decision, and the slot id. A bus plugin's Relink is
+      // its ONLY action, so dropping those would destroy them irrecoverably.
       _pushBusChain(
         event.address,
-        [...chain]..[event.index] = PluginEffect(ref: event.ref),
+        [...chain]
+          ..[event.index] = old.copyWith(
+            ref: event.ref,
+            unavailable: false,
+            unsupported: false,
+            versionChanged: false,
+          ),
       );
     });
     on<LooperTrackEffectsChanged>((event, _) {
@@ -540,9 +572,19 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   void _pushBusChain(FxAddress address, List<TrackEffect> next) {
     if (address.stage == FxStage.master) {
       _repository.setMasterEffects(effects: next);
-      _persistMasterChain();
     } else {
       _repository.setTrackEffects(channel: address.index, effects: next);
+    }
+    _persistBusChain(address);
+  }
+
+  /// Persists the bus chain envelope at [address] — used on its own by the
+  /// granular param path, which writes through the repository rather than
+  /// replacing the chain.
+  void _persistBusChain(FxAddress address) {
+    if (address.stage == FxStage.master) {
+      _persistMasterChain();
+    } else {
       _persistTrackChain(address.index);
     }
   }

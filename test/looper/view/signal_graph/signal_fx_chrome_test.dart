@@ -147,8 +147,10 @@ void main() {
       );
       // Rejected reads distinctly from missing (D-BUS vs D-MISS).
       expect(
-        fxPluginStatus(l10n, const PluginEffect(ref: ref, unavailable: true))
-            ?.message,
+        fxPluginStatus(
+          l10n,
+          const PluginEffect(ref: ref, unavailable: true),
+        )?.message,
         l10n.signalPluginUnavailable,
       );
       expect(

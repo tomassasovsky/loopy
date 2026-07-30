@@ -19,10 +19,12 @@ void main() {
       void Function(int index, TrackEffectType type)? onSetType,
       void Function(int index)? onRemoveEffect,
       void Function(int index, {required bool enabled})? onSetEffectEnabled,
+      bool chainEnabled = true,
     }) => Scaffold(
       body: SignalFxRack(
         keyPrefix: 'signalGraph_lane',
         effects: effects,
+        chainEnabled: chainEnabled,
         onAddEffect: onAddEffect ?? (_) {},
         onAddPlugin: () {},
         onRemoveEffect: onRemoveEffect ?? (_) {},
@@ -60,6 +62,54 @@ void main() {
       await tester.pump();
 
       expect(calls, [(0, false), (1, true)]);
+    });
+
+    testWidgets('a powered-off device stops accepting knob input', (
+      tester,
+    ) async {
+      final calls = <(int, int, double)>[];
+      await tester.pumpApp(
+        build(
+          effects: [
+            BuiltInEffect(type: TrackEffectType.delay, enabled: false),
+          ],
+          onSetParam: (i, p, v) => calls.add((i, p, v)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Dimming alone still hit-tests, so without IgnorePointer the knobs of a
+      // card the UI shows as off would keep writing and persisting.
+      final knob = find.byType(SignalKnob).first;
+      final gesture = await tester.startGesture(tester.getCenter(knob));
+      await gesture.moveBy(const Offset(0, -40));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(calls, isEmpty);
+    });
+
+    testWidgets('a disabled CHAIN silences every card, whatever its own flag', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        build(
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+          chainEnabled: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The cards must not stay lit while the chain they belong to is off —
+      // the surface's summary chips already read that way.
+      final dim = tester.widget<AnimatedOpacity>(
+        find.descendant(
+          of: find.byKey(const Key('signalGraph_lane_device_0')),
+          matching: find.byType(AnimatedOpacity),
+        ),
+      );
+      expect(dim.opacity, SurfaceTheme.dark.disabledOpacity);
     });
 
     testWidgets('a powered-off device dims its body, not its header', (

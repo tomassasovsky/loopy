@@ -83,17 +83,16 @@ abstract class FxScope {
   /// Appends a default (drive) built-in effect to the chain.
   void addEffect();
 
-  /// Appends a built-in effect of [type] — the device browser's pick, as ONE
-  /// user action. The default composes append + retype, which is safe only
-  /// because the input and loop stages apply the append to their backing store
-  /// before the retype is handled (the cubit synchronously, the bloc by
-  /// composing from the repository). [StageFxScope] overrides it with a single
-  /// intent, since it cannot see its own append until a later frame.
-  void addEffectOfType(TrackEffectType type) {
-    final index = effects.length;
-    addEffect();
-    setType(index, type);
-  }
+  /// Appends a built-in effect of [type] — the device browser's pick — as ONE
+  /// intent per stage.
+  ///
+  /// Never composes an append with a retype: the index for that retype could
+  /// only come from [effects], which is a projection that lags the backing
+  /// store, so a chain that grew underneath the UI (a record-time snapshot
+  /// copy, a re-sync) would make the retype land on an existing entry and
+  /// silently reset it. Every stage carries the type on its own add event
+  /// instead.
+  void addEffectOfType(TrackEffectType type);
 
   /// Appends a hosted plugin identified by [ref] to the chain.
   void insertPlugin(PluginRef ref);
@@ -185,6 +184,10 @@ class InputFxScope extends FxScope {
 
   @override
   void addEffect() => monitor.addEffect(input);
+
+  @override
+  void addEffectOfType(TrackEffectType type) =>
+      monitor.addEffect(input, type: type);
 
   @override
   void insertPlugin(PluginRef ref) => monitor.insertPlugin(input, ref);
@@ -314,6 +317,10 @@ class LaneFxScope extends FxScope {
 
   @override
   void addEffect() => looper.add(LooperLaneEffectAdded(track, lane));
+
+  @override
+  void addEffectOfType(TrackEffectType type) =>
+      looper.add(LooperLaneEffectAdded(track, lane, type: type));
 
   @override
   void insertPlugin(PluginRef ref) =>

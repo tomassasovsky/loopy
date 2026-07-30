@@ -59,28 +59,33 @@ class SignalFxSummary extends StatelessWidget {
         borderRadius: BorderRadius.circular(7),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 2),
-          child: effects.isEmpty
-              ? _AddFxChip(label: l10n.signalNoFx)
-              // Dimming happens per chip, exactly once: an outer wrapper here
-              // would multiply with the chips' own dim and would bury the
-              // chain-off marker, which exists precisely so the state does not
-              // rest on the dim (R26).
-              : Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    if (!chainEnabled)
-                      _ChainOffChip(label: l10n.signalChainOff),
-                    for (final e in effects)
-                      _SummaryChip(
-                        label: fxBlockName(l10n, e),
-                        enabled: e.enabled && chainEnabled,
-                        status: fxPluginStatus(l10n, e),
-                      ),
-                    Icon(Icons.tune, size: 14, color: surface.textTertiary),
-                  ],
-                ),
+          // Dimming happens per chip, exactly once: an outer wrapper here
+          // would multiply with the chips' own dim and would bury the
+          // chain-off marker, which exists precisely so the state does not
+          // rest on the dim (R26).
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              // A switched-off chain says so even with nothing in it: the
+              // disabled flag persists independently of the entries, so an
+              // empty disabled chain would otherwise read exactly like a
+              // never-touched one and silently swallow the next effect added.
+              if (!chainEnabled) _ChainOffChip(label: l10n.signalChainOff),
+              if (effects.isEmpty)
+                _AddFxChip(label: l10n.signalNoFx)
+              else ...[
+                for (final e in effects)
+                  _SummaryChip(
+                    label: fxBlockName(l10n, e),
+                    enabled: e.enabled && chainEnabled,
+                    status: fxPluginStatus(l10n, e),
+                  ),
+                Icon(Icons.tune, size: 14, color: surface.textTertiary),
+              ],
+            ],
+          ),
         ),
       ),
     );
@@ -109,31 +114,34 @@ class _SummaryChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     final glyph = status;
-    final chip = FxDisabledDim(
-      enabled: enabled,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: surface.cardHigh,
-          borderRadius: BorderRadius.circular(7),
-          border: Border.all(color: surface.line),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (glyph != null) ...[
-              Icon(glyph.icon, size: 11, color: surface.warning),
-              const SizedBox(width: 4),
-            ],
-            Text(
+    final chip = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: surface.cardHigh,
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: surface.line),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // The attention glyph sits OUTSIDE the dim: a missing or rejected
+          // plugin is what the user must act on, so it stays dominant over the
+          // powered-off state exactly as the placeholder card keeps it (R26).
+          if (glyph != null) ...[
+            Icon(glyph.icon, size: 11, color: surface.warning),
+            const SizedBox(width: 4),
+          ],
+          FxDisabledDim(
+            enabled: enabled,
+            child: Text(
               label,
               style: signalMono(color: surface.textSecondary, size: 10)
                   .copyWith(
                     decoration: enabled ? null : TextDecoration.lineThrough,
                   ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
     if (glyph == null) return chip;

@@ -76,6 +76,9 @@ class _FakeScope extends FxScope {
   void addEffect() {}
 
   @override
+  void addEffectOfType(TrackEffectType type) {}
+
+  @override
   void insertPlugin(PluginRef ref) {}
 
   @override

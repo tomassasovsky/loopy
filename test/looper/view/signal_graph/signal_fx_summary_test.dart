@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/looper/view/signal_graph/signal_fx_chrome.dart';
 import 'package:loopy/looper/view/signal_graph/signal_fx_summary.dart';
 
 import '../../../helpers/helpers.dart';
@@ -179,5 +180,48 @@ void main() {
       tester.getSemantics(find.byKey(const Key('sum'))).label,
       contains('Edit the master FX chain'),
     );
+  });
+
+  testWidgets('an empty chain still says the chain is off', (tester) async {
+    await tester.pumpApp(summary(effects: const [], chainEnabled: false));
+
+    // The disabled flag persists independently of the entries, so without this
+    // an empty disabled chain reads exactly like a never-touched one and
+    // silently swallows the next effect added.
+    expect(find.text('Chain off'), findsOneWidget);
+    expect(find.text('No FX'), findsOneWidget);
+  });
+
+  testWidgets('an empty enabled chain shows no chain-off marker', (
+    tester,
+  ) async {
+    await tester.pumpApp(summary(effects: const []));
+    expect(find.text('Chain off'), findsNothing);
+  });
+
+  testWidgets('a silenced plugin keeps its warning glyph undimmed', (
+    tester,
+  ) async {
+    await tester.pumpApp(
+      summary(
+        effects: [
+          const PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'x', version: 1),
+            name: 'Ghost',
+            unavailable: true,
+          ),
+        ],
+        chainEnabled: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The warning is what the user must act on, so it stays dominant over the
+    // powered-off dim — matching the placeholder card's rule for this state.
+    final dimmed = find.ancestor(
+      of: find.byIcon(Icons.warning_amber_rounded),
+      matching: find.byType(FxDisabledDim),
+    );
+    expect(dimmed, findsNothing);
   });
 }

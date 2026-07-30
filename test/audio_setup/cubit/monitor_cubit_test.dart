@@ -461,6 +461,24 @@ void main() {
       );
 
       blocTest<MonitorCubit, MonitorState>(
+        'setChainEnabled ignores an input with no configured monitor',
+        build: build,
+        act: (cubit) => cubit.setChainEnabled(3, enabled: false),
+        expect: () => <MonitorState>[],
+        verify: (_) async {
+          // Never materialize (or persist) a monitor the user never created —
+          // the restore path would resurrect it on every subsequent boot.
+          verifyNever(
+            () => repository.setMonitorChainEnabled(
+              input: any(named: 'input'),
+              enabled: any(named: 'enabled'),
+            ),
+          );
+          expect(await settings.loadMonitorEffects(3), isNull);
+        },
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
         'setEffectEnabled ignores an out-of-range slot',
         build: build,
         act: (cubit) => cubit.setEffectEnabled(0, 3, enabled: false),
@@ -479,8 +497,13 @@ void main() {
       blocTest<MonitorCubit, MonitorState>(
         'setChainEnabled flips the whole chain and persists the envelope',
         build: build,
-        act: (cubit) => cubit.setChainEnabled(0, enabled: false),
+        act: (cubit) => cubit
+          // Configure the input first: the flip only applies to a monitor the
+          // user actually has (see the phantom-monitor guard).
+          ..addEffect(0)
+          ..setChainEnabled(0, enabled: false),
         expect: () => [
+          isA<MonitorState>(),
           isA<MonitorState>().having(
             (s) => s.forInput(0).chainEnabled,
             'chainEnabled',
