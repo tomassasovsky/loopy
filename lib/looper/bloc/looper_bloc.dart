@@ -148,9 +148,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _settings?.saveLaneEffects(
           event.channel,
           event.lane,
-          encodeTrackEffects(
-            _repository.laneEffects(event.channel, event.lane),
-          ),
+          _encodedLaneChain(event.channel, event.lane),
         ),
       );
     });
@@ -168,9 +166,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _settings?.saveLaneEffects(
           event.channel,
           event.lane,
-          encodeTrackEffects(
-            _repository.laneEffects(event.channel, event.lane),
-          ),
+          _encodedLaneChain(event.channel, event.lane),
         ),
       );
     });
@@ -191,11 +187,46 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _settings?.saveLaneEffects(
           event.channel,
           event.lane,
-          encodeTrackEffects(
-            _repository.laneEffects(event.channel, event.lane),
-          ),
+          _encodedLaneChain(event.channel, event.lane),
         ),
       );
+    });
+    on<LooperTrackEffectsChanged>((event, _) {
+      _repository.setTrackEffects(
+        channel: event.channel,
+        effects: event.effects,
+      );
+      _persistTrackChain(event.channel);
+    });
+    on<LooperTrackEffectEnabledToggled>((event, _) {
+      _repository.setTrackEffectEnabled(
+        channel: event.channel,
+        index: event.index,
+        enabled: event.enabled,
+      );
+      _persistTrackChain(event.channel);
+    });
+    on<LooperTrackChainEnabledToggled>((event, _) {
+      _repository.setTrackChainEnabled(
+        channel: event.channel,
+        enabled: event.enabled,
+      );
+      _persistTrackChain(event.channel);
+    });
+    on<LooperMasterEffectsChanged>((event, _) {
+      _repository.setMasterEffects(effects: event.effects);
+      _persistMasterChain();
+    });
+    on<LooperMasterEffectEnabledToggled>((event, _) {
+      _repository.setMasterEffectEnabled(
+        index: event.index,
+        enabled: event.enabled,
+      );
+      _persistMasterChain();
+    });
+    on<LooperMasterChainEnabledToggled>((event, _) {
+      _repository.setMasterChainEnabled(enabled: event.enabled);
+      _persistMasterChain();
     });
     on<LooperLanePluginEditorOpened>((event, _) {
       final key = (event.channel, event.lane, event.index);
@@ -365,7 +396,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       _settings?.saveLaneEffects(
         channel,
         lane,
-        encodeTrackEffects(_repository.laneEffects(channel, lane)),
+        _encodedLaneChain(channel, lane),
       ),
     );
   }
@@ -379,7 +410,50 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       _settings?.saveLaneEffects(
         channel,
         lane,
-        encodeTrackEffects(_repository.laneEffects(channel, lane)),
+        _encodedLaneChain(channel, lane),
+      ),
+    );
+  }
+
+  /// Encodes lane [lane] of [channel]'s chain as the persisted envelope
+  /// string (R15): the entries, the chain-enabled flag, and the inheritance
+  /// meta all ride the one `lane_effects` key — no per-flag keys.
+  String _encodedLaneChain(int channel, int lane) => encodeFxChain(
+    FxChainEnvelope(
+      chainEnabled: _repository.laneChainEnabled(channel, lane),
+      meta: FxChainMeta(
+        inheritedFrom: _repository.laneChainInheritedFrom(channel, lane),
+      ),
+      entries: _repository.laneEffects(channel, lane),
+    ),
+  );
+
+  /// Persists track [channel]'s Track-stage chain envelope (the bus twin of
+  /// [_encodedLaneChain]; bus chains carry no inheritance meta).
+  void _persistTrackChain(int channel) {
+    unawaited(
+      _settings?.saveTrackFxChain(
+        channel,
+        encodeFxChain(
+          FxChainEnvelope(
+            chainEnabled: _repository.trackChainEnabled(channel),
+            entries: _repository.trackEffects(channel),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Persists the Master insert chain envelope.
+  void _persistMasterChain() {
+    unawaited(
+      _settings?.saveMasterFxChain(
+        encodeFxChain(
+          FxChainEnvelope(
+            chainEnabled: _repository.masterChainEnabled,
+            entries: _repository.masterEffects,
+          ),
+        ),
       ),
     );
   }

@@ -48,6 +48,52 @@ jobs:
       run_bloc_lint: false
       min_coverage: 100
 
+  # Per-package test + coverage gates for the five domain packages (FX v3
+  # part 3a [VGV-critical]): the root `build` job only runs the root app's own
+  # test/ dir, so until these jobs existed the packages' suites never ran in
+  # CI at all. One job per package (same flutter_version as `build` so the
+  # matrix can't drift; no bloc usage in the repository layer, so bloc lint is
+  # off). Coverage floors are pinned AT the value measured when the job was
+  # added — deliberately not rounded up (a blind 100 blocks every later part)
+  # and never silently lowered (raise-only from here). Native-lib-dependent
+  # tests (the fingerprint agreement suite) are fuzz-tagged and self-skip
+  # here; the `fuzz` job below runs them against the real engine.
+  looper-repository:
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    with:
+      flutter_version: "3.44.x"
+      working_directory: packages/looper_repository
+      run_bloc_lint: false
+      min_coverage: 95
+  session-repository:
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    with:
+      flutter_version: "3.44.x"
+      working_directory: packages/session_repository
+      run_bloc_lint: false
+      min_coverage: 89
+  performance-repository:
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    with:
+      flutter_version: "3.44.x"
+      working_directory: packages/performance_repository
+      run_bloc_lint: false
+      min_coverage: 99
+  pedal-repository:
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    with:
+      flutter_version: "3.44.x"
+      working_directory: packages/pedal_repository
+      run_bloc_lint: false
+      min_coverage: 96
+  controller-repository:
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    with:
+      flutter_version: "3.44.x"
+      working_directory: packages/controller_repository
+      run_bloc_lint: false
+      min_coverage: 82
+
   # Compile-only desktop guards: prove the portable engine + app keep building on
   # Windows and Linux. No audio runs (CI has no devices). Flutter is pinned to the
   # same 3.44.x as the `build` job above so the matrix can't silently drift, and
@@ -184,6 +230,16 @@ jobs:
       - name: Build the engine test library
         run: echo "LOOPY_ENGINE_LIB=$(bash packages/loopy_engine/tool/build_test_lib.sh)" >> "$GITHUB_ENV"
       - name: Run the control-sequence fuzzer
+        run: |
+          flutter pub get
+          flutter test --tags fuzz
+      # The looper_repository fingerprint agreement suite (R16) is fuzz-tagged
+      # and self-skips without LOOPY_ENGINE_LIB — the per-package job above
+      # skips it by design, so run it HERE against the engine library this job
+      # already built, or the mixed-enabled agreement guarantee would be
+      # silently skipped everywhere.
+      - name: Run the looper_repository native agreement tests
+        working-directory: packages/looper_repository
         run: |
           flutter pub get
           flutter test --tags fuzz

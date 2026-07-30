@@ -273,17 +273,109 @@ void main() {
     );
   });
 
-  group('trackChainFingerprint', () {
+  group('enabled + slotId (R16/A9)', () {
+    const ref = PluginRef(format: PluginFormat.clap, id: 'com.acme.reverb');
+
+    test('default enabled=true, slotId=null on both subtypes', () {
+      expect(BuiltInEffect(type: TrackEffectType.drive).enabled, isTrue);
+      expect(BuiltInEffect(type: TrackEffectType.drive).slotId, isNull);
+      expect(const PluginEffect(ref: ref).enabled, isTrue);
+      expect(const PluginEffect(ref: ref).slotId, isNull);
+    });
+
+    test('copyWith threads both fields and preserves them by default', () {
+      final builtIn = BuiltInEffect(
+        type: TrackEffectType.delay,
+        enabled: false,
+        slotId: 's-1',
+      );
+      final tweaked = builtIn.copyWith(params: const [0.1, 0.2, 0.3, 0.4]);
+      expect(tweaked.enabled, isFalse);
+      expect(tweaked.slotId, 's-1');
+      expect(builtIn.copyWith(enabled: true).enabled, isTrue);
+      expect(builtIn.copyWith(slotId: 's-2').slotId, 's-2');
+
+      const plugin = PluginEffect(ref: ref, enabled: false, slotId: 'p-1');
+      final relinked = plugin.copyWith(name: 'Acme');
+      expect(relinked.enabled, isFalse);
+      expect(relinked.slotId, 'p-1');
+    });
+
+    test('equality includes both fields — two otherwise-identical effects '
+        'with different ids are different entries (A9)', () {
+      expect(
+        BuiltInEffect(type: TrackEffectType.drive, slotId: 'a'),
+        isNot(BuiltInEffect(type: TrackEffectType.drive, slotId: 'b')),
+      );
+      expect(
+        BuiltInEffect(type: TrackEffectType.drive, enabled: false),
+        isNot(BuiltInEffect(type: TrackEffectType.drive)),
+      );
+      expect(
+        const PluginEffect(ref: ref, slotId: 'a'),
+        isNot(const PluginEffect(ref: ref, slotId: 'b')),
+      );
+      expect(
+        const PluginEffect(ref: ref, enabled: false),
+        isNot(const PluginEffect(ref: ref)),
+      );
+    });
+
+    test('both fields survive the boundary mappers in BOTH arms (the '
+        'engine-serializer round-trip) [R16]', () {
+      final chain = <TrackEffect>[
+        BuiltInEffect(
+          type: TrackEffectType.delay,
+          enabled: false,
+          slotId: 'built-in-1',
+        ),
+        const PluginEffect(ref: ref, enabled: false, slotId: 'plugin-1'),
+      ];
+
+      final decoded = decodeTrackEffects(encodeTrackEffects(chain));
+
+      expect(decoded, chain);
+      expect(decoded[0].enabled, isFalse);
+      expect(decoded[0].slotId, 'built-in-1');
+      expect(decoded[1].enabled, isFalse);
+      expect(decoded[1].slotId, 'plugin-1');
+    });
+
+    test('legacy entries decode enabled=true with a null slotId', () {
+      // A pre-FX-v3 wire chain: no enabled / slotId keys anywhere.
+      final decoded = decodeTrackEffects(
+        '[{"type":3,"params":[0.3,0.4,0.5,0]},'
+        '{"type":8,"plugin":{"format":1,"id":"p","version":0}}]',
+      );
+      expect(decoded, hasLength(2));
+      expect(decoded.every((e) => e.enabled), isTrue);
+      expect(decoded.every((e) => e.slotId == null), isTrue);
+    });
+
+    test('default-valued fields are omitted from the wire (legacy-stable '
+        'encoding)', () {
+      final encoded = encodeTrackEffects([
+        BuiltInEffect(type: TrackEffectType.drive),
+      ]);
+      expect(encoded, isNot(contains('enabled')));
+      expect(encoded, isNot(contains('slotId')));
+    });
+  });
+
+  group('fxChainFingerprint', () {
     const ref = PluginRef(format: PluginFormat.clap, id: 'p');
 
     test('an empty chain hashes to the FNV offset basis', () {
-      expect(trackChainFingerprint(const []), engine.FxFingerprint.offset);
+      expect(
+        fxChainFingerprint(const <TrackEffect>[]),
+        engine.FxFingerprint.offset,
+      );
     });
 
     test('is deterministic for the same chain', () {
       final a = [BuiltInEffect(type: TrackEffectType.drive)];
       final b = [BuiltInEffect(type: TrackEffectType.drive)];
-      expect(trackChainFingerprint(a), trackChainFingerprint(b));
+      expect(fxChainFingerprint(a), fxChainFingerprint(b));
     });
 
     test('is order-sensitive', () {
@@ -292,8 +384,8 @@ void main() {
         BuiltInEffect(type: TrackEffectType.reverb),
       ];
       expect(
-        trackChainFingerprint(ab),
-        isNot(trackChainFingerprint(ab.reversed.toList())),
+        fxChainFingerprint(ab),
+        isNot(fxChainFingerprint(ab.reversed.toList())),
       );
     });
 
@@ -310,7 +402,52 @@ void main() {
           params: const [0.9, 0, 0, 0],
         ),
       ];
-      expect(trackChainFingerprint(a), isNot(trackChainFingerprint(b)));
+      expect(fxChainFingerprint(a), isNot(fxChainFingerprint(b)));
+    });
+
+    test('the per-slot enabled bit changes the hash (R16)', () {
+      final enabled = [BuiltInEffect(type: TrackEffectType.drive)];
+      final disabled = [
+        BuiltInEffect(type: TrackEffectType.drive, enabled: false),
+      ];
+      expect(
+        fxChainFingerprint(enabled),
+        isNot(fxChainFingerprint(disabled)),
+      );
+      // A plugin's enabled bit folds too.
+      const pRef = PluginRef(format: PluginFormat.clap, id: 'p');
+      expect(
+        fxChainFingerprint(const [PluginEffect(ref: pRef)]),
+        isNot(
+          fxChainFingerprint(const [PluginEffect(ref: pRef, enabled: false)]),
+        ),
+      );
+    });
+
+    test('the chain-enabled flag changes the hash — but only for a NON-empty '
+        'chain (D-FPEMPTY)', () {
+      final chain = [BuiltInEffect(type: TrackEffectType.drive)];
+      expect(
+        fxChainFingerprint(chain),
+        isNot(fxChainFingerprint(chain, chainEnabled: false)),
+      );
+      // Empty chains hash to the offset basis regardless of the flag: a
+      // chain-disabled empty chain and an enabled empty chain are both dry.
+      expect(
+        fxChainFingerprint(const <TrackEffect>[], chainEnabled: false),
+        engine.FxFingerprint.offset,
+      );
+    });
+
+    test('slotId does NOT fold — sound identity, not entry identity (A9)', () {
+      expect(
+        fxChainFingerprint([
+          BuiltInEffect(type: TrackEffectType.drive, slotId: 'a'),
+        ]),
+        fxChainFingerprint([
+          BuiltInEffect(type: TrackEffectType.drive, slotId: 'b'),
+        ]),
+      );
     });
 
     test('a plugin entry folds in its type only (not host-owned params)', () {
@@ -323,12 +460,12 @@ void main() {
       final b = [
         const PluginEffect(ref: ref, paramValues: {1: 0.8}),
       ];
-      expect(trackChainFingerprint(a), trackChainFingerprint(b));
+      expect(fxChainFingerprint(a), fxChainFingerprint(b));
       // But a plugin differs from a built-in.
       final builtIn = [BuiltInEffect(type: TrackEffectType.drive)];
       expect(
-        trackChainFingerprint(a),
-        isNot(trackChainFingerprint(builtIn)),
+        fxChainFingerprint(a),
+        isNot(fxChainFingerprint(builtIn)),
       );
     });
   });

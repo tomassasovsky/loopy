@@ -1,5 +1,5 @@
 import 'package:looper_repository/looper_repository.dart'
-    show decodeTrackEffects, kMaxInputs, kMaxLanes;
+    show decodeFxChain, kMaxInputs, kMaxLanes;
 import 'package:settings_repository/settings_repository.dart';
 
 /// One-time courtesy + structural migrations of the persisted monitor settings,
@@ -159,7 +159,8 @@ Future<void> _foldInputToSingleChain(
     unionMask |= await settings.loadMonitorLaneOutput(input, lane) ?? 0x3;
     if (chosenFx == null) {
       final encoded = await settings.loadMonitorLaneEffects(input, lane);
-      if (encoded != null && decodeTrackEffects(encoded).isNotEmpty) {
+      // Envelope-aware non-empty check (legacy bare arrays decode too).
+      if (encoded != null && decodeFxChain(encoded).entries.isNotEmpty) {
         chosenFx = encoded; // first non-empty chain wins (not merged)
       }
     }

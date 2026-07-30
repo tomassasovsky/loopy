@@ -11,7 +11,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy_engine/loopy_engine.dart'
     show FxFingerprint, PumpedNativeEngine;
 
-/// Proves the Dart [trackChainFingerprint] and the native
+/// Proves the Dart [fxChainFingerprint] and the native
 /// `le_engine_*_fx_fingerprint` compute the IDENTICAL hash for the same chain —
 /// the guarantee the sequence fuzzer's `cache == engine` invariant relies on.
 /// Drives the REAL native engine through the device-free pump.
@@ -75,12 +75,89 @@ void main() {
         engine.laneFxFingerprint(channel: 0, lane: 0),
       );
       // And equals the pure-Dart hash of the same chain.
-      expect(repo.laneChainFingerprint(0, 0), trackChainFingerprint(chain));
+      expect(repo.laneChainFingerprint(0, 0), fxChainFingerprint(chain));
     });
 
     test('clearing a lane returns both sides to the empty basis', () {
       applyLane([BuiltInEffect(type: TrackEffectType.drive)]);
       applyLane(const []);
+      expect(repo.laneChainFingerprint(0, 0), FxFingerprint.offset);
+      expect(
+        engine.laneFxFingerprint(channel: 0, lane: 0),
+        FxFingerprint.offset,
+      );
+    });
+
+    test('MIXED enabled/disabled slots agree exactly (R16)', () {
+      final chain = [
+        BuiltInEffect(type: TrackEffectType.drive, enabled: false),
+        BuiltInEffect(
+          type: TrackEffectType.delay,
+          params: const [0.3, 0.4, 0.5, 0],
+        ),
+        BuiltInEffect(type: TrackEffectType.reverb, enabled: false),
+      ];
+      applyLane(chain);
+
+      expect(
+        repo.laneChainFingerprint(0, 0),
+        engine.laneFxFingerprint(channel: 0, lane: 0),
+      );
+      expect(repo.laneChainFingerprint(0, 0), fxChainFingerprint(chain));
+    });
+
+    test('ALL slots disabled agrees exactly (R16)', () {
+      applyLane([
+        BuiltInEffect(type: TrackEffectType.drive, enabled: false),
+        BuiltInEffect(type: TrackEffectType.echo, enabled: false),
+      ]);
+
+      expect(
+        repo.laneChainFingerprint(0, 0),
+        engine.laneFxFingerprint(channel: 0, lane: 0),
+      );
+    });
+
+    test('a per-slot toggle round-trip stays in agreement at every step '
+        '(R16)', () {
+      applyLane([
+        BuiltInEffect(type: TrackEffectType.drive),
+        BuiltInEffect(type: TrackEffectType.delay),
+      ]);
+      final before = repo.laneChainFingerprint(0, 0);
+
+      // Direct-atomic flip: no ring drain needed.
+      repo.setLaneEffectEnabled(channel: 0, lane: 0, index: 1, enabled: false);
+      expect(
+        repo.laneChainFingerprint(0, 0),
+        engine.laneFxFingerprint(channel: 0, lane: 0),
+      );
+      expect(repo.laneChainFingerprint(0, 0), isNot(before));
+
+      repo.setLaneEffectEnabled(channel: 0, lane: 0, index: 1, enabled: true);
+      expect(
+        repo.laneChainFingerprint(0, 0),
+        engine.laneFxFingerprint(channel: 0, lane: 0),
+      );
+      expect(repo.laneChainFingerprint(0, 0), before);
+    });
+
+    test('a chain-enabled flip agrees and folds only on a NON-empty chain '
+        '(D-FPEMPTY)', () {
+      applyLane([BuiltInEffect(type: TrackEffectType.drive)]);
+      final enabled = repo.laneChainFingerprint(0, 0);
+
+      repo.setLaneChainEnabled(channel: 0, lane: 0, enabled: false);
+      expect(
+        repo.laneChainFingerprint(0, 0),
+        engine.laneFxFingerprint(channel: 0, lane: 0),
+      );
+      expect(repo.laneChainFingerprint(0, 0), isNot(enabled));
+
+      // Chain-disabled EMPTY chain: both sides still yield the offset basis.
+      repo.setLaneChainEnabled(channel: 0, lane: 0, enabled: true);
+      applyLane(const []);
+      repo.setLaneChainEnabled(channel: 0, lane: 0, enabled: false);
       expect(repo.laneChainFingerprint(0, 0), FxFingerprint.offset);
       expect(
         engine.laneFxFingerprint(channel: 0, lane: 0),
@@ -97,6 +174,28 @@ void main() {
       );
       engine.pump(frames: 0);
 
+      expect(
+        repo.monitorChainFingerprint(0),
+        engine.monitorFxFingerprint(input: 0),
+      );
+    });
+
+    test('mixed enabled/disabled monitor slots + chain flag agree exactly '
+        '(R16)', () {
+      repo.setMonitorEffects(
+        input: 0,
+        effects: [
+          BuiltInEffect(type: TrackEffectType.echo, enabled: false),
+          BuiltInEffect(type: TrackEffectType.drive),
+        ],
+      );
+      engine.pump(frames: 0);
+      expect(
+        repo.monitorChainFingerprint(0),
+        engine.monitorFxFingerprint(input: 0),
+      );
+
+      repo.setMonitorChainEnabled(input: 0, enabled: false);
       expect(
         repo.monitorChainFingerprint(0),
         engine.monitorFxFingerprint(input: 0),

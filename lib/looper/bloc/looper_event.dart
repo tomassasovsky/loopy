@@ -402,6 +402,93 @@ final class LooperLanePluginEditorClosed extends LooperLaneEvent {
   List<Object?> get props => [channel, lane, index];
 }
 
+/// Track [channel]'s Track-stage (stereo bus) chain was replaced with
+/// [effects] — the bus twin of the lane chain-set path (FX v3 part 3a). The
+/// bloc owns Track/Master chain state: it pushes through the repository and
+/// persists the encoded envelope.
+final class LooperTrackEffectsChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackEffectsChanged].
+  const LooperTrackEffectsChanged(super.channel, this.effects);
+
+  /// The new chain, in processing order.
+  final List<TrackEffect> effects;
+
+  @override
+  List<Object?> get props => [channel, effects];
+}
+
+/// Entry [index] of track [channel]'s Track-stage chain was toggled to
+/// [enabled] (per-slot flag; click-free ramp engine-side).
+final class LooperTrackEffectEnabledToggled extends LooperChannelEvent {
+  /// Creates a [LooperTrackEffectEnabledToggled].
+  const LooperTrackEffectEnabledToggled(
+    super.channel,
+    this.index, {
+    required this.enabled,
+  });
+
+  /// The chain entry index (`0..kTrackEffectMax-1`).
+  final int index;
+
+  /// The new flag value.
+  final bool enabled;
+
+  @override
+  List<Object?> get props => [channel, index, enabled];
+}
+
+/// Track [channel]'s WHOLE Track-stage chain was toggled to [enabled] in one
+/// atomic flip (per-entry flags untouched).
+final class LooperTrackChainEnabledToggled extends LooperChannelEvent {
+  /// Creates a [LooperTrackChainEnabledToggled].
+  const LooperTrackChainEnabledToggled(super.channel, {required this.enabled});
+
+  /// The new flag value.
+  final bool enabled;
+
+  @override
+  List<Object?> get props => [channel, enabled];
+}
+
+/// The Master insert chain was replaced with [effects].
+final class LooperMasterEffectsChanged extends LooperEvent {
+  /// Creates a [LooperMasterEffectsChanged].
+  const LooperMasterEffectsChanged(this.effects);
+
+  /// The new chain, in processing order.
+  final List<TrackEffect> effects;
+
+  @override
+  List<Object?> get props => [effects];
+}
+
+/// Entry [index] of the Master insert chain was toggled to [enabled].
+final class LooperMasterEffectEnabledToggled extends LooperEvent {
+  /// Creates a [LooperMasterEffectEnabledToggled].
+  const LooperMasterEffectEnabledToggled(this.index, {required this.enabled});
+
+  /// The chain entry index (`0..kTrackEffectMax-1`).
+  final int index;
+
+  /// The new flag value.
+  final bool enabled;
+
+  @override
+  List<Object?> get props => [index, enabled];
+}
+
+/// The WHOLE Master insert chain was toggled to [enabled] in one atomic flip.
+final class LooperMasterChainEnabledToggled extends LooperEvent {
+  /// Creates a [LooperMasterChainEnabledToggled].
+  const LooperMasterChainEnabledToggled({required this.enabled});
+
+  /// The new flag value.
+  final bool enabled;
+
+  @override
+  List<Object?> get props => [enabled];
+}
+
 /// Play every track that has content.
 final class LooperPlayAllPressed extends LooperEvent {
   /// Creates a [LooperPlayAllPressed].

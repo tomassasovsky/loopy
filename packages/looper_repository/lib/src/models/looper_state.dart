@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/track.dart';
+import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
 
 /// The single source of looper truth: transport, the tracks, and engine status,
@@ -12,6 +13,8 @@ class LooperState extends Equatable {
     this.tracks = const [],
     this.status = const EngineStatus(),
     this.outputEnabledMask = 0xFFFFFFFF,
+    this.masterEffects = const [],
+    this.masterChainEnabled = true,
   });
 
   /// Master loop transport.
@@ -29,6 +32,13 @@ class LooperState extends Equatable {
   /// are enabled by default; only bits in `[0, status.outputChannels)` matter.
   final int outputEnabledMask;
 
+  /// The Master insert chain on the summed track mix, in processing order
+  /// (FX v3 part 1b). Empty == bit-identical output.
+  final List<TrackEffect> masterEffects;
+
+  /// Whether the Master insert chain is engaged (R15).
+  final bool masterChainEnabled;
+
   /// Whether hardware output [output] is currently enabled (a routing target).
   bool isOutputEnabled(int output) =>
       output < 0 || (outputEnabledMask & (1 << output)) != 0;
@@ -40,5 +50,12 @@ class LooperState extends Equatable {
   bool get hasContent => tracks.any((t) => t.hasContent);
 
   @override
-  List<Object?> get props => [transport, tracks, status, outputEnabledMask];
+  List<Object?> get props => [
+    transport,
+    tracks,
+    status,
+    outputEnabledMask,
+    masterEffects,
+    masterChainEnabled,
+  ];
 }

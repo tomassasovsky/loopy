@@ -38,9 +38,9 @@ run in parallel any time.
 |------|-------|----------------|----------|------------|--------|
 | 0 | arm() fix (standalone bug) | Opus · medium | `auto` | — | merged (#375) |
 | 1a | engine bypass + ramp | **Fable · high** | `merge-gate` | — | merged (#379) |
-| 1b | track bus + master insert | **Fable · high** | `merge-gate` | 1a | in review (#382) |
+| 1b | track bus + master insert | **Fable · high** | `merge-gate` | 1a | merged (#382) |
 | 2 | loop-stage wet cache | **Fable · extra-high** | `merge-gate` | 1a, 1b | pending |
-| 3a | domain model + shared types + CI jobs | **Fable · high** | `merge-gate` | 1a, 1b | pending |
+| 3a | domain model + shared types + CI jobs | **Fable · high** | `merge-gate` | 1a, 1b | building (#384) |
 | 3b | session v5 migration + manifest stages | Opus · medium | `merge-gate` | 3a, 0 | pending |
 | 4a | delete dead FX code | Sonnet · low | `auto` | — | pending |
 | 4b | four-stage Signal surface | Opus · medium | `merge-gate` | 3a, 4a | pending |

@@ -132,23 +132,40 @@ class PluginRef extends Equatable {
 /// effect ([BuiltInEffect]) or a hosted plugin ([PluginEffect]). Domain mirror
 /// of the engine's sealed `TrackEffect`.
 ///
-/// The chain is non-destructive and stageless — the recording is always dry and
-/// every active entry colors playback in order. The same model backs a lane's
-/// record-route chain and a hardware input's live-monitor chain.
+/// The chain is non-destructive and stage-addressed (FX v3) — the recording is
+/// always dry and every active, [enabled] entry colors the signal in order.
+/// The same model backs all four stages: a hardware input's live-monitor
+/// chain, a lane's record-route chain, a track's stereo-bus chain, and the
+/// Master insert.
 sealed class TrackEffect extends Equatable {
   /// Const base constructor for the sealed subtypes.
   const TrackEffect();
 
   /// The native `le_fx_type` code for this entry.
   int get typeCode;
+
+  /// Whether this entry is audible (R16). A disabled entry stays in the chain
+  /// with its settings intact but renders bit-exact passthrough.
+  bool get enabled;
+
+  /// The entry's stable per-slot identity (A9): minted at the repository write
+  /// boundary, unique within a session, never reused, preserved across edits /
+  /// reorders / persist→restore. `null` only before the entry has crossed a
+  /// repository write path. Identity, not sound: two entries that sound the
+  /// same but carry different ids are different entries (bindings target ids).
+  String? get slotId;
 }
 
 /// A built-in DSP effect: a [type] with its normalized [params].
 class BuiltInEffect extends TrackEffect {
   /// Creates a [BuiltInEffect]. [params] defaults to the [type]'s musical
   /// defaults.
-  BuiltInEffect({required this.type, List<double>? params})
-    : params = List<double>.unmodifiable(params ?? type.defaultParams);
+  BuiltInEffect({
+    required this.type,
+    List<double>? params,
+    this.enabled = true,
+    this.slotId,
+  }) : params = List<double>.unmodifiable(params ?? type.defaultParams);
 
   /// The effect type.
   final TrackEffectType type;
@@ -157,14 +174,29 @@ class BuiltInEffect extends TrackEffect {
   final List<double> params;
 
   @override
+  final bool enabled;
+
+  @override
+  final String? slotId;
+
+  @override
   int get typeCode => type.code;
 
   /// Returns a copy with the given fields replaced. [params] is copied.
-  BuiltInEffect copyWith({TrackEffectType? type, List<double>? params}) =>
-      BuiltInEffect(type: type ?? this.type, params: params ?? this.params);
+  BuiltInEffect copyWith({
+    TrackEffectType? type,
+    List<double>? params,
+    bool? enabled,
+    String? slotId,
+  }) => BuiltInEffect(
+    type: type ?? this.type,
+    params: params ?? this.params,
+    enabled: enabled ?? this.enabled,
+    slotId: slotId ?? this.slotId,
+  );
 
   @override
-  List<Object?> get props => [type, params];
+  List<Object?> get props => [type, params, enabled, slotId];
 }
 
 /// A hosted VST3/CLAP plugin in a chain entry, identified by its [ref]. Carries
@@ -184,6 +216,8 @@ class PluginEffect extends TrackEffect {
     this.unsupported = false,
     this.versionChanged = false,
     this.loading = false,
+    this.enabled = true,
+    this.slotId,
   });
 
   /// The hosted plugin's identity.
@@ -233,6 +267,12 @@ class PluginEffect extends TrackEffect {
   final bool loading;
 
   @override
+  final bool enabled;
+
+  @override
+  final String? slotId;
+
+  @override
   int get typeCode => engine.kPluginFxCode;
 
   /// Returns a copy with the given fields replaced.
@@ -246,6 +286,8 @@ class PluginEffect extends TrackEffect {
     bool? unsupported,
     bool? versionChanged,
     bool? loading,
+    bool? enabled,
+    String? slotId,
   }) => PluginEffect(
     ref: ref ?? this.ref,
     paramValues: paramValues ?? this.paramValues,
@@ -256,6 +298,8 @@ class PluginEffect extends TrackEffect {
     unsupported: unsupported ?? this.unsupported,
     versionChanged: versionChanged ?? this.versionChanged,
     loading: loading ?? this.loading,
+    enabled: enabled ?? this.enabled,
+    slotId: slotId ?? this.slotId,
   );
 
   @override
@@ -269,6 +313,8 @@ class PluginEffect extends TrackEffect {
     unsupported,
     versionChanged,
     loading,
+    enabled,
+    slotId,
   ];
 }
 
@@ -285,12 +331,31 @@ engine.TrackEffectType trackEffectTypeToEngine(TrackEffectType type) =>
     engine.TrackEffectType.fromCode(type.code);
 
 /// Maps a domain [TrackEffect] to its engine counterpart (boundary; internal).
+///
+/// Named explicitly by the FX-v3 plan (R16): `enabled` and `slotId` MUST
+/// thread through both arms — a field silently dropped here round-trips as its
+/// default and the bug stays invisible until a stomp un-bypasses a chain.
 engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
-  BuiltInEffect(:final type, :final params) => engine.BuiltInEffect(
-    type: trackEffectTypeToEngine(type),
-    params: params,
-  ),
-  PluginEffect(:final ref, :final paramValues, :final state, :final name) =>
+  BuiltInEffect(
+    :final type,
+    :final params,
+    :final enabled,
+    :final slotId,
+  ) =>
+    engine.BuiltInEffect(
+      type: trackEffectTypeToEngine(type),
+      params: params,
+      enabled: enabled,
+      slotId: slotId,
+    ),
+  PluginEffect(
+    :final ref,
+    :final paramValues,
+    :final state,
+    :final name,
+    :final enabled,
+    :final slotId,
+  ) =>
     engine.PluginEffect(
       ref: engine.PluginRef(
         format: pluginFormatToEngine(ref.format),
@@ -300,6 +365,8 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
       paramValues: paramValues,
       state: state,
       name: name,
+      enabled: enabled,
+      slotId: slotId,
     ),
 };
 
@@ -317,17 +384,30 @@ List<engine.TrackEffect> trackEffectsToEngine(List<TrackEffect> effects) => [
 ];
 
 /// Maps an engine [TrackEffect] to its domain mirror (boundary; internal).
+///
+/// Named explicitly by the FX-v3 plan (R16) — `enabled` and `slotId` MUST
+/// thread through both arms; see [_trackEffectToEngine].
 TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
     switch (effect) {
-      engine.BuiltInEffect(:final type, :final params) => BuiltInEffect(
-        type: TrackEffectType.fromCode(type.code),
-        params: params,
-      ),
+      engine.BuiltInEffect(
+        :final type,
+        :final params,
+        :final enabled,
+        :final slotId,
+      ) =>
+        BuiltInEffect(
+          type: TrackEffectType.fromCode(type.code),
+          params: params,
+          enabled: enabled,
+          slotId: slotId,
+        ),
       engine.PluginEffect(
         :final ref,
         :final paramValues,
         :final state,
         :final name,
+        :final enabled,
+        :final slotId,
       ) =>
         PluginEffect(
           ref: PluginRef(
@@ -338,6 +418,8 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
           paramValues: paramValues,
           state: state,
           name: name,
+          enabled: enabled,
+          slotId: slotId,
         ),
     };
 
@@ -357,35 +439,38 @@ List<TrackEffect> decodeTrackEffects(String? encoded) => [
 ];
 
 /// An order-sensitive 64-bit fingerprint of [chain], computed with the SAME
-/// FNV-1a folding the native engine uses in `le_engine_lane_fx_fingerprint`, so
-/// the repository's cache hash can be compared to the engine's published-chain
-/// hash for divergence detection (F6).
+/// FNV-1a folding the native engine uses in `le_engine_lane_fx_fingerprint` /
+/// `le_engine_monitor_fx_fingerprint`, so the repository's cache hash can be
+/// compared to the engine's published-chain hash for divergence detection
+/// (F6). Four-stage generic: the same fold keys every stage's chain (input,
+/// loop, track, master), whether or not the engine publishes a native twin.
 ///
 /// Fold order (D-FPEMPTY, pinned in lockstep with the C
-/// `le_fx_chain_fingerprint`): the chain-enabled bit first, but only for a
+/// `le_fx_chain_fingerprint`): the [chainEnabled] bit first, but only for a
 /// NON-empty chain — an empty chain still yields the FNV-1a offset basis (a
 /// chain-disabled empty chain and an enabled empty chain are both dry). Then
-/// each entry folds its type code, then its slot-enabled bit, then (built-ins
-/// only) its `kTrackEffectParams` parameter float-bits (padding a short param
-/// list with the type's defaults, matching the tail the engine seeds on a type
-/// set). A plugin entry contributes its type + enabled bit only — the engine's
-/// `a_fx_param` holds no plugin params (they live in the plugin host).
+/// each entry folds its type code, then its real [TrackEffect.enabled] bit,
+/// then (built-ins only) its `kTrackEffectParams` parameter float-bits
+/// (padding a short param list with the type's defaults, matching the tail the
+/// engine seeds on a type set). A plugin entry contributes its type + enabled
+/// bit only — the engine's `a_fx_param` holds no plugin params (they live in
+/// the plugin host).
 ///
-/// The domain model carries no `enabled` field until part 3 of the FX-v3 epic
-/// (#351), so both enable bits fold the engine's default of `1` here; part 3
-/// replaces the constants with the real per-effect/chain fields.
-int trackChainFingerprint(List<TrackEffect> chain) {
+/// [TrackEffect.slotId] deliberately does NOT fold: the fingerprint is sound
+/// identity, slot ids are entry identity (A9) — folding them would break the
+/// wet cache's fingerprint-keyed hits on toggle pairs and identical loads.
+int fxChainFingerprint(List<TrackEffect> chain, {bool chainEnabled = true}) {
   var h = engine.FxFingerprint.offset;
   final n = chain.length > engine.kTrackEffectMax
       ? engine.kTrackEffectMax
       : chain.length;
   if (n > 0) {
-    h = engine.FxFingerprint.mixU32(h, 1); // chain-enabled (part-3 handoff)
+    h = engine.FxFingerprint.mixU32(h, chainEnabled ? 1 : 0);
   }
   for (var i = 0; i < n; i++) {
     final fx = chain[i];
     h = engine.FxFingerprint.mixU32(h, fx.typeCode);
-    h = engine.FxFingerprint.mixU32(h, 1); // slot-enabled (part-3 handoff)
+    h = engine.FxFingerprint.mixU32(h, fx.enabled ? 1 : 0);
     if (fx is! BuiltInEffect) continue; // plugin: type + enabled bit only
     final defaults = fx.type.defaultParams;
     for (var p = 0; p < engine.kTrackEffectParams; p++) {

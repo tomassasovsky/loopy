@@ -287,18 +287,56 @@ Future<AutoStartResult> tryAutoStartEngine({
           lane: lane,
         );
       }
-      // Restore the saved ordered effect chain in one shot.
-      final effects = decodeTrackEffects(
+      // Restore the saved ordered effect chain in one shot. The key holds the
+      // chain envelope (R15) — the chain-enabled flag and inheritance meta
+      // ride inside it; a legacy bare-array chain decodes as enabled with no
+      // meta.
+      final chain = decodeFxChain(
         await settings.loadLaneEffects(track.channel, lane),
       );
-      if (effects.isNotEmpty) {
-        repository.setLaneEffects(
+      if (chain.entries.isNotEmpty) {
+        repository
+          ..setLaneEffects(
+            channel: track.channel,
+            lane: lane,
+            effects: chain.entries,
+          )
+          ..setLaneChainMeta(
+            channel: track.channel,
+            lane: lane,
+            inheritedFrom: chain.meta?.inheritedFrom ?? const [],
+          );
+      }
+      if (!chain.chainEnabled) {
+        repository.setLaneChainEnabled(
           channel: track.channel,
           lane: lane,
-          effects: effects,
+          enabled: false,
         );
       }
     }
+    // Restore the Track-stage (stereo bus) chain envelope (FX v3 part 3a).
+    final trackChain = decodeFxChain(
+      await settings.loadTrackFxChain(track.channel),
+    );
+    if (trackChain.entries.isNotEmpty) {
+      repository.setTrackEffects(
+        channel: track.channel,
+        effects: trackChain.entries,
+      );
+    }
+    if (!trackChain.chainEnabled) {
+      repository.setTrackChainEnabled(channel: track.channel, enabled: false);
+    }
+  }
+
+  // Restore the Master insert chain envelope (FX v3 part 3a).
+  final masterChain = decodeFxChain(await settings.loadMasterFxChain());
+  if (masterChain.entries.isNotEmpty) {
+    repository.setMasterEffects(effects: masterChain.entries);
+  }
+  if (!masterChain.chainEnabled) {
+    repository.setMasterChainEnabled(enabled: false);
   }
 
   // Restore the structural output gate. Only explicitly-disabled outputs were

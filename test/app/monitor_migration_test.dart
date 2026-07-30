@@ -1,4 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+// The domain envelope codec, prefixed — this file's chain fixtures otherwise
+// use the engine-typed models + serializer directly.
+import 'package:looper_repository/looper_repository.dart' as looper;
 import 'package:loopy/app/monitor_migration.dart';
 import 'package:loopy_engine/loopy_engine.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -188,6 +191,53 @@ void main() {
           expect(await settings.loadMonitorMigratedV3(), isTrue);
         },
       );
+
+      test('M1b: the non-empty check is envelope-aware — a lane chain saved '
+          'as an FX v3 envelope still wins the fold (R15)', () async {
+        await settings.saveMonitorMigratedV1();
+        await settings.saveMonitorMigratedV2();
+        await settings.saveMonitorLaneCount(0, 2);
+        await settings.saveMonitorLaneOutput(0, 0, 0x1);
+        await settings.saveMonitorLaneOutput(0, 1, 0x2);
+        // Lane 1 carries an envelope-encoded chain (not a bare array).
+        final envelope = looper.encodeFxChain(
+          looper.FxChainEnvelope(
+            entries: [
+              looper.BuiltInEffect(type: looper.TrackEffectType.delay),
+            ],
+          ),
+        );
+        await settings.saveMonitorLaneEffects(0, 1, envelope);
+
+        await runMonitorMigration(settings);
+
+        expect(await settings.loadMonitorEffects(0), envelope);
+      });
+
+      test('M1c: a DRY envelope (non-empty string, empty entries) does not '
+          'win the fold — the later non-empty chain does', () async {
+        await settings.saveMonitorMigratedV1();
+        await settings.saveMonitorMigratedV2();
+        await settings.saveMonitorLaneCount(0, 2);
+        await settings.saveMonitorLaneOutput(0, 0, 0x1);
+        await settings.saveMonitorLaneOutput(0, 1, 0x2);
+        // Lane 0 holds a dry envelope: a non-empty STRING whose entries are
+        // empty. The non-empty check must look inside, not at the string.
+        final dry = looper.encodeFxChain(const looper.FxChainEnvelope());
+        await settings.saveMonitorLaneEffects(0, 0, dry);
+        final wet = looper.encodeFxChain(
+          looper.FxChainEnvelope(
+            entries: [
+              looper.BuiltInEffect(type: looper.TrackEffectType.delay),
+            ],
+          ),
+        );
+        await settings.saveMonitorLaneEffects(0, 1, wet);
+
+        await runMonitorMigration(settings);
+
+        expect(await settings.loadMonitorEffects(0), wet);
+      });
 
       test('M2: FX on a non-lane-0 lane is preserved, not dropped', () async {
         await seedLanes(

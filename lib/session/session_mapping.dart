@@ -77,9 +77,13 @@ PerformanceChains performanceChainsFromLooper(LooperRepository looper) =>
 SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
   baseLengthFrames: bundle.session.baseLengthFrames,
   tracks: _rigTracks(bundle),
+  // Envelope-aware decode (R15): a v5+ manifest carries the chain envelope in
+  // the same opaque string; a v4-or-earlier bare-array chain decodes with
+  // every level defaulted to enabled. The rig consumes the entries only —
+  // chain flags/meta join `SessionRig` with part 3b's formatVersion 5.
   laneEffects: {
     for (final chain in bundle.session.laneChains)
-      (chain.channel, chain.lane): decodeTrackEffects(chain.encoded),
+      (chain.channel, chain.lane): decodeFxChain(chain.encoded).entries,
   },
   monitors: [
     for (final monitor in bundle.session.monitors)
@@ -89,7 +93,7 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
         outputMask: monitor.outputMask,
         volume: monitor.volume,
         muted: monitor.muted,
-        effects: decodeTrackEffects(monitor.encoded),
+        effects: decodeFxChain(monitor.encoded).entries,
       ),
   ],
   // Looper mode + crown (schema v4, B5c) — session-level, so read straight

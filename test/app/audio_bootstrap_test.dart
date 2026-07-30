@@ -599,6 +599,75 @@ void main() {
       expect(engine.laneFxParam[(0, 0, 1, 1)], 0.42);
     });
 
+    test('restores an ENVELOPE lane chain — flag + inheritance meta ride the '
+        'one key (R15) — plus the track/master chains', () async {
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(
+          sampleRate: 48000,
+          bufferFrames: 128,
+        ),
+      );
+      await settings.saveLaneEffects(
+        0,
+        0,
+        encodeFxChain(
+          FxChainEnvelope(
+            chainEnabled: false,
+            meta: const FxChainMeta(inheritedFrom: [2]),
+            entries: [BuiltInEffect(type: TrackEffectType.filter)],
+          ),
+        ),
+      );
+      await settings.saveTrackFxChain(
+        0,
+        encodeFxChain(
+          FxChainEnvelope(
+            chainEnabled: false,
+            entries: [BuiltInEffect(type: TrackEffectType.delay)],
+          ),
+        ),
+      );
+      await settings.saveMasterFxChain(
+        encodeFxChain(
+          FxChainEnvelope(
+            entries: [BuiltInEffect(type: TrackEffectType.reverb)],
+          ),
+        ),
+      );
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+
+      final started = await tryAutoStartEngine(
+        repository: repository,
+        settings: settings,
+      );
+
+      expect(started.started, isTrue);
+      // Lane chain + its envelope-borne flag and provenance.
+      expect(engine.laneFx[(0, 0, 0)]?.code, TrackEffectType.filter.code);
+      expect(engine.laneFxChainEnabled[(0, 0)], isFalse);
+      expect(repository.laneChainInheritedFrom(0, 0), [2]);
+      // Track-stage chain + flag.
+      expect(engine.trackFx[(0, 0)]?.code, TrackEffectType.delay.code);
+      expect(engine.trackFxCount[0], 1);
+      expect(engine.trackFxChainEnabled[0], isFalse);
+      // Master insert chain (enabled envelope pushes no disable).
+      expect(engine.masterFx[0]?.code, TrackEffectType.reverb.code);
+      expect(engine.masterFxCount, 1);
+      expect(engine.masterFxChainEnabled, isNull);
+    });
+
     test('restores a saved multi-lane setup on launch', () async {
       await settings.saveAudioConfig(
         const StoredAudioConfig(

@@ -75,21 +75,21 @@ class MonitorCubit extends Cubit<MonitorState> {
   }
 
   /// Reads hardware [input]'s persisted single-chain monitor, or null if none
-  /// was saved.
+  /// was saved. The chain key holds the envelope (R15) — the chain-enabled
+  /// flag rides inside it; a legacy bare-array chain decodes chain-enabled.
   Future<InputMonitor?> _restoreInput(int input) async {
     final enabled = await _settings.loadMonitorInputEnabled(input);
     final outputMask = await _settings.loadMonitorOutput(input);
     final volume = await _settings.loadMonitorVolume(input);
     final muted = await _settings.loadMonitorMute(input);
-    final effects = decodeTrackEffects(
-      await _settings.loadMonitorEffects(input),
-    );
+    final encodedChain = await _settings.loadMonitorEffects(input);
+    final chain = decodeFxChain(encodedChain);
     final anySaved =
         enabled != null ||
         outputMask != null ||
         volume != null ||
         muted != null ||
-        effects.isNotEmpty;
+        chain.entries.isNotEmpty;
     if (!anySaved) return null;
     return InputMonitor(
       input: input,
@@ -97,7 +97,8 @@ class MonitorCubit extends Cubit<MonitorState> {
       outputMask: outputMask ?? 0x3,
       volume: volume ?? 1.0,
       muted: muted ?? false,
-      effects: effects,
+      effects: chain.entries,
+      chainEnabled: chain.chainEnabled,
     );
   }
 
@@ -140,7 +141,12 @@ class MonitorCubit extends Cubit<MonitorState> {
     await _settings.saveMonitorMute(monitor.input, muted: monitor.muted);
     await _settings.saveMonitorEffects(
       monitor.input,
-      encodeTrackEffects(monitor.effects),
+      encodeFxChain(
+        FxChainEnvelope(
+          chainEnabled: monitor.chainEnabled,
+          entries: monitor.effects,
+        ),
+      ),
     );
   }
 
@@ -207,7 +213,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     final applied = _repository.monitorEffects(input);
     emit(state.withInput(monitor.copyWith(effects: applied)));
     unawaited(
-      _settings.saveMonitorEffects(input, encodeTrackEffects(applied)),
+      _settings.saveMonitorEffects(input, _encodedChain(input, applied)),
     );
   }
 
@@ -258,7 +264,7 @@ class MonitorCubit extends Cubit<MonitorState> {
       param: param,
       value: value,
     );
-    unawaited(_settings.saveMonitorEffects(input, encodeTrackEffects(next)));
+    unawaited(_settings.saveMonitorEffects(input, _encodedChain(input, next)));
   }
 
   /// Sets hosted-plugin parameter [paramId] of monitor [input]'s chain entry
@@ -280,7 +286,7 @@ class MonitorCubit extends Cubit<MonitorState> {
       paramId: paramId,
       value: value,
     );
-    unawaited(_settings.saveMonitorEffects(input, encodeTrackEffects(next)));
+    unawaited(_settings.saveMonitorEffects(input, _encodedChain(input, next)));
   }
 
   /// Opens the native editor window for monitor [input]'s plugin chain entry
@@ -342,10 +348,21 @@ class MonitorCubit extends Cubit<MonitorState> {
     unawaited(
       _settings.saveMonitorEffects(
         input,
-        encodeTrackEffects(applied.isNotEmpty ? applied : effects),
+        _encodedChain(input, applied.isNotEmpty ? applied : effects),
       ),
     );
   }
+
+  /// Encodes monitor [input]'s chain as the persisted envelope string (R15):
+  /// the chain-enabled flag rides beside the entries in the one monitor-fx
+  /// key. [effects] is passed rather than read from state because most save
+  /// sites persist a just-computed chain the state emit races.
+  String _encodedChain(int input, List<TrackEffect> effects) => encodeFxChain(
+    FxChainEnvelope(
+      chainEnabled: state.forInput(input).chainEnabled,
+      entries: effects,
+    ),
+  );
 
   /// Cancels every editor-sync poll timer for monitor [input].
   void _cancelEditorTimers(int input) {
@@ -367,7 +384,8 @@ class MonitorCubit extends Cubit<MonitorState> {
       ..setMonitorOutput(input: input, mask: monitor.outputMask)
       ..setMonitorVolume(input: input, volume: monitor.volume)
       ..setMonitorMute(input: input, muted: monitor.muted)
-      ..setMonitorEffects(input: input, effects: monitor.effects);
+      ..setMonitorEffects(input: input, effects: monitor.effects)
+      ..setMonitorChainEnabled(input: input, enabled: monitor.chainEnabled);
   }
 
   @override

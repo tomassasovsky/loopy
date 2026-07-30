@@ -39,6 +39,21 @@ void main() {
       expect(a.hashCode, b.hashCode);
       expect(a, isNot(c));
     });
+
+    test('FX v3 fields default and participate in equality', () {
+      const lane = Lane();
+      expect(lane.chainEnabled, isTrue);
+      expect(lane.inheritedFrom, isEmpty);
+      expect(lane.inputChainDiverges, isFalse);
+
+      expect(lane, isNot(const Lane(chainEnabled: false)));
+      expect(lane, isNot(const Lane(inheritedFrom: [0])));
+      expect(lane, isNot(const Lane(inputChainDiverges: true)));
+      expect(
+        const Lane(inheritedFrom: [1, 2]),
+        const Lane(inheritedFrom: [1, 2]),
+      );
+    });
   });
 
   group('maskToInputChannel', () {

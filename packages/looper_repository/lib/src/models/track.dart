@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/lane.dart';
-import 'package:loopy_engine/loopy_engine.dart';
+import 'package:looper_repository/src/models/track_effect.dart';
+import 'package:loopy_engine/loopy_engine.dart' hide TrackEffect;
 
 /// A single looper track: a multi-lane container that owns the transport
 /// (state, loop multiple, undo/redo depth) and its [lanes].
@@ -30,6 +31,8 @@ class Track extends Equatable {
     this.lengthPresetBars = 0,
     this.oneShot = false,
     this.lanes = const [],
+    this.effects = const [],
+    this.chainEnabled = true,
   });
 
   /// Track channel index (always 0 in the single-track phase).
@@ -101,6 +104,16 @@ class Track extends Equatable {
   /// clean buffer; empty in synthetic/default tracks.
   final List<Lane> lanes;
 
+  /// The track's stereo-bus (Track-stage) effects chain, in processing order —
+  /// downstream of the per-lane chains (FX v3 part 1b). Empty == the engine's
+  /// bit-identical per-lane routing path.
+  final List<TrackEffect> effects;
+
+  /// Whether the Track-stage chain is engaged (R15). Disabled == dry through
+  /// the bus (NOT a return to per-lane routing; only emptying the chain does
+  /// that).
+  final bool chainEnabled;
+
   /// Whether this track spans more than one base loop.
   bool get isMultiple => multiple > 1;
 
@@ -139,5 +152,7 @@ class Track extends Equatable {
     lengthPresetBars,
     oneShot,
     lanes,
+    effects,
+    chainEnabled,
   ];
 }

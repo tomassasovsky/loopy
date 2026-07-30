@@ -109,7 +109,7 @@ static uint64_t le_fx_fp_u32(uint64_t h, uint32_t v) {
 
 /* Order-sensitive fingerprint of a published fx chain (a_fx_count active of the
  * a_fx_type / a_fx_param arrays plus the two enable-flag levels). Fold order
- * (D-FPEMPTY, pinned — the Dart mirror trackChainFingerprint folds the same
+ * (D-FPEMPTY, pinned — the Dart mirror fxChainFingerprint folds the same
  * positions): the chain-enabled bit first, but only for a NON-empty chain, so
  * an empty chain still hashes to the FNV offset basis (chain-disabled empty ≡
  * enabled empty ≡ dry — the documented empty-chain invariant); then per entry

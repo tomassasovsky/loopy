@@ -49,6 +49,12 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(
+      () => repository.setMonitorChainEnabled(
+        input: any(named: 'input'),
+        enabled: any(named: 'enabled'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
       () => repository.setMonitorEffectParam(
         input: any(named: 'input'),
         index: any(named: 'index'),
@@ -174,6 +180,61 @@ void main() {
       verify: (cubit) {
         expect(cubit.state.forInput(0).enabled, isFalse);
         expect(cubit.state.forInput(1).enabled, isTrue);
+      },
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'load restores a chain-DISABLED envelope and pushes the flag '
+      '(R15/D-CHAINDIS)',
+      setUp: () async {
+        await settings.saveMonitorEffects(
+          0,
+          encodeFxChain(
+            FxChainEnvelope(
+              chainEnabled: false,
+              entries: [BuiltInEffect(type: TrackEffectType.delay)],
+            ),
+          ),
+        );
+      },
+      build: build,
+      act: (cubit) => cubit.load(),
+      verify: (cubit) {
+        final monitor = cubit.state.forInput(0);
+        expect(monitor.chainEnabled, isFalse);
+        expect(monitor.effects, hasLength(1));
+        verify(
+          () => repository.setMonitorChainEnabled(input: 0, enabled: false),
+        ).called(1);
+      },
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'a persisted chain re-encodes as the envelope carrying the chain flag',
+      setUp: () async {
+        await settings.saveMonitorEffects(
+          0,
+          encodeFxChain(
+            FxChainEnvelope(
+              chainEnabled: false,
+              entries: [BuiltInEffect(type: TrackEffectType.delay)],
+            ),
+          ),
+        );
+      },
+      build: build,
+      act: (cubit) async {
+        await cubit.load();
+        // A param tweak re-persists the chain; the disabled flag must ride.
+        cubit.setEffectParam(0, 0, 0, 0.9);
+      },
+      verify: (cubit) async {
+        final decoded = decodeFxChain(await settings.loadMonitorEffects(0));
+        expect(decoded.chainEnabled, isFalse);
+        expect(
+          ((decoded.entries.single) as BuiltInEffect).params.first,
+          0.9,
+        );
       },
     );
 
@@ -322,7 +383,7 @@ void main() {
           expect(await settings.loadMonitorMute(5), isFalse);
           expect(
             await settings.loadMonitorEffects(5),
-            encodeTrackEffects(const []),
+            encodeFxChain(const FxChainEnvelope()),
           );
         },
       );
