@@ -5,12 +5,16 @@ import 'package:loopy/pedal/cubit/pedal_cubit.dart';
 import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:pedal_repository/pedal_repository.dart'
-    show PedalBindStatus, PedalOutput;
+    show PedalBindStatus, PedalCodec, PedalOutput;
 
 /// Dropdown value for the "None" item — not a real device id (hosts may expose
 /// ports whose id is empty, which would duplicate `''` and trip
 /// DropdownButton).
 const _kPedalNoneValue = '__loopy_pedal_none__';
+
+/// Dropdown value for the "not set" firmware-version item — protocol
+/// versions start at 1, so 0 is never a real version.
+const _kPedalVersionUnknownValue = 0;
 
 /// The bidirectional-pedal block in the audio/I-O settings: a MIDI **output**
 /// device dropdown (with a "None" item) for the pedal's LED feedback link and a
@@ -53,6 +57,15 @@ class PedalSettingsSection extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         Text(l10n.pedalOutputHint, style: setupBody),
+        const SizedBox(height: 24),
+        SetupGroupLabel(l10n.pedalFirmwareGroup),
+        const SizedBox(height: 12),
+        _PedalFirmwareVersionDropdown(
+          firmwareVersion: cubit.state.firmwareVersion,
+          onSelected: cubit.selectFirmwareVersion,
+        ),
+        const SizedBox(height: 12),
+        Text(l10n.pedalFirmwareHint, style: setupBody),
       ],
     );
   }
@@ -156,6 +169,79 @@ class _PedalDropdown extends StatelessWidget {
                 return;
               }
             }
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// The manual pedal firmware wire-protocol version picker — the pre-#331
+/// version-discovery gate (R6). "Not set" keeps outbound frames at the v2
+/// safety floor; picking the flashed firmware's version lets loopy encode up
+/// to it (pedal FX mode needs v3). Options span v1 through the newest
+/// protocol the codec speaks, so a future bump appears here without a UI
+/// change.
+class _PedalFirmwareVersionDropdown extends StatelessWidget {
+  const _PedalFirmwareVersionDropdown({
+    required this.firmwareVersion,
+    required this.onSelected,
+  });
+
+  /// The saved version, or `null` when not set (unknown).
+  final int? firmwareVersion;
+
+  final ValueChanged<int?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: context.surface.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.surface.line),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<int>(
+          focusColor: Colors.transparent,
+          key: const Key('pedalSettings_firmware_picker'),
+          value: firmwareVersion ?? _kPedalVersionUnknownValue,
+          isExpanded: true,
+          dropdownColor: context.surface.cardHigh,
+          borderRadius: BorderRadius.circular(12),
+          icon: Icon(Icons.expand_more, color: context.surface.textSecondary),
+          style: TextStyle(color: context.surface.textPrimary, fontSize: 14),
+          items: [
+            DropdownMenuItem(
+              value: _kPedalVersionUnknownValue,
+              child: Text(
+                l10n.pedalFirmwareUnknown,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            for (
+              var version = PedalCodec.protocolVersionV1;
+              version <= PedalCodec.protocolVersionMax;
+              version++
+            )
+              DropdownMenuItem(
+                value: version,
+                child: Text(
+                  l10n.pedalFirmwareVersion(version),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
+          onChanged: (version) {
+            if (version == null) return;
+            onSelected(
+              version == _kPedalVersionUnknownValue ? null : version,
+            );
           },
         ),
       ),

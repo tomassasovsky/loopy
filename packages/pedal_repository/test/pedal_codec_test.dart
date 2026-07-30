@@ -220,28 +220,196 @@ void main() {
 
     test('encodeFrame rejects an unrecognized targetVersion', () {
       expect(
-        () => PedalCodec.encodeFrame(PedalStateFrame.blank(), targetVersion: 3),
+        () => PedalCodec.encodeFrame(PedalStateFrame.blank(), targetVersion: 4),
+        throwsA(isA<AssertionError>()),
+      );
+      expect(
+        () => PedalCodec.encodeFrame(PedalStateFrame.blank(), targetVersion: 0),
         throwsA(isA<AssertionError>()),
       );
     });
   });
 
-  group('PedalCodec.firmwareNeedsUpdate (D11)', () {
-    test('is true for v1 firmware', () {
+  group('PedalCodec protocol v3: 2-bit mode field (FX v3 part 5a)', () {
+    PedalStateFrame frameWithMode(PedalMode mode, {int activeBank = 0}) =>
+        PedalStateFrame.blank().copyWith(mode: mode, activeBank: activeBank);
+
+    test('protocolVersionMax is v3', () {
+      expect(PedalCodec.protocolVersionMax, PedalCodec.protocolVersionV3);
+    });
+
+    test(
+      'the encode default stays v2 — never encode above negotiated (R6): '
+      'an unknown pedal must not receive v3',
+      () {
+        expect(PedalCodec.protocolVersion, PedalCodec.protocolVersionV2);
+        final bytes = PedalCodec.encodeFrame(PedalStateFrame.blank());
+        expect(bytes[2], PedalCodec.protocolVersionV2);
+      },
+    );
+
+    test('every PedalMode round-trips at v3', () {
+      for (final mode in PedalMode.values) {
+        final bytes = PedalCodec.encodeFrame(
+          frameWithMode(mode),
+          targetVersion: PedalCodec.protocolVersionV3,
+        );
+        expect(bytes[2], PedalCodec.protocolVersionV3);
+        expect(
+          PedalCodec.decodeFrame(bytes)!.mode,
+          mode,
+          reason: 'PedalMode.$mode did not round-trip at v3',
+        );
+      }
+    });
+
+    test('fx mode coexists with bank B (both bits of payload byte 2)', () {
+      final frame = frameWithMode(PedalMode.fx, activeBank: 1);
+      final decoded = PedalCodec.decodeFrame(
+        PedalCodec.encodeFrame(
+          frame,
+          targetVersion: PedalCodec.protocolVersionV3,
+        ),
+      );
+      expect(decoded!.mode, PedalMode.fx);
+      expect(decoded.activeBank, 1);
+    });
+
+    test('PedalTrackLed.blue round-trips at every version', () {
+      final frame = PedalStateFrame.blank().copyWith(
+        trackLeds: [
+          PedalTrackLed.blue,
+          ...List.filled(PedalStateFrame.trackCount - 1, PedalTrackLed.off),
+        ],
+      );
+      for (final version in [
+        PedalCodec.protocolVersionV1,
+        PedalCodec.protocolVersionV2,
+        PedalCodec.protocolVersionV3,
+      ]) {
+        final decoded = PedalCodec.decodeFrame(
+          PedalCodec.encodeFrame(frame, targetVersion: version),
+        );
+        expect(
+          decoded!.trackLeds.first,
+          PedalTrackLed.blue,
+          reason: 'blue did not survive version $version',
+        );
+      }
+    });
+
+    group('B10 downgrade projection', () {
+      test(
+        'mode fx at v2 encodes byte-for-byte as the same frame at play '
+        '(only the mode field differs from the v3 twin)',
+        () {
+          final fx = explicitVersionGoldenFrames()['fx_mode_v3']!.frame;
+          final playTwin = fx.copyWith(mode: PedalMode.play);
+          for (final version in [
+            PedalCodec.protocolVersionV1,
+            PedalCodec.protocolVersionV2,
+          ]) {
+            expect(
+              PedalCodec.encodeFrame(fx, targetVersion: version),
+              PedalCodec.encodeFrame(playTwin, targetVersion: version),
+              reason: 'fx and its play twin diverged at version $version',
+            );
+          }
+        },
+      );
+
+      test(
+        'the v2 downgrade differs from the v3 twin only in the version '
+        'byte and the mode field — trackLeds bytes are byte-identical',
+        () {
+          final fx = explicitVersionGoldenFrames()['fx_mode_v3']!.frame;
+          final v3 = PedalCodec.encodeFrame(
+            fx,
+            targetVersion: PedalCodec.protocolVersionV3,
+          );
+          // Encoded at the default, which a sibling test pins to v2.
+          final v2 = PedalCodec.encodeFrame(fx);
+          expect(v2.length, v3.length);
+          // Reconstruct both logical payloads and compare field-by-field:
+          // everything except the mode field must be identical.
+          final p3 = PedalCodec.decodeFrame(v3)!;
+          final p2 = PedalCodec.decodeFrame(v2)!;
+          expect(p2.copyWith(mode: p3.mode), p3);
+          expect(p2.trackLeds, p3.trackLeds);
+          expect(p2.mode, PedalMode.play);
+        },
+      );
+
+      test('decoding a downgraded fx frame yields play, not fx', () {
+        final fx = frameWithMode(PedalMode.fx);
+        for (final version in [
+          PedalCodec.protocolVersionV1,
+          PedalCodec.protocolVersionV2,
+        ]) {
+          final decoded = PedalCodec.decodeFrame(
+            PedalCodec.encodeFrame(fx, targetVersion: version),
+          );
+          expect(decoded!.mode, PedalMode.play);
+        }
+      });
+    });
+
+    test('a v2 frame with byte 2 bit 1 set is rejected, never decoded as '
+        'fx (pre-v3 wires reserve byte 2 above the bank bit)', () {
+      final payload = validPayload()..[2] = 0x03; // bank B + a stray bit 1
+      expect(
+        PedalCodec.decodeFrame(
+          buildStateSysEx(payload, version: PedalCodec.protocolVersionV2),
+        ),
+        isNull,
+      );
+    });
+
+    test('the reserved fourth mode value (0b11) is rejected at v3', () {
+      // 17-byte payload (incl. master gain): flags bit0 (mode low bit) and
+      // byte 2 bit 1 (mode high bit) both set -> mode index 3, reserved.
+      final payload = [...validPayload(), 255]
+        ..[0] = 0x01
+        ..[2] = 0x02;
+      expect(
+        PedalCodec.decodeFrame(
+          buildStateSysEx(payload, version: PedalCodec.protocolVersionV3),
+        ),
+        isNull,
+      );
+    });
+
+    test('byte 2 bits above the v3 mode/bank bits are rejected', () {
+      final payload = [...validPayload(), 255]..[2] = 0x04;
+      expect(
+        PedalCodec.decodeFrame(
+          buildStateSysEx(payload, version: PedalCodec.protocolVersionV3),
+        ),
+        isNull,
+      );
+    });
+  });
+
+  group('PedalCodec.firmwareNeedsUpdate', () {
+    test('is true for firmware below the newest protocol (v1, v2)', () {
       expect(
         PedalCodec.firmwareNeedsUpdate(PedalCodec.protocolVersionV1),
         isTrue,
       );
-    });
-
-    test('is false for v2 firmware', () {
       expect(
         PedalCodec.firmwareNeedsUpdate(PedalCodec.protocolVersionV2),
+        isTrue,
+      );
+    });
+
+    test('is false for v3 firmware', () {
+      expect(
+        PedalCodec.firmwareNeedsUpdate(PedalCodec.protocolVersionV3),
         isFalse,
       );
     });
 
-    test('is false for any firmware version at least as new as v2', () {
+    test('is false for any firmware version at least as new as v3', () {
       expect(PedalCodec.firmwareNeedsUpdate(99), isFalse);
     });
   });
@@ -265,6 +433,46 @@ void main() {
           targetVersion: PedalCodec.protocolVersionV1,
         );
         expect(bytes, historical);
+      },
+    );
+
+    test(
+      'full v1/v2/v3 pairing matrix: what each wire version preserves of a '
+      'maximal (fx-mode, chain-LED, band, counting-in) frame [SC-8]',
+      () {
+        final rich = explicitVersionGoldenFrames()['fx_mode_v3']!.frame
+            .copyWith(countingIn: true);
+
+        // v1 wire: mode degrades to play, the v2 fields fall off, the v3
+        // high mode bit does not exist. Track LEDs (incl. blue) survive.
+        final v1 = PedalCodec.decodeFrame(
+          PedalCodec.encodeFrame(
+            rich,
+            targetVersion: PedalCodec.protocolVersionV1,
+          ),
+        );
+        expect(
+          v1,
+          rich.copyWith(
+            mode: PedalMode.play,
+            looperMode: PedalLooperMode.multi,
+            countingIn: false,
+          ),
+        );
+
+        // v2 wire (the encode default, pinned by a sibling test): looper
+        // mode + counting-in survive; mode still degrades.
+        final v2 = PedalCodec.decodeFrame(PedalCodec.encodeFrame(rich));
+        expect(v2, rich.copyWith(mode: PedalMode.play));
+
+        // v3 wire: full fidelity.
+        final v3 = PedalCodec.decodeFrame(
+          PedalCodec.encodeFrame(
+            rich,
+            targetVersion: PedalCodec.protocolVersionV3,
+          ),
+        );
+        expect(v3, rich);
       },
     );
   });
@@ -413,9 +621,13 @@ void main() {
     });
 
     test('an unrecognized protocol version', () {
-      // 0x01 and 0x02 are both recognized (D11); 0x03 is not.
+      // 0x01..0x03 are recognized (D11, part 5a); 0x04 and 0x00 are not.
       expect(
-        PedalCodec.decodeFrame(buildStateSysEx(validPayload(), version: 0x03)),
+        PedalCodec.decodeFrame(buildStateSysEx(validPayload(), version: 0x04)),
+        isNull,
+      );
+      expect(
+        PedalCodec.decodeFrame(buildStateSysEx(validPayload(), version: 0x00)),
         isNull,
       );
     });

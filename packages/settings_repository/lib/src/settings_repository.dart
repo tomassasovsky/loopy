@@ -300,6 +300,28 @@ class SettingsRepository {
   Future<void> savePedalClearFadeMs(int ms) =>
       _store.setInt(_pedalClearFadeMsKey, ms);
 
+  static const String _pedalFirmwareVersionKey = 'pedal.firmware_version';
+
+  /// Loads the manually-set pedal firmware wire-protocol version, or `null`
+  /// when unset (the default: version unknown).
+  ///
+  /// The pre-#331 version-discovery gate (R6): with no SysEx-capable inbound
+  /// path there is no handshake, so the user states what their pedal's
+  /// firmware speaks and `PedalRepository` encodes at that version — unknown
+  /// (`null`) means outbound frames stay at the v2 safety floor, never v3.
+  /// #331's identity-reply discovery will drive the same repository knob and
+  /// make this setting a fallback.
+  Future<int?> loadPedalFirmwareVersion() =>
+      _store.getInt(_pedalFirmwareVersionKey);
+
+  /// Saves the manually-set pedal firmware wire-protocol version.
+  Future<void> savePedalFirmwareVersion(int version) =>
+      _store.setInt(_pedalFirmwareVersionKey, version);
+
+  /// Clears the manual pedal firmware version (back to unknown ⇒ v2).
+  Future<void> clearPedalFirmwareVersion() =>
+      _store.remove(_pedalFirmwareVersionKey);
+
   static const String _showWaveformWindowKey = 'ui.waveform_window';
 
   /// Whether the secondary output-waveform window should open. Defaults to

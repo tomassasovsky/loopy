@@ -895,6 +895,18 @@
         }
     },
     "pedalOutputHint": "Pick the pedal's MIDI output so loopy can drive its LEDs. Its footswitches use the MIDI input above.",
+    "pedalFirmwareGroup": "PEDAL FIRMWARE PROTOCOL",
+    "pedalFirmwareUnknown": "Not set — send v2 (default)",
+    "pedalFirmwareVersion": "Protocol v{version}",
+    "@pedalFirmwareVersion": {
+        "description": "Dropdown option naming a pedal wire-protocol version, e.g. 'Protocol v3'.",
+        "placeholders": {
+            "version": {
+                "type": "int"
+            }
+        }
+    },
+    "pedalFirmwareHint": "Match the protocol of the firmware flashed on your pedal. loopy never sends a newer protocol than this; the pedal FX mode needs v3.",
     "pluginUnsupportedTopology": "{name} can't be used here — it isn't a stereo effect (it may be an instrument or use multiple buses).",
     "@pluginUnsupportedTopology": {
         "description": "Shown when a user inserts a plugin whose audio bus layout is not a supported stereo/mono effect.",
@@ -940,6 +952,7 @@
     "pedalSimLedOff": "off",
     "pedalSimLedArmed": "armed",
     "pedalSimLedRecording": "recording",
+    "pedalSimLedChainEnabled": "FX chain enabled",
     "pedalSimBankSemantics": "Bank {bank}",
     "@pedalSimBankSemantics": {
         "description": "Accessibility label for the on-screen pedal active bank.",

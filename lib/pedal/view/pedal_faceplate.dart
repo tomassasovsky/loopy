@@ -989,6 +989,9 @@ Color _ledColor(SurfaceTheme surface, PedalTrackLed led) => switch (led) {
   PedalTrackLed.off => surface.ledOff,
   PedalTrackLed.green => surface.ledGreen,
   PedalTrackLed.red => surface.ledRed,
+  // FX-mode chain-enabled (protocol v3, part 5a) — rendered like the
+  // firmware's verbatim blue; the FX-mode projection that emits it is 5b's.
+  PedalTrackLed.blue => surface.ledBlue,
 };
 
 Color _ringColor(SurfaceTheme surface, GlobalColor color) => switch (color) {
@@ -1004,4 +1007,7 @@ String _ledStateLabel(AppLocalizations l10n, PedalTrackLed led) =>
       PedalTrackLed.off => l10n.pedalSimLedOff,
       PedalTrackLed.green => l10n.pedalSimLedArmed,
       PedalTrackLed.red => l10n.pedalSimLedRecording,
+      // Part 5b re-labels LEDs per active mode; until then the blue chain
+      // LED gets its one truthful reading.
+      PedalTrackLed.blue => l10n.pedalSimLedChainEnabled,
     };

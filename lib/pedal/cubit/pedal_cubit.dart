@@ -48,12 +48,22 @@ class PedalCubit extends Cubit<PedalState> {
 
   Future<void>? _loadFuture;
 
-  /// Loads the persisted pedal output and auto-binds it. (The boot-default
-  /// MODE and the undo long-press threshold are control state, restored by
-  /// `ControlCubit.load`.)
+  /// Loads the persisted pedal output and auto-binds it, and applies the
+  /// persisted manual firmware version to the repository's target-version
+  /// knob (R6). (The boot-default MODE and the undo long-press threshold are
+  /// control state, restored by `ControlCubit.load`.)
   Future<void> load() => _loadFuture ??= _restore();
 
   Future<void> _restore() async {
+    // The firmware version gates what pushState encodes, so apply it before
+    // any bind can start streaming frames. Unset (null) keeps the
+    // repository's unknown ⇒ v2 floor.
+    final firmwareVersion = await _settings.loadPedalFirmwareVersion();
+    _pedal.firmwareProtocolVersion = firmwareVersion;
+    if (!isClosed && firmwareVersion != null) {
+      emit(state.copyWith(firmwareVersion: firmwareVersion));
+    }
+
     final saved = await _settings.loadPedalOutputDevice();
     if (saved == null) return;
     // Pin the saved output so the poll can reconnect it; bind now if present,
@@ -93,6 +103,23 @@ class PedalCubit extends Cubit<PedalState> {
     _syncOutputs();
     await _settings.clearPedalOutputDevice();
     if (!isClosed) emit(state.copyWith(boundOutputId: null));
+  }
+
+  /// Records what wire-protocol version the pedal's firmware speaks
+  /// ([version] `null` = unknown), persists it, and applies it to the
+  /// repository's target-version knob.
+  ///
+  /// The manual pre-#331 version-discovery gate (R6): unknown keeps outbound
+  /// frames at the v2 safety floor — the repository never encodes v3 at a
+  /// pedal not known to speak it.
+  Future<void> selectFirmwareVersion(int? version) async {
+    _pedal.firmwareProtocolVersion = version;
+    if (!isClosed) emit(state.copyWith(firmwareVersion: version));
+    if (version == null) {
+      await _settings.clearPedalFirmwareVersion();
+    } else {
+      await _settings.savePedalFirmwareVersion(version);
+    }
   }
 
   /// Hotplug poll: re-enumerates the host's MIDI outputs and reconciles the

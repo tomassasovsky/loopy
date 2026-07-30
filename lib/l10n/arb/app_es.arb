@@ -703,6 +703,18 @@
         }
     },
     "pedalOutputHint": "Elige la salida MIDI del pedal para que loopy controle sus LED. Sus interruptores usan la entrada MIDI de arriba.",
+    "pedalFirmwareGroup": "PROTOCOLO DEL FIRMWARE DEL PEDAL",
+    "pedalFirmwareUnknown": "Sin definir — enviar v2 (predeterminado)",
+    "pedalFirmwareVersion": "Protocolo v{version}",
+    "@pedalFirmwareVersion": {
+        "description": "Dropdown option naming a pedal wire-protocol version, e.g. 'Protocol v3'.",
+        "placeholders": {
+            "version": {
+                "type": "int"
+            }
+        }
+    },
+    "pedalFirmwareHint": "Debe coincidir con el protocolo del firmware grabado en tu pedal. loopy nunca envía un protocolo más nuevo que este; el modo FX del pedal necesita v3.",
     "pluginUnsupportedTopology": "{name} no se puede usar aquí: no es un efecto estéreo (puede ser un instrumento o usar varios buses).",
     "@pluginUnsupportedTopology": {
         "description": "Shown when a user inserts a plugin whose audio bus layout is not a supported stereo/mono effect.",
@@ -746,6 +758,7 @@
     "pedalSimLedOff": "apagado",
     "pedalSimLedArmed": "armado",
     "pedalSimLedRecording": "grabando",
+    "pedalSimLedChainEnabled": "cadena de FX activada",
     "pedalSimBankSemantics": "Banco {bank}",
     "@pedalSimBankSemantics": {
         "placeholders": {

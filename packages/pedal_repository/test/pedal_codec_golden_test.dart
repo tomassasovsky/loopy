@@ -33,12 +33,15 @@ void main() {
       });
     }
 
-    // D11: fixtures pinned at an explicit (non-default) protocol version —
-    // see explicitVersionGoldenFrames's doc comment.
+    // D11/B10: fixtures pinned at an explicit (non-default) protocol version
+    // — see explicitVersionGoldenFrames's doc comment. The decode assertion
+    // targets the catalog's `decoded` twin, since a downgraded wire loses
+    // fields (fx → play below v3, looperMode below v2) by design.
     for (final entry in explicitVersionGoldenFrames().entries) {
       final name = entry.key;
       final frame = entry.value.frame;
       final version = entry.value.version;
+      final decoded = entry.value.decoded;
 
       test('$name encodes to its committed bytes at its pinned version', () {
         final file = File('test/fixtures/$name.syx');
@@ -53,7 +56,7 @@ void main() {
 
       test('$name decodes back from its committed bytes', () {
         final golden = File('test/fixtures/$name.syx').readAsBytesSync();
-        expect(PedalCodec.decodeFrame(golden), frame);
+        expect(PedalCodec.decodeFrame(golden), decoded);
       });
     }
   });

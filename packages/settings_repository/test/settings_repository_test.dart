@@ -480,6 +480,24 @@ void main() {
     });
   });
 
+  group('pedal firmware version', () {
+    test('returns null (unknown) when nothing is stored', () async {
+      expect(await repository.loadPedalFirmwareVersion(), isNull);
+    });
+
+    test('round-trips a saved version', () async {
+      await repository.savePedalFirmwareVersion(3);
+      expect(await repository.loadPedalFirmwareVersion(), 3);
+    });
+
+    test('clearPedalFirmwareVersion removes the key', () async {
+      await repository.savePedalFirmwareVersion(1);
+      await repository.clearPedalFirmwareVersion();
+      expect(await repository.loadPedalFirmwareVersion(), isNull);
+      expect(store.values.containsKey('pedal.firmware_version'), isFalse);
+    });
+  });
+
   group('pedal timing', () {
     test('long-press defaults to 500 ms and round-trips', () async {
       expect(await repository.loadPedalLongPressMs(), 500);

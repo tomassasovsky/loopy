@@ -115,19 +115,82 @@ Map<String, PedalStateFrame> goldenFrames() {
 /// version rather than the [PedalCodec.protocolVersion] default every entry
 /// in [goldenFrames] above encodes at.
 ///
-/// These exist purely for the D11 bidirectional-degrade contract: proving
-/// what the app actually puts on the wire when it detects old firmware and
-/// downgrades, with a concrete committed byte sequence firmware can test
-/// against (see `firmware/test/test_pedal_protocol.c`'s
+/// These exist purely for the bidirectional-degrade contracts (D11, B10):
+/// proving what the app actually puts on the wire when it knows the bound
+/// firmware's version, with a concrete committed byte sequence firmware can
+/// test against (see `firmware/test/test_pedal_protocol.c`'s
 /// `test_version_pairings`) — not just "the codec's current default", which
 /// [goldenFrames] already covers.
-Map<String, ({PedalStateFrame frame, int version})>
-explicitVersionGoldenFrames() => {
-  // Same logical content as `idle_rec` above, forced onto the legacy (v1)
-  // wire — the D11 "today's baseline, must stay bit-identical" pairing.
-  // Pinned in pedal_codec_test.dart against the exact pre-B5a fixture bytes.
-  'idle_rec_v1': (
-    frame: goldenFrames()['idle_rec']!,
-    version: PedalCodec.protocolVersionV1,
-  ),
-};
+///
+/// `decoded` is what [PedalCodec.decodeFrame] recovers from the fixture
+/// bytes — identical to `frame` unless the pinned version genuinely cannot
+/// carry a field (a downgrade loses information by design; the golden test
+/// asserts exactly what survives).
+Map<String, ({PedalStateFrame frame, int version, PedalStateFrame decoded})>
+explicitVersionGoldenFrames() {
+  // The FX-mode frame (protocol v3, part 5a): mode fx with chain-state
+  // trackLeds (PedalTrackLed.blue = chain enabled), on bank B so the mode
+  // field's high bit coexists with the bank bit in payload byte 2
+  // (byte 2 = 0b11), plus non-default v2 fields (looperMode band) to prove
+  // v3 carries everything v2 did. The v2/v1 twins below pin the B10
+  // downgrade projection byte-for-byte: only the mode field differs.
+  final fxMode = PedalStateFrame(
+    globalColor: GlobalColor.green,
+    trackLeds: const [
+      PedalTrackLed.blue,
+      PedalTrackLed.off,
+      PedalTrackLed.blue,
+      PedalTrackLed.blue,
+      PedalTrackLed.off,
+      PedalTrackLed.off,
+      PedalTrackLed.blue,
+      PedalTrackLed.off,
+    ],
+    activeBank: 1,
+    selectedTrack: 5,
+    mode: PedalMode.fx,
+    loopLengthMicros: 2000000,
+    clearFadeActive: false,
+    masterGain: 204 / 255,
+    looperMode: PedalLooperMode.band,
+  );
+
+  return {
+    // Same logical content as `idle_rec` above, forced onto the legacy (v1)
+    // wire — the D11 "today's baseline, must stay bit-identical" pairing.
+    // Pinned in pedal_codec_test.dart against the exact pre-B5a fixture
+    // bytes.
+    'idle_rec_v1': (
+      frame: goldenFrames()['idle_rec']!,
+      version: PedalCodec.protocolVersionV1,
+      decoded: goldenFrames()['idle_rec']!,
+    ),
+
+    // FX mode at v3: full fidelity.
+    'fx_mode_v3': (
+      frame: fxMode,
+      version: PedalCodec.protocolVersionV3,
+      decoded: fxMode,
+    ),
+
+    // FX mode downgraded onto the v2 wire (B10): the mode field degrades to
+    // play (mute); every other byte — including the blue chain-state
+    // trackLeds — is identical to the v3 twin.
+    'fx_mode_v2': (
+      frame: fxMode,
+      version: PedalCodec.protocolVersionV2,
+      decoded: fxMode.copyWith(mode: PedalMode.play),
+    ),
+
+    // FX mode downgraded onto the v1 wire (B10 + D11): the mode degrades to
+    // play AND the v2-only looperMode/countingIn fields fall off the wire.
+    'fx_mode_v1': (
+      frame: fxMode,
+      version: PedalCodec.protocolVersionV1,
+      decoded: fxMode.copyWith(
+        mode: PedalMode.play,
+        looperMode: PedalLooperMode.multi,
+      ),
+    ),
+  };
+}

@@ -115,37 +115,56 @@ switch (`A2`) is dropped in this layout.
 
 ## Contract test (host, no board)
 
-The firmware's codec is unit-tested on the host against loopy's golden fixtures —
-run it from the **repo root** so the default fixtures path resolves:
+The firmware's codec is unit-tested on the host against loopy's golden
+fixtures. The shared runner builds and runs the contract test against **both**
+in-repo protocol copies (`firmware/loopy_pedal/` and
+`hardware/firmware/loopy_pedal_32u4/`) and fails if the two copies drift —
+run it from anywhere (it cd's to the repo root itself):
 
 ```sh
-gcc -std=c11 -Wall -I firmware/loopy_pedal \
-  firmware/test/test_pedal_protocol.c firmware/loopy_pedal/pedal_protocol.c \
-  -o pedal_protocol_tests && ./pedal_protocol_tests
-# expected last line: ALL PASSED
+bash firmware/test/run_tests.sh
+# expected last line: run_tests.sh: both protocol copies pass
 ```
 
-It decodes every `packages/pedal_repository/test/fixtures/*.syx`, re-encodes it,
-and asserts the bytes are identical to the fixture — plus field decodes,
-malformed-frame rejection, the identity request, and the Note/encoder encoders.
-On-device behavior (LED rendering, debounce, the FastLED poll-around-`show()`) is
-covered by the manual per-OS smoke pass.
+CI runs the identical script (`.github/workflows/main.yaml`, `native-tests`
+job). It decodes every `packages/pedal_repository/test/fixtures/*.syx`,
+re-encodes it, and asserts the bytes are identical to the fixture — plus field
+decodes, the full v1/v2/v3 version-pairing matrix, the FX→mute downgrade
+twins, malformed-frame rejection, the identity request, and the Note/encoder
+encoders. On-device behavior (LED rendering, debounce, the FastLED
+poll-around-`show()`) is covered by the manual per-OS smoke pass.
 
 ## Protocol summary
 
-State frame (loopy → pedal), 26 bytes:
+State frame (loopy → pedal), 26 bytes at every version:
 
 ```
-F0 7D <ver=01> <type=01> <20 packed payload bytes> <checksum> F7
+F0 7D <ver> <type=01> <20 packed payload bytes> <checksum> F7
 ```
 
-The 17-byte logical payload (flags · global color · bank · armed track · 8 track
-LEDs · loop length µs · master gain) is 7-bit packed and XOR-checksummed. The
-decoder also accepts the legacy 16-byte payload (pre master-gain), decoding it
-with unity gain, so an old pedal/app still interoperates. Loop-top is the single
-real-time byte `0xFA`. Footswitches send a fixed Note (NoteOn press / NoteOff
-release); the encoder sends relative CC `0x10`. See `pedal_protocol.h` and
-loopy's `PedalCodec` for the authoritative field table.
+The 17-byte logical payload (flags · global color · bank/mode-high byte ·
+armed track · 8 track LEDs · loop length µs · master gain) is 7-bit packed and
+XOR-checksummed. The decoder also accepts the legacy 16-byte payload (pre
+master-gain), decoding it with unity gain, so an old pedal/app still
+interoperates. Loop-top is the single real-time byte `0xFA`. Footswitches send
+a fixed Note (NoteOn press / NoteOff release); the encoder sends relative CC
+`0x10`. See `pedal_protocol.h` and loopy's `PedalCodec` for the authoritative
+field table.
+
+Version history — the logical payload is 17 bytes at **all** versions; each
+bump only claimed previously-reserved bits:
+
+- **v1** (`<ver>=01`): the baseline. Flags byte bits 4-7 reserved zero; the
+  interaction mode is the single flags bit 0 (`0` rec, `1` play).
+- **v2** (`<ver>=02`, D11): flags bits 4-6 = looper mode, bit 7 = counting-in.
+- **v3** (`<ver>=03`, FX v3 part 5a): the interaction mode widens to 2 bits —
+  low bit stays flags bit 0, the high bit is bit 1 of the bank byte (payload
+  byte 2) — adding FX mode (`2`); wire value `3` is reserved (rejected).
+  Adds the blue chain-enabled track-LED color (index 3). The mode field is
+  the only wire difference from v2.
+
+`PEDAL_FRAME_MAX_BYTES` is 32, against a 26-byte wire frame today — 6 bytes
+of headroom before any output buffer needs to grow.
 
 ## D-PEDAL addendum: performance-recording arm/disarm
 

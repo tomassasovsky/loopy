@@ -166,10 +166,13 @@ jobs:
   # need no audio device, so they run on Linux with just a C toolchain + ALSA
   # headers (the MIDI test links libasound). run_native_tests.sh builds and runs
   # both suites; a failed CHECK returns non-zero and fails the job. A third
-  # step below separately builds and runs the firmware/Dart protocol contract
-  # test (firmware/test/test_pedal_protocol.c), which needs the repo root as
-  # its working directory rather than run_native_tests.sh's own cd convention.
-  # This is the strongest correctness gate in the repo — keep it on every PR.
+  # step below runs the firmware/Dart protocol contract test via
+  # firmware/test/run_tests.sh — the single definition of that gate (also the
+  # local verify loop), which diffs the two pedal_protocol.{h,c} copies and
+  # builds + runs the contract test against both trees, so protocol drift
+  # between firmware/loopy_pedal and hardware/firmware/loopy_pedal_32u4
+  # fails the job. This is the strongest correctness gate in the repo — keep
+  # it on every PR.
   native-tests:
     runs-on: ubuntu-latest
     steps:
@@ -180,12 +183,8 @@ jobs:
           sudo apt-get install -y build-essential libasound2-dev
       - name: Build + run native engine/MIDI tests
         run: bash packages/loopy_engine/src/test/run_native_tests.sh
-      - name: Build + run firmware/Dart protocol contract test
-        run: |
-          gcc -std=c11 -Wall -I firmware/loopy_pedal \
-            firmware/test/test_pedal_protocol.c firmware/loopy_pedal/pedal_protocol.c \
-            -o pedal_protocol_tests
-          ./pedal_protocol_tests
+      - name: Build + run firmware/Dart protocol contract tests (both trees)
+        run: bash firmware/test/run_tests.sh
 
   # The same engine/MIDI suites under AddressSanitizer (#227): the strongest
   # net for buffer-sizing bugs — the class that stays green through every

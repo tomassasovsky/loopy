@@ -112,5 +112,72 @@ void main() {
       final frame = PedalCodec.decodeFrame(transport.sent.last);
       expect(frame?.isGoodbye, isTrue);
     });
+
+    group('firmware version (R6 pre-#331 gate)', () {
+      test(
+        'load applies the persisted version to the repository before frames '
+        'flow, and reflects it in state',
+        () async {
+          await settings.savePedalFirmwareVersion(
+            PedalCodec.protocolVersionV3,
+          );
+          final cubit = buildCubit();
+          await cubit.load();
+          expect(cubit.state.firmwareVersion, PedalCodec.protocolVersionV3);
+          expect(
+            pedal.targetProtocolVersion,
+            PedalCodec.protocolVersionV3,
+          );
+          await cubit.close();
+        },
+      );
+
+      test(
+        'load with nothing persisted keeps the unknown => v2 floor',
+        () async {
+          final cubit = buildCubit();
+          await cubit.load();
+          expect(cubit.state.firmwareVersion, isNull);
+          expect(pedal.targetProtocolVersion, PedalCodec.protocolVersionV2);
+          await cubit.close();
+        },
+      );
+
+      test(
+        'selectFirmwareVersion persists, applies, and drives what pushState '
+        'encodes',
+        () async {
+          final cubit = buildCubit();
+          await cubit.selectFirmwareVersion(PedalCodec.protocolVersionV3);
+
+          expect(cubit.state.firmwareVersion, PedalCodec.protocolVersionV3);
+          expect(
+            await settings.loadPedalFirmwareVersion(),
+            PedalCodec.protocolVersionV3,
+          );
+
+          // The knob is live: a frame pushed now goes out at v3.
+          await cubit.selectOutput(const PedalOutput(id: 'out', name: 'P'));
+          transport.sent.clear();
+          pedal.pushState(PedalStateFrame.blank());
+          expect(transport.sent.last[2], PedalCodec.protocolVersionV3);
+          await cubit.close();
+        },
+      );
+
+      test(
+        'selectFirmwareVersion(null) clears back to unknown => v2',
+        () async {
+          final cubit = buildCubit();
+          await cubit.selectFirmwareVersion(PedalCodec.protocolVersionV3);
+          await cubit.selectFirmwareVersion(null);
+
+          expect(cubit.state.firmwareVersion, isNull);
+          expect(await settings.loadPedalFirmwareVersion(), isNull);
+          expect(pedal.targetProtocolVersion, PedalCodec.protocolVersionV2);
+          await cubit.close();
+        },
+      );
+    });
   });
 }

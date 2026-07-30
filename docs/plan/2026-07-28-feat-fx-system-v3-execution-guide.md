@@ -30,12 +30,10 @@ issue: 351
 
 ## Status
 
-**Next up:** the engine + domain + persistence foundation and the dead-code
-sweep are all merged (0, 1a, 1b, 2, 3a, 3b, 4a), and **4b** — the first part a
-user can see — is in review (PR #395), awaiting its merge gate. With 4b out,
-the critical chain continues at **5b** (deps 5a, 3a, 1a), so **5a** (needs the
-#331 prereq) is the next thing to start. 5a and 6a have no in-epic
-dependencies and can run in parallel any time.
+**Next up:** everything through the four-stage Signal surface is merged (0,
+1a, 1b, 2, 3a, 3b, 4a, 4b). **5a** (protocol v3 wire) is in review; with it
+out, the critical chain continues at **5b** (deps 5a, 3a, 1a). 6a still has
+no in-epic dependencies and can run in parallel any time.
 
 Open items carried out of merged parts, neither blocking a new part:
 - [#389](https://github.com/tomassasovsky/loopy/issues/389) (`plan-gate`, from
@@ -56,7 +54,7 @@ Open items carried out of merged parts, neither blocking a new part:
 | 3a | domain model + shared types + CI jobs | **Fable · high** | `merge-gate` | 1a, 1b | merged (#386) |
 | 3b | session v5 migration + manifest stages | Opus · medium | `merge-gate` | 3a, 0 | merged (#388) |
 | 4a | delete dead FX code | Sonnet · low | `auto` | — | merged (#392) |
-| 4b | four-stage Signal surface | Opus · medium | `merge-gate` | 3a, 4a | in-review (#395) |
+| 4b | four-stage Signal surface | Opus · medium | `merge-gate` | 3a, 4a | merged (#395) |
 | 5a | protocol v3 wire + version discovery | **Fable · high** | `merge-gate` | — (#331 prereq) | pending |
 | 5b | FX interaction mode (app) | Opus · high | `merge-gate` (physical slice `blocked-verify`) | 5a, 3a, 1a | pending |
 | 6a | faceplate presentational extraction | Sonnet · medium | `auto` | — | pending |
