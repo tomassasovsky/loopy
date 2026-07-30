@@ -188,6 +188,7 @@ class _TopPlate extends StatelessWidget {
             label: label,
             onPress: sim.press,
             l10n: l10n,
+            mode: frame.mode,
             led: channel == null ? null : frame.trackLeds[channel],
             channel: channel,
           );
@@ -315,12 +316,20 @@ class _TopPlate extends StatelessWidget {
                   'MODE',
                   _pedalU(3),
                   _row1V,
+                  // The tri-state mode indicator (A1), mirroring the firmware
+                  // verbatim: rec green, mute amber, FX blue — with the
+                  // performance-armed blink keeping precedence, exactly as
+                  // both sketches render it.
                   statusLed: frame.performanceArmed
                       ? _BlinkingLed(
                           ledKey: const Key('pedalFaceplate_led_mode'),
                           color: surface.ledRed,
                         )
-                      : null,
+                      : _Led(
+                          ledKey: const Key('pedalFaceplate_led_mode'),
+                          color: _modeColor(surface, frame.mode),
+                          glow: true,
+                        ),
                 ),
                 ...silkLabels('REC/PLAY', _pedalU(0), _row1V),
                 ...silkLabels('STOP', _pedalU(1), _row1V),
@@ -606,6 +615,7 @@ class _Footswitch extends StatefulWidget {
     required this.label,
     required this.onPress,
     required this.l10n,
+    required this.mode,
     this.led,
     this.channel,
   });
@@ -614,6 +624,11 @@ class _Footswitch extends StatefulWidget {
   final String label;
   final void Function(PedalButton button, {required bool down}) onPress;
   final AppLocalizations l10n;
+
+  /// The frame's active interaction mode — what this switch DOES, and how its
+  /// LED reads, both depend on it.
+  final PedalMode mode;
+
   final PedalTrackLed? led;
   final int? channel;
 
@@ -649,12 +664,23 @@ class _FootswitchState extends State<_Footswitch> {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    final label = widget.channel != null
-        ? widget.l10n.pedalSimTrackSemantics(
-            widget.channel! + 1,
-            _ledStateLabel(widget.l10n, widget.led ?? PedalTrackLed.off),
-          )
-        : widget.l10n.pedalSimFootswitchSemantics(widget.label);
+    final label = switch (widget.channel) {
+      final int channel => widget.l10n.pedalSimTrackSemantics(
+        channel + 1,
+        _ledStateLabel(
+          widget.l10n,
+          widget.led ?? PedalTrackLed.off,
+          widget.mode,
+        ),
+      ),
+      // Stop is the FX panic control in FX mode (tap bypasses every chain,
+      // hold restores them) — a plain "STOP footswitch" would hide that.
+      null
+          when widget.button == PedalButton.stop &&
+              widget.mode == PedalMode.fx =>
+        widget.l10n.pedalSimStopFxSemantics,
+      null => widget.l10n.pedalSimFootswitchSemantics(widget.label),
+    };
     return Semantics(
       button: true,
       label: label,
@@ -994,6 +1020,15 @@ Color _ledColor(SurfaceTheme surface, PedalTrackLed led) => switch (led) {
   PedalTrackLed.blue => surface.ledBlue,
 };
 
+/// The tri-state MODE indicator's color (A1), one per interaction mode —
+/// the on-screen twin of the firmware's `modeColor`, whose amber comes from
+/// the same place the ring's does.
+Color _modeColor(SurfaceTheme surface, PedalMode mode) => switch (mode) {
+  PedalMode.rec => surface.ledGreen,
+  PedalMode.play => surface.ledAmber,
+  PedalMode.fx => surface.ledBlue,
+};
+
 Color _ringColor(SurfaceTheme surface, GlobalColor color) => switch (color) {
   GlobalColor.off => surface.ringGlow,
   GlobalColor.green => surface.ledGreen,
@@ -1002,12 +1037,25 @@ Color _ringColor(SurfaceTheme surface, GlobalColor color) => switch (color) {
   GlobalColor.blue => surface.ledBlue,
 };
 
-String _ledStateLabel(AppLocalizations l10n, PedalTrackLed led) =>
-    switch (led) {
-      PedalTrackLed.off => l10n.pedalSimLedOff,
-      PedalTrackLed.green => l10n.pedalSimLedArmed,
-      PedalTrackLed.red => l10n.pedalSimLedRecording,
-      // Part 5b re-labels LEDs per active mode; until then the blue chain
-      // LED gets its one truthful reading.
-      PedalTrackLed.blue => l10n.pedalSimLedChainEnabled,
-    };
+/// The screen-reader reading of a track LED, PER ACTIVE MODE — the same byte
+/// means different things in each, so a mode-blind label would lie.
+///
+/// FX mode reads any lit LED as chain-enabled: a pedal below protocol v3 gets
+/// the codec's B10 downgrade (blue rendered as green), and the reading must
+/// stay truthful there too.
+String _ledStateLabel(
+  AppLocalizations l10n,
+  PedalTrackLed led,
+  PedalMode mode,
+) => switch (mode) {
+  PedalMode.fx =>
+    led == PedalTrackLed.off
+        ? l10n.pedalSimLedChainDisabled
+        : l10n.pedalSimLedChainEnabled,
+  PedalMode.rec || PedalMode.play => switch (led) {
+    PedalTrackLed.off => l10n.pedalSimLedOff,
+    PedalTrackLed.green => l10n.pedalSimLedArmed,
+    PedalTrackLed.red => l10n.pedalSimLedRecording,
+    PedalTrackLed.blue => l10n.pedalSimLedChainEnabled,
+  },
+};

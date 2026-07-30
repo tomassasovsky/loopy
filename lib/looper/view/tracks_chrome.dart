@@ -223,7 +223,7 @@ class SessionMenu extends StatelessWidget {
   }
 }
 
-/// Shows the active system mode (REC / MUTE). Tap to toggle.
+/// Shows the active system mode (REC / MUTE / FX). Tap to cycle.
 class ModeIndicator extends StatelessWidget {
   /// Creates a [ModeIndicator].
   const ModeIndicator({required this.mode, required this.onToggle, super.key});
@@ -240,11 +240,26 @@ class ModeIndicator extends StatelessWidget {
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final looper = theme.extension<LooperTheme>()!;
-    final recording = mode == InteractionMode.record;
-    final color = recording ? looper.recordColor : theme.colorScheme.primary;
-    final modeName = recording
-        ? l10n.interactionModeRec
-        : l10n.interactionModeMute;
+    // One color + icon + name per mode, matching the pedal's own tri-state
+    // MODE indicator (rec green-ish accent, mute primary, FX blue) so the
+    // screen and the plate never disagree about which mode is live.
+    final (color, icon, modeName) = switch (mode) {
+      InteractionMode.record => (
+        looper.recordColor,
+        Icons.fiber_manual_record,
+        l10n.interactionModeRec,
+      ),
+      InteractionMode.mute => (
+        theme.colorScheme.primary,
+        Icons.volume_off_rounded,
+        l10n.interactionModeMute,
+      ),
+      InteractionMode.fx => (
+        looper.fxColor,
+        Icons.graphic_eq,
+        l10n.interactionModeFx,
+      ),
+    };
 
     return FocusableTapTarget(
       key: const Key('tracks_mode_indicator'),
@@ -261,11 +276,7 @@ class ModeIndicator extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              recording ? Icons.fiber_manual_record : Icons.volume_off_rounded,
-              size: 16,
-              color: color,
-            ),
+            Icon(icon, size: 16, color: color),
             const SizedBox(width: 6),
             Text(
               modeName,

@@ -214,6 +214,145 @@ void main() {
     expect(control.state.cursor, 1);
   });
 
+  testWidgets('tapping a tile toggles that track FX chain in FX mode', (
+    tester,
+  ) async {
+    control.setMode(InteractionMode.fx);
+    seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+    await pump(tester);
+
+    await tester.tap(find.byKey(const Key('tracks_tile_1')));
+    // One interaction mode for every surface: touch does what the pedal's
+    // track stomp and the number keys do.
+    verify(
+      () => bloc.add(const LooperTrackChainEnabledToggled(1, enabled: false)),
+    ).called(1);
+    verifyNever(() => bloc.add(const LooperRecordPressed(1)));
+    verifyNever(() => bloc.add(const LooperMuteToggled(1)));
+  });
+
+  testWidgets('the number keys toggle FX chains in FX mode', (tester) async {
+    control.setMode(InteractionMode.fx);
+    seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+    await pump(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+    await tester.pump();
+
+    verify(
+      () => bloc.add(const LooperTrackChainEnabledToggled(1, enabled: false)),
+    ).called(1);
+    verifyNever(() => bloc.add(const LooperMuteToggled(1)));
+    expect(control.state.cursor, 1); // the digit still selects
+  });
+
+  testWidgets('M cycles the mode chip through REC, MUTE and FX, announcing '
+      'each landed mode', (tester) async {
+    // Assert the DELIVERED announcement text, not the getter: a getter-only
+    // assertion passes even when two ARB keys collide and the string that
+    // actually ships is some other surface's copy.
+    final announcements = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockDecodedMessageHandler(
+      SystemChannels.accessibility,
+      (message) async {
+        final data = message! as Map<dynamic, dynamic>;
+        if (data['type'] == 'announce') {
+          announcements.add(
+            (data['data'] as Map<dynamic, dynamic>)['message'] as String,
+          );
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockDecodedMessageHandler(
+        SystemChannels.accessibility,
+        null,
+      ),
+    );
+
+    seed(const LooperState(tracks: [Track()]));
+    await pump(tester);
+
+    Future<void> cycle() async {
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+      await tester.pump();
+    }
+
+    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+
+    await cycle();
+    expect(control.state.mode, InteractionMode.mute);
+    await cycle();
+    expect(control.state.mode, InteractionMode.fx);
+    // The chip renders the landed mode, so the screen and the plate agree.
+    expect(find.text('FX'), findsOneWidget);
+    expect(announcements, contains(l10n.a11yModeFx));
+    expect(l10n.a11yModeFx, 'FX mode');
+    await cycle();
+    expect(control.state.mode, InteractionMode.record);
+    expect(announcements, contains(l10n.a11yModeRecord));
+  });
+
+  testWidgets('an FX-chain key toggle announces the chain state', (
+    tester,
+  ) async {
+    final announcements = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockDecodedMessageHandler(
+      SystemChannels.accessibility,
+      (message) async {
+        final data = message! as Map<dynamic, dynamic>;
+        if (data['type'] == 'announce') {
+          announcements.add(
+            (data['data'] as Map<dynamic, dynamic>)['message'] as String,
+          );
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockDecodedMessageHandler(
+        SystemChannels.accessibility,
+        null,
+      ),
+    );
+
+    control.setMode(InteractionMode.fx);
+    seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+    await pump(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+    await tester.pump();
+
+    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    expect(announcements, contains(l10n.a11yTrackFxChainOff));
+    // Pinned literally: these keys once collided with the FX editor's own
+    // chain-power strings, and the getter silently resolved to those.
+    expect(l10n.a11yTrackFxChainOff, 'Track FX chain off');
+    expect(l10n.a11yTrackFxChainOn, 'Track FX chain on');
+  });
+
+  testWidgets('an FX-mode track tile reads its chain state to a screen '
+      'reader', (tester) async {
+    final handle = tester.ensureSemantics();
+    try {
+      control.setMode(InteractionMode.fx);
+      seed(
+        const LooperState(
+          tracks: [Track(), Track(channel: 1, chainEnabled: false)],
+        ),
+      );
+      await pump(tester);
+
+      // The tile carries no other cue for chain state, so the label must:
+      // one track engaged, one bypassed.
+      expect(find.bySemanticsLabel(RegExp('FX chain on')), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp('FX chain off')), findsOneWidget);
+    } finally {
+      handle.dispose();
+    }
+  });
+
   testWidgets('long-pressing a tile stops that channel', (tester) async {
     seed(const LooperState(tracks: [Track()]));
     await pump(tester);

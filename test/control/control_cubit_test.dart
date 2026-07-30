@@ -81,6 +81,11 @@ void main() {
     late Directory tempDir;
     late DateTime clock;
 
+    /// The repository's remembered Track-chain intent, stubbed as real state
+    /// (absence == enabled) so a stomp's read-modify-write behaves like the
+    /// live repository rather than a frozen `true`.
+    late Map<int, bool> chainEnabled;
+
     /// Publishes [tracks] as engine truth: both the pull (`looper.state`) and
     /// the push (the cubit's reducer subscription) see the same snapshot.
     void setEngine(
@@ -122,6 +127,22 @@ void main() {
       ).thenReturn(EngineResult.ok);
       when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
 
+      chainEnabled = <int, bool>{};
+      when(() => looper.trackChainEnabled(any())).thenAnswer(
+        (call) => chainEnabled[call.positionalArguments.first as int] ?? true,
+      );
+      when(
+        () => looper.setTrackChainEnabled(
+          channel: any(named: 'channel'),
+          enabled: any(named: 'enabled'),
+        ),
+      ).thenAnswer((call) {
+        chainEnabled[call.namedArguments[#channel] as int] =
+            call.namedArguments[#enabled] as bool;
+        return EngineResult.ok;
+      });
+      when(() => looper.trackEffects(any())).thenReturn(const <TrackEffect>[]);
+
       tempDir = Directory.systemTemp.createTempSync('loopy_control_cubit');
       clock = DateTime(2026, 7, 6, 14, 30, 15);
       performance = PerformanceRepository(
@@ -148,10 +169,12 @@ void main() {
     });
 
     group('mode', () {
-      test('toggleMode flips between Record and Mute', () {
+      test('toggleMode cycles Record -> Mute -> FX -> Record', () {
         expect(cubit.state.mode, InteractionMode.record);
         cubit.toggleMode();
         expect(cubit.state.mode, InteractionMode.mute);
+        cubit.toggleMode();
+        expect(cubit.state.mode, InteractionMode.fx);
         cubit.toggleMode();
         expect(cubit.state.mode, InteractionMode.record);
       });
@@ -224,6 +247,269 @@ void main() {
         expect(cubit.state.mode, InteractionMode.mute);
         expect(cubit.state.defaultMode, InteractionMode.record);
         expect(await settings.loadDefaultInteractionMode(), isNull);
+      });
+
+      test('entering FX mode finalizes a live capture (A5)', () {
+        setEngine(
+          _tracksWith(const [Track(state: TrackState.recording)]),
+        );
+        cubit.setMode(InteractionMode.fx);
+        // FX mode has no transport control, so a take left running would be
+        // unstoppable from there: the entry ends it.
+        verify(() => looper.record()).called(1);
+        expect(cubit.state.mode, InteractionMode.fx);
+      });
+
+      test('entering FX mode with nothing capturing touches the transport '
+          'not at all', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
+        cubit.setMode(InteractionMode.fx);
+        verifyNever(() => looper.record(channel: any(named: 'channel')));
+        verifyNever(() => looper.record());
+        verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
+      });
+
+      test('side effects fire for the LANDED mode only — a jump straight to '
+          'FX never runs Mute entry (A5)', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
+        cubit.setMode(InteractionMode.fx);
+        // Mute's entry would have latched the whole content set here.
+        expect(cubit.state.parkedResume, isEmpty);
+      });
+
+      test('FX entry clears the stored mute-mode intent', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.stopped, lengthFrames: 48000),
+          ]),
+        );
+        cubit.toggleMode(); // -> mute, parkedResume = {0}
+        expect(cubit.state.parkedResume, {0});
+        cubit.toggleMode(); // -> fx
+        expect(cubit.state.parkedResume, isEmpty);
+        expect(cubit.state.excluded, isEmpty);
+      });
+
+      test('a stored "fx" boot default falls back to record (R12)', () async {
+        await settings.saveDefaultInteractionMode(InteractionMode.fx.token);
+        await cubit.load();
+        expect(cubit.state.defaultMode, InteractionMode.record);
+        expect(cubit.state.mode, InteractionMode.record);
+      });
+
+      test(
+        'setDefaultMode refuses FX — it is never a boot mode (R12)',
+        () async {
+          // Debug builds fail loudly — a caller offering FX here has a bug...
+          await expectLater(
+            cubit.setDefaultMode(InteractionMode.fx),
+            throwsA(isA<AssertionError>()),
+          );
+          // ...and nothing is applied or persisted either way, which is what
+          // keeps a release build off the dead boot surface.
+          expect(cubit.state.defaultMode, InteractionMode.record);
+          expect(cubit.state.mode, InteractionMode.record);
+          expect(await settings.loadDefaultInteractionMode(), isNull);
+        },
+      );
+    });
+
+    // The FX-mode button matrix: every one of the ten controls is defined,
+    // and the three inert ones are proven inert (A2/A4) — a stray stomp must
+    // never erase the set.
+    group('FX mode', () {
+      /// Presses and releases [button] on the wire, letting the decoded event
+      /// reach the cubit.
+      Future<void> stomp(PedalButton button) async {
+        transport
+          ..emit(0x90, button.note, 127)
+          ..emit(0x80, button.note, 0);
+        await pumpEventQueue();
+      }
+
+      /// Holds [button] past the 500 ms long-press threshold, then releases.
+      /// Real delays (not fake_async) — the wire events reach the cubit
+      /// through the repository's stream, which a fake clock cannot pump.
+      Future<void> hold(PedalButton button) async {
+        transport.emit(0x90, button.note, 127);
+        await pumpEventQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        transport.emit(0x80, button.note, 0);
+        await pumpEventQueue();
+      }
+
+      setUp(() {
+        setEngine(_emptyTracks());
+        cubit.setMode(InteractionMode.fx);
+      });
+
+      test('a track stomp toggles that track Track-stage chain', () async {
+        await stomp(PedalButton.track1);
+        verify(
+          () => looper.setTrackChainEnabled(channel: 0, enabled: false),
+        ).called(1);
+
+        await stomp(PedalButton.track1);
+        verify(
+          () => looper.setTrackChainEnabled(channel: 0, enabled: true),
+        ).called(1);
+      });
+
+      test('track stomps are bank-aware (A3): bank B stomps 4..7', () async {
+        cubit.browseBank(1);
+        await stomp(PedalButton.track2);
+        verify(
+          () => looper.setTrackChainEnabled(channel: 5, enabled: false),
+        ).called(1);
+        verifyNever(
+          () => looper.setTrackChainEnabled(channel: 1, enabled: false),
+        );
+      });
+
+      test(
+        'a stomp persists the chain envelope so a reboot keeps it',
+        () async {
+          await stomp(PedalButton.track1);
+          expect(await settings.loadTrackFxChain(0), isNotNull);
+        },
+      );
+
+      test('Stop is FX panic: every Track chain off', () async {
+        await stomp(PedalButton.stop);
+        for (var channel = 0; channel < 8; channel++) {
+          verify(
+            () => looper.setTrackChainEnabled(
+              channel: channel,
+              enabled: false,
+            ),
+          ).called(1);
+        }
+      });
+
+      test('a Stop LONG-PRESS restores every Track chain instead of '
+          'panicking', () async {
+        await stomp(PedalButton.stop); // panic first, so restore has work
+        expect(chainEnabled.values, everyElement(isFalse));
+
+        await hold(PedalButton.stop);
+        for (var channel = 0; channel < 8; channel++) {
+          verify(
+            () => looper.setTrackChainEnabled(channel: channel, enabled: true),
+          ).called(1);
+        }
+        // The hold consumed the gesture: the release must NOT also panic.
+        expect(chainEnabled.values, everyElement(isTrue));
+      });
+
+      test(
+        'Stop in Rec/Mute mode still acts on the PRESS (no gesture split)',
+        () async {
+          cubit.setMode(InteractionMode.record);
+          setEngine(
+            _tracksWith(const [
+              Track(state: TrackState.playing, lengthFrames: 48000),
+            ]),
+          );
+          transport.emit(0x90, PedalButton.stop.note, 127);
+          await pumpEventQueue();
+          verify(() => looper.setMute(muted: true)).called(1);
+        },
+      );
+
+      test('Clear is INERT — a stray stomp never erases the set', () async {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
+        await stomp(PedalButton.clear);
+        verifyNever(() => looper.clear(channel: any(named: 'channel')));
+        expect(cubit.state.mode, InteractionMode.fx); // no home-and-reset
+      });
+
+      test('Rec/Play is INERT (reserved, A4)', () async {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.stopped, lengthFrames: 48000),
+          ]),
+        );
+        await stomp(PedalButton.recPlay);
+        verifyNever(() => looper.record(channel: any(named: 'channel')));
+        verifyNever(() => looper.record());
+        verifyNever(() => looper.play(channel: any(named: 'channel')));
+        verifyNever(() => looper.play());
+      });
+
+      test(
+        'Undo is INERT until the #219 contract — tap AND long-press',
+        () async {
+          await stomp(PedalButton.undo);
+          await hold(PedalButton.undo); // past the redo threshold too
+          verifyNever(() => looper.undo(channel: any(named: 'channel')));
+          verifyNever(() => looper.undo());
+          verifyNever(() => looper.redo(channel: any(named: 'channel')));
+          verifyNever(() => looper.redo());
+        },
+      );
+
+      test('Bank still switches banks', () async {
+        await stomp(PedalButton.bank);
+        expect(cubit.state.activeBank, 1);
+        expect(cubit.state.cursor, 4);
+      });
+
+      test('the encoder still drives master gain', () async {
+        transport.emit(0xB0, PedalCodec.encoderCc, 64 + 4);
+        await pumpEventQueue();
+        verify(() => looper.setMasterGain(any())).called(1);
+      });
+
+      test(
+        'MODE long-press still arms performance recording (unchanged)',
+        () async {
+          await hold(PedalButton.mode);
+          expect(performance.armedDirectory, isNotNull);
+          expect(cubit.state.mode, InteractionMode.fx); // not a mode cycle
+        },
+      );
+
+      test('a MODE tap cycles out of FX back to record', () async {
+        await stomp(PedalButton.mode);
+        expect(cubit.state.mode, InteractionMode.record);
+      });
+
+      test('toggleTrackChain ignores out-of-range channels', () {
+        cubit
+          ..toggleTrackChain(-1)
+          ..toggleTrackChain(8);
+        verifyNever(
+          () => looper.setTrackChainEnabled(
+            channel: any(named: 'channel'),
+            enabled: any(named: 'enabled'),
+          ),
+        );
+      });
+
+      test('a panic over already-disabled chains writes nothing twice', () {
+        cubit
+          ..panicTrackChains()
+          ..panicTrackChains();
+        for (var channel = 0; channel < 8; channel++) {
+          verify(
+            () => looper.setTrackChainEnabled(
+              channel: channel,
+              enabled: false,
+            ),
+          ).called(1);
+        }
       });
     });
 

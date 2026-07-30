@@ -161,6 +161,43 @@ void main() {
       expect(projectTrackLed(looper, overlay, 0), PedalTrackLed.off);
     });
 
+    test(
+      'FX mode: blue when the Track chain is engaged, dark when bypassed',
+      () {
+        final looper = _stateWith(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(
+              channel: 1,
+              state: TrackState.playing,
+              lengthFrames: 48000,
+              chainEnabled: false,
+            ),
+          ]),
+        );
+        const overlay = ControlState(mode: InteractionMode.fx, cursor: 1);
+        expect(projectTrackLed(looper, overlay, 0), PedalTrackLed.blue);
+        expect(projectTrackLed(looper, overlay, 1), PedalTrackLed.off);
+        // Neither the cursor nor mute/record state leaks into the FX reading:
+        // channel 1 is the cursor and still reads dark.
+        expect(projectTrackLed(looper, overlay, 2), PedalTrackLed.blue);
+      },
+    );
+
+    test('FX mode: an EMPTY track with an engaged chain still reads blue', () {
+      // The LED reports the flag the stomp toggles, so every stomp gives
+      // feedback — a lit LED promises "in circuit", not "has effects".
+      final looper = _stateWith(_tracksWith(const []), masterLengthFrames: 0);
+      const overlay = ControlState(mode: InteractionMode.fx);
+      expect(projectTrackLed(looper, overlay, 0), PedalTrackLed.blue);
+    });
+
+    test('FX mode: a channel the engine does not expose reads dark', () {
+      final looper = _stateWith(const [Track()], masterLengthFrames: 0);
+      const overlay = ControlState(mode: InteractionMode.fx);
+      expect(projectTrackLed(looper, overlay, 7), PedalTrackLed.off);
+    });
+
     test('redo after undo-to-empty relights with NO stored set to update', () {
       // The original bug class, retired by derivation: an undone-to-empty
       // track (dark) that redo resurrects reads green off the very next
@@ -189,6 +226,25 @@ void main() {
       expect(frame.activeBank, 1);
       expect(frame.mode, PedalMode.rec);
       expect(frame.clearFadeActive, isFalse);
+    });
+
+    test('the mode indicator distinguishes all three modes on the wire', () {
+      final looper = _stateWith(_tracksWith(const []), masterLengthFrames: 0);
+      // From the frame alone — its MODE field plus the trackLeds meaning it
+      // selects — the live mode is identifiable (SC-1).
+      const modes = {
+        InteractionMode.record: PedalMode.rec,
+        InteractionMode.mute: PedalMode.play,
+        InteractionMode.fx: PedalMode.fx,
+      };
+      for (final entry in modes.entries) {
+        expect(
+          projectFrame(looper, ControlState(mode: entry.key)).mode,
+          entry.value,
+          reason: '${entry.key.name} must project its own wire mode',
+        );
+      }
+      expect(modes.values.toSet(), hasLength(3)); // no two modes collide
     });
 
     test('global color: recording red, overdub amber, playing green', () {

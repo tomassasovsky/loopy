@@ -82,11 +82,14 @@ enum TrackIndicator {
       TrackState.recording || TrackState.overdubbing => TrackIndicator.record,
       TrackState.playing => TrackIndicator.play,
       TrackState.stopped when hasContent => TrackIndicator.play,
+      // Only RECORD mode arms the selection to record — in mute and FX mode a
+      // track press does something else entirely, so the cursor must not
+      // promise a take that no button there would start.
       TrackState.empty || TrackState.stopped =>
         selected
-            ? (mode == InteractionMode.mute
-                  ? TrackIndicator.play
-                  : TrackIndicator.record)
+            ? (mode == InteractionMode.record
+                  ? TrackIndicator.record
+                  : TrackIndicator.play)
             : TrackIndicator.idle,
     };
   }
@@ -105,6 +108,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     required this.waveformColor,
     required this.waveformBackground,
     required this.recordColor,
+    required this.fxColor,
     required this.recordMeterColors,
     required this.muteMeterColors,
     required this.indicatorColors,
@@ -126,6 +130,11 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
   /// Accent for the record/recording state (e.g. the mode indicator).
   final Color recordColor;
 
+  /// Accent for FX mode (the mode chip). Matches the pedal's blue chain-state
+  /// LEDs by intent, but is an app token: the plate reads its colour from the
+  /// hardware LED palette, and the chrome must not depend on that.
+  final Color fxColor;
+
   /// Track-meter (peak bar) colors by [LooperMeterState] in record mode.
   final Map<LooperMeterState, Color> recordMeterColors;
 
@@ -142,11 +151,15 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
 
   /// The meter color for [state] in the current mode ([mode] selects the
   /// mute or record table). Transparent if the table omits it.
+  ///
+  /// FX mode shares the MUTE table: like mute mode it is a mixing view (no
+  /// track arms to record from it), and giving it a third palette would say
+  /// something about the meters that FX mode does not change.
   Color meterColor(LooperMeterState state, {required InteractionMode mode}) =>
-      {
-        InteractionMode.mute: muteMeterColors,
-        InteractionMode.record: recordMeterColors,
-      }[mode]![state] ??
+      switch (mode) {
+        InteractionMode.mute || InteractionMode.fx => muteMeterColors,
+        InteractionMode.record => recordMeterColors,
+      }[state] ??
       Colors.transparent;
 
   /// The status-indicator color for [indicator]. Transparent if the table
@@ -161,6 +174,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     Color? waveformColor,
     Color? waveformBackground,
     Color? recordColor,
+    Color? fxColor,
     Map<LooperMeterState, Color>? recordMeterColors,
     Map<LooperMeterState, Color>? muteMeterColors,
     Map<TrackIndicator, Color>? indicatorColors,
@@ -171,6 +185,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     waveformColor: waveformColor ?? this.waveformColor,
     waveformBackground: waveformBackground ?? this.waveformBackground,
     recordColor: recordColor ?? this.recordColor,
+    fxColor: fxColor ?? this.fxColor,
     recordMeterColors: recordMeterColors ?? this.recordMeterColors,
     muteMeterColors: muteMeterColors ?? this.muteMeterColors,
     indicatorColors: indicatorColors ?? this.indicatorColors,
@@ -199,6 +214,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
           Color.lerp(waveformBackground, other.waveformBackground, t) ??
           waveformBackground,
       recordColor: Color.lerp(recordColor, other.recordColor, t) ?? recordColor,
+      fxColor: Color.lerp(fxColor, other.fxColor, t) ?? fxColor,
       recordMeterColors: _lerpColorMap(
         recordMeterColors,
         other.recordMeterColors,

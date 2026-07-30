@@ -75,6 +75,14 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
+    when(() => looper.trackChainEnabled(any())).thenReturn(true);
+    when(() => looper.trackEffects(any())).thenReturn(const <TrackEffect>[]);
+    when(
+      () => looper.setTrackChainEnabled(
+        channel: any(named: 'channel'),
+        enabled: any(named: 'enabled'),
+      ),
+    ).thenReturn(EngineResult.ok);
   });
 
   tearDown(() => looperStates.close());
@@ -359,47 +367,80 @@ void main() {
     group('the MODE status LED (D-PEDAL)', () {
       const modeLedKey = Key('pedalFaceplate_led_mode');
 
-      testWidgets('is absent when performance recording is not armed', (
+      Color modeLedColor(WidgetTester tester) =>
+          (tester.widget<Container>(find.byKey(modeLedKey)).decoration!
+                  as BoxDecoration)
+              .color!;
+
+      testWidgets(
+        'shows the steady tri-state mode indicator when not armed: '
+        'rec green, mute amber, FX blue (mode indicator, part 5b)',
+        (tester) async {
+          final (_, sim) = await pumpFaceplate(tester);
+
+          // Each mode gets its OWN color, so a tester reading the plate can
+          // name the live mode from the LEDs alone (SC-1).
+          final wanted = <PedalMode, Color>{
+            PedalMode.rec: SurfaceTheme.dark.ledGreen,
+            PedalMode.play: SurfaceTheme.dark.ledAmber,
+            PedalMode.fx: SurfaceTheme.dark.ledBlue,
+          };
+          for (final entry in wanted.entries) {
+            sim.send(
+              PedalCodec.encodeFrame(
+                _frame(mode: entry.key),
+                targetVersion: PedalCodec.protocolVersionV3,
+              ),
+            );
+            await tester.pump();
+            expect(
+              modeLedColor(tester),
+              entry.value,
+              reason:
+                  'mode ${entry.key.name} must have its own indicator '
+                  'color',
+            );
+          }
+          // ...and the three colors are actually distinct.
+          expect(wanted.values.toSet(), hasLength(3));
+        },
+      );
+
+      testWidgets('the armed blink takes precedence over the mode color', (
         tester,
       ) async {
         final (_, sim) = await pumpFaceplate(tester);
 
-        sim.send(PedalCodec.encodeFrame(_frame()));
-        await tester.pump();
-
-        expect(find.byKey(modeLedKey), findsNothing);
-      });
-
-      testWidgets('is present and blinks while armed', (tester) async {
-        final (_, sim) = await pumpFaceplate(tester);
-
-        sim.send(PedalCodec.encodeFrame(_frame(performanceArmed: true)));
+        // FX mode (blue indicator) + armed: the blink wins, exactly as both
+        // firmware sketches render it.
+        sim.send(
+          PedalCodec.encodeFrame(
+            _frame(mode: PedalMode.fx, performanceArmed: true),
+            targetVersion: PedalCodec.protocolVersionV3,
+          ),
+        );
         await tester.pump();
         expect(find.byKey(modeLedKey), findsOneWidget);
-
-        Color ledColor() =>
-            (tester.widget<Container>(find.byKey(modeLedKey)).decoration!
-                    as BoxDecoration)
-                .color!;
 
         // _BlinkingLed starts lit, then alternates lit/dark every 400ms.
-        expect(ledColor(), SurfaceTheme.dark.ledRed);
+        expect(modeLedColor(tester), SurfaceTheme.dark.ledRed);
         await tester.pump(const Duration(milliseconds: 400));
-        expect(ledColor(), Colors.transparent);
+        expect(modeLedColor(tester), Colors.transparent);
         await tester.pump(const Duration(milliseconds: 400));
-        expect(ledColor(), SurfaceTheme.dark.ledRed);
+        expect(modeLedColor(tester), SurfaceTheme.dark.ledRed);
       });
 
-      testWidgets('disappears again once disarmed', (tester) async {
+      testWidgets('falls back to the mode color once disarmed', (tester) async {
         final (_, sim) = await pumpFaceplate(tester);
 
         sim.send(PedalCodec.encodeFrame(_frame(performanceArmed: true)));
         await tester.pump();
-        expect(find.byKey(modeLedKey), findsOneWidget);
+        expect(modeLedColor(tester), SurfaceTheme.dark.ledRed);
 
         sim.send(PedalCodec.encodeFrame(_frame()));
         await tester.pump();
-        expect(find.byKey(modeLedKey), findsNothing);
+        // Still present — it is the mode indicator now, not the armed blink.
+        expect(modeLedColor(tester), SurfaceTheme.dark.ledGreen);
       });
     });
   });
@@ -457,6 +498,45 @@ void main() {
       await tester.drag(find.byKey(_encoderKey), const Offset(30, 0));
       await settle(tester);
       verify(() => looper.setMasterGain(any())).called(greaterThan(0));
+    });
+
+    testWidgets('simulator taps in FX mode stomp Track chains, and the LEDs '
+        'read as chain state', (tester) async {
+      final handle = tester.ensureSemantics();
+      try {
+        await pumpFaceplate(tester);
+        // Cycle REC -> MUTE -> FX on the plate itself: the on-screen pedal
+        // drives the same contextual matrix the hardware does.
+        for (var i = 0; i < 2; i++) {
+          await tester.tap(
+            find.byKey(const Key('pedalFaceplate_footswitch_mode')),
+          );
+          await settle(tester);
+        }
+
+        await tester.tap(
+          find.byKey(const Key('pedalFaceplate_footswitch_track1')),
+        );
+        await settle(tester);
+        verify(
+          () => looper.setTrackChainEnabled(channel: 0, enabled: false),
+        ).called(1);
+
+        // Nothing in FX mode reads as record/mute state to a screen reader.
+        expect(
+          find.bySemanticsLabel(RegExp('FX chain')),
+          findsWidgets,
+        );
+        expect(find.bySemanticsLabel(RegExp('recording')), findsNothing);
+        // ...and Stop announces the panic gesture rather than "STOP
+        // footswitch".
+        expect(
+          find.bySemanticsLabel(RegExp('FX panic')),
+          findsOneWidget,
+        );
+      } finally {
+        handle.dispose();
+      }
     });
 
     testWidgets('leaving the tree releases a held switch', (tester) async {

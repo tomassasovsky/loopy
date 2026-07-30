@@ -74,7 +74,6 @@ class TrackColumn extends StatelessWidget {
     // bar color is one table lookup on the track's meter state (muted included;
     // see LooperTheme.meterColors).
     final meterState = LooperMeterState.of(track.state, muted: track.muted);
-    final muteMode = mode == InteractionMode.mute;
     final barColor = looper.meterColor(meterState, mode: mode);
     // Crown badge (D18, B5c): visible only in Sync/Band (Wave-view style,
     // per the brainstorm) — an inert, empty slot in every other mode so the
@@ -234,19 +233,33 @@ class TrackColumn extends StatelessWidget {
             child: FocusableTapTarget(
               key: Key('tracks_tile_${track.channel}'),
               // The tap action follows the mode (mirroring the 1–8 number
-              // keys): record/overdub in record mode, mute/unmute in mute mode.
-              semanticLabel: muteMode
-                  ? l10n.a11yTrackTileMute(name, stateWord)
-                  : l10n.a11yTrackTile(name, stateWord),
+              // keys): record/overdub in record mode, mute/unmute in mute
+              // mode, FX-chain on/off in FX mode — one interaction mode for
+              // every surface, touch included.
+              // FX mode puts the CHAIN state in the label: the tile shows
+              // transport state (meter, indicator) but nothing about the
+              // chain, so a screen-reader user would otherwise be toggling a
+              // switch whose position they cannot read.
+              semanticLabel: switch (mode) {
+                InteractionMode.record => l10n.a11yTrackTile(name, stateWord),
+                InteractionMode.mute => l10n.a11yTrackTileMute(name, stateWord),
+                InteractionMode.fx =>
+                  track.chainEnabled
+                      ? l10n.a11yTrackTileFxOn(name)
+                      : l10n.a11yTrackTileFxOff(name),
+              },
               selected: selected,
               borderRadius: 8,
               onTap: () {
                 context.read<ControlCubit>().selectTrack(track.channel);
-                bloc.add(
-                  muteMode
-                      ? LooperMuteToggled(track.channel)
-                      : LooperRecordPressed(track.channel),
-                );
+                bloc.add(switch (mode) {
+                  InteractionMode.record => LooperRecordPressed(track.channel),
+                  InteractionMode.mute => LooperMuteToggled(track.channel),
+                  InteractionMode.fx => LooperTrackChainEnabledToggled(
+                    track.channel,
+                    enabled: !track.chainEnabled,
+                  ),
+                });
               },
               child: GestureDetector(
                 key: Key('tracks_tileStop_${track.channel}'),

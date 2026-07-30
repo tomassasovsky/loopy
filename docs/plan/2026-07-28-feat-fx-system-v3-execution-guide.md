@@ -30,10 +30,11 @@ issue: 351
 
 ## Status
 
-**Next up:** everything through the four-stage Signal surface is merged (0,
-1a, 1b, 2, 3a, 3b, 4a, 4b). **5a** (protocol v3 wire) is in review; with it
-out, the critical chain continues at **5b** (deps 5a, 3a, 1a). 6a still has
-no in-epic dependencies and can run in parallel any time.
+**Next up:** everything through the protocol v3 wire is merged (0, 1a, 1b, 2,
+3a, 3b, 4a, 4b, 5a). **5b** (the app-side FX interaction mode) is in review;
+with it out, the critical chain continues at **6b** (deps 6a, 5b, 3a), so
+**6a** — which has no in-epic dependencies — is the one to run next, in
+parallel.
 
 Open items carried out of merged parts, neither blocking a new part:
 - [#389](https://github.com/tomassasovsky/loopy/issues/389) (`plan-gate`, from
@@ -55,8 +56,8 @@ Open items carried out of merged parts, neither blocking a new part:
 | 3b | session v5 migration + manifest stages | Opus · medium | `merge-gate` | 3a, 0 | merged (#388) |
 | 4a | delete dead FX code | Sonnet · low | `auto` | — | merged (#392) |
 | 4b | four-stage Signal surface | Opus · medium | `merge-gate` | 3a, 4a | merged (#395) |
-| 5a | protocol v3 wire + version discovery | **Fable · high** | `merge-gate` | — (#331 prereq) | in-review (#399) |
-| 5b | FX interaction mode (app) | Opus · high | `merge-gate` (physical slice `blocked-verify`) | 5a, 3a, 1a | pending |
+| 5a | protocol v3 wire + version discovery | **Fable · high** | `merge-gate` | — (#331 prereq) | merged (#399) |
+| 5b | FX interaction mode (app) | Opus · high | `merge-gate` (physical slice `blocked-verify`) | 5a, 3a, 1a | in-review (#401, hardware slice #402) |
 | 6a | faceplate presentational extraction | Sonnet · medium | `auto` | — | pending |
 | 6b | remap bindings + momentary | Opus · high | `merge-gate` | 6a, 5b, 3a | pending |
 | 7 | expression + external MIDI | Opus · high | `merge-gate` | 3a, 6b | pending |

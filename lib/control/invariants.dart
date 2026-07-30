@@ -134,9 +134,11 @@ final List<ControlInvariant> controlInvariants = [
       return 'frame bank ${c.frame.activeBank} != overlay '
           '${c.overlay.activeBank}';
     }
-    final want = c.overlay.mode == InteractionMode.mute
-        ? PedalMode.play
-        : PedalMode.rec;
+    final want = switch (c.overlay.mode) {
+      InteractionMode.record => PedalMode.rec,
+      InteractionMode.mute => PedalMode.play,
+      InteractionMode.fx => PedalMode.fx,
+    };
     if (c.frame.mode != want) {
       return 'frame mode ${c.frame.mode} != overlay mode ${c.overlay.mode}';
     }
@@ -156,6 +158,10 @@ final List<ControlInvariant> controlInvariants = [
     return null;
   }),
   ControlInvariant('empty-track-dark', (c) {
+    // Rec and Mute only: in FX mode the LEDs report chain state, which an
+    // empty track has just as much as a loaded one ('fx-led-mirrors-chain'
+    // below is that mode's rule).
+    if (c.overlay.mode == InteractionMode.fx) return null;
     for (final t in c.looper.tracks) {
       if (t.state != TrackState.empty ||
           t.channel >= c.frame.trackLeds.length) {
@@ -225,6 +231,23 @@ final List<ControlInvariant> controlInvariants = [
           c.frame.trackLeds[t.channel] != PedalTrackLed.red) {
         return 'capturing track ${t.channel} LED is '
             '${c.frame.trackLeds[t.channel]}, not red';
+      }
+    }
+    return null;
+  }),
+  // FX mode's LED rule: every track LED reads the Track-stage chain flag and
+  // nothing else — blue engaged, dark bypassed (R8: the meaning changes per
+  // mode, the wire does not). A channel the engine does not expose reads dark.
+  ControlInvariant('fx-led-mirrors-chain', (c) {
+    if (c.overlay.mode != InteractionMode.fx) return null;
+    for (var ch = 0; ch < c.frame.trackLeds.length; ch++) {
+      final track = _trackAt(c.looper, ch);
+      final want = (track?.chainEnabled ?? false)
+          ? PedalTrackLed.blue
+          : PedalTrackLed.off;
+      if (c.frame.trackLeds[ch] != want) {
+        return 'FX LED $ch is ${c.frame.trackLeds[ch]} but chain enabled is '
+            '${track?.chainEnabled}';
       }
     }
     return null;

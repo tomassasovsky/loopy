@@ -85,9 +85,22 @@ class PedalCubit extends Cubit<PedalState> {
       state.copyWith(
         availableOutputs: _pedal.availableOutputs(),
         boundOutputId: _pedal.boundOutputId,
+        firmwareUpdateAvailable: _firmwareUpdateAvailable,
       ),
     );
   }
+
+  /// Whether a REAL pedal is bound and the codec is downgrading what loopy
+  /// sends it (flow err-4). Reads the repository's own resolved wire version
+  /// rather than re-deriving the floor, so the banner follows whatever
+  /// decides the version — the manual setting today, #331's identity reply
+  /// later. The on-screen pedal is excluded: there is no firmware behind it
+  /// to flash, so "update available" would be a lie even while it rehearses
+  /// a pinned downgrade.
+  bool get _firmwareUpdateAvailable =>
+      _pedal.boundOutputId != null &&
+      _pedal.boundOutputId != kSimulatorOutputId &&
+      _pedal.targetProtocolVersion < PedalCodec.protocolVersionMax;
 
   /// Binds the pedal output to [device] and persists the choice.
   Future<void> selectOutput(PedalOutput device) async {
@@ -129,7 +142,14 @@ class PedalCubit extends Cubit<PedalState> {
   /// reply later — must route through here so the pairing cannot diverge.
   void _applyFirmwareVersion(int? version) {
     _pedal.firmwareProtocolVersion = version;
-    if (!isClosed) emit(state.copyWith(firmwareVersion: version));
+    if (!isClosed) {
+      emit(
+        state.copyWith(
+          firmwareVersion: version,
+          firmwareUpdateAvailable: _firmwareUpdateAvailable,
+        ),
+      );
+    }
   }
 
   /// Hotplug poll: re-enumerates the host's MIDI outputs and reconciles the
@@ -157,7 +177,14 @@ class PedalCubit extends Cubit<PedalState> {
 
   void _onBindStatus(PedalBindStatus status) {
     if (isClosed) return;
-    emit(state.copyWith(bindStatus: status));
+    // A bind/unbind changes which device's wire version applies, so the
+    // update flag is re-derived with the status it rides in on.
+    emit(
+      state.copyWith(
+        bindStatus: status,
+        firmwareUpdateAvailable: _firmwareUpdateAvailable,
+      ),
+    );
   }
 
   @override

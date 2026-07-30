@@ -126,6 +126,26 @@ void main() {
         frame: frame(), // mode: rec
       );
       expect(violation(mode, 'frame-mirrors-overlay'), isNotNull);
+
+      // FX must project as its OWN wire mode, never fall back to rec.
+      final fx = ControlContext(
+        looper: looper(),
+        overlay: const ControlState(mode: InteractionMode.fx),
+        frame: frame(), // mode: rec
+      );
+      expect(violation(fx, 'frame-mirrors-overlay'), isNotNull);
+    });
+
+    test('accepts an FX overlay mirrored by an FX frame', () {
+      final c = ControlContext(
+        looper: looper(),
+        overlay: const ControlState(mode: InteractionMode.fx),
+        frame: frame(
+          mode: PedalMode.fx,
+          leds: List.filled(PedalStateFrame.trackCount, PedalTrackLed.blue),
+        ),
+      );
+      expect(violation(c, 'frame-mirrors-overlay'), isNull);
     });
 
     test('accepts a mirrored frame', () {
@@ -302,6 +322,49 @@ void main() {
         ),
       );
       expect(violation(ok, 'parked-preview-matches-resume'), isNull);
+    });
+
+    test('fx-led-mirrors-chain: a dark LED over an engaged chain violates', () {
+      final c = ControlContext(
+        looper: looper(),
+        overlay: const ControlState(mode: InteractionMode.fx),
+        frame: frame(mode: PedalMode.fx), // all dark, all chains engaged
+      );
+      expect(violation(c, 'fx-led-mirrors-chain'), isNotNull);
+    });
+
+    test('fx-led-mirrors-chain: a lit LED over a bypassed chain violates', () {
+      final c = ControlContext(
+        looper: looper(
+          tracks: tracksWith(const Track(channel: 2, chainEnabled: false)),
+        ),
+        overlay: const ControlState(mode: InteractionMode.fx),
+        frame: frame(
+          mode: PedalMode.fx,
+          leds: List.filled(PedalStateFrame.trackCount, PedalTrackLed.blue),
+        ),
+      );
+      expect(violation(c, 'fx-led-mirrors-chain'), isNotNull);
+    });
+
+    test('fx-led-mirrors-chain: blue-for-engaged, dark-for-bypassed holds', () {
+      final c = ControlContext(
+        looper: looper(
+          tracks: tracksWith(const Track(channel: 2, chainEnabled: false)),
+        ),
+        overlay: const ControlState(mode: InteractionMode.fx),
+        frame: frame(
+          mode: PedalMode.fx,
+          leds: [
+            for (var i = 0; i < PedalStateFrame.trackCount; i++)
+              if (i == 2) PedalTrackLed.off else PedalTrackLed.blue,
+          ],
+        ),
+      );
+      expect(violation(c, 'fx-led-mirrors-chain'), isNull);
+      // ...and empty-track-dark stands aside in FX mode (every track here is
+      // empty, yet seven LEDs are lit).
+      expect(violation(c, 'empty-track-dark'), isNull);
     });
 
     test('capturing-red-in-rec: a dark capturing track violates', () {

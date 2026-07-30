@@ -367,6 +367,21 @@ void main() {
     );
   });
 
+  testWidgets('the default-mode picker never offers FX (R12)', (
+    tester,
+  ) async {
+    await pump(tester);
+
+    // Booting into FX with no chains is a dead surface, so the mode is
+    // reachable only by cycling — there is no option to pick it here.
+    expect(
+      find.byKey(const Key('settings_defaultMode_record')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('settings_defaultMode_mute')), findsOneWidget);
+    expect(find.byKey(const Key('settings_defaultMode_fx')), findsNothing);
+  });
+
   testWidgets('choosing a refresh rate persists it and applies it', (
     tester,
   ) async {

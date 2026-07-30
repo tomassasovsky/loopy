@@ -4,6 +4,7 @@ import 'package:bloc/bloc.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/common/fx_chain_persistence.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'looper_event.dart';
@@ -590,20 +591,14 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   }
 
   /// Persists track [channel]'s Track-stage chain envelope (the bus twin of
-  /// [_encodedLaneChain]; bus chains carry no inheritance meta).
-  void _persistTrackChain(int channel) {
-    unawaited(
-      _settings?.saveTrackFxChain(
-        channel,
-        encodeFxChain(
-          FxChainEnvelope(
-            chainEnabled: _repository.trackChainEnabled(channel),
-            entries: _repository.trackEffects(channel),
-          ),
-        ),
-      ),
-    );
-  }
+  /// [_encodedLaneChain]; bus chains carry no inheritance meta) — through the
+  /// helper `ControlCubit`'s FX-mode stomps share, so the on-screen and pedal
+  /// paths write the same envelope.
+  void _persistTrackChain(int channel) => persistTrackFxChain(
+    settings: _settings,
+    looper: _repository,
+    channel: channel,
+  );
 
   /// Persists the Master insert chain envelope.
   void _persistMasterChain() {

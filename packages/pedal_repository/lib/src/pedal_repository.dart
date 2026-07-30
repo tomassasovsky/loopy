@@ -5,6 +5,8 @@ import 'package:pedal_repository/src/pedal_codec.dart';
 import 'package:pedal_repository/src/pedal_event.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
 import 'package:pedal_repository/src/pedal_transport.dart';
+import 'package:pedal_repository/src/simulator_pedal_transport.dart'
+    show kSimulatorOutputId;
 
 /// The binding state of the pedal output link.
 ///
@@ -88,9 +90,25 @@ class PedalRepository {
   /// un-reflashed pedal rejects versions it does not know, so the safe floor
   /// wins until a version is learned. A known version is clamped into
   /// [PedalCodec.protocolVersionV1]..[PedalCodec.protocolVersionMax].
+  ///
+  /// The ON-SCREEN pedal ([kSimulatorOutputId]) replaces the UNKNOWN floor
+  /// only: it has no firmware to be unknown about — the renderer on the other
+  /// end of that "wire" ships in this very build — so with no version set it
+  /// speaks [PedalCodec.protocolVersionMax] rather than the v2 floor.
+  /// Otherwise the simulator would render the downgrade of every new field
+  /// (FX mode shown as mute, chain LEDs green instead of blue) until someone
+  /// set a firmware version for a pedal that does not exist.
+  ///
+  /// An EXPLICIT version still wins, simulator included: that is what makes
+  /// the on-screen pedal a rehearsal rig for the B10 downgrade — pin v2 and
+  /// the plate shows exactly what a pre-v3 pedal shows.
   int get targetProtocolVersion {
     final known = firmwareProtocolVersion;
-    if (known == null) return PedalCodec.protocolVersion;
+    if (known == null) {
+      return _boundOutputId == kSimulatorOutputId
+          ? PedalCodec.protocolVersionMax
+          : PedalCodec.protocolVersion;
+    }
     return known.clamp(
       PedalCodec.protocolVersionV1,
       PedalCodec.protocolVersionMax,

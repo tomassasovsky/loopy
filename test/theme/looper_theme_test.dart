@@ -31,6 +31,7 @@ void main() {
       waveformColor: Color(0xFF00E5FF),
       waveformBackground: Color(0xFF000000),
       recordColor: Color(0xFFFF1744),
+      fxColor: Color(0xFF3B82F6),
       recordMeterColors: {
         LooperMeterState.playing: Color(0xFF00FF00),
         LooperMeterState.muted: Color(0xFFFFFFFF),
@@ -71,6 +72,12 @@ void main() {
         theme.meterColor(LooperMeterState.muted, mode: InteractionMode.mute),
         Colors.transparent,
       );
+      // FX mode shares the mute table — it is a mixing view, and the meters
+      // mean exactly what they mean there.
+      expect(
+        theme.meterColor(LooperMeterState.playing, mode: InteractionMode.fx),
+        theme.meterColor(LooperMeterState.playing, mode: InteractionMode.mute),
+      );
     });
 
     test('indicatorColor picks the color for the indicator', () {
@@ -95,6 +102,7 @@ void main() {
         waveformColor: Color(0xFF00E5FF),
         waveformBackground: Color(0xFF000000),
         recordColor: Color(0xFFFF1744),
+        fxColor: Color(0xFF3B82F6),
         recordMeterColors: {},
         muteMeterColors: {},
         indicatorColors: {},
@@ -279,6 +287,17 @@ void main() {
           ),
           TrackIndicator.play,
           reason: 'mute mode arms green',
+        );
+        expect(
+          TrackIndicator.of(
+            state,
+            muted: false,
+            hasContent: false,
+            selected: true,
+            mode: InteractionMode.fx,
+          ),
+          TrackIndicator.play,
+          reason: 'FX mode starts no take, so the cursor must not read red',
         );
       }
     });

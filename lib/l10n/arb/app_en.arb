@@ -193,10 +193,26 @@
     "emDash": "—",
     "interactionModeRec": "REC",
     "interactionModeMute": "MUTE",
+    "interactionModeFx": "FX",
+    "@interactionModeFx": {
+        "description": "Short label on the mode chip for FX mode, where track presses toggle each track's FX chain."
+    },
     "a11yUndone": "Undone",
     "a11yRedone": "Redone",
     "a11yModeRecord": "Record mode",
     "a11yModeMute": "Mute mode",
+    "a11yModeFx": "FX mode",
+    "@a11yModeFx": {
+        "description": "Announced when the looper lands in FX mode."
+    },
+    "a11yTrackFxChainOn": "Track FX chain on",
+    "@a11yTrackFxChainOn": {
+        "description": "Announced when a track's Track-stage FX chain is switched on from the tracks surface. Distinct from a11yFxChainOn, which belongs to the FX editor's chain power toggle — two surfaces, two strings, so a copy change to one never rewords the other."
+    },
+    "a11yTrackFxChainOff": "Track FX chain off",
+    "@a11yTrackFxChainOff": {
+        "description": "Announced when a track's Track-stage FX chain is switched off (bypassed) from the tracks surface."
+    },
     "a11yPlayingAll": "Playing all tracks",
     "a11yStoppedAll": "Stopped all tracks",
     "a11yAllCleared": "All tracks cleared",
@@ -253,7 +269,7 @@
     "@shortcutPlayStopAll": {
         "description": "Legend description for the Space shortcut."
     },
-    "shortcutMode": "Switch record / mute mode",
+    "shortcutMode": "Switch record / mute / FX mode",
     "@shortcutMode": {
         "description": "Legend description for the M shortcut."
     },
@@ -261,7 +277,7 @@
     "@shortcutArm": {
         "description": "Legend description for the A shortcut."
     },
-    "shortcutSelectTrack": "Select a track (mute it in mute mode)",
+    "shortcutSelectTrack": "Select a track (mute it in mute mode, toggle its FX chain in FX mode)",
     "@shortcutSelectTrack": {
         "description": "Legend description for the 1–8 number-key shortcuts."
     },
@@ -315,6 +331,24 @@
                 "type": "String"
             },
             "state": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yTrackTileFxOn": "{name}, FX chain on, activate to switch it off",
+    "@a11yTrackTileFxOn": {
+        "description": "Accessibility label for a track tile in FX mode while that track's FX chain is engaged. The state is in the label because FX mode gives the tile no other visual cue for it.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yTrackTileFxOff": "{name}, FX chain off, activate to switch it on",
+    "@a11yTrackTileFxOff": {
+        "description": "Accessibility label for a track tile in FX mode while that track's FX chain is bypassed.",
+        "placeholders": {
+            "name": {
                 "type": "String"
             }
         }
@@ -382,7 +416,7 @@
     "trackIndicatorsTitle": "Track indicators",
     "trackIndicatorsSubtitle": "Show a status light on each track",
     "looperGroupLabel": "LOOPER",
-    "defaultModeIntro": "Mode the looper starts in — what a track press does, from the pedal, keyboard, or screen. Number keys select tracks; in Record mode R/P arm and play the selection, in Mute mode they mute / unmute.",
+    "defaultModeIntro": "Mode the looper starts in — what a track press does, from the pedal, keyboard, or screen. Number keys select tracks; in Record mode R/P arm and play the selection, in Mute mode they mute / unmute. FX mode (the third stop on the MODE switch, where track presses toggle FX chains) is not offered here — it is reached by cycling, never booted into.",
     "recordModeLabel": "Record",
     "recordModeSub": "Arm & capture",
     "muteModeLabel": "Mute",
@@ -915,6 +949,34 @@
         }
     },
     "pedalFirmwareHint": "Match the protocol of the firmware flashed on your pedal. loopy never sends a newer protocol than this; the pedal FX mode needs v3.",
+    "pedalFirmwareUpdateTitle": "Pedal firmware update available",
+    "@pedalFirmwareUpdateTitle": {
+        "description": "Heading of the banner shown while the bound pedal speaks a wire protocol older than the one FX mode needs."
+    },
+    "pedalFirmwareUpdateBody": "This pedal is set to protocol v{version}, so FX mode shows its chain LEDs in green instead of blue and the pedal reads FX as mute. Flash the v{needed} firmware, then set the protocol above to v{needed}.",
+    "@pedalFirmwareUpdateBody": {
+        "description": "Body of the pedal firmware update banner; {version} is the negotiated protocol and {needed} the protocol FX mode needs.",
+        "placeholders": {
+            "version": {
+                "type": "int"
+            },
+            "needed": {
+                "type": "int"
+            }
+        }
+    },
+    "pedalFirmwareUpdateBodyUnknown": "This pedal's firmware protocol is not set, so loopy stays on the v{version} safety floor: FX mode shows its chain LEDs in green instead of blue and the pedal reads FX as mute. Flash the v{needed} firmware, then set the protocol above to v{needed}.",
+    "@pedalFirmwareUpdateBodyUnknown": {
+        "description": "Body of the pedal firmware update banner when no firmware version has been set; {version} is the safety-floor protocol and {needed} the protocol FX mode needs.",
+        "placeholders": {
+            "version": {
+                "type": "int"
+            },
+            "needed": {
+                "type": "int"
+            }
+        }
+    },
     "pluginUnsupportedTopology": "{name} can't be used here — it isn't a stereo effect (it may be an instrument or use multiple buses).",
     "@pluginUnsupportedTopology": {
         "description": "Shown when a user inserts a plugin whose audio bus layout is not a supported stereo/mono effect.",
@@ -961,6 +1023,14 @@
     "pedalSimLedArmed": "armed",
     "pedalSimLedRecording": "recording",
     "pedalSimLedChainEnabled": "FX chain enabled",
+    "pedalSimLedChainDisabled": "FX chain bypassed",
+    "@pedalSimLedChainDisabled": {
+        "description": "Accessibility reading of a dark track LED while the pedal is in FX mode: that track's FX chain is switched off."
+    },
+    "pedalSimStopFxSemantics": "STOP footswitch, FX panic — press to bypass every FX chain, hold to restore them",
+    "@pedalSimStopFxSemantics": {
+        "description": "Accessibility label for the on-screen pedal STOP footswitch while in FX mode, where it is the FX panic control."
+    },
     "pedalSimBankSemantics": "Bank {bank}",
     "@pedalSimBankSemantics": {
         "description": "Accessibility label for the on-screen pedal active bank.",
