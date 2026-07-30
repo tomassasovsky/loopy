@@ -30,17 +30,18 @@ issue: 351
 
 ## Status
 
-**Next up:** merge gate on part 1b (PR #382, build green — human merges);
-then 2 and 3a in parallel. 4a / 5a / 6a have no in-epic dependencies and can
-run in parallel any time.
+**Next up:** merge gate on part 2 (PR #385, build green — human merges; the
+[B4] A/B listen note is the open exit-bar item). 3a merged (#386), so 3b
+(deps 3a + 0) is unblocked now and can run in parallel with 2's gate.
+4a / 5a / 6a have no in-epic dependencies and can run in parallel any time.
 
 | Part | Scope | Model / effort | Autonomy | Depends on | Status |
 |------|-------|----------------|----------|------------|--------|
 | 0 | arm() fix (standalone bug) | Opus · medium | `auto` | — | merged (#375) |
 | 1a | engine bypass + ramp | **Fable · high** | `merge-gate` | — | merged (#379) |
 | 1b | track bus + master insert | **Fable · high** | `merge-gate` | 1a | merged (#382) |
-| 2 | loop-stage wet cache | **Fable · extra-high** | `merge-gate` | 1a, 1b | pending |
-| 3a | domain model + shared types + CI jobs | **Fable · high** | `merge-gate` | 1a, 1b | in review (#386) |
+| 2 | loop-stage wet cache | **Fable · extra-high** | `merge-gate` | 1a, 1b | in review (#385) |
+| 3a | domain model + shared types + CI jobs | **Fable · high** | `merge-gate` | 1a, 1b | merged (#386) |
 | 3b | session v5 migration + manifest stages | Opus · medium | `merge-gate` | 3a, 0 | pending |
 | 4a | delete dead FX code | Sonnet · low | `auto` | — | pending |
 | 4b | four-stage Signal surface | Opus · medium | `merge-gate` | 3a, 4a | pending |

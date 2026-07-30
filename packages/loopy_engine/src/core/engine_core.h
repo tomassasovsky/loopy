@@ -53,6 +53,49 @@ static inline int32_t le_lanes_active(const le_track* t) {
   return n;
 }
 
+/* FNV-1a fold of one 32-bit value, byte by byte in little-endian order so the
+ * hash is endianness-independent. The primitive under every chain-fingerprint
+ * fold (engine_snapshot.c's canonical le_fx_chain_fingerprint, the wet cache's
+ * enqueue-snapshot fold in engine_cache.c, and — mirrored — the Dart
+ * trackChainFingerprint): ONE definition, so the folds can never drift at the
+ * byte level. `static inline` like the other tiny hot helpers here. */
+static inline uint64_t le_fx_fp_u32(uint64_t h, uint32_t v) {
+  for (int b = 0; b < 4; ++b) {
+    h ^= (uint8_t)(v >> (8 * b));
+    h *= 0x100000001b3ULL;
+  }
+  return h;
+}
+
+/* The control thread's view of a track's state: the target of a
+ * posted-but-unapplied state-flip command (UNDO_TO_EMPTY / REDO_FROM_EMPTY /
+ * CLEAR), or the published a_state once everything posted has been acked.
+ * Ring FIFO makes this deterministic — no observation race. Shared by the
+ * command producers (engine_commands.c) and the wet-cache scheduler's enqueue
+ * gate (engine_cache.c), which must never diverge on this predicate. The
+ * acquire pairs with the audio thread's release on the ack bump, so once the
+ * counters match, the a_state store that preceded the ack is visible. */
+static inline int32_t le_effective_state(le_track* t) {
+  if (t->state_cmds_posted >
+      atomic_load_explicit(&t->a_state_acks, memory_order_acquire)) {
+    return t->pending_target;
+  }
+  return load_i32(&t->a_state);
+}
+
+/* Publishes pool slot [slot] as every active lane's live buffer AND bumps the
+ * track's content revision in the same motion — the STRUCTURAL half of the
+ * a_audio_rev bump-site table (engine_private.h): every control-side history
+ * operation that re-points a_live (undo/redo swaps, redo-from-empty,
+ * clear-restore, layered session finalize) MUST go through this helper, so
+ * the [R1] bump can never be forgotten when the next history feature copies
+ * the swap. Control thread only (a_live's sole writer). */
+static inline void le_track_publish_live(le_track* t, int32_t slot) {
+  const int32_t lanes = le_lanes_active(t);
+  for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, slot);
+  le_audio_rev_bump(t); /* [R1] a_live now names other audio */
+}
+
 /* Whether `ch` is a usable track index. Defined in engine.c. */
 int valid_channel(le_engine* e, int32_t ch);
 

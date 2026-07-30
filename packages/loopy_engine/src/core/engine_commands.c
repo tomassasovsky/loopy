@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include "audio_ring.h"  /* le_audio_ring_init (performance-recording rings) */
+#include "engine_cache.h" /* le_cache_tick (wet-cache scheduler heartbeat) */
 #include "engine_core.h" /* le_push, valid_channel, le_lanes_active, le_*_reset */
 #include "engine_fx.h"   /* le_fx_ensure_hann, LE_PV_N / LE_PV_BINS */
 #include "engine_private.h"
@@ -239,9 +240,8 @@ static int le_redo_push(le_track* t, le_hist_entry e) {
  * corrupting the struct, hence the guard rather than an assert. */
 static void le_undo_swap(le_track* t) {
   const int32_t prev = t->undo_stack[--t->undo_count].slot;
-  const int32_t lanes = le_lanes_active(t);
   (void)le_redo_push(t, le_hist_layer(load_i32(&t->lanes[0].a_live)));
-  for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, prev);
+  le_track_publish_live(t, prev); /* [R1] undo swap */
   le_publish_undo_depth(t);
   store_i32(&t->a_redo_depth, t->redo_count);
 }
@@ -269,19 +269,10 @@ static void le_drop_clear_history(le_track* t) {
   le_publish_undo_depth(t);
 }
 
-/* The track's effective state for control-side decisions: the target of a
- * posted-but-unapplied state-flip command (UNDO_TO_EMPTY / REDO_FROM_EMPTY /
- * CLEAR), or the published a_state once everything posted has been acked.
- * Ring FIFO makes this deterministic — no observation race. */
-static int32_t le_effective_state(le_track* t) {
-  /* Acquire pairs with the audio thread's release on the ack bump, so once the
-   * counters match, the a_state store that preceded the ack is visible. */
-  if (t->state_cmds_posted >
-      atomic_load_explicit(&t->a_state_acks, memory_order_acquire)) {
-    return t->pending_target;
-  }
-  return load_i32(&t->a_state);
-}
+/* le_effective_state — the track's effective state for control-side decisions
+ * — moved to engine_core.h (static inline): the wet-cache scheduler's enqueue
+ * gate (engine_cache.c) decides from the same predicate and the two must
+ * never diverge. */
 
 /* Marks a successfully posted state-flip command (control thread). */
 static void le_mark_state_cmd(le_track* t, int32_t target) {
@@ -492,6 +483,22 @@ void le_engine_drain_events(le_engine* engine) {
     }
     le_apply_queued_undo(engine, ch);
   }
+  /* Loop-stage wet cache (FX v3 part 2): one scheduler pass per drain —
+   * collect finished renders, publish [B5], chunked enqueue copies,
+   * debounce + enqueue [B2][B3], enforce the memory cap. No-op until
+   * le_cache_init has run.
+   *
+   * CADENCE CONTRACT: this hook is the cache's ONLY control-thread
+   * heartbeat, so cache liveness (renders publishing, cap bytes releasing)
+   * requires SOME periodic control-side call into le_engine_drain_events —
+   * the app's snapshot poll today, or le_engine_get_lane_cache polling in a
+   * headless/test harness. A client that stops calling entirely leaves the
+   * cache frozen mid-flight (lanes report RENDERING, bytes stay pinned) —
+   * audio is unaffected (live playback continues), but any such client must
+   * either keep polling or grow a dedicated pump seam here first. Per-call
+   * cost is bounded: the copy step is chunked and every scan is fixed-size
+   * with an under-budget early-out. */
+  le_cache_tick(engine);
 }
 
 /* Zeroes every active lane's live buffer (control thread) before a fresh capture
@@ -991,7 +998,7 @@ static int32_t le_restore_clear(le_engine* engine, int32_t channel) {
   t->undo_count--;
   /* Cannot fail: one entry off the undo stack for the one added here. */
   (void)le_redo_push(t, e);
-  for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, e.slot);
+  le_track_publish_live(t, e.slot); /* [R1] clear-restore */
   /* Leftover armed shadows may be sized for a different loop; the audio thread
    * drops them when the command applies (same reclaim rule as redo-from-empty:
    * an EMPTY track has no layer in flight, so no retire event can be
@@ -1139,7 +1146,7 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
       return LE_ERR_INVALID;
     }
     const int32_t next = t->redo_stack[--t->redo_count].slot;
-    for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, next);
+    le_track_publish_live(t, next); /* [R1] redo-from-empty */
     t->empty_len = 0;
     /* Leftover armed shadows may be sized for a different loop; the audio
      * thread drops them when the command applies. Same no-in-flight argument
@@ -1151,9 +1158,8 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
     return LE_OK;
   }
   const int32_t next = t->redo_stack[--t->redo_count].slot;
-  const int32_t lanes = le_lanes_active(t);
   t->undo_stack[t->undo_count++] = le_hist_layer(load_i32(&t->lanes[0].a_live));
-  for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, next);
+  le_track_publish_live(t, next); /* [R1] redo swap */
   le_publish_undo_depth(t);
   store_i32(&t->a_redo_depth, t->redo_count);
   le_plog_push_ctrl(engine,
@@ -1551,6 +1557,7 @@ int32_t le_engine_set_lane_fx(le_engine* engine, int32_t channel, int32_t lane,
   if (rc == LE_OK) {
     ln->fx_type_pushed[index] = type;
     if (changed) store_i32(&ln->a_fx_enabled[index], 1);
+    le_lane_fx_gen_bump(ln); /* chain identity moved (wet-cache fast path) */
   }
   return rc;
 }
@@ -1589,6 +1596,7 @@ int32_t le_engine_set_lane_fx_count(le_engine* engine, int32_t channel,
                                        .fxcount = {channel, lane, count}});
   if (rc == LE_OK) {
     le_fx_seed_entering_slots(&ln->fx_count_pushed, ln->a_fx_enabled, count);
+    le_lane_fx_gen_bump(ln); /* chain identity moved (wet-cache fast path) */
   }
   return rc;
 }
@@ -1608,6 +1616,7 @@ int32_t le_engine_set_lane_fx_param(le_engine* engine, int32_t channel,
    * audio-thread DSP state). Works whether or not the device is running. */
   store_f32(&engine->tracks[channel].lanes[lane].a_fx_param[index][param],
             value);
+  le_lane_fx_gen_bump(&engine->tracks[channel].lanes[lane]);
   le_plog_push_ctrl(
       engine, (le_command){.code = LE_PLOG_SET_LANE_FX_PARAM,
                            .fx = {channel, lane,
@@ -1630,6 +1639,7 @@ int32_t le_engine_set_lane_fx_enabled(le_engine* engine, int32_t channel,
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
   const int32_t on = enabled ? 1 : 0;
   store_i32(&engine->tracks[channel].lanes[lane].a_fx_enabled[index], on);
+  le_lane_fx_gen_bump(&engine->tracks[channel].lanes[lane]);
   le_plog_push_ctrl(engine, (le_command){.code = LE_PLOG_SET_LANE_FX_ENABLED,
                                         .fx = {channel, lane, index, on}});
   return LE_OK;
@@ -1642,6 +1652,7 @@ int32_t le_engine_set_lane_fx_chain_enabled(le_engine* engine, int32_t channel,
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
   const int32_t on = enabled ? 1 : 0;
   store_i32(&engine->tracks[channel].lanes[lane].a_fx_chain_enabled, on);
+  le_lane_fx_gen_bump(&engine->tracks[channel].lanes[lane]);
   le_plog_push_ctrl(
       engine, (le_command){.code = LE_PLOG_SET_LANE_FX_CHAIN_ENABLED,
                            .lanef = {channel, lane, on ? 1.0f : 0.0f}});

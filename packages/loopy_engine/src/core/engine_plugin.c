@@ -160,6 +160,7 @@ int32_t le_engine_set_lane_plugin(le_engine* engine, int32_t channel,
     le_lane* ln = &engine->tracks[channel].lanes[lane];
     store_i32(&ln->a_fx_enabled[index], 1);
     ln->fx_type_pushed[index] = LE_FX_PLUGIN;
+    le_lane_fx_gen_bump(ln); /* chain identity moved (wet-cache fast path) */
   }
   return rc;
 }
@@ -188,6 +189,7 @@ int32_t le_engine_clear_lane_plugin(le_engine* engine, int32_t channel,
    * callback) is still a successful clear from the caller's view. */
   (void)clear_slot(engine, fx, type, index);
   engine->tracks[channel].lanes[lane].fx_type_pushed[index] = LE_FX_NONE;
+  le_lane_fx_gen_bump(&engine->tracks[channel].lanes[lane]);
   return LE_OK;
 }
 

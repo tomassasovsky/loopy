@@ -96,16 +96,9 @@ static int32_t le_max_fx_latency(le_engine* engine) {
   return max_lat;
 }
 
-/* FNV-1a mix of one 32-bit value, byte by byte in little-endian order so the
- * hash is endianness-independent (both this and the Dart mirror process the
- * value's low byte first). */
-static uint64_t le_fx_fp_u32(uint64_t h, uint32_t v) {
-  for (int b = 0; b < 4; ++b) {
-    h ^= (uint8_t)(v >> (8 * b));
-    h *= 0x100000001b3ULL;
-  }
-  return h;
-}
+/* The FNV-1a byte fold (le_fx_fp_u32) is shared from engine_core.h — one
+ * definition for this canonical fold, the wet cache's enqueue-snapshot fold
+ * (engine_cache.c), and, mirrored, the Dart trackChainFingerprint. */
 
 /* Order-sensitive fingerprint of a published fx chain (a_fx_count active of the
  * a_fx_type / a_fx_param arrays plus the two enable-flag levels). Fold order

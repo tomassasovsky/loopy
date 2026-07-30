@@ -614,6 +614,7 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state,
   le_track_set_len(t, len);
   store_i32(&t->a_multiple, 1); /* the defining track is one base loop */
   store_i32(&t->a_sync_divisor, 0); /* a defining track is never a division */
+  le_audio_rev_bump(t); /* [R1] record finalize: fresh content */
   store_i32(&t->a_state, end_state);
   t->start_iter = 0;
   /* This track leaves RECORDING here regardless of end_state — even the
@@ -850,6 +851,7 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
     /* Drop (not apply) any mute deferred during the void take: an EMPTY
      * track always comes back unmuted. */
     le_consume_pending_mutes(e, t, end_state, 0, frame);
+    le_audio_rev_bump(t); /* [R1] record finalize (void take -> EMPTY) */
     store_i32(&t->a_state, LE_TRACK_EMPTY);
     le_track_set_len(t, 0);
     store_i32(&t->a_multiple, 1);
@@ -896,6 +898,7 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
     store_i32(&t->a_multiple, k);
     le_track_set_len(t, k * base);
   }
+  le_audio_rev_bump(t); /* [R1] record finalize: fresh content */
   store_i32(&t->a_state, end_state);
   t->record_pos = 0;
   le_plog_push(e, frame, (le_command){.code = LE_PLOG_RECORD_END, .arg_i = ch});
@@ -924,6 +927,13 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
 static void le_dub_session_start(le_engine* e, le_track* t) {
   const int32_t len = load_i32(&t->lanes[0].a_len);
   if (len <= 0) return;
+  /* [R1] entry into OVERDUBBING (the single funnel: finalize-to-overdub and
+   * punch-in both land here). Bumped in the same command drain that flips the
+   * state — BEFORE this block's frame loop performs any in-place write — so
+   * no overdub write ever happens under the old revision. A re-punch during
+   * the fade tail / drain (the in-flight early-return below) bumps too:
+   * writes resume, so the content epoch moves again. */
+  le_audio_rev_bump(t);
   if (load_i32(&t->a_layer_in_flight)) {
     /* A re-punch while the previous layer is still in flight. Two cases:
      *  - Fade-tail continuation (od_gain > 0): writes never stopped, so the
@@ -1003,6 +1013,7 @@ static void le_dub_boundary(le_engine* e, le_track* t, uint64_t frame) {
     if (t->dub_retire_slot >= 0) return; /* frozen: retire is stuck */
     t->dub_retire_slot = t->dub_slot;
     t->dub_slot = -1;
+    le_audio_rev_bump(t); /* [R1] a completed overdub pass retired */
     le_dub_try_retire(e, t, frame);
   }
   if (t->dub_slot < 0 && t->dub_spare >= 0) {
@@ -1106,6 +1117,7 @@ static void le_dub_block_update(le_engine* e, uint64_t frame) {
         t->dub_retire_slot < 0) {
       t->dub_retire_slot = t->dub_slot;
       t->dub_slot = -1;
+      le_audio_rev_bump(t); /* [R1] the punch-out pass retired (post-drain) */
       le_dub_try_retire(e, t, frame);
     }
     /* Session fully wound down: every layer retired and collected-able. */
@@ -1357,6 +1369,7 @@ static void le_apply_mute_cmd(le_engine* e, int32_t ch, int32_t lane,
 static void handle_clear(le_engine* e, int32_t ch) {
   if (!valid_channel(e, ch)) return;
   le_track* t = &e->tracks[ch];
+  le_audio_rev_bump(t); /* [R1] clear: the track's content is gone */
   t->record_pos = 0;
   t->start_iter = 0;
   t->pending_record = 0;
@@ -1731,6 +1744,7 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
        * stays Clear's job (handle_clear's all-empty check). */
       if (!valid_channel(e, cmd->arg_i)) break;
       le_track* t = &e->tracks[cmd->arg_i];
+      le_audio_rev_bump(t); /* [R1] undo to empty: content-less from here */
       t->record_pos = 0;
       t->start_iter = 0;
       t->pending_record = 0;
@@ -2099,6 +2113,10 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       store_i32(&ln->a_fx_type[index], cmd->fx.type);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&ln->fx, index);
+      /* Wet-cache fast path: the published type just moved, so the chain
+       * identity did too. The control setter already bumped, but a raw
+       * le_engine_post_command bypasses it — this bump covers that hatch. */
+      le_lane_fx_gen_bump(ln);
       break;
     }
     case LE_CMD_SET_LANE_FX_COUNT: {
@@ -2110,6 +2128,8 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       if (count < 0) count = 0;
       if (count > LE_FX_MAX) count = LE_FX_MAX;
       store_i32(&e->tracks[ch].lanes[lane].a_fx_count, count);
+      /* Wet-cache fast path: covers the raw-post hatch (see SET_LANE_FX). */
+      le_lane_fx_gen_bump(&e->tracks[ch].lanes[lane]);
       break;
     }
     /* ---- multi-lane routing commands ----
@@ -3164,6 +3184,64 @@ static inline void snapshot_track_fx(
   }
 }
 
+/* Per-buffer wet-cache snapshot (FX v3 part 2): loads each lane's published
+ * entry ONCE (acquire) and re-derives the lane's current cache key —
+ * {a_audio_rev [R1], chain fingerprint (params + enabled), a_vol_bits (D-VOL),
+ * a_len} — accepting the entry only when EVERY field matches. cache_ent[t][l]
+ * is the buffer-stable verdict the mix step consumes (NULL = play live). Any
+ * mismatch clears the lane's audio-local cache_active flag right here, so an
+ * edit falls back to live processing within the same buffer [B4] — the chain
+ * re-enters through the enable machinery's clean settled-bypass re-enable
+ * edge (reset + staggered ring clear + warmup + ramp [B7]), which is what
+ * makes the fallback click-free while the documented tail-drop happens.
+ * Cost when the cache is idle: one relaxed pointer load per lane. The
+ * fingerprint recompute (le_engine_lane_fx_fingerprint — pure atomic loads +
+ * FNV math, RT-safe) runs only while an entry is published. */
+static inline void snapshot_lane_cache(
+    le_engine* e, int tc, const int32_t* lane_n,
+    const le_wet_entry* cache_ent[][LE_MAX_LANES]) {
+  for (int t = 0; t < tc; ++t) {
+    le_track* tr = &e->tracks[t];
+    for (int l = 0; l < lane_n[t]; ++l) {
+      le_lane* ln = &tr->lanes[l];
+      cache_ent[t][l] = NULL;
+      const le_wet_entry* w =
+          atomic_load_explicit(&ln->a_wet, memory_order_acquire);
+      int ok = w != NULL;
+      if (ok) {
+        /* The full key check via the ONE shared predicate — with the
+         * fingerprint term served from the audio-local verdict cache while
+         * the lane's chain-edit generation (a_fx_gen) is unchanged, so a
+         * cached steady state costs one relaxed load instead of a ~40-load
+         * FNV refold per buffer. Any chain edit bumps the generation and
+         * forces the full refold the same buffer. */
+        const uint32_t rev =
+            atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire);
+        const uint32_t vol =
+            atomic_load_explicit(&ln->a_vol_bits, memory_order_relaxed);
+        const int32_t len = load_i32(&ln->a_len);
+        const uint32_t gen =
+            atomic_load_explicit(&ln->a_fx_gen, memory_order_relaxed);
+        if (w == ln->cache_fp_entry && gen == ln->cache_fp_gen) {
+          ok = le_wet_entry_key_matches(w, rev, w->chain_fp, vol, len);
+        } else {
+          ok = le_wet_entry_key_matches(
+              w, rev, le_engine_lane_fx_fingerprint(e, t, l), vol, len);
+          if (ok) { /* remember the passed fp verdict for this {entry, gen} */
+            ln->cache_fp_entry = w;
+            ln->cache_fp_gen = gen;
+          }
+        }
+      }
+      if (ok) {
+        cache_ent[t][l] = w;
+      } else if (load_i32(&ln->a_cache_active)) {
+        store_i32(&ln->a_cache_active, 0); /* same-buffer live fallback [B4] */
+      }
+    }
+  }
+}
+
 /* ---- per-frame core steps ----
  *
  * The fused heart of the per-frame loop, lifted into named steps. Each is
@@ -3400,6 +3478,7 @@ static inline void mix_tracks_frame(
     const int32_t* trk_fx_count, int32_t trk_fx_type[][LE_FX_MAX],
     float trk_fx_params[][LE_FX_MAX][LE_FX_PARAMS],
     int32_t trk_fx_enabled[][LE_FX_MAX],
+    const le_wet_entry* cache_ent[][LE_MAX_LANES],
     float lane_sumsq[][LE_MAX_LANES], float lane_peak[][LE_MAX_LANES],
     int32_t* st, float* frame_trk_peak, uint64_t perf_frame_base) {
   /* Snapshot per-lane playback state once per frame. The track state can flip
@@ -3609,16 +3688,69 @@ static inline void mix_tracks_frame(
        * volume while it sounds, silence otherwise, run through the lane's whole
        * (stageless) effects chain on its `fx` state. Effects run every frame the
        * lane has them (even on silence) so delay tails and LFO phase stay
-       * continuous; the wet result is routed only while the lane is audible. */
+       * continuous; the wet result is routed only while the lane is audible.
+       * EXCEPTION (part 2): while cached playback is engaged below, the live
+       * chain is skipped entirely — its state was settled to bypass at the
+       * engage edge, and a fallback re-enters through the clean re-enable
+       * path instead of resuming a stale tail. */
       const int audible =
           (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
           !mut[t][l];
-      float wl = audible ? loopsample * vol[t][l] : 0.0f;
-      float wr = wl;
       le_lane* ln = &e->tracks[t].lanes[l];
-      if (has_fx[t][l]) {
-        fx_apply_chain(&ln->fx, sr, fx_cap, &wl, &wr, fx_count[t][l],
-                       fx_type[t][l], fx_params[t][l], fx_enabled[t][l]);
+
+      /* Loop-stage wet cache (part 2). The per-buffer snapshot already
+       * verified the published entry's full key against the lane's current
+       * one (snapshot_lane_cache — a mismatch cleared cache_active there, the
+       * same-buffer live fallback [B4]). Cached playback ENGAGES only at the
+       * lane's own loop boundary (read position 0), never mid-cycle, so
+       * cache-in is click-free by construction; the engage edge settles every
+       * chain slot to bypass so a later fallback re-enters through the
+       * enable machinery's clean re-enable path (reset + ring clear + warmup
+       * + ramp [B7]) rather than resuming a stale tail. While engaged the
+       * chain is SKIPPED entirely — zero FX CPU — and the entry's stereo pair
+       * plays verbatim (volume is baked into the render, D-VOL). Mute routes
+       * nothing but stays engaged; unmute resumes cached (tails are part of
+       * the periodic render — the small documented difference from live
+       * [R5]). Meters above keep reading the dry loopsample either way.
+       *
+       * PERIODIC-RENDER SEMANTICS (the general form of that [R5] note, part
+       * of the [B4] listen check): cached playback replays ONE baked lap, so
+       * anything in the chain that free-runs across laps diverges from an
+       * uncached engine over time — an LFO whose rate is not loop-locked
+       * repeats the baked sweep each lap instead of evolving, and a tail
+       * longer than the loop carries exactly one lap of accumulation instead
+       * of building wash. Inherent to caching a loop (not a bug); the parity
+       * tests pin the first cached lap, and the listen check owns the rest.
+       *
+       * Engagement additionally requires the track to be PLAYING: engaging a
+       * STOPPED lane would force-bypass its silently-ticking chain (wiping
+       * tail/LFO continuity) for playback nobody hears. */
+      const le_wet_entry* wce = cache_ent[t][l];
+      const int32_t rp = seg_base[t] + trk_pos[t];
+      if (wce != NULL && st[t] == LE_TRACK_PLAYING &&
+          !load_i32(&ln->a_cache_active) && rp == 0) {
+        store_i32(&ln->a_cache_active, 1);
+        for (int s = 0; s < LE_FX_MAX; ++s) {
+          le_fx_enable_force_bypass(&ln->fx, s);
+        }
+      }
+      float wl;
+      float wr;
+      if (wce != NULL && load_i32(&ln->a_cache_active)) {
+        if (audible && rp >= 0 && rp < wce->len) {
+          wl = wce->pcm[2 * rp];
+          wr = wce->pcm[2 * rp + 1];
+        } else {
+          wl = 0.0f;
+          wr = 0.0f;
+        }
+      } else {
+        wl = audible ? loopsample * vol[t][l] : 0.0f;
+        wr = wl;
+        if (has_fx[t][l]) {
+          fx_apply_chain(&ln->fx, sr, fx_cap, &wl, &wr, fx_count[t][l],
+                         fx_type[t][l], fx_params[t][l], fx_enabled[t][l]);
+        }
       }
       if (!trk_has_fx[t]) {
         /* Empty Track chain (the default and the migration state): the legacy
@@ -3792,6 +3924,13 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   snapshot_track_fx(e, tc, trk_fx_count, trk_fx_type, trk_fx_params,
                     trk_fx_enabled, trk_has_fx);
 
+  /* Loop-stage wet cache (part 2), snapshotted once per buffer (see
+   * snapshot_lane_cache): the per-lane published-entry pointer + full key
+   * verdict. NULL everywhere until a render publishes — one relaxed load per
+   * lane of dormant cost. */
+  const le_wet_entry* cache_ent[LE_MAX_TRACKS][LE_MAX_LANES];
+  snapshot_lane_cache(e, tc, lane_n, cache_ent);
+
   /* Master insert chain (part 1b), snapshotted once per buffer (see
    * snapshot_bus_fx). mst_has_fx false (empty chain) skips master_fx_frame
    * entirely — zero cost, bit-identical output (D-MASTER). */
@@ -3867,8 +4006,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
                      out_enabled, overdub_fb, od_step, od_fade_frames, pos,
                      lane_n, has_fx, fx_count, fx_type, fx_params, fx_enabled,
                      trk_has_fx, trk_fx_count, trk_fx_type, trk_fx_params,
-                     trk_fx_enabled, lane_sumsq, lane_peak, st, frame_trk_peak,
-                     perf_frame_base);
+                     trk_fx_enabled, cache_ent, lane_sumsq, lane_peak, st,
+                     frame_trk_peak, perf_frame_base);
 
     /* Master insert (part 1b, D-MASTER): colors the track mix only — BEFORE
      * the monitors sum in below, and before master gain/limiter. Empty chain

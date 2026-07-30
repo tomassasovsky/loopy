@@ -676,6 +676,16 @@ void le_fx_free_octaver(le_fx_state* fx, int slot) {
   }
 }
 
+void le_fx_state_free_buffers(le_fx_state* fx) {
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    free(fx->delay[s][0]);
+    fx->delay[s][0] = NULL;
+    free(fx->delay[s][1]);
+    fx->delay[s][1] = NULL;
+    le_fx_free_octaver(fx, s);
+  }
+}
+
 /* Schroeder/Freeverb reverb: LE_REV_COMBS parallel damped comb filters are
  * summed and run through LE_REV_APS series allpass diffusers, producing a dense
  * decaying tail rather than the discrete repeats of DELAY/ECHO. Two such banks
