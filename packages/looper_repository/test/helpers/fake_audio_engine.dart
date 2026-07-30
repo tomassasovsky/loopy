@@ -426,6 +426,14 @@ class FakeAudioEngine implements AudioEngine {
     required int index,
     required TrackEffectType type,
   }) {
+    // D-ENSEED, modeled like the real engine: an actual type CHANGE re-seeds
+    // the slot's enabled flag to true, synchronously in this setter — so a
+    // repository that pushes enabled bits BEFORE the type/count commands has
+    // them clobbered here and fails tests exactly as it would on the native
+    // engine (the migrated-disabled-bit bug class).
+    if (laneFx[(channel, lane, index)] != type) {
+      laneFxEnabled[(channel, lane, index)] = true;
+    }
     laneFx[(channel, lane, index)] = type;
     calls.add('setLaneFx');
     return EngineResult.ok;
@@ -437,6 +445,11 @@ class FakeAudioEngine implements AudioEngine {
     required int lane,
     required int count,
   }) {
+    // D-ENSEED's second half: a slot ENTERING the active window seeds
+    // enabled, synchronously, like the engine's le_fx_seed_entering_slots.
+    for (var s = laneFxCount[(channel, lane)] ?? 0; s < count; s++) {
+      laneFxEnabled[(channel, lane, s)] = true;
+    }
     laneFxCount[(channel, lane)] = count;
     calls.add('setLaneFxCount');
     return EngineResult.ok;
@@ -484,58 +497,147 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
-  // ---- Track-stage + Master insert chains (FX v3 part 1b): no repository
-  // consumes these yet (part 3 wires the domain model), so plain ok stubs. ----
+  // ---- Track-stage + Master insert chains (FX v3 part 1b), recorded so
+  // repository tests can assert the four-stage pushes. ----
+
+  /// Per-(channel, index) effect type passed to [setTrackFx].
+  final Map<(int, int), TrackEffectType> trackFx = {};
+
+  /// Per-channel active chain length passed to [setTrackFxCount].
+  final Map<int, int> trackFxCount = {};
+
+  /// Per-(channel, index, param) value passed to [setTrackFxParam].
+  final Map<(int, int, int), double> trackFxParam = {};
+
+  /// Per-(channel, index) flag passed to [setTrackFxEnabled].
+  final Map<(int, int), bool> trackFxEnabled = {};
+
+  /// Per-channel flag passed to [setTrackFxChainEnabled].
+  final Map<int, bool> trackFxChainEnabled = {};
+
+  /// Per-index effect type passed to [setMasterFx].
+  final Map<int, TrackEffectType> masterFx = {};
+
+  /// Active chain length passed to [setMasterFxCount].
+  int? masterFxCount;
+
+  /// Per-(index, param) value passed to [setMasterFxParam].
+  final Map<(int, int), double> masterFxParam = {};
+
+  /// Per-index flag passed to [setMasterFxEnabled].
+  final Map<int, bool> masterFxEnabled = {};
+
+  /// Flag passed to [setMasterFxChainEnabled].
+  bool? masterFxChainEnabled;
+
   @override
   EngineResult setTrackFx({
     required int channel,
     required int index,
     required TrackEffectType type,
-  }) => EngineResult.ok;
+  }) {
+    // D-ENSEED re-seed on type change — see [setLaneFx].
+    if (trackFx[(channel, index)] != type) {
+      trackFxEnabled[(channel, index)] = true;
+    }
+    trackFx[(channel, index)] = type;
+    calls.add('setTrackFx');
+    return EngineResult.ok;
+  }
+
   @override
-  EngineResult setTrackFxCount({
-    required int channel,
-    required int count,
-  }) => EngineResult.ok;
+  EngineResult setTrackFxCount({required int channel, required int count}) {
+    // D-ENSEED entering-slot seed — see [setLaneFxCount].
+    for (var s = trackFxCount[channel] ?? 0; s < count; s++) {
+      trackFxEnabled[(channel, s)] = true;
+    }
+    trackFxCount[channel] = count;
+    calls.add('setTrackFxCount');
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setTrackFxParam({
     required int channel,
     required int index,
     required int param,
     required double value,
-  }) => EngineResult.ok;
+  }) {
+    trackFxParam[(channel, index, param)] = value;
+    calls.add('setTrackFxParam');
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setTrackFxEnabled({
     required int channel,
     required int index,
     required bool enabled,
-  }) => EngineResult.ok;
+  }) {
+    trackFxEnabled[(channel, index)] = enabled;
+    calls.add('setTrackFxEnabled');
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setTrackFxChainEnabled({
     required int channel,
     required bool enabled,
-  }) => EngineResult.ok;
+  }) {
+    trackFxChainEnabled[channel] = enabled;
+    calls.add('setTrackFxChainEnabled');
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setMasterFx({
     required int index,
     required TrackEffectType type,
-  }) => EngineResult.ok;
+  }) {
+    // D-ENSEED re-seed on type change — see [setLaneFx].
+    if (masterFx[index] != type) {
+      masterFxEnabled[index] = true;
+    }
+    masterFx[index] = type;
+    calls.add('setMasterFx');
+    return EngineResult.ok;
+  }
+
   @override
-  EngineResult setMasterFxCount({required int count}) => EngineResult.ok;
+  EngineResult setMasterFxCount({required int count}) {
+    // D-ENSEED entering-slot seed — see [setLaneFxCount].
+    for (var s = masterFxCount ?? 0; s < count; s++) {
+      masterFxEnabled[s] = true;
+    }
+    masterFxCount = count;
+    calls.add('setMasterFxCount');
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setMasterFxParam({
     required int index,
     required int param,
     required double value,
-  }) => EngineResult.ok;
+  }) {
+    masterFxParam[(index, param)] = value;
+    calls.add('setMasterFxParam');
+    return EngineResult.ok;
+  }
+
   @override
-  EngineResult setMasterFxEnabled({
-    required int index,
-    required bool enabled,
-  }) => EngineResult.ok;
+  EngineResult setMasterFxEnabled({required int index, required bool enabled}) {
+    masterFxEnabled[index] = enabled;
+    calls.add('setMasterFxEnabled');
+    return EngineResult.ok;
+  }
+
   @override
-  EngineResult setMasterFxChainEnabled({required bool enabled}) =>
-      EngineResult.ok;
+  EngineResult setMasterFxChainEnabled({required bool enabled}) {
+    masterFxChainEnabled = enabled;
+    calls.add('setMasterFxChainEnabled');
+    return EngineResult.ok;
+  }
 
   /// Per-input enabled flag passed to [setMonitorInputEnabled].
   final Map<int, bool> monitorInputEnabled = {};
@@ -598,6 +700,10 @@ class FakeAudioEngine implements AudioEngine {
     required int index,
     required TrackEffectType type,
   }) {
+    // D-ENSEED re-seed on type change — see [setLaneFx].
+    if (monitorFx[(input, index)] != type) {
+      monitorFxEnabled[(input, index)] = true;
+    }
     monitorFx[(input, index)] = type;
     calls.add('setMonitorInputFx');
     return EngineResult.ok;
@@ -608,6 +714,10 @@ class FakeAudioEngine implements AudioEngine {
     required int input,
     required int count,
   }) {
+    // D-ENSEED entering-slot seed — see [setLaneFxCount].
+    for (var s = monitorFxCount[input] ?? 0; s < count; s++) {
+      monitorFxEnabled[(input, s)] = true;
+    }
     monitorFxCount[input] = count;
     calls.add('setMonitorInputFxCount');
     return EngineResult.ok;

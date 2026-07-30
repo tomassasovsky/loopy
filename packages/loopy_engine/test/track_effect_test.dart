@@ -433,4 +433,77 @@ void main() {
       expect(decodeTrackEffects('{"type":1}'), isEmpty);
     });
   });
+
+  group('enabled + slotId (FX v3, R16/A9)', () {
+    test('both fields round-trip through the codec on both subtypes', () {
+      final chain = [
+        BuiltInEffect(
+          type: TrackEffectType.delay,
+          enabled: false,
+          slotId: 'b-1',
+        ),
+        const PluginEffect(
+          ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+          enabled: false,
+          slotId: 'p-1',
+        ),
+      ];
+
+      final decoded = decodeTrackEffects(encodeTrackEffects(chain));
+
+      expect(decoded, hasLength(2));
+      final builtIn = decoded[0] as BuiltInEffect;
+      expect(builtIn.enabled, isFalse);
+      expect(builtIn.slotId, 'b-1');
+      final plugin = decoded[1] as PluginEffect;
+      expect(plugin.enabled, isFalse);
+      expect(plugin.slotId, 'p-1');
+    });
+
+    test('wrong-TYPED enabled/slotId decode to defaults, never throw', () {
+      final decoded = decodeTrackEffects(
+        '[{"type":1,"params":[0.5,0.8,0,0],"enabled":"yes","slotId":7},'
+        '{"type":8,"plugin":{"format":1,"id":"p","version":0},'
+        '"enabled":1,"slotId":{}}]',
+      );
+      expect(decoded, hasLength(2));
+      expect((decoded[0] as BuiltInEffect).enabled, isTrue);
+      expect((decoded[0] as BuiltInEffect).slotId, isNull);
+      expect((decoded[1] as PluginEffect).enabled, isTrue);
+      expect((decoded[1] as PluginEffect).slotId, isNull);
+    });
+
+    test('missing keys decode enabled=true / slotId=null (legacy)', () {
+      final decoded = decodeTrackEffects(
+        '[{"type":1,"params":[0.5,0.8,0,0]},'
+        '{"type":8,"plugin":{"format":1,"id":"p","version":0}}]',
+      );
+      expect((decoded[0] as BuiltInEffect).enabled, isTrue);
+      expect((decoded[0] as BuiltInEffect).slotId, isNull);
+      expect((decoded[1] as PluginEffect).enabled, isTrue);
+      expect((decoded[1] as PluginEffect).slotId, isNull);
+    });
+
+    test('default values are omitted so a pre-FX-v3 chain encodes '
+        'byte-unchanged', () {
+      final encoded = encodeTrackEffects([
+        BuiltInEffect(type: TrackEffectType.drive),
+      ]);
+      expect(encoded, isNot(contains('enabled')));
+      expect(encoded, isNot(contains('slotId')));
+    });
+
+    test('equality and copyWith cover both fields on both subtypes', () {
+      final a = BuiltInEffect(type: TrackEffectType.drive, slotId: 'x');
+      expect(a, isNot(BuiltInEffect(type: TrackEffectType.drive)));
+      expect(a.copyWith(enabled: false).enabled, isFalse);
+      expect(a.copyWith(enabled: false).slotId, 'x');
+
+      const ref = PluginRef(format: PluginFormat.vst3, id: 't');
+      const p = PluginEffect(ref: ref, enabled: false);
+      expect(p, isNot(const PluginEffect(ref: ref)));
+      expect(p.copyWith(slotId: 'y').slotId, 'y');
+      expect(p.copyWith(slotId: 'y').enabled, isFalse);
+    });
+  });
 }

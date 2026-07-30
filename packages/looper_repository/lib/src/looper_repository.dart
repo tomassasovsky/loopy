@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:looper_repository/src/models/audio_config.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
+import 'package:looper_repository/src/models/fx_slot_ids.dart';
 import 'package:looper_repository/src/models/input_monitor.dart';
 import 'package:looper_repository/src/models/lane.dart';
 import 'package:looper_repository/src/models/looper_state.dart';
@@ -243,10 +244,46 @@ class LooperRepository {
   final Map<(int, int), bool> _laneMute = {};
   final Map<(int, int), List<TrackEffect>> _laneEffects = {};
 
+  /// Per-(channel, lane) chain-enabled flags (R15; absent => enabled). Only
+  /// disabled entries are stored (default-on, self-cleaning, mirroring
+  /// [_outputEnabled]), and they are re-applied on every successful (re)start
+  /// — a fresh engine start resets every chain flag to enabled.
+  final Map<(int, int), bool> _laneChainEnabled = {};
+
+  /// Per-(channel, lane) inheritance provenance (R13/A8): the inputs whose
+  /// monitor chains were snapshot-copied onto the lane at record time, in
+  /// input order. Absent => never inherited. Repository-owned meta the engine
+  /// never sees; rides the persisted chain envelope.
+  final Map<(int, int), List<int>> _laneChainMeta = {};
+
+  /// The Track-stage (per-track stereo bus) chains and the Master insert
+  /// chain (FX v3 part 1b), remembered and re-applied on every (re)start,
+  /// mirroring [_laneEffects]. Owned by the bloc layer's `LooperBloc`.
+  final Map<int, List<TrackEffect>> _trackEffects = {};
+  List<TrackEffect> _masterEffects = const [];
+
+  /// Track/monitor/master chain-enabled flags (absent / `true` => enabled),
+  /// stored like [_laneChainEnabled].
+  final Map<int, bool> _trackChainEnabled = {};
+  final Map<int, bool> _monitorChainEnabled = {};
+  bool _masterChainEnabled = true;
+
   /// What each cleared track's [undo] must put back that the engine cannot:
-  /// `channel -> lane -> (chain, mute)`. Written by [clear], consumed by
-  /// [undo] only when the engine confirms the restore point survived.
-  final Map<int, Map<int, ({List<TrackEffect> effects, bool muted})>>
+  /// `channel -> lane -> (chain, chain flag, provenance, mute)`. Written by
+  /// [clear], consumed by [undo] only when the engine confirms the restore
+  /// point survived.
+  final Map<
+    int,
+    Map<
+      int,
+      ({
+        List<TrackEffect> effects,
+        bool chainEnabled,
+        List<int> inheritedFrom,
+        bool muted,
+      })
+    >
+  >
   _clearRestore = {};
 
   /// Per-hardware-input live monitor enable flag (absent => disabled). The
@@ -531,10 +568,17 @@ class LooperRepository {
                 rms: s.tracks[i].lanes[l].rms,
                 peak: s.tracks[i].lanes[l].peak,
                 effects: _laneEffects[(i, l)] ?? const [],
+                chainEnabled: laneChainEnabled(i, l),
+                inheritedFrom: _laneChainMeta[(i, l)] ?? const [],
+                inputChainDiverges: laneChainDivergesFromInput(i, l),
               ),
           ],
+          effects: _trackEffects[i] ?? const [],
+          chainEnabled: trackChainEnabled(i),
         ),
     ],
+    masterEffects: _masterEffects,
+    masterChainEnabled: _masterChainEnabled,
     status: EngineStatus(
       deviceName: _engine.deviceName,
       sampleRate: s.sampleRate,
@@ -657,6 +701,16 @@ class LooperRepository {
       for (final key in _laneEffects.keys) {
         _applyLaneEffects(key.$1, key.$2);
       }
+      // Re-apply the per-lane chain-enabled flags (R15): a fresh start resets
+      // every chain flag to enabled, so only the stored OFF entries need
+      // re-asserting (default-on, like the output gate below).
+      _laneChainEnabled.forEach(
+        (key, enabled) => _engine.setLaneFxChainEnabled(
+          channel: key.$1,
+          lane: key.$2,
+          enabled: enabled,
+        ),
+      );
       // Re-apply per-input live monitors: enable first, then the single chain's
       // routing / mix / effects.
       _monitorInputEnabled.forEach(
@@ -676,6 +730,23 @@ class LooperRepository {
             _engine.setMonitorInputMute(input: input, muted: muted),
       );
       _monitorEffects.keys.toList().forEach(_applyMonitorEffects);
+      _monitorChainEnabled.forEach(
+        (input, enabled) => _engine.setMonitorInputFxChainEnabled(
+          input: input,
+          enabled: enabled,
+        ),
+      );
+      // Re-apply the Track-stage + Master insert chains and their chain flags
+      // (FX v3 part 1b owners), mirroring the lane/monitor replay above.
+      _trackEffects.keys.toList().forEach(_applyTrackEffects);
+      _trackChainEnabled.forEach(
+        (channel, enabled) =>
+            _engine.setTrackFxChainEnabled(channel: channel, enabled: enabled),
+      );
+      if (_masterEffects.isNotEmpty) _applyMasterEffects();
+      if (!_masterChainEnabled) {
+        _engine.setMasterFxChainEnabled(enabled: false);
+      }
       // Re-apply the structural output gate. A fresh start enables every
       // output, so only the stored OFF entries need re-asserting (default-on).
       _outputEnabled.forEach(
@@ -840,12 +911,22 @@ class LooperRepository {
   /// repository is the single record-time snapshot authority and the engine is
   /// a pure sink that holds only what the repo pushes (it no longer self-
   /// snapshots on record). Keeps [LooperState] / persistence / engine all
-  /// deriving from the one owner. A lane with nothing monitored (no monitorable
-  /// input, or a clean input chain) keeps its own chain — that dry path bails
-  /// before any push, so the lane's engine chain is left untouched. A *non-
-  /// empty* monitored chain always overwrites the lane (D2 — the take sounds
-  /// like what was monitored), even if plugin captures reduce it to empty; that
-  /// overwrite is pushed too, so cache and engine stay equal.
+  /// deriving from the one owner. A lane with nothing monitored keeps its own
+  /// chain — BOTH dry shapes bail before any push (D2/D-CHAINDIS, R18): an
+  /// empty input chain, and a chain-DISABLED input chain (a disabled chain
+  /// sounds dry, so the take that reproduces the monitored sound is a dry
+  /// take; the lane's engine chain is left untouched either way). A *non-
+  /// empty, enabled* monitored chain always overwrites the lane (D2 — the take
+  /// sounds like what was monitored), even if plugin captures reduce it to
+  /// empty; that overwrite is pushed too, so cache and engine stay equal.
+  ///
+  /// Inheritance is a by-value copy with provenance (R13/A6): per-slot
+  /// `enabled` copies by value (a disabled monitor slot inherits disabled —
+  /// R18), every copied entry gets a FRESH slot id (the take's entries are new
+  /// identities; bindings on the input chain must not follow the copy — A9),
+  /// and the lane's `inheritedFrom` meta records the source input(s) in input
+  /// order (A8). Nothing ever propagates to an existing take; part 4's detach
+  /// clears the marker only.
   void _snapshotMonitorChainsOntoLanes(int channel) {
     // Iterate the repo's own lane config (`_laneCount` / `_laneInput`). The repo
     // is the single writer of both — every `setLaneCount` / `setLaneInput`
@@ -859,25 +940,40 @@ class LooperRepository {
           ? _monitorEffects[input]
           : null;
       if (chain == null || chain.isEmpty) continue;
+      // D-CHAINDIS (R18): a chain-disabled monitor chain is treated as dry —
+      // same bail as the empty chain above, the lane keeps its prior chain.
+      if (!monitorChainEnabled(input)) continue;
       // D-P1: a plugin in the monitor chain can't be value-copied — capture
       // its live opaque state so the lane re-instantiates a frozen instance
       // from that exact state on playback. The recorded audio is dry either
       // way, so a capture failure just drops the entry (bypassed) without
       // affecting the take.
-      final snapshot = <TrackEffect>[];
+      final captured = <TrackEffect>[];
       for (var i = 0; i < chain.length; i++) {
-        final captured = _capturePluginForLane(chain[i], input, i);
-        if (captured != null) snapshot.add(captured);
+        final fx = _capturePluginForLane(chain[i], input, i);
+        if (fx != null) captured.add(fx);
       }
+      // The take's entries are new identities (A9): fresh slot ids, never the
+      // input chain's.
+      final snapshot = withFreshSlotIds(captured);
       if (snapshot.isEmpty) {
         // Every entry of a non-empty monitored chain failed to capture (all
         // plugins, all bypassed): the monitored chain still overwrites the lane
         // (D2), reducing it to empty. Push that too (below) so a stale
-        // staged/persisted engine chain can't outlive it and diverge.
+        // staged/persisted engine chain can't outlive it and diverge. An empty
+        // chain is dry — no provenance to keep.
         _laneEffects.remove((channel, lane));
+        _laneChainMeta.remove((channel, lane));
       } else {
         _laneEffects[(channel, lane)] = snapshot;
+        // Provenance (R13/A8): today one routed input feeds a lane, so the
+        // list is one element; a future multi-input mix concatenates via
+        // `concatenateInheritedChains` and lists every source here.
+        _laneChainMeta[(channel, lane)] = List<int>.unmodifiable([input]);
       }
+      // The monitored chain was chain-ENABLED (the disabled shape bailed
+      // above), and the copy is by value — the take's chain flag matches.
+      setLaneChainEnabled(channel: channel, lane: lane, enabled: true);
       // Push it to the engine's lane FX like any other lane edit (plugin
       // entries carry the frozen state captured above) — the pure-sink push
       // that lands the take's chain regardless of ring-drain timing.
@@ -940,15 +1036,21 @@ class LooperRepository {
   /// The erasure both clears share: forget the remembered mutes (the engine
   /// force-unmutes every lane) and empty the take's chains in cache + engine,
   /// persisting each (F3 — without this, settings keeps the erased take's chain
-  /// and a restart replays it onto the fresh take).
+  /// and a restart replays it onto the fresh take). The chain flag resets to
+  /// the enabled default and the inheritance meta is dropped alongside — a
+  /// cleared lane is dry with no history; [undo]'s restore puts both back from
+  /// the [_clearRestore] snapshot.
   void _dropTakeState(int channel) {
     _forgetLaneMutes(channel);
-    final clearedLanes = [
+    final clearedLanes = {
       for (final key in _laneEffects.keys)
         if (key.$1 == channel) key.$2,
-    ];
+      for (final key in _laneChainEnabled.keys)
+        if (key.$1 == channel) key.$2,
+    };
     for (final lane in clearedLanes) {
       setLaneEffects(channel: channel, lane: lane, effects: const []);
+      setLaneChainEnabled(channel: channel, lane: lane, enabled: true);
       onLaneChainChanged?.call(channel, lane);
     }
   }
@@ -964,13 +1066,28 @@ class LooperRepository {
   /// stale entry is inert instead, because it is only ever applied when
   /// [AudioEngine.undoRestoresClear] says a restore actually happened.
   void _snapshotForClearRestore(int channel) {
+    // The union of chain-carrying AND flag-carrying lanes (the same set
+    // [_dropTakeState] resets): a lane with an empty chain but a disabled
+    // flag must round-trip its flag through clear→undo too.
+    final lanes = {
+      for (final key in _laneEffects.keys)
+        if (key.$1 == channel) key.$2,
+      for (final key in _laneChainEnabled.keys)
+        if (key.$1 == channel) key.$2,
+    };
     _clearRestore[channel] = {
-      for (final entry in _laneEffects.entries)
-        if (entry.key.$1 == channel)
-          entry.key.$2: (
-            effects: List<TrackEffect>.of(entry.value),
-            muted: _laneMute[entry.key] ?? false,
+      for (final lane in lanes)
+        lane: (
+          effects: List<TrackEffect>.of(
+            _laneEffects[(channel, lane)] ?? const [],
           ),
+          // R15: disable a chain → clear → restore must come back disabled,
+          // so the chain flag (and the inheritance marker) ride the snapshot
+          // beside the chain itself.
+          chainEnabled: laneChainEnabled(channel, lane),
+          inheritedFrom: _laneChainMeta[(channel, lane)] ?? const [],
+          muted: _laneMute[(channel, lane)] ?? false,
+        ),
     };
   }
 
@@ -1002,6 +1119,18 @@ class LooperRepository {
         channel: channel,
         lane: entry.key,
         effects: entry.value.effects,
+      );
+      // R15: the chain flag (and provenance) come back with the take —
+      // disable → clear → restore ⇒ still disabled.
+      setLaneChainEnabled(
+        channel: channel,
+        lane: entry.key,
+        enabled: entry.value.chainEnabled,
+      );
+      setLaneChainMeta(
+        channel: channel,
+        lane: entry.key,
+        inheritedFrom: entry.value.inheritedFrom,
       );
       onLaneChainChanged?.call(channel, entry.key);
       // The engine restored the lane mutes from its own record; remember them
@@ -1037,7 +1166,12 @@ class LooperRepository {
   /// commit the master loop, re-apply mix through the cached setters, then
   /// apply the rig's chains — explicitly resetting every remembered lane /
   /// monitor chain the rig does not define, so a previous session's
-  /// leftovers can never sound (or apply) under the loaded one. The crowned
+  /// leftovers can never sound (or apply) under the loaded one. EXCEPTION
+  /// (FX v3 interim): the Track-stage and Master insert chains and their
+  /// chain flags are NOT yet reset here — the session manifest cannot
+  /// describe them until part 3b's formatVersion 5, which owns their
+  /// leftover reset (R17); until then a live rig's bus chains persist
+  /// across a load. The crowned
   /// primary track is the one exception with an incomplete reset: no native
   /// "un-crown" call exists, so a channel crowned by a live/prior session can
   /// stay crowned on the ENGINE through a load that defines no crown of its
@@ -1068,6 +1202,17 @@ class LooperRepository {
     _laneOutput.clear();
     _laneVolume.clear();
     _laneMute.clear();
+    // Chain-enabled flags + inheritance meta (R15/F2): the session manifest
+    // defines no chain-level flags until part 3b's formatVersion 5, so every
+    // remembered lane flag resets to the enabled default — pushed to the
+    // engine too (the setter is a direct atomic publish), or a chain the
+    // loaded session defines on a previously chain-disabled lane would land
+    // silently muted. The provenance markers drop with the takes they
+    // described.
+    for (final key in _laneChainEnabled.keys.toList()) {
+      setLaneChainEnabled(channel: key.$1, lane: key.$2, enabled: true);
+    }
+    _laneChainMeta.clear();
     // Same wholesale-replace reasoning for length presets (A6): `clear`
     // deliberately leaves a_length_preset_bars untouched (so a manual
     // clear+re-record keeps the user's preset), which means a session load
@@ -1304,6 +1449,7 @@ class LooperRepository {
       setMonitorVolume(input: input, volume: 1);
       setMonitorMute(input: input, muted: false);
       setMonitorEffects(input: input, effects: const []);
+      setMonitorChainEnabled(input: input, enabled: true);
     }
     for (final monitor in rig.monitors) {
       setMonitorInputEnabled(input: monitor.input, enabled: monitor.enabled);
@@ -1311,6 +1457,9 @@ class LooperRepository {
       setMonitorVolume(input: monitor.input, volume: monitor.volume);
       setMonitorMute(input: monitor.input, muted: monitor.muted);
       setMonitorEffects(input: monitor.input, effects: monitor.effects);
+      // The manifest carries no chain flag until 3b's formatVersion 5 —
+      // migration defaults every level to enabled (R15).
+      setMonitorChainEnabled(input: monitor.input, enabled: true);
     }
   }
 
@@ -1360,6 +1509,7 @@ class LooperRepository {
       ..._monitorVolume.keys,
       ..._monitorMute.keys,
       ..._monitorEffects.keys,
+      ..._monitorChainEnabled.keys,
     };
     final result = <int, InputMonitor>{};
     for (final input in inputs) {
@@ -1370,6 +1520,7 @@ class LooperRepository {
         volume: monitorVolume(input),
         muted: monitorMuted(input),
         effects: monitorEffects(input),
+        chainEnabled: monitorChainEnabled(input),
       );
       // Skip inputs equal to the disabled default (no state worth persisting).
       if (monitor != InputMonitor(input: input)) result[input] = monitor;
@@ -1392,16 +1543,73 @@ class LooperRepository {
   bool monitorMuted(int input) => _monitorMute[input] ?? false;
 
   /// The fingerprint of lane [lane] of track [channel]'s CACHED chain, computed
-  /// with the same folding as the engine's [AudioEngine.laneFxFingerprint], so
-  /// the two can be compared for cache-vs-engine divergence (F6). An absent
-  /// chain yields the empty-chain basis, matching an empty engine lane.
-  int laneChainFingerprint(int channel, int lane) =>
-      trackChainFingerprint(_laneEffects[(channel, lane)] ?? const []);
+  /// with the same folding as the engine's [AudioEngine.laneFxFingerprint] —
+  /// chain flag + per-slot enabled bits included — so the two can be compared
+  /// for cache-vs-engine divergence (F6). An absent chain yields the
+  /// empty-chain basis, matching an empty engine lane.
+  int laneChainFingerprint(int channel, int lane) => fxChainFingerprint(
+    _laneEffects[(channel, lane)] ?? const [],
+    chainEnabled: laneChainEnabled(channel, lane),
+  );
 
   /// The fingerprint of monitor [input]'s CACHED chain (see
   /// [laneChainFingerprint]).
-  int monitorChainFingerprint(int input) =>
-      trackChainFingerprint(_monitorEffects[input] ?? const []);
+  int monitorChainFingerprint(int input) => fxChainFingerprint(
+    _monitorEffects[input] ?? const [],
+    chainEnabled: monitorChainEnabled(input),
+  );
+
+  /// The fingerprint of track [channel]'s CACHED Track-stage chain (see
+  /// [laneChainFingerprint]; pure-Dart — the engine publishes no native twin
+  /// for the bus stages yet).
+  int trackFxChainFingerprint(int channel) => fxChainFingerprint(
+    _trackEffects[channel] ?? const [],
+    chainEnabled: trackChainEnabled(channel),
+  );
+
+  /// The fingerprint of the CACHED Master insert chain (see
+  /// [trackFxChainFingerprint]).
+  int masterFxChainFingerprint() => fxChainFingerprint(
+    _masterEffects,
+    chainEnabled: _masterChainEnabled,
+  );
+
+  /// Whether lane [lane] of track [channel]'s chain currently SOUNDS
+  /// different from its routed input's monitor chain (A7). The domain query
+  /// behind part 4's overdub "input ≠ loop chain" hint: overdub never
+  /// re-inherits, so the two drift apart the moment the input chain is edited
+  /// after the take. A lane with no monitorable routed input never diverges
+  /// (there is nothing to diverge from).
+  ///
+  /// Audible-shape comparison, consistent with D-CHAINDIS (R18): a chain that
+  /// is EMPTY, chain-DISABLED, or has EVERY slot individually disabled (each
+  /// renders bit-exact passthrough, R16) is dry on either side — two dry
+  /// chains never diverge (even if their raw fingerprints differ), a dry
+  /// chain always diverges from an audible one, and two audible chains
+  /// compare by sound fingerprint.
+  bool laneChainDivergesFromInput(int channel, int lane) {
+    final input = _laneInput[(channel, lane)] ?? lane;
+    if (input < 0 || input >= kMaxInputs) return false;
+    final laneDry = _chainAudiblyDry(
+      _laneEffects[(channel, lane)] ?? const [],
+      chainEnabled: laneChainEnabled(channel, lane),
+    );
+    final monitorDry = _chainAudiblyDry(
+      _monitorEffects[input] ?? const [],
+      chainEnabled: monitorChainEnabled(input),
+    );
+    if (laneDry || monitorDry) return laneDry != monitorDry;
+    return laneChainFingerprint(channel, lane) !=
+        monitorChainFingerprint(input);
+  }
+
+  /// Whether a chain renders bit-exact passthrough: empty, chain-disabled,
+  /// or every slot individually disabled (all three dry shapes; an empty
+  /// chain trivially satisfies the `every`).
+  static bool _chainAudiblyDry(
+    List<TrackEffect> chain, {
+    required bool chainEnabled,
+  }) => !chainEnabled || chain.every((fx) => !fx.enabled);
 
   /// Sets track [channel]'s playback gain (`0..LE_MAX_GAIN`, 2.0, +6.02 dB
   /// headroom above unity) on **every lane of it**. A
@@ -1627,12 +1835,27 @@ class LooperRepository {
     required int lane,
     required List<TrackEffect> effects,
   }) {
-    final clamped = effects.length > kTrackEffectMax
-        ? effects.sublist(0, kTrackEffectMax)
-        : List<TrackEffect>.of(effects);
+    // The repository write boundary mints stable slot ids (A9): any entry
+    // arriving without one — a fresh insert, a legacy decode — gets a unique
+    // id exactly once; entries that carry one keep it.
+    final clamped = _clampAndMint(effects);
     if (clamped.isEmpty) {
       _laneEffects.remove((channel, lane));
+      // An empty chain is dry — no provenance to keep (the marker described
+      // entries that no longer exist).
+      _laneChainMeta.remove((channel, lane));
     } else {
+      // Provenance follows the entries it describes (A9): when the incoming
+      // chain keeps NONE of the previous entries' slot ids — a wholesale
+      // replacement, not an edit/reorder (those carry ids through) — the
+      // inheritance marker is as stale as on the empty branch and drops too.
+      final previous = _laneEffects[(channel, lane)];
+      if (previous != null && _laneChainMeta.containsKey((channel, lane))) {
+        final kept = {for (final fx in previous) fx.slotId};
+        if (!clamped.any((fx) => kept.contains(fx.slotId))) {
+          _laneChainMeta.remove((channel, lane));
+        }
+      }
       _laneEffects[(channel, lane)] = clamped;
     }
     _reproject();
@@ -1871,24 +2094,25 @@ class LooperRepository {
         if (handle != null) _laneSlots[(channel, lane, i)] = handle;
         if (loaded != fx) mutated = true;
         next.add(loaded);
-        continue;
-      }
-      next.add(fx);
-      if (fx is! BuiltInEffect) continue;
-      _engine.setLaneFx(
-        channel: channel,
-        lane: lane,
-        index: i,
-        type: trackEffectTypeToEngine(fx.type),
-      );
-      for (var p = 0; p < fx.params.length; p++) {
-        _engine.setLaneFxParam(
-          channel: channel,
-          lane: lane,
-          index: i,
-          param: p,
-          value: fx.params[p],
-        );
+      } else {
+        next.add(fx);
+        if (fx is BuiltInEffect) {
+          _engine.setLaneFx(
+            channel: channel,
+            lane: lane,
+            index: i,
+            type: trackEffectTypeToEngine(fx.type),
+          );
+          for (var p = 0; p < fx.params.length; p++) {
+            _engine.setLaneFxParam(
+              channel: channel,
+              lane: lane,
+              index: i,
+              param: p,
+              value: fx.params[p],
+            );
+          }
+        }
       }
     }
     // Store the params-enriched chain so the projected state carries the live
@@ -1897,11 +2121,28 @@ class LooperRepository {
       _laneEffects[(channel, lane)] = next;
       _reproject();
     }
-    return _engine.setLaneFxCount(
+    final result = _engine.setLaneFxCount(
       channel: channel,
       lane: lane,
       count: effects.length,
     );
+    // Push the per-slot enabled bit for EVERY slot on every apply (R16): the
+    // engine keys its flags by slot index and re-seeds them to enabled on a
+    // type change AND on a slot entering the active window (D-ENSEED), so a
+    // reorder/deletion re-pushed index-by-index would otherwise migrate
+    // disabled state onto the wrong effect. Both re-seeds run synchronously
+    // on the control thread inside the type/count setters, so pushing the
+    // bits strictly AFTER the count leaves the domain — keyed by effect, not
+    // index — the single source of truth.
+    for (var i = 0; i < effects.length; i++) {
+      _engine.setLaneFxEnabled(
+        channel: channel,
+        lane: lane,
+        index: i,
+        enabled: effects[i].enabled,
+      );
+    }
+    return result;
   }
 
   /// Reconciles a freshly-loaded plugin [handle] with its chain entry [fx]:
@@ -2032,28 +2273,340 @@ class LooperRepository {
     return _engine.pluginParamValueText(handle, paramId, value);
   }
 
-  /// Replaces track [channel]'s lane 0 effect chain. Convenience for lane 0.
+  // ---- Track-stage (stereo bus) + Master insert chains (FX v3 part 3a) ----
+  //
+  // The two bus stages mirror the lane set: a remembered chain per owner,
+  // re-applied on every (re)start, with `LooperBloc` owning their state the
+  // way it owns lane chains. Hosted plugins are not yet loadable at these
+  // stages (the engine's slot ABI covers lane + monitor chains only): a
+  // PluginEffect entry stays in the domain chain — identity + state preserved
+  // for the day a bus slot ABI lands, never silently dropped — but is MARKED
+  // unsupported at the write boundary (the D-MISS placeholder posture, via
+  // [_markBusUnsupportedPlugins]) so it never reads as an active slot, and it
+  // publishes as a passthrough (`none`) engine slot.
+
+  /// Replaces track [channel]'s Track-stage (stereo bus) chain with [effects]
+  /// (clamped to [kTrackEffectMax]). Empty == the engine's bit-identical
+  /// per-lane routing path. Remembered and re-applied on every (re)start.
   EngineResult setTrackEffects({
     required int channel,
     required List<TrackEffect> effects,
-  }) => setLaneEffects(channel: channel, lane: 0, effects: effects);
+  }) {
+    final clamped = _markBusUnsupportedPlugins(_clampAndMint(effects));
+    if (clamped.isEmpty) {
+      _trackEffects.remove(channel);
+    } else {
+      _trackEffects[channel] = clamped;
+    }
+    _reproject();
+    if (!_intendRunning) return EngineResult.ok;
+    return _applyTrackEffects(channel);
+  }
 
-  /// Sets a parameter on track [channel]'s lane 0 chain (lane-0 convenience).
-  EngineResult setTrackEffectParam({
+  /// Track [channel]'s remembered Track-stage chain (empty if none), in
+  /// processing order.
+  List<TrackEffect> trackEffects(int channel) =>
+      List<TrackEffect>.unmodifiable(_trackEffects[channel] ?? const []);
+
+  /// Replaces the Master insert chain with [effects] (clamped to
+  /// [kTrackEffectMax]). Empty == bit-identical output. Remembered and
+  /// re-applied on every (re)start.
+  EngineResult setMasterEffects({required List<TrackEffect> effects}) {
+    _masterEffects = _markBusUnsupportedPlugins(_clampAndMint(effects));
+    _reproject();
+    if (!_intendRunning) return EngineResult.ok;
+    return _applyMasterEffects();
+  }
+
+  /// The remembered Master insert chain (empty if none), in processing order.
+  List<TrackEffect> get masterEffects =>
+      List<TrackEffect>.unmodifiable(_masterEffects);
+
+  /// Pushes track [channel]'s remembered Track-stage chain to the engine —
+  /// the bus twin of [_applyLaneEffects]: each entry's type + params, its
+  /// per-slot enabled bit (every slot, every apply — R16), then the count.
+  EngineResult _applyTrackEffects(int channel) {
+    final effects = _trackEffects[channel] ?? const <TrackEffect>[];
+    for (var i = 0; i < effects.length; i++) {
+      final fx = effects[i];
+      _engine.setTrackFx(
+        channel: channel,
+        index: i,
+        // A hosted plugin publishes as passthrough until the engine grows a
+        // bus-stage slot ABI (see the section comment above).
+        type: fx is BuiltInEffect
+            ? trackEffectTypeToEngine(fx.type)
+            : trackEffectTypeToEngine(TrackEffectType.none),
+      );
+      if (fx is BuiltInEffect) {
+        for (var p = 0; p < fx.params.length; p++) {
+          _engine.setTrackFxParam(
+            channel: channel,
+            index: i,
+            param: p,
+            value: fx.params[p],
+          );
+        }
+      }
+    }
+    final result = _engine.setTrackFxCount(
+      channel: channel,
+      count: effects.length,
+    );
+    // Per-slot enabled bits strictly AFTER the count push — see
+    // [_applyLaneEffects] for the D-ENSEED ordering rationale.
+    for (var i = 0; i < effects.length; i++) {
+      _engine.setTrackFxEnabled(
+        channel: channel,
+        index: i,
+        enabled: effects[i].enabled,
+      );
+    }
+    return result;
+  }
+
+  /// Pushes the remembered Master insert chain to the engine (see
+  /// [_applyTrackEffects]).
+  EngineResult _applyMasterEffects() {
+    final effects = _masterEffects;
+    for (var i = 0; i < effects.length; i++) {
+      final fx = effects[i];
+      _engine.setMasterFx(
+        index: i,
+        type: fx is BuiltInEffect
+            ? trackEffectTypeToEngine(fx.type)
+            : trackEffectTypeToEngine(TrackEffectType.none),
+      );
+      if (fx is BuiltInEffect) {
+        for (var p = 0; p < fx.params.length; p++) {
+          _engine.setMasterFxParam(index: i, param: p, value: fx.params[p]);
+        }
+      }
+    }
+    final result = _engine.setMasterFxCount(count: effects.length);
+    // Per-slot enabled bits strictly AFTER the count push — see
+    // [_applyLaneEffects] for the D-ENSEED ordering rationale.
+    for (var i = 0; i < effects.length; i++) {
+      _engine.setMasterFxEnabled(index: i, enabled: effects[i].enabled);
+    }
+    return result;
+  }
+
+  // ---- per-slot + per-chain enable, all four stages (R15/R16) ----
+  //
+  // Every setter updates the cache and calls the engine's direct-atomic
+  // enable bindings in the same call, so `cache == engine` always holds. The
+  // bindings work while stopped (no ring command), so unlike the chain
+  // setters these do NOT gate on the engine running — the flag lands
+  // immediately and a later (re)start replays it.
+
+  /// Enables/disables entry [index] of lane [lane] of track [channel]'s chain
+  /// without losing its type or parameters (click-free ramp engine-side).
+  EngineResult setLaneEffectEnabled({
+    required int channel,
+    required int lane,
+    required int index,
+    required bool enabled,
+  }) {
+    final effects = _laneEffects[(channel, lane)];
+    if (effects == null || index < 0 || index >= effects.length) {
+      return EngineResult.invalid;
+    }
+    _laneEffects[(channel, lane)] = List<TrackEffect>.of(effects)
+      ..[index] = _withEnabled(effects[index], enabled);
+    _reproject();
+    return _engine.setLaneFxEnabled(
+      channel: channel,
+      lane: lane,
+      index: index,
+      enabled: enabled,
+    );
+  }
+
+  /// Enables/disables entry [index] of monitor [input]'s chain. No
+  /// `_reproject()`: monitor chains are not part of the projected
+  /// [LooperState] (the MonitorCubit owns and emits them).
+  EngineResult setMonitorEffectEnabled({
+    required int input,
+    required int index,
+    required bool enabled,
+  }) {
+    final effects = _monitorEffects[input];
+    if (effects == null || index < 0 || index >= effects.length) {
+      return EngineResult.invalid;
+    }
+    _monitorEffects[input] = List<TrackEffect>.of(effects)
+      ..[index] = _withEnabled(effects[index], enabled);
+    return _engine.setMonitorInputFxEnabled(
+      input: input,
+      index: index,
+      enabled: enabled,
+    );
+  }
+
+  /// Enables/disables entry [index] of track [channel]'s Track-stage chain.
+  EngineResult setTrackEffectEnabled({
     required int channel,
     required int index,
-    required int param,
-    required double value,
-  }) => setLaneEffectParam(
-    channel: channel,
-    lane: 0,
-    index: index,
-    param: param,
-    value: value,
-  );
+    required bool enabled,
+  }) {
+    final effects = _trackEffects[channel];
+    if (effects == null || index < 0 || index >= effects.length) {
+      return EngineResult.invalid;
+    }
+    _trackEffects[channel] = List<TrackEffect>.of(effects)
+      ..[index] = _withEnabled(effects[index], enabled);
+    _reproject();
+    return _engine.setTrackFxEnabled(
+      channel: channel,
+      index: index,
+      enabled: enabled,
+    );
+  }
 
-  /// Track [channel]'s lane 0 remembered effect chain. Convenience for lane 0.
-  List<TrackEffect> trackEffects(int channel) => laneEffects(channel, 0);
+  /// Enables/disables entry [index] of the Master insert chain.
+  EngineResult setMasterEffectEnabled({
+    required int index,
+    required bool enabled,
+  }) {
+    if (index < 0 || index >= _masterEffects.length) {
+      return EngineResult.invalid;
+    }
+    _masterEffects = List<TrackEffect>.of(_masterEffects)
+      ..[index] = _withEnabled(_masterEffects[index], enabled);
+    _reproject();
+    return _engine.setMasterFxEnabled(index: index, enabled: enabled);
+  }
+
+  /// Enables/disables lane [lane] of track [channel]'s WHOLE chain in one
+  /// atomic flip without touching the per-entry flags (R15).
+  EngineResult setLaneChainEnabled({
+    required int channel,
+    required int lane,
+    required bool enabled,
+  }) {
+    if (enabled) {
+      _laneChainEnabled.remove((channel, lane)); // absence == enabled
+    } else {
+      _laneChainEnabled[(channel, lane)] = false;
+    }
+    _reproject();
+    return _engine.setLaneFxChainEnabled(
+      channel: channel,
+      lane: lane,
+      enabled: enabled,
+    );
+  }
+
+  /// Whether lane [lane] of track [channel]'s chain is engaged (remembered
+  /// intent; absence == enabled).
+  bool laneChainEnabled(int channel, int lane) =>
+      _laneChainEnabled[(channel, lane)] ?? true;
+
+  /// Enables/disables monitor [input]'s WHOLE chain in one atomic flip. A
+  /// chain-disabled monitor is treated as dry — it also stops being
+  /// snapshot-copied onto recording lanes (D-CHAINDIS, R18).
+  EngineResult setMonitorChainEnabled({
+    required int input,
+    required bool enabled,
+  }) {
+    if (enabled) {
+      _monitorChainEnabled.remove(input);
+    } else {
+      _monitorChainEnabled[input] = false;
+    }
+    return _engine.setMonitorInputFxChainEnabled(
+      input: input,
+      enabled: enabled,
+    );
+  }
+
+  /// Whether monitor [input]'s chain is engaged (remembered intent).
+  bool monitorChainEnabled(int input) => _monitorChainEnabled[input] ?? true;
+
+  /// Enables/disables track [channel]'s WHOLE Track-stage chain. Disabling
+  /// yields dry through the bus, NOT a return to per-lane routing (only
+  /// emptying the chain does that).
+  EngineResult setTrackChainEnabled({
+    required int channel,
+    required bool enabled,
+  }) {
+    if (enabled) {
+      _trackChainEnabled.remove(channel);
+    } else {
+      _trackChainEnabled[channel] = false;
+    }
+    _reproject();
+    return _engine.setTrackFxChainEnabled(channel: channel, enabled: enabled);
+  }
+
+  /// Whether track [channel]'s Track-stage chain is engaged.
+  bool trackChainEnabled(int channel) => _trackChainEnabled[channel] ?? true;
+
+  /// Enables/disables the WHOLE Master insert chain.
+  EngineResult setMasterChainEnabled({required bool enabled}) {
+    _masterChainEnabled = enabled;
+    _reproject();
+    return _engine.setMasterFxChainEnabled(enabled: enabled);
+  }
+
+  /// Whether the Master insert chain is engaged.
+  bool get masterChainEnabled => _masterChainEnabled;
+
+  /// Sets lane [lane] of track [channel]'s inheritance provenance (R13/A8) —
+  /// the boot-restore counterpart of the record-time stamp in
+  /// [_snapshotMonitorChainsOntoLanes], and part 4's detach path (an empty
+  /// list clears the marker).
+  void setLaneChainMeta({
+    required int channel,
+    required int lane,
+    required List<int> inheritedFrom,
+  }) {
+    if (inheritedFrom.isEmpty) {
+      _laneChainMeta.remove((channel, lane));
+    } else {
+      _laneChainMeta[(channel, lane)] = List<int>.unmodifiable(inheritedFrom);
+    }
+    _reproject();
+  }
+
+  /// Lane [lane] of track [channel]'s inheritance provenance: the inputs its
+  /// chain was copied from at record time, in input order; empty when never
+  /// inherited.
+  List<int> laneChainInheritedFrom(int channel, int lane) =>
+      _laneChainMeta[(channel, lane)] ?? const [];
+
+  /// Flips one entry's enabled flag, dispatching over the sealed hierarchy
+  /// (each subtype owns its `copyWith`).
+  static TrackEffect _withEnabled(TrackEffect fx, bool enabled) => switch (fx) {
+    BuiltInEffect() => fx.copyWith(enabled: enabled),
+    PluginEffect() => fx.copyWith(enabled: enabled),
+  };
+
+  /// The shared write-boundary step of all four chain setters: clamps
+  /// [effects] to [kTrackEffectMax] and mints stable slot ids for any id-less
+  /// entry, exactly once (A9).
+  static List<TrackEffect> _clampAndMint(List<TrackEffect> effects) =>
+      withMintedSlotIds(
+        effects.length > kTrackEffectMax
+            ? effects.sublist(0, kTrackEffectMax)
+            : effects,
+      );
+
+  /// Marks hosted plugins in a bus-stage (Track/Master) chain with the D-MISS
+  /// placeholder posture — the engine hosts no plugins at these stages yet
+  /// (see the section comment above the bus setters), so the entry is kept
+  /// but must not read as an active slot: the UI gets the "installed but not
+  /// loadable here" placeholder instead of an active-looking silent effect.
+  static List<TrackEffect> _markBusUnsupportedPlugins(
+    List<TrackEffect> effects,
+  ) => [
+    for (final fx in effects)
+      if (fx is PluginEffect)
+        fx.copyWith(unavailable: true, unsupported: true, loading: false)
+      else
+        fx,
+  ];
 
   /// Replaces monitor [input]'s effect chain with [effects] (clamped to
   /// [kTrackEffectMax]). An empty chain is the clean (dry) path. Remembered and
@@ -2064,9 +2617,9 @@ class LooperRepository {
     required int input,
     required List<TrackEffect> effects,
   }) {
-    final clamped = effects.length > kTrackEffectMax
-        ? effects.sublist(0, kTrackEffectMax)
-        : List<TrackEffect>.of(effects);
+    // Repository write boundary: mint slot ids exactly once (A9), same as
+    // [setLaneEffects].
+    final clamped = _clampAndMint(effects);
     if (clamped.isEmpty) {
       _monitorEffects.remove(input);
     } else {
@@ -2212,29 +2765,43 @@ class LooperRepository {
         if (handle != null) _monitorSlots[(input, i)] = handle;
         if (loaded != fx) mutated = true;
         next.add(loaded);
-        continue;
-      }
-      next.add(fx);
-      if (fx is! BuiltInEffect) continue;
-      _engine.setMonitorInputFx(
-        input: input,
-        index: i,
-        type: trackEffectTypeToEngine(fx.type),
-      );
-      for (var p = 0; p < fx.params.length; p++) {
-        _engine.setMonitorInputFxParam(
-          input: input,
-          index: i,
-          param: p,
-          value: fx.params[p],
-        );
+      } else {
+        next.add(fx);
+        if (fx is BuiltInEffect) {
+          _engine.setMonitorInputFx(
+            input: input,
+            index: i,
+            type: trackEffectTypeToEngine(fx.type),
+          );
+          for (var p = 0; p < fx.params.length; p++) {
+            _engine.setMonitorInputFxParam(
+              input: input,
+              index: i,
+              param: p,
+              value: fx.params[p],
+            );
+          }
+        }
       }
     }
     // Monitor chains are not part of the projected `LooperState` (the
     // MonitorCubit owns and emits them), so we only refresh the remembered
     // chain with the live param metadata — no `_reproject()`.
     if (mutated) _monitorEffects[input] = next;
-    return _engine.setMonitorInputFxCount(input: input, count: effects.length);
+    final result = _engine.setMonitorInputFxCount(
+      input: input,
+      count: effects.length,
+    );
+    // Per-slot enabled bit for EVERY slot, strictly AFTER the count push —
+    // see [_applyLaneEffects] for the D-ENSEED ordering rationale.
+    for (var i = 0; i < effects.length; i++) {
+      _engine.setMonitorInputFxEnabled(
+        input: input,
+        index: i,
+        enabled: effects[i].enabled,
+      );
+    }
+    return result;
   }
 
   /// Sets the global default loop length for inheriting tracks (`0` = auto).

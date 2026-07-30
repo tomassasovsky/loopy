@@ -599,6 +599,117 @@ void main() {
       expect(engine.laneFxParam[(0, 0, 1, 1)], 0.42);
     });
 
+    test('a LEGACY restored chain persists its freshly-minted slot ids back '
+        '(mint-once, A9)', () async {
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(
+          sampleRate: 48000,
+          bufferFrames: 128,
+        ),
+      );
+      // Pre-FX-v3 payload: bare array, no slot ids anywhere.
+      await settings.saveLaneEffects(
+        0,
+        0,
+        encodeTrackEffects([BuiltInEffect(type: TrackEffectType.filter)]),
+      );
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+
+      final started = await tryAutoStartEngine(
+        repository: repository,
+        settings: settings,
+      );
+      expect(started.started, isTrue);
+
+      // The minted envelope was written back, so the NEXT launch decodes the
+      // same ids instead of re-minting different ones.
+      final persisted = decodeFxChain(await settings.loadLaneEffects(0, 0));
+      final mintedId = persisted.entries.single.slotId;
+      expect(mintedId, isNotNull);
+      expect(mintedId, repository.laneEffects(0, 0).single.slotId);
+    });
+
+    test('restores an ENVELOPE lane chain — flag + inheritance meta ride the '
+        'one key (R15) — plus the track/master chains', () async {
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(
+          sampleRate: 48000,
+          bufferFrames: 128,
+        ),
+      );
+      await settings.saveLaneEffects(
+        0,
+        0,
+        encodeFxChain(
+          FxChainEnvelope(
+            chainEnabled: false,
+            meta: const FxChainMeta(inheritedFrom: [2]),
+            entries: [BuiltInEffect(type: TrackEffectType.filter)],
+          ),
+        ),
+      );
+      await settings.saveTrackFxChain(
+        0,
+        encodeFxChain(
+          FxChainEnvelope(
+            chainEnabled: false,
+            entries: [BuiltInEffect(type: TrackEffectType.delay)],
+          ),
+        ),
+      );
+      await settings.saveMasterFxChain(
+        encodeFxChain(
+          FxChainEnvelope(
+            entries: [BuiltInEffect(type: TrackEffectType.reverb)],
+          ),
+        ),
+      );
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+
+      final started = await tryAutoStartEngine(
+        repository: repository,
+        settings: settings,
+      );
+
+      expect(started.started, isTrue);
+      // Lane chain + its envelope-borne flag and provenance.
+      expect(engine.laneFx[(0, 0, 0)]?.code, TrackEffectType.filter.code);
+      expect(engine.laneFxChainEnabled[(0, 0)], isFalse);
+      expect(repository.laneChainInheritedFrom(0, 0), [2]);
+      // Track-stage chain + flag.
+      expect(engine.trackFx[(0, 0)]?.code, TrackEffectType.delay.code);
+      expect(engine.trackFxCount[0], 1);
+      expect(engine.trackFxChainEnabled[0], isFalse);
+      // Master insert chain (enabled envelope pushes no disable).
+      expect(engine.masterFx[0]?.code, TrackEffectType.reverb.code);
+      expect(engine.masterFxCount, 1);
+      expect(engine.masterFxChainEnabled, isNull);
+    });
+
     test('restores a saved multi-lane setup on launch', () async {
       await settings.saveAudioConfig(
         const StoredAudioConfig(

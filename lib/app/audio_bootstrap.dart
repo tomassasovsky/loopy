@@ -287,18 +287,97 @@ Future<AutoStartResult> tryAutoStartEngine({
           lane: lane,
         );
       }
-      // Restore the saved ordered effect chain in one shot.
-      final effects = decodeTrackEffects(
+      // Restore the saved ordered effect chain in one shot. The key holds the
+      // chain envelope (R15) — the chain-enabled flag and inheritance meta
+      // ride inside it; a legacy bare-array chain decodes as enabled with no
+      // meta.
+      final chain = decodeFxChain(
         await settings.loadLaneEffects(track.channel, lane),
       );
-      if (effects.isNotEmpty) {
-        repository.setLaneEffects(
+      if (chain.entries.isNotEmpty) {
+        repository
+          ..setLaneEffects(
+            channel: track.channel,
+            lane: lane,
+            effects: chain.entries,
+          )
+          ..setLaneChainMeta(
+            channel: track.channel,
+            lane: lane,
+            inheritedFrom: chain.meta?.inheritedFrom ?? const [],
+          );
+        // Mint-once for legacy payloads (A9): entries that decoded id-less
+        // were just minted stable slot ids at the repository write boundary —
+        // persist the minted envelope back, or every launch would re-mint
+        // DIFFERENT ids and a binding stored against one would dangle after
+        // the next restart.
+        if (chain.entries.any((e) => e.slotId == null)) {
+          await settings.saveLaneEffects(
+            track.channel,
+            lane,
+            encodeFxChain(
+              FxChainEnvelope(
+                chainEnabled: chain.chainEnabled,
+                meta: chain.meta,
+                entries: repository.laneEffects(track.channel, lane),
+              ),
+            ),
+          );
+        }
+      }
+      if (!chain.chainEnabled) {
+        repository.setLaneChainEnabled(
           channel: track.channel,
           lane: lane,
-          effects: effects,
+          enabled: false,
         );
       }
     }
+    // Restore the Track-stage (stereo bus) chain envelope (FX v3 part 3a).
+    final trackChain = decodeFxChain(
+      await settings.loadTrackFxChain(track.channel),
+    );
+    if (trackChain.entries.isNotEmpty) {
+      repository.setTrackEffects(
+        channel: track.channel,
+        effects: trackChain.entries,
+      );
+      // Mint-once (A9) — see the lane restore above.
+      if (trackChain.entries.any((e) => e.slotId == null)) {
+        await settings.saveTrackFxChain(
+          track.channel,
+          encodeFxChain(
+            FxChainEnvelope(
+              chainEnabled: trackChain.chainEnabled,
+              entries: repository.trackEffects(track.channel),
+            ),
+          ),
+        );
+      }
+    }
+    if (!trackChain.chainEnabled) {
+      repository.setTrackChainEnabled(channel: track.channel, enabled: false);
+    }
+  }
+
+  // Restore the Master insert chain envelope (FX v3 part 3a).
+  final masterChain = decodeFxChain(await settings.loadMasterFxChain());
+  if (masterChain.entries.isNotEmpty) {
+    repository.setMasterEffects(effects: masterChain.entries);
+    // Mint-once (A9) — see the lane restore above.
+    if (masterChain.entries.any((e) => e.slotId == null)) {
+      await settings.saveMasterFxChain(
+        encodeFxChain(
+          FxChainEnvelope(
+            chainEnabled: masterChain.chainEnabled,
+            entries: repository.masterEffects,
+          ),
+        ),
+      );
+    }
+  }
+  if (!masterChain.chainEnabled) {
+    repository.setMasterChainEnabled(enabled: false);
   }
 
   // Restore the structural output gate. Only explicitly-disabled outputs were

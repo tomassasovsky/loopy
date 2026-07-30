@@ -19,6 +19,9 @@ class Lane extends Equatable {
     this.rms = 0,
     this.peak = 0,
     this.effects = const [],
+    this.chainEnabled = true,
+    this.inheritedFrom = const [],
+    this.inputChainDiverges = false,
   });
 
   /// Hardware input channel this lane records (`-1` = none).
@@ -45,6 +48,19 @@ class Lane extends Equatable {
   /// The lane's record-route effects chain, in processing order.
   final List<TrackEffect> effects;
 
+  /// Whether the lane's whole chain is engaged (R15/R18). Disabled == the lane
+  /// plays dry while its per-entry flags stay intact.
+  final bool chainEnabled;
+
+  /// The inputs this lane's chain was inherited from at record time, in input
+  /// order (R13/A8); empty when never inherited (or detached by part 4).
+  final List<int> inheritedFrom;
+
+  /// Whether the lane's chain currently differs (by sound fingerprint) from
+  /// its routed input's monitor chain (A7) — the domain signal behind part 4's
+  /// "input chain no longer matches this take" overdub hint.
+  final bool inputChainDiverges;
+
   /// Whether the lane holds recorded audio.
   bool get hasContent => lengthFrames > 0;
 
@@ -62,6 +78,9 @@ class Lane extends Equatable {
     rms,
     peak,
     effects,
+    chainEnabled,
+    inheritedFrom,
+    inputChainDiverges,
   ];
 }
 

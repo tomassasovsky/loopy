@@ -209,6 +209,61 @@ void main() {
       tracks: tracks,
     );
 
+    test('decodes chains in BOTH wire formats: legacy bare array and the '
+        'FX v3 envelope (R15)', () {
+      final pcm = Float32List.fromList([1, 1, 1, 1]);
+      final legacy = encodeTrackEffects([
+        BuiltInEffect(type: TrackEffectType.drive),
+      ]);
+      final envelope = encodeFxChain(
+        FxChainEnvelope(
+          chainEnabled: false,
+          entries: [BuiltInEffect(type: TrackEffectType.reverb)],
+        ),
+      );
+      final bundle = (
+        session: Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 4,
+          tracks: [
+            SessionTrack(
+              channel: 0,
+              multiple: 1,
+              lengthFrames: 4,
+              lanes: [lane(0, 'track0_lane0_L0.wav')],
+            ),
+          ],
+          laneChains: [
+            SessionLaneChain(channel: 0, lane: 0, encoded: legacy),
+          ],
+          monitors: [
+            SessionMonitor(
+              input: 0,
+              enabled: true,
+              outputMask: 0x3,
+              volume: 1,
+              muted: false,
+              encoded: envelope,
+            ),
+          ],
+        ),
+        laneStems: {
+          (0, 0): [pcm],
+        },
+      );
+
+      final rig = rigFromBundle(bundle);
+
+      final laneChain = rig.laneEffects[(0, 0)]!;
+      expect((laneChain.single as BuiltInEffect).type, TrackEffectType.drive);
+      final monitorChain = rig.monitors.single.effects;
+      expect(
+        (monitorChain.single as BuiltInEffect).type,
+        TrackEffectType.reverb,
+      );
+    });
+
     test('maps every lane that has decoded audio', () {
       final l0 = Float32List.fromList([1, 1, 1, 1]);
       final l1 = Float32List.fromList([2, 2, 2, 2]);

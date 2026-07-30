@@ -36,6 +36,19 @@ export 'src/models/audio_config.dart'
         LoopbackInfo,
         LoopbackKind;
 export 'src/models/engine_status.dart';
+// The stage-addressed FX model (FX v3 part 3a): the four-stage address + its
+// canonical JSON (R19), the chain wire envelope (R13/R15), and the stable
+// per-slot id minting helpers (A9).
+export 'src/models/fx_address.dart' show FxAddress, FxStage;
+export 'src/models/fx_chain_envelope.dart'
+    show
+        FxChainEnvelope,
+        FxChainMeta,
+        concatenateInheritedChains,
+        decodeFxChain,
+        encodeFxChain;
+export 'src/models/fx_slot_ids.dart'
+    show SlotIds, withFreshSlotIds, withMintedSlotIds;
 export 'src/models/input_monitor.dart';
 export 'src/models/lane.dart';
 export 'src/models/looper_state.dart';
@@ -59,7 +72,7 @@ export 'src/models/track_effect.dart'
         TrackEffectType,
         decodeTrackEffects,
         encodeTrackEffects,
-        trackChainFingerprint,
+        fxChainFingerprint,
         trackEffectsToEngine;
 export 'src/models/transport_state.dart';
 // Plugin discovery: the async scan driver + its cache. PluginDescriptor itself

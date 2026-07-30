@@ -25,5 +25,21 @@ void main() {
       expect(a, equals(const LooperState()));
       expect(a.hashCode, const LooperState().hashCode);
     });
+
+    test('Master insert fields default and participate in equality', () {
+      const state = LooperState();
+      expect(state.masterEffects, isEmpty);
+      expect(state.masterChainEnabled, isTrue);
+
+      expect(state, isNot(const LooperState(masterChainEnabled: false)));
+      expect(
+        state,
+        isNot(
+          LooperState(
+            masterEffects: [BuiltInEffect(type: TrackEffectType.reverb)],
+          ),
+        ),
+      );
+    });
   });
 }

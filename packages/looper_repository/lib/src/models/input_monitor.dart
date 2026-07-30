@@ -23,6 +23,7 @@ class InputMonitor extends Equatable {
     this.volume = 1,
     this.muted = false,
     this.effects = const [],
+    this.chainEnabled = true,
   });
 
   /// The hardware input channel this monitor routes.
@@ -44,6 +45,11 @@ class InputMonitor extends Equatable {
   /// empty chain is the clean (dry) path. Snapshot-copied to a lane on record.
   final List<TrackEffect> effects;
 
+  /// Whether the whole chain is engaged (R15/R18). A chain-disabled monitor is
+  /// treated as dry: it sounds dry live AND is never snapshot-copied onto a
+  /// recording lane (D-CHAINDIS).
+  final bool chainEnabled;
+
   /// Returns a copy with the given fields replaced.
   InputMonitor copyWith({
     bool? enabled,
@@ -51,6 +57,7 @@ class InputMonitor extends Equatable {
     double? volume,
     bool? muted,
     List<TrackEffect>? effects,
+    bool? chainEnabled,
   }) => InputMonitor(
     input: input,
     enabled: enabled ?? this.enabled,
@@ -58,6 +65,7 @@ class InputMonitor extends Equatable {
     volume: volume ?? this.volume,
     muted: muted ?? this.muted,
     effects: effects ?? this.effects,
+    chainEnabled: chainEnabled ?? this.chainEnabled,
   );
 
   @override
@@ -68,5 +76,6 @@ class InputMonitor extends Equatable {
     volume,
     muted,
     effects,
+    chainEnabled,
   ];
 }

@@ -203,6 +203,10 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(() => repository.laneEffects(any(), any())).thenReturn(const []);
+    when(() => repository.laneChainEnabled(any(), any())).thenReturn(true);
+    when(
+      () => repository.laneChainInheritedFrom(any(), any()),
+    ).thenReturn(const []);
     when(
       () => repository.setOutputEnabled(
         output: any(named: 'output'),
@@ -915,7 +919,11 @@ void main() {
 
         callback!(0, 1);
         verify(
-          () => settings.saveLaneEffects(0, 1, encodeTrackEffects(takeChain)),
+          () => settings.saveLaneEffects(
+            0,
+            1,
+            encodeFxChain(FxChainEnvelope(entries: takeChain)),
+          ),
         ).called(1);
       },
     );
@@ -947,7 +955,7 @@ void main() {
                   () => settings.saveLaneEffects(1, 2, captureAny()),
                 ).captured.single
                 as String;
-        final decoded = decodeTrackEffects(encoded).single as PluginEffect;
+        final decoded = decodeFxChain(encoded).entries.single as PluginEffect;
         expect(decoded.name, 'Acme Reverb');
       },
     );
@@ -989,6 +997,157 @@ void main() {
         verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
       },
     );
+
+    group('track/master chain events (FX v3 part 3a)', () {
+      final trackChain = [BuiltInEffect(type: TrackEffectType.delay)];
+      final masterChain = [BuiltInEffect(type: TrackEffectType.reverb)];
+
+      setUp(() {
+        when(
+          () => repository.setTrackEffects(
+            channel: any(named: 'channel'),
+            effects: any(named: 'effects'),
+          ),
+        ).thenReturn(EngineResult.ok);
+        when(
+          () => repository.setTrackEffectEnabled(
+            channel: any(named: 'channel'),
+            index: any(named: 'index'),
+            enabled: any(named: 'enabled'),
+          ),
+        ).thenReturn(EngineResult.ok);
+        when(
+          () => repository.setTrackChainEnabled(
+            channel: any(named: 'channel'),
+            enabled: any(named: 'enabled'),
+          ),
+        ).thenReturn(EngineResult.ok);
+        when(
+          () => repository.setMasterEffects(
+            effects: any(named: 'effects'),
+          ),
+        ).thenReturn(EngineResult.ok);
+        when(
+          () => repository.setMasterEffectEnabled(
+            index: any(named: 'index'),
+            enabled: any(named: 'enabled'),
+          ),
+        ).thenReturn(EngineResult.ok);
+        when(
+          () => repository.setMasterChainEnabled(
+            enabled: any(named: 'enabled'),
+          ),
+        ).thenReturn(EngineResult.ok);
+        when(() => repository.trackEffects(any())).thenReturn(trackChain);
+        when(() => repository.trackChainEnabled(any())).thenReturn(false);
+        when(() => repository.masterEffects).thenReturn(masterChain);
+        when(() => repository.masterChainEnabled).thenReturn(false);
+        when(
+          () => settings.saveTrackFxChain(any(), any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => settings.saveMasterFxChain(any()),
+        ).thenAnswer((_) async {});
+      });
+
+      blocTest<LooperBloc, LooperState>(
+        'LooperTrackEffectsChanged pushes the chain and persists the '
+        'envelope with the repo chain flag',
+        build: () => LooperBloc(repository: repository, settings: settings),
+        act: (bloc) => bloc.add(LooperTrackEffectsChanged(1, trackChain)),
+        verify: (_) {
+          verify(
+            () => repository.setTrackEffects(channel: 1, effects: trackChain),
+          ).called(1);
+          final encoded =
+              verify(
+                    () => settings.saveTrackFxChain(1, captureAny()),
+                  ).captured.single
+                  as String;
+          final decoded = decodeFxChain(encoded);
+          expect(decoded.entries, trackChain);
+          expect(decoded.chainEnabled, isFalse); // the repo flag rode along
+        },
+      );
+
+      blocTest<LooperBloc, LooperState>(
+        'LooperTrackEffectEnabledToggled flips the slot and re-persists',
+        build: () => LooperBloc(repository: repository, settings: settings),
+        act: (bloc) => bloc.add(
+          const LooperTrackEffectEnabledToggled(0, 1, enabled: false),
+        ),
+        verify: (_) {
+          verify(
+            () => repository.setTrackEffectEnabled(
+              channel: 0,
+              index: 1,
+              enabled: false,
+            ),
+          ).called(1);
+          verify(() => settings.saveTrackFxChain(0, any())).called(1);
+        },
+      );
+
+      blocTest<LooperBloc, LooperState>(
+        'LooperTrackChainEnabledToggled flips the chain flag and '
+        're-persists',
+        build: () => LooperBloc(repository: repository, settings: settings),
+        act: (bloc) =>
+            bloc.add(const LooperTrackChainEnabledToggled(2, enabled: false)),
+        verify: (_) {
+          verify(
+            () => repository.setTrackChainEnabled(channel: 2, enabled: false),
+          ).called(1);
+          verify(() => settings.saveTrackFxChain(2, any())).called(1);
+        },
+      );
+
+      blocTest<LooperBloc, LooperState>(
+        'LooperMasterEffectsChanged pushes the chain and persists the '
+        'envelope',
+        build: () => LooperBloc(repository: repository, settings: settings),
+        act: (bloc) => bloc.add(LooperMasterEffectsChanged(masterChain)),
+        verify: (_) {
+          verify(
+            () => repository.setMasterEffects(effects: masterChain),
+          ).called(1);
+          final encoded =
+              verify(
+                    () => settings.saveMasterFxChain(captureAny()),
+                  ).captured.single
+                  as String;
+          expect(decodeFxChain(encoded).entries, masterChain);
+        },
+      );
+
+      blocTest<LooperBloc, LooperState>(
+        'LooperMasterEffectEnabledToggled flips the slot and re-persists',
+        build: () => LooperBloc(repository: repository, settings: settings),
+        act: (bloc) => bloc.add(
+          const LooperMasterEffectEnabledToggled(0, enabled: false),
+        ),
+        verify: (_) {
+          verify(
+            () => repository.setMasterEffectEnabled(index: 0, enabled: false),
+          ).called(1);
+          verify(() => settings.saveMasterFxChain(any())).called(1);
+        },
+      );
+
+      blocTest<LooperBloc, LooperState>(
+        'LooperMasterChainEnabledToggled flips the chain flag and '
+        're-persists',
+        build: () => LooperBloc(repository: repository, settings: settings),
+        act: (bloc) =>
+            bloc.add(const LooperMasterChainEnabledToggled(enabled: false)),
+        verify: (_) {
+          verify(
+            () => repository.setMasterChainEnabled(enabled: false),
+          ).called(1);
+          verify(() => settings.saveMasterFxChain(any())).called(1);
+        },
+      );
+    });
 
     blocTest<LooperBloc, LooperState>(
       'LooperModeChanged persists the mode code (B5c)',

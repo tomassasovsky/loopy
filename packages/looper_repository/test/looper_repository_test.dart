@@ -740,7 +740,8 @@ void main() {
 
     test('a per-lane effects chain is deferred then re-applied on start', () {
       final repo = buildRepo()
-        ..setTrackEffects(
+        ..setLaneEffects(
+          lane: 0,
           channel: 1,
           effects: [
             BuiltInEffect(
@@ -761,13 +762,20 @@ void main() {
     test('a live param tweak updates the entry without resetting it', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setTrackEffects(
+        ..setLaneEffects(
+          lane: 0,
           channel: 0,
           effects: [BuiltInEffect(type: TrackEffectType.drive)],
         );
       engine.calls.clear();
 
-      repo.setTrackEffectParam(channel: 0, index: 0, param: 0, value: 0.9);
+      repo.setLaneEffectParam(
+        lane: 0,
+        channel: 0,
+        index: 0,
+        param: 0,
+        value: 0.9,
+      );
       expect(engine.laneFxParam[(0, 0, 0, 0)], 0.9);
       // No setLaneFx (which would reset DSP) — only the granular param call.
       expect(engine.calls, isNot(contains('setLaneFx')));
@@ -788,7 +796,8 @@ void main() {
         // whole chain (so trailing built-ins keep their indices).
         buildRepo()
           ..startEngine(const EngineConfig())
-          ..setTrackEffects(
+          ..setLaneEffects(
+            lane: 0,
             channel: 0,
             effects: [
               BuiltInEffect(type: TrackEffectType.drive),
@@ -826,7 +835,8 @@ void main() {
       ];
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setTrackEffects(
+        ..setLaneEffects(
+          lane: 0,
           channel: 0,
           effects: const [
             PluginEffect(
@@ -862,7 +872,8 @@ void main() {
       });
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setTrackEffects(
+        ..setLaneEffects(
+          lane: 0,
           channel: 0,
           effects: const [
             PluginEffect(
@@ -897,7 +908,8 @@ void main() {
       });
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setTrackEffects(
+        ..setLaneEffects(
+          lane: 0,
           channel: 0,
           effects: const [
             PluginEffect(
@@ -928,7 +940,8 @@ void main() {
       engine.paramValueTexts[(100, 0.5)] = '-6.0 dB';
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setTrackEffects(
+        ..setLaneEffects(
+          lane: 0,
           channel: 0,
           effects: const [
             PluginEffect(
@@ -1008,7 +1021,8 @@ void main() {
     test('persisted plugin paramValues replay through the RT queue', () {
       buildRepo()
         ..startEngine(const EngineConfig())
-        ..setTrackEffects(
+        ..setLaneEffects(
+          lane: 0,
           channel: 0,
           effects: const [
             PluginEffect(
@@ -1025,7 +1039,8 @@ void main() {
     test('setLanePluginParam routes to the loaded slot and remembers it', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setTrackEffects(
+        ..setLaneEffects(
+          lane: 0,
           channel: 0,
           effects: const [
             PluginEffect(
@@ -1055,7 +1070,8 @@ void main() {
     test('setLanePluginParam on a non-plugin entry is invalid', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setTrackEffects(
+        ..setLaneEffects(
+          lane: 0,
           channel: 0,
           effects: [BuiltInEffect(type: TrackEffectType.drive)],
         );
@@ -1122,7 +1138,8 @@ void main() {
     test('a plugin param set with no loaded slot is invalid', () {
       // Engine not started => no slot loaded for the remembered chain.
       final repo = buildRepo()
-        ..setTrackEffects(
+        ..setLaneEffects(
+          lane: 0,
           channel: 0,
           effects: const [
             PluginEffect(
@@ -1133,7 +1150,8 @@ void main() {
         ..startEngine(const EngineConfig());
       // Simulate a failed load: the next plugin load returns no handle.
       engine.nextSlotHandle = null;
-      repo.setTrackEffects(
+      repo.setLaneEffects(
+        lane: 0,
         channel: 0,
         effects: const [
           PluginEffect(
@@ -1156,7 +1174,8 @@ void main() {
     test('openLanePluginEditor opens the loaded slot editor', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setTrackEffects(
+        ..setLaneEffects(
+          lane: 0,
           channel: 0,
           effects: const [
             PluginEffect(
@@ -1198,7 +1217,8 @@ void main() {
       ];
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setTrackEffects(
+        ..setLaneEffects(
+          lane: 0,
           channel: 0,
           effects: const [
             PluginEffect(
@@ -1238,7 +1258,8 @@ void main() {
       ];
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setTrackEffects(
+        ..setLaneEffects(
+          lane: 0,
           channel: 0,
           effects: const [
             PluginEffect(
@@ -1310,7 +1331,8 @@ void main() {
         engine.nextSlotHandle = null; // load fails (uninstalled / moved)
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
-          ..setTrackEffects(
+          ..setLaneEffects(
+            lane: 0,
             channel: 0,
             effects: const [
               PluginEffect(
@@ -1337,7 +1359,8 @@ void main() {
         engine.nextSlotHandle = null; // not loadable (catalog has no match)
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
-          ..setTrackEffects(
+          ..setLaneEffects(
+            lane: 0,
             channel: 0,
             effects: const [
               PluginEffect(
@@ -1379,7 +1402,8 @@ void main() {
           ..nextSlotHandle = null;
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
-          ..setTrackEffects(
+          ..setLaneEffects(
+            lane: 0,
             channel: 0,
             effects: const [
               PluginEffect(
@@ -1425,7 +1449,8 @@ void main() {
       await repo.pluginCatalog.scan();
 
       engine.nextSlotHandle = null; // engine rejects the load (topology)
-      repo.setTrackEffects(
+      repo.setLaneEffects(
+        lane: 0,
         channel: 0,
         effects: const [
           PluginEffect(
@@ -1456,7 +1481,8 @@ void main() {
       await repo.pluginCatalog.scan();
 
       engine.nextSlotHandle = MockPluginSlotHandle('p');
-      repo.setTrackEffects(
+      repo.setLaneEffects(
+        lane: 0,
         channel: 0,
         effects: const [
           PluginEffect(
@@ -1489,7 +1515,8 @@ void main() {
           total: 1,
         );
       final repo = buildRepo()
-        ..setTrackEffects(
+        ..setLaneEffects(
+          lane: 0,
           channel: 0,
           effects: const [
             PluginEffect(
@@ -1555,7 +1582,8 @@ void main() {
       engine.nextSlotHandle = MockPluginSlotHandle('p');
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setTrackEffects(
+        ..setLaneEffects(
+          lane: 0,
           channel: 0,
           effects: const [
             PluginEffect(
@@ -1576,7 +1604,8 @@ void main() {
       engine.nextSlotHandle = null; // initial load fails -> unavailable
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setTrackEffects(
+        ..setLaneEffects(
+          lane: 0,
           channel: 0,
           effects: [
             PluginEffect(
@@ -1613,13 +1642,14 @@ void main() {
     test('an empty chain drops the lane and zeroes the count on restart', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setTrackEffects(
+        ..setLaneEffects(
+          lane: 0,
           channel: 0,
           effects: [BuiltInEffect(type: TrackEffectType.drive)],
         );
       expect(engine.laneFx[(0, 0, 0)]?.code, TrackEffectType.drive.code);
 
-      repo.setTrackEffects(channel: 0, effects: const []);
+      repo.setLaneEffects(lane: 0, channel: 0, effects: const []);
       expect(engine.laneFxCount[(0, 0)], 0);
 
       engine.laneFx.clear();
@@ -2442,7 +2472,8 @@ void main() {
       // A garbage (non-base64) blob must not crash the restore.
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setTrackEffects(
+        ..setLaneEffects(
+          lane: 0,
           channel: 0,
           effects: const [
             PluginEffect(
@@ -2459,7 +2490,8 @@ void main() {
     test('restoring a lane plugin replays its state blob (D-P1 frozen)', () {
       buildRepo()
         ..startEngine(const EngineConfig())
-        ..setTrackEffects(
+        ..setLaneEffects(
+          lane: 0,
           channel: 0,
           effects: [
             PluginEffect(
@@ -4246,6 +4278,761 @@ void main() {
       );
       addTearDown(repo.dispose);
       expect(repo.startEngine(mock.startConfig).isOk, isTrue);
+    });
+  });
+
+  group('slotId minting at the repository write boundary (A9)', () {
+    test('setLaneEffects mints ids for id-less entries exactly once', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [BuiltInEffect(type: TrackEffectType.drive)],
+      );
+      final minted = repo.laneEffects(0, 0).single.slotId;
+      expect(minted, isNotNull);
+
+      // Re-setting the same (already-minted) chain keeps the id — mint once.
+      repo.setLaneEffects(channel: 0, lane: 0, effects: repo.laneEffects(0, 0));
+      expect(repo.laneEffects(0, 0).single.slotId, minted);
+    });
+
+    test('ids are unique across entries, chains, and stages', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [
+            BuiltInEffect(type: TrackEffectType.drive),
+            BuiltInEffect(type: TrackEffectType.delay),
+          ],
+        )
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.echo)],
+        )
+        ..setTrackEffects(
+          channel: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.filter)],
+        )
+        ..setMasterEffects(
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        );
+
+      final ids = [
+        ...repo.laneEffects(0, 0).map((e) => e.slotId),
+        repo.monitorEffects(0).single.slotId,
+        repo.trackEffects(0).single.slotId,
+        repo.masterEffects.single.slotId,
+      ];
+      expect(ids.every((id) => id != null), isTrue);
+      expect(ids.toSet(), hasLength(ids.length));
+    });
+
+    test('ids survive param edits and reorders', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          BuiltInEffect(type: TrackEffectType.drive),
+          BuiltInEffect(type: TrackEffectType.delay),
+        ],
+      );
+      final before = repo.laneEffects(0, 0).map((e) => e.slotId).toList();
+
+      repo.setLaneEffectParam(
+        channel: 0,
+        lane: 0,
+        index: 0,
+        param: 0,
+        value: 0.9,
+      );
+      expect(repo.laneEffects(0, 0).map((e) => e.slotId), before);
+
+      // A reorder re-set through the boundary keeps each entry's id.
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: repo.laneEffects(0, 0).reversed.toList(),
+      );
+      expect(repo.laneEffects(0, 0).map((e) => e.slotId), before.reversed);
+    });
+  });
+
+  group('four-stage chains: track + master setters (FX v3 part 3a)', () {
+    test('setTrackEffects updates cache and pushes type/params/enabled/count '
+        'to the engine bus stage', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setTrackEffects(
+        channel: 1,
+        effects: [
+          BuiltInEffect(
+            type: TrackEffectType.delay,
+            params: const [0.3, 0.4, 0.5, 0],
+          ),
+          BuiltInEffect(type: TrackEffectType.reverb, enabled: false),
+        ],
+      );
+
+      expect(repo.trackEffects(1), hasLength(2));
+      expect(engine.trackFx[(1, 0)]?.name, 'delay');
+      expect(engine.trackFx[(1, 1)]?.name, 'reverb');
+      expect(engine.trackFxParam[(1, 0, 0)], 0.3);
+      // The per-slot enabled bit is pushed for EVERY slot on every apply.
+      expect(engine.trackFxEnabled[(1, 0)], isTrue);
+      expect(engine.trackFxEnabled[(1, 1)], isFalse);
+      expect(engine.trackFxCount[1], 2);
+    });
+
+    test('setMasterEffects updates cache and pushes the Master insert', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setMasterEffects(
+        effects: [BuiltInEffect(type: TrackEffectType.echo, enabled: false)],
+      );
+
+      expect(repo.masterEffects, hasLength(1));
+      expect(engine.masterFx[0]?.name, 'echo');
+      expect(engine.masterFxEnabled[0], isFalse);
+      expect(engine.masterFxCount, 1);
+    });
+
+    test('a hosted plugin at a bus stage publishes as passthrough (no bus '
+        'slot ABI yet) and is MARKED unsupported in the domain chain', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        )
+        ..setMasterEffects(
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'q'),
+            ),
+          ],
+        );
+
+      // Kept, never dropped — but flagged with the D-MISS placeholder posture
+      // so it cannot read as an active slot while the engine renders `none`.
+      final trackPlugin = repo.trackEffects(0).single as PluginEffect;
+      expect(trackPlugin.unavailable, isTrue);
+      expect(trackPlugin.unsupported, isTrue);
+      expect(trackPlugin.ref.id, 'p');
+      final masterPlugin = repo.masterEffects.single as PluginEffect;
+      expect(masterPlugin.unavailable, isTrue);
+      expect(masterPlugin.unsupported, isTrue);
+      expect(engine.trackFx[(0, 0)]?.name, 'none');
+      expect(engine.trackFxCount[0], 1);
+      expect(engine.masterFx[0]?.name, 'none');
+    });
+
+    test('track/master chains and flags are projected onto LooperState', () {
+      engine.nextSnapshot = _playingSnapshot;
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo
+        ..setTrackEffects(
+          channel: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        )
+        ..setTrackChainEnabled(channel: 0, enabled: false)
+        ..setMasterEffects(
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        )
+        ..setMasterChainEnabled(enabled: false);
+
+      final state = repo.state;
+      expect(state.tracks.first.effects, hasLength(1));
+      expect(state.tracks.first.chainEnabled, isFalse);
+      expect(state.masterEffects, hasLength(1));
+      expect(state.masterChainEnabled, isFalse);
+    });
+  });
+
+  group('per-slot + per-chain enable setters (R15/R16)', () {
+    test('per-slot setters update cache + engine together on all four '
+        'stages', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        )
+        ..setMonitorEffects(
+          input: 2,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        )
+        ..setTrackEffects(
+          channel: 1,
+          effects: [BuiltInEffect(type: TrackEffectType.echo)],
+        )
+        ..setMasterEffects(
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        );
+
+      expect(
+        repo.setLaneEffectEnabled(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          enabled: false,
+        ),
+        EngineResult.ok,
+      );
+      expect(
+        repo.setMonitorEffectEnabled(input: 2, index: 0, enabled: false),
+        EngineResult.ok,
+      );
+      expect(
+        repo.setTrackEffectEnabled(channel: 1, index: 0, enabled: false),
+        EngineResult.ok,
+      );
+      expect(
+        repo.setMasterEffectEnabled(index: 0, enabled: false),
+        EngineResult.ok,
+      );
+
+      // Cache side.
+      expect(repo.laneEffects(0, 0).single.enabled, isFalse);
+      expect(repo.monitorEffects(2).single.enabled, isFalse);
+      expect(repo.trackEffects(1).single.enabled, isFalse);
+      expect(repo.masterEffects.single.enabled, isFalse);
+      // Engine side.
+      expect(engine.laneFxEnabled[(0, 0, 0)], isFalse);
+      expect(engine.monitorFxEnabled[(2, 0)], isFalse);
+      expect(engine.trackFxEnabled[(1, 0)], isFalse);
+      expect(engine.masterFxEnabled[0], isFalse);
+    });
+
+    test('per-slot setters reject an out-of-range index', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      expect(
+        repo.setLaneEffectEnabled(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          enabled: false,
+        ),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setMasterEffectEnabled(index: 3, enabled: false),
+        EngineResult.invalid,
+      );
+    });
+
+    test('enabled setters work while STOPPED on ALL FOUR stages — the flag '
+        'lands on the engine immediately, no ring', () {
+      // Never started: the direct-atomic bindings must still be called.
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+
+      repo
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        )
+        ..setMonitorEffects(
+          input: 1,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        )
+        ..setTrackEffects(
+          channel: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.echo)],
+        )
+        ..setMasterEffects(
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        )
+        ..setLaneEffectEnabled(channel: 0, lane: 0, index: 0, enabled: false)
+        ..setMonitorEffectEnabled(input: 1, index: 0, enabled: false)
+        ..setTrackEffectEnabled(channel: 0, index: 0, enabled: false)
+        ..setMasterEffectEnabled(index: 0, enabled: false)
+        ..setLaneChainEnabled(channel: 0, lane: 0, enabled: false)
+        ..setMonitorChainEnabled(input: 1, enabled: false)
+        ..setTrackChainEnabled(channel: 0, enabled: false)
+        ..setMasterChainEnabled(enabled: false);
+
+      expect(engine.laneFxEnabled[(0, 0, 0)], isFalse);
+      expect(engine.monitorFxEnabled[(1, 0)], isFalse);
+      expect(engine.trackFxEnabled[(0, 0)], isFalse);
+      expect(engine.masterFxEnabled[0], isFalse);
+      expect(engine.laneFxChainEnabled[(0, 0)], isFalse);
+      expect(engine.monitorFxChainEnabled[1], isFalse);
+      expect(engine.trackFxChainEnabled[0], isFalse);
+      expect(engine.masterFxChainEnabled, isFalse);
+    });
+
+    test('per-chain setters update the remembered flag + engine on all four '
+        'stages', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo
+        ..setLaneChainEnabled(channel: 0, lane: 1, enabled: false)
+        ..setMonitorChainEnabled(input: 3, enabled: false)
+        ..setTrackChainEnabled(channel: 2, enabled: false)
+        ..setMasterChainEnabled(enabled: false);
+
+      expect(repo.laneChainEnabled(0, 1), isFalse);
+      expect(repo.monitorChainEnabled(3), isFalse);
+      expect(repo.trackChainEnabled(2), isFalse);
+      expect(repo.masterChainEnabled, isFalse);
+      expect(engine.laneFxChainEnabled[(0, 1)], isFalse);
+      expect(engine.monitorFxChainEnabled[3], isFalse);
+      expect(engine.trackFxChainEnabled[2], isFalse);
+      expect(engine.masterFxChainEnabled, isFalse);
+
+      // Flags default to enabled and re-enable restores the default.
+      repo.setLaneChainEnabled(channel: 0, lane: 1, enabled: true);
+      expect(repo.laneChainEnabled(0, 1), isTrue);
+      expect(repo.laneChainEnabled(5, 5), isTrue); // never-set default
+    });
+
+    test('a chain apply re-pushes EVERY slot enabled bit so index-keyed '
+        'engine flags can never migrate onto the wrong effect (R16)', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      final drive = BuiltInEffect(type: TrackEffectType.drive);
+      final delay = BuiltInEffect(type: TrackEffectType.delay, enabled: false);
+      repo.setLaneEffects(channel: 0, lane: 0, effects: [drive, delay]);
+      expect(engine.laneFxEnabled[(0, 0, 0)], isTrue);
+      expect(engine.laneFxEnabled[(0, 0, 1)], isFalse);
+
+      // Reorder: the disabled DELAY moves to index 0. Every index is
+      // re-pushed from the domain chain, so the flags follow the effects.
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: repo.laneEffects(0, 0).reversed.toList(),
+      );
+      expect(engine.laneFxEnabled[(0, 0, 0)], isFalse);
+      expect(engine.laneFxEnabled[(0, 0, 1)], isTrue);
+    });
+  });
+
+  group('four-stage fingerprints (R16)', () {
+    test('track/master fingerprints fold the cached chain + flags', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      expect(repo.trackFxChainFingerprint(0), FxFingerprint.offset);
+      expect(repo.masterFxChainFingerprint(), FxFingerprint.offset);
+
+      repo.setTrackEffects(
+        channel: 0,
+        effects: [BuiltInEffect(type: TrackEffectType.drive)],
+      );
+      final enabled = repo.trackFxChainFingerprint(0);
+      expect(enabled, isNot(FxFingerprint.offset));
+
+      repo.setTrackChainEnabled(channel: 0, enabled: false);
+      expect(repo.trackFxChainFingerprint(0), isNot(enabled));
+    });
+
+    test('lane/monitor fingerprints reflect per-slot and chain flags', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [BuiltInEffect(type: TrackEffectType.drive)],
+      );
+      final base = repo.laneChainFingerprint(0, 0);
+
+      repo.setLaneEffectEnabled(channel: 0, lane: 0, index: 0, enabled: false);
+      final slotOff = repo.laneChainFingerprint(0, 0);
+      expect(slotOff, isNot(base));
+
+      repo.setLaneEffectEnabled(channel: 0, lane: 0, index: 0, enabled: true);
+      expect(repo.laneChainFingerprint(0, 0), base); // toggle round-trip
+
+      repo.setLaneChainEnabled(channel: 0, lane: 0, enabled: false);
+      expect(repo.laneChainFingerprint(0, 0), isNot(base));
+    });
+  });
+
+  group('re-apply on restart: four-stage chains + flags', () {
+    test('a restart replays track/master chains and every stage chain '
+        'flag', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo
+        ..setTrackEffects(
+          channel: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        )
+        ..setMasterEffects(
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        )
+        ..setLaneChainEnabled(channel: 0, lane: 0, enabled: false)
+        ..setMonitorChainEnabled(input: 1, enabled: false)
+        ..setTrackChainEnabled(channel: 0, enabled: false)
+        ..setMasterChainEnabled(enabled: false)
+        ..stopEngine();
+
+      // Wipe the fake's records so only the restart replay repopulates them.
+      engine.trackFx.clear();
+      engine.trackFxCount.clear();
+      engine.masterFx.clear();
+      engine.masterFxCount = null;
+      engine.laneFxChainEnabled.clear();
+      engine.monitorFxChainEnabled.clear();
+      engine.trackFxChainEnabled.clear();
+      engine.masterFxChainEnabled = null;
+
+      repo.startEngine(const EngineConfig());
+
+      expect(engine.trackFx[(0, 0)]?.name, 'delay');
+      expect(engine.trackFxCount[0], 1);
+      expect(engine.masterFx[0]?.name, 'reverb');
+      expect(engine.masterFxCount, 1);
+      expect(engine.laneFxChainEnabled[(0, 0)], isFalse);
+      expect(engine.monitorFxChainEnabled[1], isFalse);
+      expect(engine.trackFxChainEnabled[0], isFalse);
+      expect(engine.masterFxChainEnabled, isFalse);
+    });
+  });
+
+  group('inheritance rules (R13/R18/A7/A8)', () {
+    EngineSnapshot emptyTrackSnapshot() => const EngineSnapshot(
+      isRunning: true,
+      sampleRate: 48000,
+      bufferFrames: 128,
+      framesProcessed: 0,
+      xrunCount: 0,
+      inputRms: 0,
+      inputPeak: 0,
+      outputRms: 0,
+      latencyState: le.LatencyState.idle,
+      measuredLatencyMs: -1,
+      tracks: [TrackSnapshot.empty()],
+    );
+
+    test('record copies by value with provenance: editing the input chain '
+        'afterwards never alters the take (R13)', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+
+      final take = repo.laneEffects(0, 0);
+      expect((take.single as BuiltInEffect).type, TrackEffectType.delay);
+      expect(repo.laneChainInheritedFrom(0, 0), [0]);
+
+      // Edit the input chain post-record — the take must be byte-identical.
+      repo.setMonitorEffects(
+        input: 0,
+        effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+      );
+      expect(repo.laneEffects(0, 0), take);
+    });
+
+    test('copied entries carry FRESH slot ids — bindings on the input chain '
+        'never follow the copy (A9)', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        );
+      addTearDown(repo.dispose);
+      final sourceId = repo.monitorEffects(0).single.slotId;
+
+      repo.record();
+
+      final copiedId = repo.laneEffects(0, 0).single.slotId;
+      expect(copiedId, isNotNull);
+      expect(copiedId, isNot(sourceId));
+    });
+
+    test('a disabled monitor slot inherits disabled — the take reproduces '
+        'the monitored sound (R18)', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [
+            BuiltInEffect(type: TrackEffectType.drive, enabled: false),
+            BuiltInEffect(type: TrackEffectType.reverb),
+          ],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+
+      final take = repo.laneEffects(0, 0);
+      expect(take[0].enabled, isFalse);
+      expect(take[1].enabled, isTrue);
+    });
+
+    test('D-CHAINDIS: a chain-disabled monitor chain is treated as dry — the '
+        'lane keeps its prior chain (R18)', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final prior = [BuiltInEffect(type: TrackEffectType.echo)];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(channel: 0, lane: 0, effects: prior)
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        )
+        ..setMonitorChainEnabled(input: 0, enabled: false)
+        ..record();
+      addTearDown(repo.dispose);
+
+      // Both dry shapes bail: the lane's chain is untouched.
+      expect(
+        (repo.laneEffects(0, 0).single as BuiltInEffect).type,
+        TrackEffectType.echo,
+      );
+      expect(repo.laneChainInheritedFrom(0, 0), isEmpty);
+    });
+
+    test('overdub never re-inherits (A7): a record on a non-empty track '
+        'leaves the take chain and provenance alone', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+      final take = repo.laneEffects(0, 0);
+
+      // The take exists; a later record press is an overdub (track PLAYING).
+      engine.nextSnapshot = _playingSnapshot;
+      repo
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        )
+        ..record();
+
+      expect(repo.laneEffects(0, 0), take);
+      expect(repo.laneChainInheritedFrom(0, 0), [0]);
+    });
+
+    test('divergence query flips when the input chain drifts from the take '
+        'chain (A7)', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+
+      // Right after the copy the two chains sound identical.
+      expect(repo.laneChainDivergesFromInput(0, 0), isFalse);
+
+      repo.setMonitorEffects(
+        input: 0,
+        effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+      );
+      expect(repo.laneChainDivergesFromInput(0, 0), isTrue);
+    });
+
+    test('divergence compares AUDIBLE shapes: dry vs dry never diverges, '
+        'dry vs audible always does (D-CHAINDIS)', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      // Chain-disabled monitor chain + empty lane chain: both dry — even
+      // though their raw fingerprints differ, nothing audibly diverges.
+      repo
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        )
+        ..setMonitorChainEnabled(input: 0, enabled: false)
+        ..setLaneInput(channel: 0, lane: 0, inputChannel: 0);
+      expect(repo.laneChainDivergesFromInput(0, 0), isFalse);
+
+      // A dry monitor vs an audible lane chain: genuinely different sounds.
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+      );
+      expect(repo.laneChainDivergesFromInput(0, 0), isTrue);
+
+      // Chain-disabling the lane too makes both sides dry again.
+      repo.setLaneChainEnabled(channel: 0, lane: 0, enabled: false);
+      expect(repo.laneChainDivergesFromInput(0, 0), isFalse);
+    });
+
+    test('the THIRD dry shape — every slot individually disabled — also '
+        'never diverges from a dry chain (R16)', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      // Lane holds one per-slot-disabled effect (bit-exact passthrough);
+      // routed input's monitor chain is empty. Both are audibly dry.
+      repo
+        ..setLaneInput(channel: 0, lane: 0, inputChannel: 0)
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [
+            BuiltInEffect(type: TrackEffectType.reverb, enabled: false),
+          ],
+        );
+      expect(repo.laneChainDivergesFromInput(0, 0), isFalse);
+
+      // Two all-disabled chains of DIFFERENT types: still dry vs dry.
+      repo.setMonitorEffects(
+        input: 0,
+        effects: [
+          BuiltInEffect(type: TrackEffectType.drive, enabled: false),
+        ],
+      );
+      expect(repo.laneChainDivergesFromInput(0, 0), isFalse);
+
+      // Re-enabling the lane's slot makes it audible again → diverges.
+      repo.setLaneEffectEnabled(channel: 0, lane: 0, index: 0, enabled: true);
+      expect(repo.laneChainDivergesFromInput(0, 0), isTrue);
+    });
+
+    test('a WHOLESALE chain replacement drops the stale inheritedFrom '
+        'marker; edits and reorders keep it (A9)', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [
+            BuiltInEffect(type: TrackEffectType.delay),
+            BuiltInEffect(type: TrackEffectType.reverb),
+          ],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+      expect(repo.laneChainInheritedFrom(0, 0), [0]);
+
+      // An edit that keeps entries (reorder + param change) keeps the marker.
+      repo
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: repo.laneEffects(0, 0).reversed.toList(),
+        )
+        ..setLaneEffectParam(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          param: 0,
+          value: 0.9,
+        );
+      expect(repo.laneChainInheritedFrom(0, 0), [0]);
+
+      // Replacing the chain with entries sharing NO slot ids (fresh, id-less
+      // input entries get new ids minted) is a wholesale replacement — the
+      // marker describes nothing that survived and drops.
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [BuiltInEffect(type: TrackEffectType.echo)],
+      );
+      expect(repo.laneChainInheritedFrom(0, 0), isEmpty);
+    });
+
+    test('clear-restore carries a DISABLED flag even on a lane with an '
+        'empty chain (snapshot key union)', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      engine.undoRestoresClearResult = true;
+      repo
+        ..setLaneChainEnabled(channel: 0, lane: 0, enabled: false)
+        ..clear()
+        ..undo();
+
+      expect(repo.laneChainEnabled(0, 0), isFalse);
+    });
+
+    test('clear-restore carries the chain flag and provenance: disable → '
+        'clear → undo ⇒ still disabled, still inherited (R15)', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+      repo.setLaneChainEnabled(channel: 0, lane: 0, enabled: false);
+
+      engine.undoRestoresClearResult = true;
+      repo
+        ..clear()
+        ..undo();
+
+      expect(repo.laneChainEnabled(0, 0), isFalse);
+      expect(repo.laneChainInheritedFrom(0, 0), [0]);
+      expect(
+        (repo.laneEffects(0, 0).single as BuiltInEffect).type,
+        TrackEffectType.delay,
+      );
+    });
+
+    test('clear without undo resets the lane chain flag and provenance to '
+        'the dry defaults', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+      repo
+        ..setLaneChainEnabled(channel: 0, lane: 0, enabled: false)
+        ..clear();
+
+      expect(repo.laneEffects(0, 0), isEmpty);
+      expect(repo.laneChainEnabled(0, 0), isTrue);
+      expect(repo.laneChainInheritedFrom(0, 0), isEmpty);
     });
   });
 }

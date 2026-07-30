@@ -825,6 +825,28 @@ class SettingsRepository {
   Future<void> saveLaneEffects(int channel, int lane, String encoded) =>
       _store.setString(_laneEffectsKey(channel, lane), encoded);
 
+  String _trackFxChainKey(int channel) => 'track_fx_chain.$channel';
+  static const String _masterFxChainKey = 'master_fx_chain';
+
+  /// Loads track [channel]'s persisted Track-stage (stereo bus) chain as an
+  /// opaque encoded envelope string (see `encodeFxChain`), or `null` if none
+  /// is saved. The chain-enabled flag rides inside the envelope — no separate
+  /// per-flag key exists (R15).
+  Future<String?> loadTrackFxChain(int channel) =>
+      _store.getString(_trackFxChainKey(channel));
+
+  /// Saves track [channel]'s [encoded] Track-stage chain envelope.
+  Future<void> saveTrackFxChain(int channel, String encoded) =>
+      _store.setString(_trackFxChainKey(channel), encoded);
+
+  /// Loads the persisted Master insert chain as an opaque encoded envelope
+  /// string (see `encodeFxChain`), or `null` if none is saved.
+  Future<String?> loadMasterFxChain() => _store.getString(_masterFxChainKey);
+
+  /// Saves the [encoded] Master insert chain envelope.
+  Future<void> saveMasterFxChain(String encoded) =>
+      _store.setString(_masterFxChainKey, encoded);
+
   static const String _updateAutoCheckKey = 'updates.auto_check';
   static const String _updateChannelKey = 'updates.channel';
   static const String _updateDismissedKey = 'updates.dismissed';

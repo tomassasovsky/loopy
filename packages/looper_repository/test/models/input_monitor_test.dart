@@ -76,5 +76,15 @@ void main() {
       expect(withFx, isNot(const InputMonitor(input: 0))); // vs clean chain
       expect(withFx, isNot(withOtherFx)); // a differing chain breaks equality
     });
+
+    test('chainEnabled defaults true, copies, and participates in '
+        'equality (R15)', () {
+      const monitor = InputMonitor(input: 0);
+      expect(monitor.chainEnabled, isTrue);
+      final disabled = monitor.copyWith(chainEnabled: false);
+      expect(disabled.chainEnabled, isFalse);
+      expect(disabled, isNot(monitor));
+      expect(disabled.copyWith(chainEnabled: true), monitor);
+    });
   });
 }

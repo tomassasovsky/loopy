@@ -255,8 +255,12 @@ sealed class TrackEffect {
 final class BuiltInEffect extends TrackEffect {
   /// Creates a [BuiltInEffect]. [params] defaults to the [type]'s musical
   /// defaults.
-  BuiltInEffect({required this.type, List<double>? params})
-    : params = List<double>.unmodifiable(params ?? type.defaultParams);
+  BuiltInEffect({
+    required this.type,
+    List<double>? params,
+    this.enabled = true,
+    this.slotId,
+  }) : params = List<double>.unmodifiable(params ?? type.defaultParams);
 
   /// Rebuilds a [BuiltInEffect] from [toJson] output; unknown codes fall back
   /// to safe defaults. A legacy `stage` key (from the removed pre/post model)
@@ -265,11 +269,23 @@ final class BuiltInEffect extends TrackEffect {
   /// The decoded `params` are normalized to [kTrackEffectParams]: a list saved
   /// by a narrower build is padded with the type's own `defaultParams` (so a
   /// future non-zero default round-trips, and the octaver's new `mode` lands on
-  /// phase vocoder), and an over-long list is truncated.
+  /// phase vocoder), and an over-long list is truncated. A missing `enabled`
+  /// decodes `true` (every pre-FX-v3 entry was audible — R15's "migration
+  /// defaults every level to enabled"); a missing `slotId` stays null for the
+  /// repository write boundary to mint (A9).
   factory BuiltInEffect.fromJson(Map<String, dynamic> json) {
     final type = TrackEffectType.fromCode((json['type'] as num?)?.toInt() ?? 0);
+    // `is`-checks, not casts: a wrong-typed field in a corrupt persisted
+    // chain must decode to the default, never throw a TypeError past
+    // decodeTrackEffects' FormatException-only catch.
+    final rawEnabled = json['enabled'];
+    final enabled = rawEnabled is! bool || rawEnabled;
+    final rawSlotId = json['slotId'];
+    final slotId = rawSlotId is String ? rawSlotId : null;
     final rawParams = json['params'];
-    if (rawParams is! List) return BuiltInEffect(type: type);
+    if (rawParams is! List) {
+      return BuiltInEffect(type: type, enabled: enabled, slotId: slotId);
+    }
     final decoded = [for (final v in rawParams) (v as num).toDouble()];
     final defaults = type.defaultParams;
     return BuiltInEffect(
@@ -278,6 +294,8 @@ final class BuiltInEffect extends TrackEffect {
         for (var i = 0; i < kTrackEffectParams; i++)
           i < decoded.length ? decoded[i] : defaults[i],
       ],
+      enabled: enabled,
+      slotId: slotId,
     );
   }
 
@@ -287,24 +305,53 @@ final class BuiltInEffect extends TrackEffect {
   /// The normalized parameter values (length [kTrackEffectParams]).
   final List<double> params;
 
+  /// Whether this entry is audible (R16): a disabled entry stays in the chain
+  /// with its type and params intact but renders bit-exact passthrough. The
+  /// engine receives the flag through the per-slot enable setters, never
+  /// through the chain payload.
+  final bool enabled;
+
+  /// The entry's stable per-slot identity (A9), minted by the repository write
+  /// boundary and never reused within a session; `null` until minted. Pure
+  /// Dart-side passthrough — the C engine never parses it.
+  final String? slotId;
+
   @override
   int get typeCode => type.code;
 
   /// Returns a copy with the given fields replaced. [params] is copied.
-  BuiltInEffect copyWith({TrackEffectType? type, List<double>? params}) =>
-      BuiltInEffect(type: type ?? this.type, params: params ?? this.params);
+  BuiltInEffect copyWith({
+    TrackEffectType? type,
+    List<double>? params,
+    bool? enabled,
+    String? slotId,
+  }) => BuiltInEffect(
+    type: type ?? this.type,
+    params: params ?? this.params,
+    enabled: enabled ?? this.enabled,
+    slotId: slotId ?? this.slotId,
+  );
 
   @override
-  Map<String, dynamic> toJson() => {'type': type.code, 'params': params};
+  Map<String, dynamic> toJson() => {
+    'type': type.code,
+    'params': params,
+    // Omitted when default so a pre-FX-v3 chain's encoding is byte-unchanged.
+    if (!enabled) 'enabled': false,
+    if (slotId != null) 'slotId': slotId,
+  };
 
   @override
   bool operator ==(Object other) =>
       other is BuiltInEffect &&
       other.type == type &&
+      other.enabled == enabled &&
+      other.slotId == slotId &&
       _listEquals(other.params, params);
 
   @override
-  int get hashCode => Object.hash(type, Object.hashAll(params));
+  int get hashCode =>
+      Object.hash(type, enabled, slotId, Object.hashAll(params));
 
   static bool _listEquals(List<double> a, List<double> b) {
     if (a.length != b.length) return false;
@@ -332,11 +379,15 @@ final class PluginEffect extends TrackEffect {
     this.params = const [],
     this.state = '',
     this.name = '',
+    this.enabled = true,
+    this.slotId,
   });
 
   /// Rebuilds a [PluginEffect] from a persisted `{type, plugin, paramValues,
   /// state}` entry. Absent / malformed fields decode to empty (a part-4
-  /// `{type, plugin}` entry stays readable).
+  /// `{type, plugin}` entry stays readable). A missing `enabled` decodes
+  /// `true` (R15); a missing `slotId` stays null for the repository write
+  /// boundary to mint (A9).
   factory PluginEffect.fromJson(Map<String, dynamic> json) {
     final raw = json['paramValues'];
     final values = <int, double>{};
@@ -346,11 +397,16 @@ final class PluginEffect extends TrackEffect {
         if (id != null && value is num) values[id] = value.toDouble();
       });
     }
+    // Same wrong-typed-field tolerance as BuiltInEffect.fromJson.
+    final rawEnabled = json['enabled'];
+    final rawSlotId = json['slotId'];
     return PluginEffect(
       ref: PluginRef.fromJson(json['plugin'] as Map<String, dynamic>),
       paramValues: values,
       state: (json['state'] as String?) ?? '',
       name: (json['name'] as String?) ?? '',
+      enabled: rawEnabled is! bool || rawEnabled,
+      slotId: rawSlotId is String ? rawSlotId : null,
     );
   }
 
@@ -378,6 +434,13 @@ final class PluginEffect extends TrackEffect {
   /// (which wins) once a scan completes. Empty when never resolved.
   final String name;
 
+  /// Whether this entry is audible (R16) — see [BuiltInEffect.enabled]. A
+  /// disabled plugin keeps its own DSP state (its tail resumes on re-enable).
+  final bool enabled;
+
+  /// The entry's stable per-slot identity (A9) — see [BuiltInEffect.slotId].
+  final String? slotId;
+
   @override
   int get typeCode => kPluginFxCode;
 
@@ -388,12 +451,16 @@ final class PluginEffect extends TrackEffect {
     List<PluginParamInfo>? params,
     String? state,
     String? name,
+    bool? enabled,
+    String? slotId,
   }) => PluginEffect(
     ref: ref ?? this.ref,
     paramValues: paramValues ?? this.paramValues,
     params: params ?? this.params,
     state: state ?? this.state,
     name: name ?? this.name,
+    enabled: enabled ?? this.enabled,
+    slotId: slotId ?? this.slotId,
   );
 
   @override
@@ -406,6 +473,9 @@ final class PluginEffect extends TrackEffect {
       },
     if (state.isNotEmpty) 'state': state,
     if (name.isNotEmpty) 'name': name,
+    // Omitted when default so a pre-FX-v3 chain's encoding is byte-unchanged.
+    if (!enabled) 'enabled': false,
+    if (slotId != null) 'slotId': slotId,
   };
 
   @override
@@ -414,6 +484,8 @@ final class PluginEffect extends TrackEffect {
       other.ref == ref &&
       other.state == state &&
       other.name == name &&
+      other.enabled == enabled &&
+      other.slotId == slotId &&
       _mapEquals(other.paramValues, paramValues);
 
   @override
@@ -421,6 +493,8 @@ final class PluginEffect extends TrackEffect {
     ref,
     state,
     name,
+    enabled,
+    slotId,
     Object.hashAllUnordered([
       for (final e in paramValues.entries) Object.hash(e.key, e.value),
     ]),

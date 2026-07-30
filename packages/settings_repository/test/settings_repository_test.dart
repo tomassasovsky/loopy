@@ -158,6 +158,24 @@ void main() {
     });
   });
 
+  group('track/master fx chains (FX v3)', () {
+    test('track chain returns null when nothing is stored', () async {
+      expect(await repository.loadTrackFxChain(0), isNull);
+    });
+
+    test('round-trips an encoded track chain envelope per channel', () async {
+      await repository.saveTrackFxChain(1, '{"chainEnabled":false}');
+      expect(await repository.loadTrackFxChain(1), '{"chainEnabled":false}');
+      expect(await repository.loadTrackFxChain(0), isNull);
+    });
+
+    test('round-trips the master chain envelope', () async {
+      expect(await repository.loadMasterFxChain(), isNull);
+      await repository.saveMasterFxChain('{"chainEnabled":true}');
+      expect(await repository.loadMasterFxChain(), '{"chainEnabled":true}');
+    });
+  });
+
   group('monitor (single chain)', () {
     test('per-input enable flag defaults to null and round-trips', () async {
       expect(await repository.loadMonitorInputEnabled(0), isNull);
