@@ -4409,22 +4409,39 @@ void main() {
     });
 
     test('a hosted plugin at a bus stage publishes as passthrough (no bus '
-        'slot ABI yet) while staying in the domain chain', () {
+        'slot ABI yet) and is MARKED unsupported in the domain chain', () {
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
 
-      repo.setTrackEffects(
-        channel: 0,
-        effects: const [
-          PluginEffect(
-            ref: PluginRef(format: PluginFormat.clap, id: 'p'),
-          ),
-        ],
-      );
+      repo
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        )
+        ..setMasterEffects(
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'q'),
+            ),
+          ],
+        );
 
-      expect(repo.trackEffects(0).single, isA<PluginEffect>());
+      // Kept, never dropped — but flagged with the D-MISS placeholder posture
+      // so it cannot read as an active slot while the engine renders `none`.
+      final trackPlugin = repo.trackEffects(0).single as PluginEffect;
+      expect(trackPlugin.unavailable, isTrue);
+      expect(trackPlugin.unsupported, isTrue);
+      expect(trackPlugin.ref.id, 'p');
+      final masterPlugin = repo.masterEffects.single as PluginEffect;
+      expect(masterPlugin.unavailable, isTrue);
+      expect(masterPlugin.unsupported, isTrue);
       expect(engine.trackFx[(0, 0)]?.name, 'none');
       expect(engine.trackFxCount[0], 1);
+      expect(engine.masterFx[0]?.name, 'none');
     });
 
     test('track/master chains and flags are projected onto LooperState', () {
@@ -4880,6 +4897,81 @@ void main() {
       // Chain-disabling the lane too makes both sides dry again.
       repo.setLaneChainEnabled(channel: 0, lane: 0, enabled: false);
       expect(repo.laneChainDivergesFromInput(0, 0), isFalse);
+    });
+
+    test('the THIRD dry shape — every slot individually disabled — also '
+        'never diverges from a dry chain (R16)', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      // Lane holds one per-slot-disabled effect (bit-exact passthrough);
+      // routed input's monitor chain is empty. Both are audibly dry.
+      repo
+        ..setLaneInput(channel: 0, lane: 0, inputChannel: 0)
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [
+            BuiltInEffect(type: TrackEffectType.reverb, enabled: false),
+          ],
+        );
+      expect(repo.laneChainDivergesFromInput(0, 0), isFalse);
+
+      // Two all-disabled chains of DIFFERENT types: still dry vs dry.
+      repo.setMonitorEffects(
+        input: 0,
+        effects: [
+          BuiltInEffect(type: TrackEffectType.drive, enabled: false),
+        ],
+      );
+      expect(repo.laneChainDivergesFromInput(0, 0), isFalse);
+
+      // Re-enabling the lane's slot makes it audible again → diverges.
+      repo.setLaneEffectEnabled(channel: 0, lane: 0, index: 0, enabled: true);
+      expect(repo.laneChainDivergesFromInput(0, 0), isTrue);
+    });
+
+    test('a WHOLESALE chain replacement drops the stale inheritedFrom '
+        'marker; edits and reorders keep it (A9)', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [
+            BuiltInEffect(type: TrackEffectType.delay),
+            BuiltInEffect(type: TrackEffectType.reverb),
+          ],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+      expect(repo.laneChainInheritedFrom(0, 0), [0]);
+
+      // An edit that keeps entries (reorder + param change) keeps the marker.
+      repo
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: repo.laneEffects(0, 0).reversed.toList(),
+        )
+        ..setLaneEffectParam(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          param: 0,
+          value: 0.9,
+        );
+      expect(repo.laneChainInheritedFrom(0, 0), [0]);
+
+      // Replacing the chain with entries sharing NO slot ids (fresh, id-less
+      // input entries get new ids minted) is a wholesale replacement — the
+      // marker describes nothing that survived and drops.
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [BuiltInEffect(type: TrackEffectType.echo)],
+      );
+      expect(repo.laneChainInheritedFrom(0, 0), isEmpty);
     });
 
     test('clear-restore carries a DISABLED flag even on a lane with an '

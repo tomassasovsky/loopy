@@ -1166,7 +1166,12 @@ class LooperRepository {
   /// commit the master loop, re-apply mix through the cached setters, then
   /// apply the rig's chains — explicitly resetting every remembered lane /
   /// monitor chain the rig does not define, so a previous session's
-  /// leftovers can never sound (or apply) under the loaded one. The crowned
+  /// leftovers can never sound (or apply) under the loaded one. EXCEPTION
+  /// (FX v3 interim): the Track-stage and Master insert chains and their
+  /// chain flags are NOT yet reset here — the session manifest cannot
+  /// describe them until part 3b's formatVersion 5, which owns their
+  /// leftover reset (R17); until then a live rig's bus chains persist
+  /// across a load. The crowned
   /// primary track is the one exception with an incomplete reset: no native
   /// "un-crown" call exists, so a channel crowned by a live/prior session can
   /// stay crowned on the ENGINE through a load that defines no crown of its
@@ -1577,23 +1582,34 @@ class LooperRepository {
   /// (there is nothing to diverge from).
   ///
   /// Audible-shape comparison, consistent with D-CHAINDIS (R18): a chain that
-  /// is EMPTY or chain-DISABLED is dry on either side — two dry chains never
-  /// diverge (even if their raw fingerprints differ), a dry chain always
-  /// diverges from an audible one, and two audible chains compare by sound
-  /// fingerprint.
+  /// is EMPTY, chain-DISABLED, or has EVERY slot individually disabled (each
+  /// renders bit-exact passthrough, R16) is dry on either side — two dry
+  /// chains never diverge (even if their raw fingerprints differ), a dry
+  /// chain always diverges from an audible one, and two audible chains
+  /// compare by sound fingerprint.
   bool laneChainDivergesFromInput(int channel, int lane) {
     final input = _laneInput[(channel, lane)] ?? lane;
     if (input < 0 || input >= kMaxInputs) return false;
-    final laneDry =
-        (_laneEffects[(channel, lane)] ?? const []).isEmpty ||
-        !laneChainEnabled(channel, lane);
-    final monitorDry =
-        (_monitorEffects[input] ?? const []).isEmpty ||
-        !monitorChainEnabled(input);
+    final laneDry = _chainAudiblyDry(
+      _laneEffects[(channel, lane)] ?? const [],
+      chainEnabled: laneChainEnabled(channel, lane),
+    );
+    final monitorDry = _chainAudiblyDry(
+      _monitorEffects[input] ?? const [],
+      chainEnabled: monitorChainEnabled(input),
+    );
     if (laneDry || monitorDry) return laneDry != monitorDry;
     return laneChainFingerprint(channel, lane) !=
         monitorChainFingerprint(input);
   }
+
+  /// Whether a chain renders bit-exact passthrough: empty, chain-disabled,
+  /// or every slot individually disabled (all three dry shapes; an empty
+  /// chain trivially satisfies the `every`).
+  static bool _chainAudiblyDry(
+    List<TrackEffect> chain, {
+    required bool chainEnabled,
+  }) => !chainEnabled || chain.every((fx) => !fx.enabled);
 
   /// Sets track [channel]'s playback gain (`0..LE_MAX_GAIN`, 2.0, +6.02 dB
   /// headroom above unity) on **every lane of it**. A
@@ -1829,6 +1845,17 @@ class LooperRepository {
       // entries that no longer exist).
       _laneChainMeta.remove((channel, lane));
     } else {
+      // Provenance follows the entries it describes (A9): when the incoming
+      // chain keeps NONE of the previous entries' slot ids — a wholesale
+      // replacement, not an edit/reorder (those carry ids through) — the
+      // inheritance marker is as stale as on the empty branch and drops too.
+      final previous = _laneEffects[(channel, lane)];
+      if (previous != null && _laneChainMeta.containsKey((channel, lane))) {
+        final kept = {for (final fx in previous) fx.slotId};
+        if (!clamped.any((fx) => kept.contains(fx.slotId))) {
+          _laneChainMeta.remove((channel, lane));
+        }
+      }
       _laneEffects[(channel, lane)] = clamped;
     }
     _reproject();
@@ -2251,9 +2278,12 @@ class LooperRepository {
   // The two bus stages mirror the lane set: a remembered chain per owner,
   // re-applied on every (re)start, with `LooperBloc` owning their state the
   // way it owns lane chains. Hosted plugins are not yet loadable at these
-  // stages (the engine's slot ABI covers lane + monitor chains only), so a
-  // PluginEffect entry stays in the domain chain but publishes as a
-  // passthrough (`none`) slot until a later part grows the native surface.
+  // stages (the engine's slot ABI covers lane + monitor chains only): a
+  // PluginEffect entry stays in the domain chain — identity + state preserved
+  // for the day a bus slot ABI lands, never silently dropped — but is MARKED
+  // unsupported at the write boundary (the D-MISS placeholder posture, via
+  // [_markBusUnsupportedPlugins]) so it never reads as an active slot, and it
+  // publishes as a passthrough (`none`) engine slot.
 
   /// Replaces track [channel]'s Track-stage (stereo bus) chain with [effects]
   /// (clamped to [kTrackEffectMax]). Empty == the engine's bit-identical
@@ -2262,7 +2292,7 @@ class LooperRepository {
     required int channel,
     required List<TrackEffect> effects,
   }) {
-    final clamped = _clampAndMint(effects);
+    final clamped = _markBusUnsupportedPlugins(_clampAndMint(effects));
     if (clamped.isEmpty) {
       _trackEffects.remove(channel);
     } else {
@@ -2282,7 +2312,7 @@ class LooperRepository {
   /// [kTrackEffectMax]). Empty == bit-identical output. Remembered and
   /// re-applied on every (re)start.
   EngineResult setMasterEffects({required List<TrackEffect> effects}) {
-    _masterEffects = _clampAndMint(effects);
+    _masterEffects = _markBusUnsupportedPlugins(_clampAndMint(effects));
     _reproject();
     if (!_intendRunning) return EngineResult.ok;
     return _applyMasterEffects();
@@ -2562,6 +2592,21 @@ class LooperRepository {
             ? effects.sublist(0, kTrackEffectMax)
             : effects,
       );
+
+  /// Marks hosted plugins in a bus-stage (Track/Master) chain with the D-MISS
+  /// placeholder posture — the engine hosts no plugins at these stages yet
+  /// (see the section comment above the bus setters), so the entry is kept
+  /// but must not read as an active slot: the UI gets the "installed but not
+  /// loadable here" placeholder instead of an active-looking silent effect.
+  static List<TrackEffect> _markBusUnsupportedPlugins(
+    List<TrackEffect> effects,
+  ) => [
+    for (final fx in effects)
+      if (fx is PluginEffect)
+        fx.copyWith(unavailable: true, unsupported: true, loading: false)
+      else
+        fx,
+  ];
 
   /// Replaces monitor [input]'s effect chain with [effects] (clamped to
   /// [kTrackEffectMax]). An empty chain is the clean (dry) path. Remembered and

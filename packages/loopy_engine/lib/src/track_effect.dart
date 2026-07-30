@@ -275,8 +275,13 @@ final class BuiltInEffect extends TrackEffect {
   /// repository write boundary to mint (A9).
   factory BuiltInEffect.fromJson(Map<String, dynamic> json) {
     final type = TrackEffectType.fromCode((json['type'] as num?)?.toInt() ?? 0);
-    final enabled = json['enabled'] as bool? ?? true;
-    final slotId = json['slotId'] as String?;
+    // `is`-checks, not casts: a wrong-typed field in a corrupt persisted
+    // chain must decode to the default, never throw a TypeError past
+    // decodeTrackEffects' FormatException-only catch.
+    final rawEnabled = json['enabled'];
+    final enabled = rawEnabled is! bool || rawEnabled;
+    final rawSlotId = json['slotId'];
+    final slotId = rawSlotId is String ? rawSlotId : null;
     final rawParams = json['params'];
     if (rawParams is! List) {
       return BuiltInEffect(type: type, enabled: enabled, slotId: slotId);
@@ -392,13 +397,16 @@ final class PluginEffect extends TrackEffect {
         if (id != null && value is num) values[id] = value.toDouble();
       });
     }
+    // Same wrong-typed-field tolerance as BuiltInEffect.fromJson.
+    final rawEnabled = json['enabled'];
+    final rawSlotId = json['slotId'];
     return PluginEffect(
       ref: PluginRef.fromJson(json['plugin'] as Map<String, dynamic>),
       paramValues: values,
       state: (json['state'] as String?) ?? '',
       name: (json['name'] as String?) ?? '',
-      enabled: json['enabled'] as bool? ?? true,
-      slotId: json['slotId'] as String?,
+      enabled: rawEnabled is! bool || rawEnabled,
+      slotId: rawSlotId is String ? rawSlotId : null,
     );
   }
 

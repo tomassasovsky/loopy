@@ -210,6 +210,26 @@ void main() {
     );
 
     blocTest<MonitorCubit, MonitorState>(
+      'a chain-DISABLED envelope with EMPTY entries still counts as saved '
+      'state — the flag survives the restart (R15)',
+      setUp: () async {
+        await settings.saveMonitorEffects(
+          0,
+          encodeFxChain(const FxChainEnvelope(chainEnabled: false)),
+        );
+      },
+      build: build,
+      act: (cubit) => cubit.load(),
+      verify: (cubit) {
+        expect(cubit.state.inputs, contains(0));
+        expect(cubit.state.forInput(0).chainEnabled, isFalse);
+        verify(
+          () => repository.setMonitorChainEnabled(input: 0, enabled: false),
+        ).called(1);
+      },
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
       'a persisted chain re-encodes as the envelope carrying the chain flag',
       setUp: () async {
         await settings.saveMonitorEffects(

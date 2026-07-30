@@ -426,6 +426,14 @@ class FakeAudioEngine implements AudioEngine {
     required int index,
     required TrackEffectType type,
   }) {
+    // D-ENSEED, modeled like the real engine: an actual type CHANGE re-seeds
+    // the slot's enabled flag to true, synchronously in this setter — so a
+    // repository that pushes enabled bits BEFORE the type/count commands has
+    // them clobbered here and fails tests exactly as it would on the native
+    // engine (the migrated-disabled-bit bug class).
+    if (laneFx[(channel, lane, index)] != type) {
+      laneFxEnabled[(channel, lane, index)] = true;
+    }
     laneFx[(channel, lane, index)] = type;
     calls.add('setLaneFx');
     return EngineResult.ok;
@@ -437,6 +445,11 @@ class FakeAudioEngine implements AudioEngine {
     required int lane,
     required int count,
   }) {
+    // D-ENSEED's second half: a slot ENTERING the active window seeds
+    // enabled, synchronously, like the engine's le_fx_seed_entering_slots.
+    for (var s = laneFxCount[(channel, lane)] ?? 0; s < count; s++) {
+      laneFxEnabled[(channel, lane, s)] = true;
+    }
     laneFxCount[(channel, lane)] = count;
     calls.add('setLaneFxCount');
     return EngineResult.ok;
@@ -523,6 +536,10 @@ class FakeAudioEngine implements AudioEngine {
     required int index,
     required TrackEffectType type,
   }) {
+    // D-ENSEED re-seed on type change — see [setLaneFx].
+    if (trackFx[(channel, index)] != type) {
+      trackFxEnabled[(channel, index)] = true;
+    }
     trackFx[(channel, index)] = type;
     calls.add('setTrackFx');
     return EngineResult.ok;
@@ -530,6 +547,10 @@ class FakeAudioEngine implements AudioEngine {
 
   @override
   EngineResult setTrackFxCount({required int channel, required int count}) {
+    // D-ENSEED entering-slot seed — see [setLaneFxCount].
+    for (var s = trackFxCount[channel] ?? 0; s < count; s++) {
+      trackFxEnabled[(channel, s)] = true;
+    }
     trackFxCount[channel] = count;
     calls.add('setTrackFxCount');
     return EngineResult.ok;
@@ -573,6 +594,10 @@ class FakeAudioEngine implements AudioEngine {
     required int index,
     required TrackEffectType type,
   }) {
+    // D-ENSEED re-seed on type change — see [setLaneFx].
+    if (masterFx[index] != type) {
+      masterFxEnabled[index] = true;
+    }
     masterFx[index] = type;
     calls.add('setMasterFx');
     return EngineResult.ok;
@@ -580,6 +605,10 @@ class FakeAudioEngine implements AudioEngine {
 
   @override
   EngineResult setMasterFxCount({required int count}) {
+    // D-ENSEED entering-slot seed — see [setLaneFxCount].
+    for (var s = masterFxCount ?? 0; s < count; s++) {
+      masterFxEnabled[s] = true;
+    }
     masterFxCount = count;
     calls.add('setMasterFxCount');
     return EngineResult.ok;
@@ -671,6 +700,10 @@ class FakeAudioEngine implements AudioEngine {
     required int index,
     required TrackEffectType type,
   }) {
+    // D-ENSEED re-seed on type change — see [setLaneFx].
+    if (monitorFx[(input, index)] != type) {
+      monitorFxEnabled[(input, index)] = true;
+    }
     monitorFx[(input, index)] = type;
     calls.add('setMonitorInputFx');
     return EngineResult.ok;
@@ -681,6 +714,10 @@ class FakeAudioEngine implements AudioEngine {
     required int input,
     required int count,
   }) {
+    // D-ENSEED entering-slot seed — see [setLaneFxCount].
+    for (var s = monitorFxCount[input] ?? 0; s < count; s++) {
+      monitorFxEnabled[(input, s)] = true;
+    }
     monitorFxCount[input] = count;
     calls.add('setMonitorInputFxCount');
     return EngineResult.ok;

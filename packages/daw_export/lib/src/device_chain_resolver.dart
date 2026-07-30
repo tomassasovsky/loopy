@@ -68,8 +68,13 @@ DeviceChainResolution resolveDeviceChain(
     return const DeviceChainResolution.resolved(<DawEffect>[]);
   }
 
-  final shared = laneEffects.first;
-  for (final lane in laneEffects.skip(1)) {
+  // Compare and resolve the lanes' AUDIBLE chains (see [_audibleEntries]):
+  // FX v3 entries carry identity (`slotId`) and a per-slot bypass flag
+  // (`enabled`) that must not affect what a chain sounds like when equal.
+  final audible = [for (final lane in laneEffects) _audibleEntries(lane)];
+
+  final shared = audible.first;
+  for (final lane in audible.skip(1)) {
     if (!_effectsEqual(shared, lane)) {
       return const DeviceChainResolution.fallback(
         DeviceChainFallbackReason.mixedLaneChains,
@@ -101,6 +106,28 @@ DeviceChainResolution resolveDeviceChain(
     for (final entry in shared) DawEffect.fromJson(entry),
   ]);
 }
+
+/// A lane's audibly ACTIVE entries, normalized for comparison and resolution
+/// (FX v3 part 3a):
+///
+/// - An entry whose `enabled` flag is `false` renders bit-exact passthrough
+///   (R16), so it is dropped — a bypassed slot must not export as an active
+///   device, and two lanes differing only by a bypassed slot share the same
+///   audible chain. (A bypassed third-party plugin is likewise inaudible, so
+///   it no longer forces the `thirdPartyPlugin` fallback.)
+/// - `slotId` is entry IDENTITY, not sound (A9): it is stripped so two lanes
+///   carrying by-value copies of the same inherited chain — which mint fresh
+///   per-lane ids by design — still compare identical, as they did before ids
+///   existed on the wire.
+List<Map<String, dynamic>> _audibleEntries(List<Map<String, dynamic>> lane) => [
+  for (final entry in lane)
+    if (entry['enabled'] != false)
+      {
+        for (final field in entry.entries)
+          if (field.key != 'slotId' && field.key != 'enabled')
+            field.key: field.value,
+      },
+];
 
 /// Whether two lanes' raw effects arrays are identical — same length, same
 /// entries, same order. Order-sensitive and value-sensitive on purpose: two

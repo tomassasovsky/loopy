@@ -72,6 +72,23 @@ class MonitorCubit extends Cubit<MonitorState> {
     }
     emit(MonitorState(inputs: restored));
     restored.values.forEach(_applyMonitor);
+    // Mint-once for legacy payloads (A9): the repository minted stable slot
+    // ids for any id-less restored entries while the chains were applied
+    // above. Re-read the minted chains into state and persist them back, or
+    // every launch would re-mint DIFFERENT ids for the same legacy chain.
+    for (final monitor in restored.values) {
+      if (isClosed) return;
+      if (!monitor.effects.any((fx) => fx.slotId == null)) continue;
+      final minted = _repository.monitorEffects(monitor.input);
+      // Nothing applied (engine not running / a unit-test fake): keep the
+      // un-minted state; the next real apply re-mints and persists.
+      if (minted.isEmpty) continue;
+      emit(state.withInput(monitor.copyWith(effects: minted)));
+      await _settings.saveMonitorEffects(
+        monitor.input,
+        _encodedChain(monitor.input, minted),
+      );
+    }
   }
 
   /// Reads hardware [input]'s persisted single-chain monitor, or null if none
@@ -84,12 +101,18 @@ class MonitorCubit extends Cubit<MonitorState> {
     final muted = await _settings.loadMonitorMute(input);
     final encodedChain = await _settings.loadMonitorEffects(input);
     final chain = decodeFxChain(encodedChain);
+    // A chain-DISABLED envelope counts as saved state even with no entries:
+    // the encode side can write {chainEnabled:false, entries:[]} (disable the
+    // chain, then remove its last effect), and dropping it here would revert
+    // the flag to enabled on the next boot — the disable-survives-restart
+    // guarantee R15 pins.
     final anySaved =
         enabled != null ||
         outputMask != null ||
         volume != null ||
         muted != null ||
-        chain.entries.isNotEmpty;
+        chain.entries.isNotEmpty ||
+        !chain.chainEnabled;
     if (!anySaved) return null;
     return InputMonitor(
       input: input,

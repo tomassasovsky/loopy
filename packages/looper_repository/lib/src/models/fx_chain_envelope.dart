@@ -108,8 +108,12 @@ FxChainEnvelope decodeFxChain(String? encoded) {
   final meta = rawMeta is Map<String, dynamic>
       ? FxChainMeta.fromJson(rawMeta)
       : null;
+  // Wrong-TYPED fields must never throw (the malformed-input contract above):
+  // this decoder runs uncaught on the boot path, so a corrupt persisted
+  // string aborting decode would abort bootstrap. An `is`-check, not a cast.
+  final rawChainEnabled = raw['chainEnabled'];
   return FxChainEnvelope(
-    chainEnabled: raw['chainEnabled'] as bool? ?? true,
+    chainEnabled: rawChainEnabled is! bool || rawChainEnabled,
     meta: meta != null && meta.isInherited ? meta : null,
     entries: decodeTrackEffects(jsonEncode(raw['entries'])),
   );

@@ -61,6 +61,98 @@ void main() {
       ]);
     });
 
+    test('chains differing only by slotId resolve — entry identity is not '
+        'sound (FX v3 A9)', () {
+      // Two lanes inheriting the same monitor chain mint per-lane-unique
+      // slot ids by design; the audible chains are identical.
+      final laneA = [
+        {
+          ..._fx(3, [0.35, 0.35, 0.35, 0.0]),
+          'slotId': 'a-1',
+        },
+      ];
+      final laneB = [
+        {
+          ..._fx(3, [0.35, 0.35, 0.35, 0.0]),
+          'slotId': 'b-7',
+        },
+      ];
+      final result = resolveDeviceChain([laneA, laneB]);
+      expect(result.fallbackReason, isNull);
+      expect(result.chain, [
+        const DawEffect(type: 3, params: [0.35, 0.35, 0.35, 0.0]),
+      ]);
+    });
+
+    test('a per-slot DISABLED entry is dropped — bypassed slots must not '
+        'export as active devices (FX v3 R16)', () {
+      final result = resolveDeviceChain([
+        [
+          {
+            ..._fx(3, [0.35, 0.35, 0.35, 0.0]),
+            'enabled': false,
+          },
+          _fx(7, [0.5, 0.5, 0.35, 0.0]),
+        ],
+      ]);
+      expect(result.fallbackReason, isNull);
+      expect(result.chain, [
+        const DawEffect(type: 7, params: [0.5, 0.5, 0.35, 0.0]),
+      ]);
+    });
+
+    test('lanes differing only by a disabled slot share the same audible '
+        'chain and resolve', () {
+      final laneA = [
+        {
+          ..._fx(1, [0.5, 0.8, 0.0, 0.0]),
+          'enabled': false,
+        },
+        _fx(7, [0.5, 0.5, 0.35, 0.0]),
+      ];
+      final laneB = [
+        _fx(7, [0.5, 0.5, 0.35, 0.0]),
+      ];
+      final result = resolveDeviceChain([laneA, laneB]);
+      expect(result.fallbackReason, isNull);
+      expect(result.chain, [
+        const DawEffect(type: 7, params: [0.5, 0.5, 0.35, 0.0]),
+      ]);
+    });
+
+    test('a DISABLED third-party plugin entry is inaudible and no longer '
+        'forces the thirdPartyPlugin fallback', () {
+      final result = resolveDeviceChain([
+        [
+          {
+            'type': kPluginFxCode,
+            'plugin': {'format': 1, 'id': 'p', 'version': 0},
+            'enabled': false,
+          },
+          _fx(1, [0.5, 0.8, 0.0, 0.0]),
+        ],
+      ]);
+      expect(result.fallbackReason, isNull);
+      expect(result.chain, [
+        const DawEffect(type: 1, params: [0.5, 0.8, 0.0, 0.0]),
+      ]);
+    });
+
+    test('per-slot enabled DIFFERENCES on the same entries still fall back '
+        '(different audible chains)', () {
+      final laneA = [
+        {
+          ..._fx(3, [0.35, 0.35, 0.35, 0.0]),
+          'enabled': false,
+        },
+      ];
+      final laneB = [
+        _fx(3, [0.35, 0.35, 0.35, 0.0]),
+      ];
+      final result = resolveDeviceChain([laneA, laneB]);
+      expect(result.fallbackReason, DeviceChainFallbackReason.mixedLaneChains);
+    });
+
     test(
       'falls back to mixedLaneChains when lanes have the same effect but '
       'different param values (near-miss, not a false match)',

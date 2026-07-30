@@ -460,6 +460,19 @@ void main() {
       expect(plugin.slotId, 'p-1');
     });
 
+    test('wrong-TYPED enabled/slotId decode to defaults, never throw', () {
+      final decoded = decodeTrackEffects(
+        '[{"type":1,"params":[0.5,0.8,0,0],"enabled":"yes","slotId":7},'
+        '{"type":8,"plugin":{"format":1,"id":"p","version":0},'
+        '"enabled":1,"slotId":{}}]',
+      );
+      expect(decoded, hasLength(2));
+      expect((decoded[0] as BuiltInEffect).enabled, isTrue);
+      expect((decoded[0] as BuiltInEffect).slotId, isNull);
+      expect((decoded[1] as PluginEffect).enabled, isTrue);
+      expect((decoded[1] as PluginEffect).slotId, isNull);
+    });
+
     test('missing keys decode enabled=true / slotId=null (legacy)', () {
       final decoded = decodeTrackEffects(
         '[{"type":1,"params":[0.5,0.8,0,0]},'

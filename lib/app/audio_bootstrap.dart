@@ -306,6 +306,24 @@ Future<AutoStartResult> tryAutoStartEngine({
             lane: lane,
             inheritedFrom: chain.meta?.inheritedFrom ?? const [],
           );
+        // Mint-once for legacy payloads (A9): entries that decoded id-less
+        // were just minted stable slot ids at the repository write boundary —
+        // persist the minted envelope back, or every launch would re-mint
+        // DIFFERENT ids and a binding stored against one would dangle after
+        // the next restart.
+        if (chain.entries.any((e) => e.slotId == null)) {
+          await settings.saveLaneEffects(
+            track.channel,
+            lane,
+            encodeFxChain(
+              FxChainEnvelope(
+                chainEnabled: chain.chainEnabled,
+                meta: chain.meta,
+                entries: repository.laneEffects(track.channel, lane),
+              ),
+            ),
+          );
+        }
       }
       if (!chain.chainEnabled) {
         repository.setLaneChainEnabled(
@@ -324,6 +342,18 @@ Future<AutoStartResult> tryAutoStartEngine({
         channel: track.channel,
         effects: trackChain.entries,
       );
+      // Mint-once (A9) — see the lane restore above.
+      if (trackChain.entries.any((e) => e.slotId == null)) {
+        await settings.saveTrackFxChain(
+          track.channel,
+          encodeFxChain(
+            FxChainEnvelope(
+              chainEnabled: trackChain.chainEnabled,
+              entries: repository.trackEffects(track.channel),
+            ),
+          ),
+        );
+      }
     }
     if (!trackChain.chainEnabled) {
       repository.setTrackChainEnabled(channel: track.channel, enabled: false);
@@ -334,6 +364,17 @@ Future<AutoStartResult> tryAutoStartEngine({
   final masterChain = decodeFxChain(await settings.loadMasterFxChain());
   if (masterChain.entries.isNotEmpty) {
     repository.setMasterEffects(effects: masterChain.entries);
+    // Mint-once (A9) — see the lane restore above.
+    if (masterChain.entries.any((e) => e.slotId == null)) {
+      await settings.saveMasterFxChain(
+        encodeFxChain(
+          FxChainEnvelope(
+            chainEnabled: masterChain.chainEnabled,
+            entries: repository.masterEffects,
+          ),
+        ),
+      );
+    }
   }
   if (!masterChain.chainEnabled) {
     repository.setMasterChainEnabled(enabled: false);

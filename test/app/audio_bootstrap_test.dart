@@ -599,6 +599,48 @@ void main() {
       expect(engine.laneFxParam[(0, 0, 1, 1)], 0.42);
     });
 
+    test('a LEGACY restored chain persists its freshly-minted slot ids back '
+        '(mint-once, A9)', () async {
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(
+          sampleRate: 48000,
+          bufferFrames: 128,
+        ),
+      );
+      // Pre-FX-v3 payload: bare array, no slot ids anywhere.
+      await settings.saveLaneEffects(
+        0,
+        0,
+        encodeTrackEffects([BuiltInEffect(type: TrackEffectType.filter)]),
+      );
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+
+      final started = await tryAutoStartEngine(
+        repository: repository,
+        settings: settings,
+      );
+      expect(started.started, isTrue);
+
+      // The minted envelope was written back, so the NEXT launch decodes the
+      // same ids instead of re-minting different ones.
+      final persisted = decodeFxChain(await settings.loadLaneEffects(0, 0));
+      final mintedId = persisted.entries.single.slotId;
+      expect(mintedId, isNotNull);
+      expect(mintedId, repository.laneEffects(0, 0).single.slotId);
+    });
+
     test('restores an ENVELOPE lane chain — flag + inheritance meta ride the '
         'one key (R15) — plus the track/master chains', () async {
       await settings.saveAudioConfig(

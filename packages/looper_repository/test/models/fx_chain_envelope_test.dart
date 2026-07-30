@@ -70,6 +70,32 @@ void main() {
       expect(decodeFxChain('42'), const FxChainEnvelope());
     });
 
+    test('wrong-TYPED fields never throw — corrupt persisted strings decode '
+        'to safe defaults on the uncaught boot path', () {
+      // Envelope-level: a non-bool chainEnabled falls back to enabled.
+      expect(
+        decodeFxChain('{"chainEnabled":1,"entries":[]}'),
+        const FxChainEnvelope(),
+      );
+      expect(
+        decodeFxChain('{"chainEnabled":"no","entries":[]}').chainEnabled,
+        isTrue,
+      );
+      // Entry-level: wrong-typed enabled/slotId decode to their defaults.
+      final decoded = decodeFxChain(
+        '{"chainEnabled":true,"entries":['
+        '{"type":1,"params":[0.5,0.8,0,0],"enabled":"true","slotId":123}]}',
+      );
+      expect(decoded.entries.single.enabled, isTrue);
+      expect(decoded.entries.single.slotId, isNull);
+      // Wrong-typed entries/meta shapes degrade, never throw.
+      expect(
+        decodeFxChain('{"chainEnabled":true,"entries":5}').entries,
+        isEmpty,
+      );
+      expect(decodeFxChain('{"meta":[1],"entries":[]}').meta, isNull);
+    });
+
     test('an empty non-inherited meta is not persisted', () {
       final encoded = encodeFxChain(
         const FxChainEnvelope(meta: FxChainMeta()),
