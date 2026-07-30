@@ -1,8 +1,8 @@
 name: routing_graph
 description: >-
   Reusable routing-graph UI primitives: a zoom/pan canvas, bezier wires, port
-  chips, draggable effect-chain cards, and the geometry helpers that lay them
-  out. Theming via a package-local RoutingGraphTheme extension.
+  chips, and the geometry helpers that lay them out. Theming via a
+  package-local RoutingGraphTheme extension.
 version: 0.1.0
 publish_to: none
 

@@ -301,9 +301,6 @@
     },
     "fxEditorInputConsequence": "se graba en las nuevas tomas",
     "fxEditorLaneConsequence": "moldea la reproducción, no destructivo",
-    "fxEditorChainIn": "ENT",
-    "fxEditorChainOut": "SAL",
-    "fxEditorEmptySelection": "Selecciona un bloque para editar sus controles.",
     "fxEditorScopeGone": "Esta cadena ya no existe.",
     "fxEditorEditBlock": "Editar {name}",
     "@fxEditorEditBlock": {
@@ -402,7 +399,6 @@
     "paramMode": "Modo",
     "octaverModePhaseVocoder": "Vocoder de fase",
     "octaverModePsola": "PSOLA",
-    "octaverLatencyHint": "El vocoder de fase añade ~{ms} ms — usa PSOLA para monitoreo en vivo",
     "pitchUnison": "Unísono",
     "pitchOctaves": "{sign}{count} oct",
     "pitchSemitones": "{sign}{count} st",

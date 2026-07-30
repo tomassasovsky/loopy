@@ -584,9 +584,6 @@
     },
     "fxEditorInputConsequence": "prints into new takes",
     "fxEditorLaneConsequence": "shapes playback, non-destructive",
-    "fxEditorChainIn": "IN",
-    "fxEditorChainOut": "OUT",
-    "fxEditorEmptySelection": "Select a block to edit its controls.",
     "fxEditorScopeGone": "This chain no longer exists.",
     "fxEditorEditBlock": "Edit {name}",
     "@fxEditorEditBlock": {
@@ -751,14 +748,6 @@
     "paramMode": "Mode",
     "octaverModePhaseVocoder": "Phase Vocoder",
     "octaverModePsola": "PSOLA",
-    "octaverLatencyHint": "Phase Vocoder adds ~{ms} ms — use PSOLA for live monitoring",
-    "@octaverLatencyHint": {
-        "placeholders": {
-            "ms": {
-                "type": "String"
-            }
-        }
-    },
     "pitchUnison": "Unison",
     "pitchOctaves": "{sign}{count} oct",
     "@pitchOctaves": {
