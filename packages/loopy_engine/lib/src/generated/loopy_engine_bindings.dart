@@ -2569,6 +2569,288 @@ class LoopyEngineBindings {
       _le_engine_set_monitor_input_fx_chain_enabledPtr
           .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
+  /// Sets Track-stage chain entry [index] (0..LE_FX_MAX-1) of track [channel] to
+  /// [type]. Changing the type resets that entry's DSP state; delay-lined types
+  /// lazily allocate their buffers on this calling thread and seed the type's
+  /// default parameters. Use le_engine_set_track_fx_count to make entries
+  /// active.
+  int le_engine_set_track_fx(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int index,
+    int type,
+  ) {
+    return _le_engine_set_track_fx(
+      engine,
+      channel,
+      index,
+      type,
+    );
+  }
+
+  late final _le_engine_set_track_fxPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_set_track_fx');
+  late final _le_engine_set_track_fx = _le_engine_set_track_fxPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+
+  /// Sets track [channel]'s Track-stage active chain length to [count]
+  /// (0..LE_FX_MAX): only entries [0, count) are processed, in order. Count 0
+  /// (empty) restores the bit-identical per-lane routing path.
+  int le_engine_set_track_fx_count(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int count,
+  ) {
+    return _le_engine_set_track_fx_count(
+      engine,
+      channel,
+      count,
+    );
+  }
+
+  late final _le_engine_set_track_fx_countPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_track_fx_count');
+  late final _le_engine_set_track_fx_count = _le_engine_set_track_fx_countPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// Sets parameter [param] (0..LE_FX_PARAMS-1) of track [channel]'s Track-stage
+  /// chain entry [index] to [value] (clamped to 0..1). Direct atomic publish —
+  /// works whether or not the device is running.
+  int le_engine_set_track_fx_param(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int index,
+    int param,
+    double value,
+  ) {
+    return _le_engine_set_track_fx_param(
+      engine,
+      channel,
+      index,
+      param,
+      value,
+    );
+  }
+
+  late final _le_engine_set_track_fx_paramPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_track_fx_param');
+  late final _le_engine_set_track_fx_param = _le_engine_set_track_fx_paramPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, int, int, double)
+      >();
+
+  /// Enables/disables track [channel]'s Track-stage chain entry [index] — the
+  /// bus twin of le_engine_set_lane_fx_enabled, identical contract: direct
+  /// atomic publish (no ring, works while stopped), click-free ~5 ms dry/wet
+  /// crossfade on the running audio thread, no tail spill on bypass, built-in
+  /// DSP state reset on re-enable, default enabled, and an ACTUAL type change
+  /// via le_engine_set_track_fx re-seeds the flag to 1. Never changes routing
+  /// topology (see the section doc above).
+  int le_engine_set_track_fx_enabled(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int index,
+    int enabled,
+  ) {
+    return _le_engine_set_track_fx_enabled(
+      engine,
+      channel,
+      index,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_track_fx_enabledPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_set_track_fx_enabled');
+  late final _le_engine_set_track_fx_enabled =
+      _le_engine_set_track_fx_enabledPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+
+  /// Enables/disables track [channel]'s WHOLE Track-stage chain in one atomic
+  /// flip without touching the per-entry flags — the bus twin of
+  /// le_engine_set_lane_fx_chain_enabled, same contract. Default enabled.
+  /// Disabling yields dry-through-the-bus, NOT a return to per-lane routing —
+  /// only emptying the chain does that.
+  int le_engine_set_track_fx_chain_enabled(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int enabled,
+  ) {
+    return _le_engine_set_track_fx_chain_enabled(
+      engine,
+      channel,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_track_fx_chain_enabledPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_track_fx_chain_enabled');
+  late final _le_engine_set_track_fx_chain_enabled =
+      _le_engine_set_track_fx_chain_enabledPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// Sets Master insert chain entry [index] (0..LE_FX_MAX-1) to [type]. Same
+  /// contract as le_engine_set_track_fx (type change resets DSP state, buffers
+  /// allocate on this calling thread, defaults seeded on an actual change). Use
+  /// le_engine_set_master_fx_count to make entries active.
+  int le_engine_set_master_fx(
+    ffi.Pointer<le_engine> engine,
+    int index,
+    int type,
+  ) {
+    return _le_engine_set_master_fx(
+      engine,
+      index,
+      type,
+    );
+  }
+
+  late final _le_engine_set_master_fxPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_master_fx');
+  late final _le_engine_set_master_fx = _le_engine_set_master_fxPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// Sets the Master insert active chain length to [count] (0..LE_FX_MAX).
+  /// Count 0 (empty) restores bit-identical output.
+  int le_engine_set_master_fx_count(
+    ffi.Pointer<le_engine> engine,
+    int count,
+  ) {
+    return _le_engine_set_master_fx_count(
+      engine,
+      count,
+    );
+  }
+
+  late final _le_engine_set_master_fx_countPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_master_fx_count');
+  late final _le_engine_set_master_fx_count = _le_engine_set_master_fx_countPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Sets parameter [param] (0..LE_FX_PARAMS-1) of Master insert chain entry
+  /// [index] to [value] (clamped to 0..1). Direct atomic publish — works
+  /// whether or not the device is running.
+  int le_engine_set_master_fx_param(
+    ffi.Pointer<le_engine> engine,
+    int index,
+    int param,
+    double value,
+  ) {
+    return _le_engine_set_master_fx_param(
+      engine,
+      index,
+      param,
+      value,
+    );
+  }
+
+  late final _le_engine_set_master_fx_paramPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_master_fx_param');
+  late final _le_engine_set_master_fx_param = _le_engine_set_master_fx_paramPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, double)>();
+
+  /// Enables/disables Master insert chain entry [index] — same contract as
+  /// le_engine_set_track_fx_enabled (direct store, works while stopped,
+  /// click-free ramp, no tail spill, re-enable reset, default enabled, type
+  /// change re-seeds to 1).
+  int le_engine_set_master_fx_enabled(
+    ffi.Pointer<le_engine> engine,
+    int index,
+    int enabled,
+  ) {
+    return _le_engine_set_master_fx_enabled(
+      engine,
+      index,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_master_fx_enabledPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_master_fx_enabled');
+  late final _le_engine_set_master_fx_enabled =
+      _le_engine_set_master_fx_enabledPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// Enables/disables the WHOLE Master insert chain in one atomic flip without
+  /// touching the per-entry flags — same contract as
+  /// le_engine_set_track_fx_chain_enabled. Default enabled.
+  int le_engine_set_master_fx_chain_enabled(
+    ffi.Pointer<le_engine> engine,
+    int enabled,
+  ) {
+    return _le_engine_set_master_fx_chain_enabled(
+      engine,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_master_fx_chain_enabledPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_master_fx_chain_enabled');
+  late final _le_engine_set_master_fx_chain_enabled =
+      _le_engine_set_master_fx_chain_enabledPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// ---- structural output gate ---- *
   /// Turns hardware output [output] on/off as a routing target. A disabled output is
   /// skipped in the mix fan-out regardless of any lane/monitor mask pointing at it,
@@ -3767,6 +4049,26 @@ enum le_command_code {
   /// rejected — see le_engine_set_clock_mode.
   LE_CMD_SET_CLOCK_MODE(48),
 
+  /// set a track's Track-stage chain entry type (and
+  /// reset its DSP state). fx arm: channel, index,
+  /// type (lane unused).
+  LE_CMD_SET_TRACK_FX(49),
+
+  /// set a track's Track-stage active chain
+  /// length. fxcount arm: channel, count
+  /// (lane unused).
+  LE_CMD_SET_TRACK_FX_COUNT(50),
+
+  /// set the Master insert chain entry type (and
+  /// reset its DSP state). fx arm: index, type
+  /// (channel + lane unused).
+  LE_CMD_SET_MASTER_FX(51),
+
+  /// set the Master insert active chain
+  /// length. fxcount arm: count (channel +
+  /// lane unused).
+  LE_CMD_SET_MASTER_FX_COUNT(52),
+
   /// a completed overdub-pass snapshot. evt arm:
   /// channel, slot, generation.
   LE_EVT_LAYER_RETIRED(100);
@@ -3824,6 +4126,10 @@ enum le_command_code {
     46 => LE_CMD_CROWN_PRIMARY,
     47 => LE_CMD_SET_ONE_SHOT,
     48 => LE_CMD_SET_CLOCK_MODE,
+    49 => LE_CMD_SET_TRACK_FX,
+    50 => LE_CMD_SET_TRACK_FX_COUNT,
+    51 => LE_CMD_SET_MASTER_FX,
+    52 => LE_CMD_SET_MASTER_FX_COUNT,
     100 => LE_EVT_LAYER_RETIRED,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };

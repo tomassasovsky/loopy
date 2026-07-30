@@ -663,5 +663,79 @@ void main() {
       );
       expect(engine.monitorFxFingerprint(input: 0), isNot(enabled));
     });
+
+    // Track-stage + Master insert setters (FX v3 part 1b): the native engine
+    // validates every argument, so an ok/invalid split across the same call
+    // proves each argument passes through the FFI seam intact.
+    test('track chain setters pass through with native validation', () {
+      expect(
+        engine.setTrackFx(channel: 0, index: 0, type: TrackEffectType.drive),
+        EngineResult.ok,
+      );
+      expect(engine.setTrackFxCount(channel: 0, count: 1), EngineResult.ok);
+      expect(
+        engine.setTrackFxParam(channel: 0, index: 0, param: 1, value: 0.5),
+        EngineResult.ok,
+      );
+      expect(
+        engine.setTrackFxEnabled(channel: 0, index: 0, enabled: false),
+        EngineResult.ok,
+      );
+      expect(
+        engine.setTrackFxChainEnabled(channel: 0, enabled: false),
+        EngineResult.ok,
+      );
+
+      expect(
+        engine.setTrackFx(channel: -1, index: 0, type: TrackEffectType.drive),
+        EngineResult.invalid,
+      );
+      expect(
+        engine.setTrackFx(channel: 0, index: 99, type: TrackEffectType.drive),
+        EngineResult.invalid,
+      );
+      expect(
+        engine.setTrackFxParam(channel: 0, index: 0, param: 99, value: 0.5),
+        EngineResult.invalid,
+      );
+      expect(
+        engine.setTrackFxEnabled(channel: 99, index: 0, enabled: true),
+        EngineResult.invalid,
+      );
+      expect(
+        engine.setTrackFxChainEnabled(channel: -1, enabled: true),
+        EngineResult.invalid,
+      );
+    });
+
+    test('master chain setters pass through with native validation', () {
+      expect(
+        engine.setMasterFx(index: 0, type: TrackEffectType.reverb),
+        EngineResult.ok,
+      );
+      expect(engine.setMasterFxCount(count: 1), EngineResult.ok);
+      expect(
+        engine.setMasterFxParam(index: 0, param: 0, value: 0.5),
+        EngineResult.ok,
+      );
+      expect(
+        engine.setMasterFxEnabled(index: 0, enabled: false),
+        EngineResult.ok,
+      );
+      expect(engine.setMasterFxChainEnabled(enabled: false), EngineResult.ok);
+
+      expect(
+        engine.setMasterFx(index: -1, type: TrackEffectType.reverb),
+        EngineResult.invalid,
+      );
+      expect(
+        engine.setMasterFxParam(index: 99, param: 0, value: 0.5),
+        EngineResult.invalid,
+      );
+      expect(
+        engine.setMasterFxEnabled(index: 99, enabled: true),
+        EngineResult.invalid,
+      );
+    });
   }, skip: skip);
 }

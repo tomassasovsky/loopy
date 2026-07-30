@@ -376,6 +376,28 @@ typedef enum le_command_code {
   LE_CMD_SET_CLOCK_MODE = 48, /* arg_i = le_clock_mode. RECEIVE (2) is
                                * rejected — see le_engine_set_clock_mode. */
 
+  /* ---- Track-stage + Master insert chains (FX v3 part 1b) ----
+   * The bus twins of the lane / monitor FX commands: type/count ride the ring
+   * so the audio thread resets the entry's DSP state in lockstep, while
+   * params and the enable flags are direct atomic stores (no command). The
+   * track commands reuse the typed `fx` / `fxcount` arms with the lane field
+   * unused; the master commands need no channel (one engine-level chain), so
+   * their channel field is unused too. NONE of these are perf-logged:
+   * track/master chains are manifest-only (part 9's stems decision — the arm
+   * manifest carries them from part 3; nothing replays them). */
+  LE_CMD_SET_TRACK_FX = 49, /* set a track's Track-stage chain entry type (and
+                             * reset its DSP state). fx arm: channel, index,
+                             * type (lane unused). */
+  LE_CMD_SET_TRACK_FX_COUNT = 50, /* set a track's Track-stage active chain
+                                   * length. fxcount arm: channel, count
+                                   * (lane unused). */
+  LE_CMD_SET_MASTER_FX = 51, /* set the Master insert chain entry type (and
+                              * reset its DSP state). fx arm: index, type
+                              * (channel + lane unused). */
+  LE_CMD_SET_MASTER_FX_COUNT = 52, /* set the Master insert active chain
+                                    * length. fxcount arm: count (channel +
+                                    * lane unused). */
+
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
   LE_EVT_LAYER_RETIRED = 100, /* a completed overdub-pass snapshot. evt arm:
@@ -1554,6 +1576,109 @@ LE_EXPORT int32_t le_engine_set_monitor_input_fx_enabled(le_engine* engine,
 LE_EXPORT int32_t le_engine_set_monitor_input_fx_chain_enabled(le_engine* engine,
                                                                int32_t input,
                                                                int32_t enabled);
+
+/* ---- Track-stage (per-track stereo bus) chain (FX v3 part 1b) ---- *
+ * Each track owns ONE Track-stage chain, downstream of its per-lane chains.
+ * While the chain is EMPTY (count 0 — the default and the state every
+ * existing session loads into) the engine's per-lane routing is bit-identical
+ * to the chain never having existed. When non-empty, the track's audible
+ * lanes sum into one stereo pair, the chain runs once per frame on it, and
+ * the wet result routes via the UNION of those lanes' enabled output masks —
+ * a documented behavior change that only occurs when track FX are added to a
+ * divergent-mask configuration. Topology keys off emptiness, not enabled: a
+ * non-empty but disabled chain keeps the bus topology (the part-1a bypass
+ * makes it dry), so an enable stomp toggles DSP, never routing. The chain
+ * ticks every frame it is non-empty (delay tails / LFO phase stay continuous
+ * over silence) and routes only while some lane is audible.
+ *
+ * Track/Master chains sit post-capture: they do not affect record alignment,
+ * so fx_added_latency_frames (monitored-path record alignment) is unchanged
+ * by anything set here. */
+
+/* Sets Track-stage chain entry [index] (0..LE_FX_MAX-1) of track [channel] to
+ * [type]. Changing the type resets that entry's DSP state; delay-lined types
+ * lazily allocate their buffers on this calling thread and seed the type's
+ * default parameters. Use le_engine_set_track_fx_count to make entries
+ * active. */
+LE_EXPORT int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel,
+                                         int32_t index, int32_t type);
+
+/* Sets track [channel]'s Track-stage active chain length to [count]
+ * (0..LE_FX_MAX): only entries [0, count) are processed, in order. Count 0
+ * (empty) restores the bit-identical per-lane routing path. */
+LE_EXPORT int32_t le_engine_set_track_fx_count(le_engine* engine,
+                                               int32_t channel, int32_t count);
+
+/* Sets parameter [param] (0..LE_FX_PARAMS-1) of track [channel]'s Track-stage
+ * chain entry [index] to [value] (clamped to 0..1). Direct atomic publish —
+ * works whether or not the device is running. */
+LE_EXPORT int32_t le_engine_set_track_fx_param(le_engine* engine,
+                                               int32_t channel, int32_t index,
+                                               int32_t param, float value);
+
+/* Enables/disables track [channel]'s Track-stage chain entry [index] — the
+ * bus twin of le_engine_set_lane_fx_enabled, identical contract: direct
+ * atomic publish (no ring, works while stopped), click-free ~5 ms dry/wet
+ * crossfade on the running audio thread, no tail spill on bypass, built-in
+ * DSP state reset on re-enable, default enabled, and an ACTUAL type change
+ * via le_engine_set_track_fx re-seeds the flag to 1. Never changes routing
+ * topology (see the section doc above). */
+LE_EXPORT int32_t le_engine_set_track_fx_enabled(le_engine* engine,
+                                                 int32_t channel, int32_t index,
+                                                 int32_t enabled);
+
+/* Enables/disables track [channel]'s WHOLE Track-stage chain in one atomic
+ * flip without touching the per-entry flags — the bus twin of
+ * le_engine_set_lane_fx_chain_enabled, same contract. Default enabled.
+ * Disabling yields dry-through-the-bus, NOT a return to per-lane routing —
+ * only emptying the chain does that. */
+LE_EXPORT int32_t le_engine_set_track_fx_chain_enabled(le_engine* engine,
+                                                       int32_t channel,
+                                                       int32_t enabled);
+
+/* ---- Master insert chain (FX v3 part 1b) ---- *
+ * ONE engine-level chain inserted on the summed track mix, before master
+ * gain/limiter. Live monitor signals are summed AFTER it and stay uncolored
+ * (live-through sound stays predictable); master gain + limiter still apply
+ * to both, unchanged. While the chain is EMPTY the output is bit-identical
+ * to the chain never having existed. FX kernels are strict stereo, so for
+ * ch_out != 2 the chain processes the FIRST ENABLED output pair and passes
+ * every other channel through bit-exact dry; ch_out == 1 processes mono as
+ * l == r. Like the Track stage, this sits post-capture and leaves
+ * fx_added_latency_frames untouched. */
+
+/* Sets Master insert chain entry [index] (0..LE_FX_MAX-1) to [type]. Same
+ * contract as le_engine_set_track_fx (type change resets DSP state, buffers
+ * allocate on this calling thread, defaults seeded on an actual change). Use
+ * le_engine_set_master_fx_count to make entries active. */
+LE_EXPORT int32_t le_engine_set_master_fx(le_engine* engine, int32_t index,
+                                          int32_t type);
+
+/* Sets the Master insert active chain length to [count] (0..LE_FX_MAX).
+ * Count 0 (empty) restores bit-identical output. */
+LE_EXPORT int32_t le_engine_set_master_fx_count(le_engine* engine,
+                                                int32_t count);
+
+/* Sets parameter [param] (0..LE_FX_PARAMS-1) of Master insert chain entry
+ * [index] to [value] (clamped to 0..1). Direct atomic publish — works
+ * whether or not the device is running. */
+LE_EXPORT int32_t le_engine_set_master_fx_param(le_engine* engine,
+                                                int32_t index, int32_t param,
+                                                float value);
+
+/* Enables/disables Master insert chain entry [index] — same contract as
+ * le_engine_set_track_fx_enabled (direct store, works while stopped,
+ * click-free ramp, no tail spill, re-enable reset, default enabled, type
+ * change re-seeds to 1). */
+LE_EXPORT int32_t le_engine_set_master_fx_enabled(le_engine* engine,
+                                                  int32_t index,
+                                                  int32_t enabled);
+
+/* Enables/disables the WHOLE Master insert chain in one atomic flip without
+ * touching the per-entry flags — same contract as
+ * le_engine_set_track_fx_chain_enabled. Default enabled. */
+LE_EXPORT int32_t le_engine_set_master_fx_chain_enabled(le_engine* engine,
+                                                        int32_t enabled);
 
 /* ---- structural output gate ---- *
  * Turns hardware output [output] on/off as a routing target. A disabled output is

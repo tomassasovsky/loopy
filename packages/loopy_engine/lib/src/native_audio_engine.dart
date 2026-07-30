@@ -922,6 +922,59 @@ class NativeAudioEngine implements AudioEngine {
     );
   }
 
+  // ---- Master insert chain (FX v3 part 1b) ----
+
+  @override
+  EngineResult setMasterFx({
+    required int index,
+    required TrackEffectType type,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_master_fx(_engine, index, type.code),
+    );
+  }
+
+  @override
+  EngineResult setMasterFxCount({required int count}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_master_fx_count(_engine, count),
+    );
+  }
+
+  @override
+  EngineResult setMasterFxParam({
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_master_fx_param(_engine, index, param, value),
+    );
+  }
+
+  @override
+  EngineResult setMasterFxEnabled({required int index, required bool enabled}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_master_fx_enabled(
+        _engine,
+        index,
+        enabled ? 1 : 0,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setMasterFxChainEnabled({required bool enabled}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_master_fx_chain_enabled(_engine, enabled ? 1 : 0),
+    );
+  }
+
   @override
   EngineResult setOverdubFeedback(double feedback) {
     _checkAlive();
@@ -1127,6 +1180,79 @@ class NativeAudioEngine implements AudioEngine {
   @override
   int laneFxFingerprint({required int channel, required int lane}) =>
       _bindings.le_engine_lane_fx_fingerprint(_engine, channel, lane);
+
+  // ---- Track-stage (per-track stereo bus) chain (FX v3 part 1b) ----
+
+  @override
+  EngineResult setTrackFx({
+    required int channel,
+    required int index,
+    required TrackEffectType type,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_fx(_engine, channel, index, type.code),
+    );
+  }
+
+  @override
+  EngineResult setTrackFxCount({required int channel, required int count}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_fx_count(_engine, channel, count),
+    );
+  }
+
+  @override
+  EngineResult setTrackFxParam({
+    required int channel,
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_fx_param(
+        _engine,
+        channel,
+        index,
+        param,
+        value,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setTrackFxEnabled({
+    required int channel,
+    required int index,
+    required bool enabled,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_fx_enabled(
+        _engine,
+        channel,
+        index,
+        enabled ? 1 : 0,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setTrackFxChainEnabled({
+    required int channel,
+    required bool enabled,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_fx_chain_enabled(
+        _engine,
+        channel,
+        enabled ? 1 : 0,
+      ),
+    );
+  }
 
   @override
   EngineResult setMonitorInputEnabled({

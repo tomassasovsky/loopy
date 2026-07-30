@@ -463,6 +463,45 @@ abstract interface class MasterBusControl {
   /// it changes the routing graph, not a gain. All outputs are enabled by
   /// default; the current gate is in [EngineSnapshot.outputEnabledMask].
   EngineResult setOutputEnabled({required int output, required bool enabled});
+
+  // ---- Master insert chain (FX v3 part 1b) ----
+  //
+  // One engine-level chain on the summed track mix, before master
+  // gain/limiter. Live monitor signals are summed AFTER it and stay uncolored
+  // (live-through sound stays predictable); gain + limiter still apply to
+  // both, unchanged. While EMPTY (the default) the output is bit-identical to
+  // the chain never having existed. FX kernels are strict stereo: with more
+  // than two outputs the chain processes the first ENABLED output pair and
+  // passes the rest through bit-exact dry; a mono output processes as l == r.
+
+  /// Sets Master insert chain entry [index] (`0..kTrackEffectMax-1`) to
+  /// [type]. Changing the type resets that entry's DSP state and seeds the
+  /// type's default parameters; use [setMasterFxCount] to control how many
+  /// entries are active.
+  EngineResult setMasterFx({required int index, required TrackEffectType type});
+
+  /// Sets the Master insert active chain length to [count]
+  /// (`0..kTrackEffectMax`). Count 0 (empty) restores bit-identical output.
+  EngineResult setMasterFxCount({required int count});
+
+  /// Sets parameter [param] (`0..kTrackEffectParams-1`) of Master insert chain
+  /// entry [index] to [value] (clamped to `0..1`). A direct atomic publish —
+  /// works whether or not the device is running.
+  EngineResult setMasterFxParam({
+    required int index,
+    required int param,
+    required double value,
+  });
+
+  /// Enables/disables Master insert chain entry [index] — same contract as
+  /// [EffectsControl.setTrackFxEnabled] (works while stopped, click-free
+  /// ramp, no tail spill, DSP reset on re-enable, default enabled).
+  EngineResult setMasterFxEnabled({required int index, required bool enabled});
+
+  /// Enables/disables the WHOLE Master insert chain in one atomic flip
+  /// without touching the per-entry flags — same contract as
+  /// [EffectsControl.setTrackFxChainEnabled]. Default enabled.
+  EngineResult setMasterFxChainEnabled({required bool enabled});
 }
 
 /// Per-lane (record-route) effect chains.
@@ -534,6 +573,63 @@ abstract interface class EffectsControl {
   /// flags a cache-vs-engine drift. An empty / out-of-range chain hashes to the
   /// FNV-1a offset basis.
   int laneFxFingerprint({required int channel, required int lane});
+
+  // ---- Track-stage (per-track stereo bus) chain (FX v3 part 1b) ----
+  //
+  // One chain per track, downstream of its per-lane chains. While EMPTY
+  // (count 0 — the default) the engine's per-lane routing is bit-identical to
+  // the chain never having existed. When non-empty, the track's audible lanes
+  // sum into one stereo pair, the chain runs once per frame, and the wet
+  // result routes via the UNION of those lanes' enabled output masks.
+  // Topology keys off emptiness, not enabled: a disabled non-empty chain is
+  // dry-through-the-bus, never a routing change. Track/Master chains sit
+  // post-capture and do not affect record alignment
+  // ([EngineSnapshot.fxAddedLatencyFrames] is unchanged by them).
+
+  /// Sets Track-stage chain entry [index] (`0..kTrackEffectMax-1`) of track
+  /// [channel] to [type]. Changing the type resets that entry's DSP state and
+  /// seeds the type's default parameters; use [setTrackFxCount] to control how
+  /// many entries are active.
+  EngineResult setTrackFx({
+    required int channel,
+    required int index,
+    required TrackEffectType type,
+  });
+
+  /// Sets track [channel]'s Track-stage active chain length to [count]
+  /// (`0..kTrackEffectMax`). Count 0 (empty) restores the bit-identical
+  /// per-lane routing path.
+  EngineResult setTrackFxCount({required int channel, required int count});
+
+  /// Sets parameter [param] (`0..kTrackEffectParams-1`) of track [channel]'s
+  /// Track-stage chain entry [index] to [value] (clamped to `0..1`). A direct
+  /// atomic publish — works whether or not the device is running.
+  EngineResult setTrackFxParam({
+    required int channel,
+    required int index,
+    required int param,
+    required double value,
+  });
+
+  /// Enables/disables track [channel]'s Track-stage chain entry [index] — the
+  /// bus twin of [setLaneFxEnabled], identical contract: works while stopped,
+  /// click-free ~5 ms crossfade, no tail spill on bypass, built-in DSP reset
+  /// on re-enable, default enabled, and an actual type change via [setTrackFx]
+  /// re-seeds the flag to enabled.
+  EngineResult setTrackFxEnabled({
+    required int channel,
+    required int index,
+    required bool enabled,
+  });
+
+  /// Enables/disables track [channel]'s WHOLE Track-stage chain in one atomic
+  /// flip without touching the per-entry flags — the bus twin of
+  /// [setLaneFxChainEnabled], same contract. Disabling yields dry through the
+  /// bus, NOT a return to per-lane routing; only emptying the chain does that.
+  EngineResult setTrackFxChainEnabled({
+    required int channel,
+    required bool enabled,
+  });
 }
 
 /// Per-input live monitoring: a single chain per hardware input — enable plus
