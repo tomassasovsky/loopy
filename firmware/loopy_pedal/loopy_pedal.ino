@@ -33,7 +33,7 @@ static const uint8_t kLedPin = 2;
 static const uint8_t kNumLeds = 19;
 static const uint8_t kRingStart = 0;  // loop-position ring = LEDs 0..11
 static const uint8_t kRingCount = 12;
-static const uint8_t kModeLed = 12;   // global transport-activity color
+static const uint8_t kModeLed = 12;   // tri-state mode indicator (A1)
 static const uint8_t kTrackLed0 = 13; // active-bank tracks 1..4 = LEDs 13..16
 static const uint8_t kClearLed = 17;  // lit during a clear fade
 static const uint8_t kBankLed = 18;   // lit when bank B is active
@@ -97,7 +97,9 @@ static void sendIdentityReply() {
       0xF0, 0x7E, 0x7F, 0x06, 0x02, PEDAL_MANUFACTURER_ID,
       0x4C, 0x50, // family "LP"
       0x01, 0x00, // member
-      0x01, 0x00, 0x00, 0x00, // revision
+      // Revision byte 0 reports the wire protocol version this firmware
+      // speaks — the value #331's version discovery will read (R6).
+      PEDAL_PROTOCOL_VERSION, 0x00, 0x00, 0x00,
       0xF7};
   sendBytes(kReply, sizeof(kReply));
 }
@@ -162,6 +164,8 @@ static CRGB ledColor(uint8_t led) {
       return CRGB::Green;
     case PEDAL_LED_RED:
       return CRGB::Red;
+    case PEDAL_LED_BLUE: // FX-mode chain-enabled (part 5b's projection)
+      return CRGB::Blue;
     default:
       return CRGB::Black;
   }
@@ -179,6 +183,21 @@ static CRGB globalColor(uint8_t color) {
       return CRGB::Blue;
     default:
       return CRGB::Black;
+  }
+}
+
+// The tri-state mode indicator's color per decoded interaction mode (A1):
+// Rec green (ready to record), Play/mute amber, FX blue — matching the
+// chain-enabled track-LED blue. Rendered verbatim from the frame's 2-bit
+// mode; loopy remains the single source of truth.
+static CRGB modeColor(uint8_t mode) {
+  switch (mode) {
+    case PEDAL_MODE_PLAY:
+      return globalColor(PEDAL_GLOBAL_AMBER); // one definition of amber
+    case PEDAL_MODE_FX:
+      return CRGB::Blue;
+    default: // PEDAL_MODE_REC
+      return CRGB::Green;
   }
 }
 
@@ -201,6 +220,10 @@ static const float kRingShape = 1.5f;
 static float g_ringPhase = 0.0f;       // current center, 0..kRingCount
 static unsigned long g_ringLastMs = 0; // for dt-based phase advance
 
+// How bright the ring's idle mode-colored sweep runs (A1) — dim enough to
+// read as "idle", bright enough to name the mode from across a stage.
+static const uint8_t kRingModeIdleLevel = 90;
+
 static void renderRing() {
   // Colored by the activity color loopy sends in global_color: red recording /
   // amber overdubbing / green playing.
@@ -221,6 +244,15 @@ static void renderRing() {
   // loop is cleared (nothing left to play) fall through so the hump keeps
   // advancing in the off color and the ring animates to dark.
   if (!active && g_frame.loop_length_micros > 0) return;
+  // Fold the interaction mode into the ring's color scheme (A1): with no
+  // transport activity (global color OFF) the sweep runs in a dimmed mode
+  // color instead of fading to dark, so the active mode is legible from
+  // across a stage. Activity colors (record red / overdub amber / play
+  // green / clear-fade blue) keep primacy whenever loopy sends one.
+  const CRGB sweep =
+      (g_haveFrame && g_frame.global_color == PEDAL_GLOBAL_OFF)
+          ? scaled(modeColor(g_frame.play_mode), kRingModeIdleLevel)
+          : activity;
   // Advance the center only while active, so a Stop leaves it where it was.
   g_ringPhase += (float)dt / (float)kRingMsPerRev * (float)kRingCount;
   while (g_ringPhase >= (float)kRingCount) g_ringPhase -= (float)kRingCount;
@@ -234,7 +266,7 @@ static void renderRing() {
       if (b < 0.0f) b = 0.0f;
       level = (uint8_t)(b * 255.0f + 0.5f);
     }
-    g_leds[kRingStart + i] = scaled(activity, level);
+    g_leds[kRingStart + i] = scaled(sweep, level);
   }
 }
 
@@ -318,13 +350,13 @@ static void render() {
       const bool blinkOn = (millis() / kBlinkHalfPeriodMs) % 2 == 0;
       g_leds[kModeLed] = blinkOn ? CRGB::Red : CRGB::Black;
     } else {
-      // LED 12 shows transport activity from loopy's global_color: green
-      // playing, red recording, amber overdubbing, blue during a clear fade —
-      // and green when idle (off = not recording). The pedal's Rec/Play mode
-      // is no longer shown here.
-      g_leds[kModeLed] = (g_frame.global_color == PEDAL_GLOBAL_OFF)
-                             ? CRGB::Green
-                             : globalColor(g_frame.global_color);
+      // LED 12 is the tri-state mode indicator (A1): rec green / play amber
+      // / fx blue from the decoded 2-bit mode. Transport activity lives on
+      // the ring; the performance-armed red BLINK above keeps precedence
+      // (D-PEDAL) — solid red stays unambiguous as looper-recording on the
+      // ring. The goodbye frame darkens everything, this LED included.
+      g_leds[kModeLed] = g_frame.goodbye ? CRGB::Black
+                                         : modeColor(g_frame.play_mode);
     }
     g_leds[kClearLed] = g_frame.clear_fade ? CRGB::Red : CRGB::Black;
     g_leds[kBankLed] = (g_frame.active_bank == 1) ? CRGB(0, 0, 80) : CRGB::Black;

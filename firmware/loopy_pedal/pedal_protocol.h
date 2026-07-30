@@ -13,10 +13,17 @@
  *   F0 7D <ver> <type=01> <20 packed payload bytes> <checksum> F7
  * The 17-byte logical payload (the current fields, master gain included),
  * the 7-bit packing, and the XOR checksum match PedalCodec exactly (see that
- * file for the field table). <ver> is PEDAL_PROTOCOL_VERSION_V1 (0x01) or
- * PEDAL_PROTOCOL_VERSION_V2 (0x02, D11) — the payload's byte *count* is
- * identical at both versions, v2 only claims 4 previously-unused bits in the
- * existing flags byte (looper_mode + counting_in); see pedal_decode_frame.
+ * file for the field table). <ver> is PEDAL_PROTOCOL_VERSION_V1 (0x01),
+ * PEDAL_PROTOCOL_VERSION_V2 (0x02, D11), or PEDAL_PROTOCOL_VERSION_V3
+ * (0x03, FX v3 part 5a) — the payload's byte *count* is identical at all
+ * three versions: v2 only claims 4 previously-unused bits in the existing
+ * flags byte (looper_mode + counting_in), and v3 only claims bit 1 of the
+ * active-bank byte as the mode field's high bit so a third interaction mode
+ * (FX) fits; see pedal_decode_frame.
+ *
+ * This file is mirrored byte-for-byte in
+ * hardware/firmware/loopy_pedal_32u4/ — firmware/test/run_tests.sh fails if
+ * the two copies drift.
  */
 #ifndef LOOPY_PEDAL_PROTOCOL_H
 #define LOOPY_PEDAL_PROTOCOL_H
@@ -28,16 +35,32 @@
 /* Wire protocol version 1 (pre-B5a): flags byte bits 4-7 are unused/reserved
  * and always zero -- no looper_mode / counting_in on this wire. */
 #define PEDAL_PROTOCOL_VERSION_V1 0x01
-/* Wire protocol version 2 (current, D11): flags byte bits 4-6 carry the
- * looper-mode code (PEDAL_LOOPER_MODE_*), bit 7 carries counting_in. Same
- * 17-byte payload as v1 -- the flags byte had the headroom. */
+/* Wire protocol version 2 (D11): flags byte bits 4-6 carry the looper-mode
+ * code (PEDAL_LOOPER_MODE_*), bit 7 carries counting_in. Same 17-byte
+ * payload as v1 -- the flags byte had the headroom. */
 #define PEDAL_PROTOCOL_VERSION_V2 0x02
+/* Wire protocol version 3 (current, FX v3 part 5a): the interaction-mode
+ * field widens to 2 bits so PEDAL_MODE_FX fits -- low bit stays flags
+ * bit 0, the high bit claims bit 1 of the active-bank byte (payload byte 2,
+ * which used 1 of its 8 bits). Same 17-byte payload again; the mode field
+ * is the only wire difference from v2 (R8: no other growth). */
+#define PEDAL_PROTOCOL_VERSION_V3 0x03
 /* The version pedal_encode_frame emits when a pedal_frame carries no
  * remembered version (protocol_version == 0) -- i.e. the newest this unit
- * speaks. Decoded frames instead re-emit at whatever version they arrived
- * at (see pedal_frame.protocol_version) so the host contract test's
- * decode-then-reencode round trip is version-preserving. */
-#define PEDAL_PROTOCOL_VERSION PEDAL_PROTOCOL_VERSION_V2
+ * speaks. Also the wire-protocol revision the identity reply reports (the
+ * value #331's version discovery will read). Decoded frames instead
+ * re-emit at whatever version they arrived at (see
+ * pedal_frame.protocol_version) so the host contract test's
+ * decode-then-reencode round trip is version-preserving.
+ *
+ * NOTE this deliberately does NOT mirror the Dart side's encode default:
+ * PedalCodec.protocolVersion stays pinned at v2 as the app's R6 safety
+ * floor (an app must never send v3 to a pedal that has not negotiated it),
+ * while this constant tracks the newest version the FIRMWARE decodes.
+ * pedal_encode_frame is host-test-only today; any future runtime C encode
+ * path must pass an explicitly negotiated protocol_version rather than
+ * relying on this newest-version fallback. */
+#define PEDAL_PROTOCOL_VERSION PEDAL_PROTOCOL_VERSION_V3
 #define PEDAL_MSG_TYPE_STATE 0x01
 #define PEDAL_SYSEX_START 0xF0
 #define PEDAL_SYSEX_END 0xF7
@@ -50,12 +73,29 @@
 /* The largest state frame, for output buffers (26 in practice). */
 #define PEDAL_FRAME_MAX_BYTES 32
 
-/* Per-track LED, matching PedalTrackLed. */
+/* Per-track LED, matching PedalTrackLed. BLUE (FX v3 part 5a) is the
+ * FX-mode chain-enabled color part 5b's app-side projection emits -- the
+ * firmware renders it verbatim like every other entry, with no mode branch
+ * in the track-LED path (R8/A3). */
 enum {
   PEDAL_LED_OFF = 0,
   PEDAL_LED_GREEN = 1,
   PEDAL_LED_RED = 2,
-  PEDAL_LED_COUNT = 3
+  PEDAL_LED_BLUE = 3,
+  PEDAL_LED_COUNT = 4
+};
+
+/* The pedal's interaction mode (pedal_frame.play_mode), matching PedalMode.
+ * A 2-bit wire field since protocol v3: low bit in flags bit 0, high bit in
+ * bit 1 of the active-bank byte. The fourth wire value (3) is reserved; the
+ * decoder rejects it. On a v1/v2 wire only the low bit exists, so those
+ * frames can never decode to PEDAL_MODE_FX. This is a DIFFERENT axis from
+ * PEDAL_LOOPER_MODE_* (the engine's transport mode). */
+enum {
+  PEDAL_MODE_REC = 0,
+  PEDAL_MODE_PLAY = 1,
+  PEDAL_MODE_FX = 2,
+  PEDAL_MODE_COUNT = 3
 };
 
 /* Global / mode color, matching GlobalColor. */
@@ -100,7 +140,7 @@ enum {
 
 /* The decoded looper state the pedal renders. */
 typedef struct pedal_frame {
-  uint8_t play_mode;  /* 0 = Rec mode, 1 = Play mode */
+  uint8_t play_mode;  /* PEDAL_MODE_*: 0 = Rec, 1 = Play, 2 = FX (v3) */
   uint8_t clear_fade; /* clear-all fade in progress */
   uint8_t goodbye;    /* shutdown frame: darken everything */
   uint8_t performance_armed; /* D-PEDAL: blink the mode LED red when set */
@@ -114,13 +154,13 @@ typedef struct pedal_frame {
    * the wire never carried anything else at v1. */
   uint8_t looper_mode;
   uint8_t counting_in;
-  /* The version this frame was decoded at (PEDAL_PROTOCOL_VERSION_V1/V2), or
-   * 0 for a frame that was never decoded (freshly constructed by a caller).
-   * pedal_encode_frame re-emits at this version when non-zero, so the host
-   * contract test's decode -> re-encode round trip reproduces the exact
-   * bytes it started from regardless of which version they were. Firmware
-   * itself never calls pedal_encode_frame at runtime (see its doc comment)
-   * -- this field only matters to the host test. */
+  /* The version this frame was decoded at (PEDAL_PROTOCOL_VERSION_V1/V2/V3),
+   * or 0 for a frame that was never decoded (freshly constructed by a
+   * caller). pedal_encode_frame re-emits at this version when non-zero, so
+   * the host contract test's decode -> re-encode round trip reproduces the
+   * exact bytes it started from regardless of which version they were.
+   * Firmware itself never calls pedal_encode_frame at runtime (see its doc
+   * comment) -- this field only matters to the host test. */
   uint8_t protocol_version;
 } pedal_frame;
 
@@ -128,14 +168,15 @@ typedef struct pedal_frame {
 extern "C" {
 #endif
 
-/* Decodes a complete SysEx message (F0..F7) into *out. Accepts both
- * PEDAL_PROTOCOL_VERSION_V1 and _V2 (D11) -- a v1 frame decodes with
- * looper_mode/counting_in at their defaults, since v1 never carried them.
- * Returns 1 on success, 0 for any malformed / unrecognized-version /
- * bad-checksum / out-of-range frame -- every field (including looper_mode)
- * is validated before anything is written, so on a 0 return *out is left
- * completely untouched (the caller keeps its last good frame). Never reads
- * past `len`. */
+/* Decodes a complete SysEx message (F0..F7) into *out. Accepts
+ * PEDAL_PROTOCOL_VERSION_V1 through _V3 -- a v1 frame decodes with
+ * looper_mode/counting_in at their defaults (v1 never carried them), and a
+ * v1/v2 frame can never decode to PEDAL_MODE_FX (only v3 carries the mode
+ * field's high bit). Returns 1 on success, 0 for any malformed /
+ * unrecognized-version / bad-checksum / out-of-range frame (including the
+ * reserved fourth mode value) -- every field is validated before anything
+ * is written, so on a 0 return *out is left completely untouched (the
+ * caller keeps its last good frame). Never reads past `len`. */
 int pedal_decode_frame(const uint8_t* msg, int len, pedal_frame* out);
 
 /* Encodes *frame into `buf` (must hold PEDAL_FRAME_MAX_BYTES), at

@@ -142,5 +142,70 @@ void main() {
       expect(cubit.state.bindStatus, PedalBindStatus.bound);
       expect(find.textContaining('Loopy Pedal'), findsWidgets);
     });
+
+    testWidgets(
+      'the firmware picker defaults to "not set" and offers every codec '
+      'version (R6 manual gate)',
+      (tester) async {
+        final cubit = cubitWith(FakePedalTransport());
+        addTearDown(cubit.close);
+
+        await pumpSection(tester, cubit);
+
+        expect(
+          find.byKey(const Key('pedalSettings_firmware_picker')),
+          findsOneWidget,
+        );
+        expect(cubit.state.firmwareVersion, isNull);
+        // The closed dropdown shows the "not set" (unknown => v2) item.
+        expect(find.textContaining('v2'), findsWidgets);
+
+        await tester.tap(
+          find.byKey(const Key('pedalSettings_firmware_picker')),
+        );
+        await tester.pumpAndSettle();
+        for (
+          var version = PedalCodec.protocolVersionV1;
+          version <= PedalCodec.protocolVersionMax;
+          version++
+        ) {
+          expect(find.text('Protocol v$version'), findsWidgets);
+        }
+      },
+    );
+
+    testWidgets('a saved firmware version renders as the selection', (
+      tester,
+    ) async {
+      final cubit = cubitWith(FakePedalTransport());
+      addTearDown(cubit.close);
+      await cubit.selectFirmwareVersion(PedalCodec.protocolVersionV1);
+
+      await pumpSection(tester, cubit);
+
+      // The closed dropdown shows the persisted selection, not "not set".
+      expect(
+        find.text('Protocol v${PedalCodec.protocolVersionV1}'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('selecting a firmware version updates the cubit', (
+      tester,
+    ) async {
+      final cubit = cubitWith(FakePedalTransport());
+      addTearDown(cubit.close);
+
+      await pumpSection(tester, cubit);
+      await tester.tap(find.byKey(const Key('pedalSettings_firmware_picker')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.text('Protocol v${PedalCodec.protocolVersionV3}').last,
+      );
+      await tester.pumpAndSettle();
+
+      expect(cubit.state.firmwareVersion, PedalCodec.protocolVersionV3);
+    });
   });
 }

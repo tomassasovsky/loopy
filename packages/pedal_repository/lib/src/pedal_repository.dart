@@ -57,6 +57,17 @@ class PedalRepository {
   String? _boundOutputId;
   bool _disposed = false;
 
+  /// What wire protocol version the bound pedal's firmware is known to
+  /// speak, or `null` when unknown (the default).
+  ///
+  /// This is the version-discovery seam (R6): today the app sets it from
+  /// the manual "pedal firmware version" setting; once #331's SysEx-capable
+  /// inbound path ships, the identity reply drives the same knob. It only
+  /// caps what [pushState] *encodes* — nothing here talks to hardware.
+  /// [targetProtocolVersion] is the clamped value outbound frames actually
+  /// encode at.
+  int? firmwareProtocolVersion;
+
   /// Decoded pedal inputs (button presses/releases, encoder deltas).
   Stream<PedalEvent> get events => _events.stream;
 
@@ -68,6 +79,23 @@ class PedalRepository {
 
   /// The id of the bound output destination, or `null` when not bound.
   String? get boundOutputId => _boundOutputId;
+
+  /// The protocol version outbound frames are encoded at: the known firmware
+  /// version clamped to what the codec speaks, or
+  /// [PedalCodec.protocolVersion] (v2) when the firmware version is unknown.
+  ///
+  /// Never encodes above negotiated (R6): unknown ⇒ v2, **never** v3 — an
+  /// un-reflashed pedal rejects versions it does not know, so the safe floor
+  /// wins until a version is learned. A known version is clamped into
+  /// [PedalCodec.protocolVersionV1]..[PedalCodec.protocolVersionMax].
+  int get targetProtocolVersion {
+    final known = firmwareProtocolVersion;
+    if (known == null) return PedalCodec.protocolVersion;
+    return known.clamp(
+      PedalCodec.protocolVersionV1,
+      PedalCodec.protocolVersionMax,
+    );
+  }
 
   /// The host's available MIDI output destinations, as domain models (mapped
   /// from the transport's raw enumeration so callers never name the data type).
@@ -101,7 +129,10 @@ class PedalRepository {
     if (_disposed) return;
     if (_status == PedalBindStatus.bound) {
       _transport.send(
-        PedalCodec.encodeFrame(PedalStateFrame.blank(goodbye: true)),
+        PedalCodec.encodeFrame(
+          PedalStateFrame.blank(goodbye: true),
+          targetVersion: targetProtocolVersion,
+        ),
       );
     }
     _transport.closeOutput();
@@ -109,10 +140,13 @@ class PedalRepository {
     _setStatus(PedalBindStatus.none);
   }
 
-  /// Encodes [frame] and sends it to the pedal. A no-op when not bound.
+  /// Encodes [frame] at [targetProtocolVersion] and sends it to the pedal.
+  /// A no-op when not bound.
   void pushState(PedalStateFrame frame) {
     if (_disposed || _status != PedalBindStatus.bound) return;
-    _transport.send(PedalCodec.encodeFrame(frame));
+    _transport.send(
+      PedalCodec.encodeFrame(frame, targetVersion: targetProtocolVersion),
+    );
   }
 
   /// Sends the single-byte loop-top pulse. A no-op when not bound.

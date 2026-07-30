@@ -14,6 +14,9 @@ plugin, macOS dylib loading, flavor schemes). They will bite otherwise.
   (bare `flutter test`/`dart test` are hook-blocked; the very_good MCP test
   tool is broken in this env)
 - Native engine tests: `bash packages/loopy_engine/src/test/run_native_tests.sh`
+- Pedal firmware contract + protocol-copy drift gate (required when anything
+  under `firmware/` or `hardware/firmware/` or the pedal codec changes):
+  `bash firmware/test/run_tests.sh`
 - Static analysis: `dart analyze` must come back clean
 - Formatting is automatic — a PostToolUse hook runs `dart format` on every
   edited `.dart` file, so never hand-format or commit format-only churn

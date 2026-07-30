@@ -205,6 +205,44 @@ void main() {
       expect(ledColor(2), SurfaceTheme.dark.ledOff);
     });
 
+    testWidgets(
+      'renders the chain-enabled (blue) LED with a truthful semantics label '
+      '(protocol v3, part 5a)',
+      (tester) async {
+        // try/finally rather than addTearDown: testWidgets verifies all
+        // semantics handles are disposed BEFORE tear-down callbacks run,
+        // so the handle must be released inside the body even when an
+        // expect below throws.
+        final handle = tester.ensureSemantics();
+        try {
+          final (_, sim) = await pumpFaceplate(tester);
+          sim.send(
+            PedalCodec.encodeFrame(
+              _frame(leds: {0: PedalTrackLed.blue}),
+              targetVersion: PedalCodec.protocolVersionV3,
+            ),
+          );
+          await tester.pump();
+
+          final led = tester.widget<Container>(
+            find.byKey(const Key('pedalFaceplate_led_track0')),
+          );
+          expect(
+            (led.decoration! as BoxDecoration).color,
+            SurfaceTheme.dark.ledBlue,
+          );
+          // The footswitch semantics read the LED as chain state, not
+          // record/mute state (5b re-labels per active mode).
+          expect(
+            find.bySemanticsLabel(RegExp('FX chain enabled')),
+            findsOneWidget,
+          );
+        } finally {
+          handle.dispose();
+        }
+      },
+    );
+
     testWidgets('maps the track LEDs to the active bank (B => 4..7)', (
       tester,
     ) async {

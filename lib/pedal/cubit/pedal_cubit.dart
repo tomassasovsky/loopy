@@ -48,13 +48,24 @@ class PedalCubit extends Cubit<PedalState> {
 
   Future<void>? _loadFuture;
 
-  /// Loads the persisted pedal output and auto-binds it. (The boot-default
-  /// MODE and the undo long-press threshold are control state, restored by
-  /// `ControlCubit.load`.)
+  /// Loads the persisted pedal output and auto-binds it, and applies the
+  /// persisted manual firmware version to the repository's target-version
+  /// knob (R6). (The boot-default MODE and the undo long-press threshold are
+  /// control state, restored by `ControlCubit.load`.)
   Future<void> load() => _loadFuture ??= _restore();
 
   Future<void> _restore() async {
-    final saved = await _settings.loadPedalOutputDevice();
+    // Both reads are independent platform-channel round trips — start them
+    // together so they overlap instead of stacking on the boot path.
+    final firmwareVersionFuture = _settings.loadPedalFirmwareVersion();
+    final savedFuture = _settings.loadPedalOutputDevice();
+
+    // The firmware version gates what pushState encodes, so apply it before
+    // any bind can start streaming frames. Unset (null) keeps the
+    // repository's unknown ⇒ v2 floor.
+    _applyFirmwareVersion(await firmwareVersionFuture);
+
+    final saved = await savedFuture;
     if (saved == null) return;
     // Pin the saved output so the poll can reconnect it; bind now if present,
     // otherwise the poll binds it as soon as it appears.
@@ -93,6 +104,32 @@ class PedalCubit extends Cubit<PedalState> {
     _syncOutputs();
     await _settings.clearPedalOutputDevice();
     if (!isClosed) emit(state.copyWith(boundOutputId: null));
+  }
+
+  /// Records what wire-protocol version the pedal's firmware speaks
+  /// ([version] `null` = unknown), persists it, and applies it to the
+  /// repository's target-version knob.
+  ///
+  /// The manual pre-#331 version-discovery gate (R6): unknown keeps outbound
+  /// frames at the v2 safety floor — the repository never encodes v3 at a
+  /// pedal not known to speak it.
+  Future<void> selectFirmwareVersion(int? version) async {
+    _applyFirmwareVersion(version);
+    if (version == null) {
+      await _settings.clearPedalFirmwareVersion();
+    } else {
+      await _settings.savePedalFirmwareVersion(version);
+    }
+  }
+
+  /// The one seam that applies a firmware version: repository knob first
+  /// (it gates what the next pushed frame encodes), then the state mirror.
+  /// Every current and future source of a version — the persisted setting
+  /// in [load], the picker via [selectFirmwareVersion], #331's identity
+  /// reply later — must route through here so the pairing cannot diverge.
+  void _applyFirmwareVersion(int? version) {
+    _pedal.firmwareProtocolVersion = version;
+    if (!isClosed) emit(state.copyWith(firmwareVersion: version));
   }
 
   /// Hotplug poll: re-enumerates the host's MIDI outputs and reconciles the

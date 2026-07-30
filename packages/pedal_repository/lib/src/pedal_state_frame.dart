@@ -14,6 +14,20 @@ enum PedalTrackLed {
 
   /// Track is recording / overdubbing or armed — LED red.
   red,
+
+  /// Track's FX chain is enabled (FX mode, protocol v3 / part 5b) — LED blue.
+  ///
+  /// Reserved by part 5a for the FX-mode chain-state projection part 5b
+  /// emits: in [PedalMode.fx] the app writes chain-enabled state into the
+  /// same `trackLeds` bytes (a new color costs zero wire bytes — the byte is
+  /// an enum index), and the firmware renders it verbatim with no mode
+  /// branch. Firmware built before part 5a has no entry for this index and
+  /// rejects a frame carrying it wholesale, so `PedalCodec.encodeFrame`
+  /// degrades blue to [green] when targeting protocol v1/v2 (B10) — an
+  /// older pedal shows chain-enabled as a lit green LED instead of going
+  /// dark; the "pedal firmware update available" banner (part 5b, riding
+  /// #331's OTA flow) tells the user why the color is missing.
+  blue,
 }
 
 /// The global status color shown by the pedal (e.g. the center / mode LED).

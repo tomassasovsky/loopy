@@ -147,6 +147,78 @@ void main() {
       });
     });
 
+    group('targetProtocolVersion (R6: never encode above negotiated)', () {
+      test('is v2 while the firmware version is unknown — never v3', () {
+        expect(repo.targetProtocolVersion, PedalCodec.protocolVersionV2);
+      });
+
+      test('follows a known firmware version (manual v1 stays v1)', () {
+        repo.firmwareProtocolVersion = PedalCodec.protocolVersionV1;
+        expect(repo.targetProtocolVersion, PedalCodec.protocolVersionV1);
+
+        repo.firmwareProtocolVersion = PedalCodec.protocolVersionV3;
+        expect(repo.targetProtocolVersion, PedalCodec.protocolVersionV3);
+      });
+
+      test('clamps a newer-than-codec firmware version to the codec max', () {
+        repo.firmwareProtocolVersion = 99;
+        expect(repo.targetProtocolVersion, PedalCodec.protocolVersionMax);
+      });
+
+      test('clamps a below-v1 firmware version to v1', () {
+        repo.firmwareProtocolVersion = 0;
+        expect(repo.targetProtocolVersion, PedalCodec.protocolVersionV1);
+      });
+
+      test('clearing the version (null) returns to the v2 floor', () {
+        repo
+          ..firmwareProtocolVersion = PedalCodec.protocolVersionV3
+          ..firmwareProtocolVersion = null;
+        expect(repo.targetProtocolVersion, PedalCodec.protocolVersionV2);
+      });
+
+      test('pushState encodes at the resolved version', () {
+        repo
+          ..firmwareProtocolVersion = PedalCodec.protocolVersionV3
+          ..bind('pedal-out');
+        final frame = PedalStateFrame.blank().copyWith(mode: PedalMode.fx);
+
+        repo.pushState(frame);
+
+        expect(
+          transport.sent.last,
+          PedalCodec.encodeFrame(
+            frame,
+            targetVersion: PedalCodec.protocolVersionV3,
+          ),
+        );
+        expect(transport.sent.last[2], PedalCodec.protocolVersionV3);
+      });
+
+      test('pushState stays at v2 for an unknown pedal even in fx mode', () {
+        repo.bind('pedal-out');
+        final frame = PedalStateFrame.blank().copyWith(mode: PedalMode.fx);
+
+        repo.pushState(frame);
+
+        expect(transport.sent.last[2], PedalCodec.protocolVersionV2);
+        // The downgraded frame decodes as play (mute), the B10 projection.
+        expect(
+          PedalCodec.decodeFrame(transport.sent.last)!.mode,
+          PedalMode.play,
+        );
+      });
+
+      test('the goodbye frame is encoded at the resolved version too', () {
+        repo
+          ..firmwareProtocolVersion = PedalCodec.protocolVersionV1
+          ..bind('pedal-out')
+          ..unbind();
+
+        expect(transport.sent.last[2], PedalCodec.protocolVersionV1);
+      });
+    });
+
     group('sendLoopTop', () {
       test('sends the single-byte pulse when bound', () {
         repo.bind('pedal-out');
