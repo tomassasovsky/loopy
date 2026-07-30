@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:looper_repository/src/models/audio_config.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
+import 'package:looper_repository/src/models/fx_chain_envelope.dart';
 import 'package:looper_repository/src/models/fx_slot_ids.dart';
 import 'package:looper_repository/src/models/input_monitor.dart';
 import 'package:looper_repository/src/models/lane.dart';
@@ -1164,14 +1165,11 @@ class LooperRepository {
   /// the looper mode and crown (B5c) — all pushed from the rig's values or
   /// their defaults before any content is imported — import the stems,
   /// commit the master loop, re-apply mix through the cached setters, then
-  /// apply the rig's chains — explicitly resetting every remembered lane /
-  /// monitor chain the rig does not define, so a previous session's
-  /// leftovers can never sound (or apply) under the loaded one. EXCEPTION
-  /// (FX v3 interim): the Track-stage and Master insert chains and their
-  /// chain flags are NOT yet reset here — the session manifest cannot
-  /// describe them until part 3b's formatVersion 5, which owns their
-  /// leftover reset (R17); until then a live rig's bus chains persist
-  /// across a load. The crowned
+  /// apply the rig's chains — explicitly resetting every remembered chain of
+  /// all FOUR FX stages (input monitor, loop lane, track bus, master insert)
+  /// and every chain-enabled flag the rig does not define, so a previous
+  /// session's leftovers can never sound (or apply) under the loaded one
+  /// (R17). The crowned
   /// primary track is the one exception with an incomplete reset: no native
   /// "un-crown" call exists, so a channel crowned by a live/prior session can
   /// stay crowned on the ENGINE through a load that defines no crown of its
@@ -1202,13 +1200,13 @@ class LooperRepository {
     _laneOutput.clear();
     _laneVolume.clear();
     _laneMute.clear();
-    // Chain-enabled flags + inheritance meta (R15/F2): the session manifest
-    // defines no chain-level flags until part 3b's formatVersion 5, so every
-    // remembered lane flag resets to the enabled default — pushed to the
-    // engine too (the setter is a direct atomic publish), or a chain the
-    // loaded session defines on a previously chain-disabled lane would land
-    // silently muted. The provenance markers drop with the takes they
-    // described.
+    // Chain-enabled flags + inheritance meta (R15/F2): every remembered lane
+    // flag resets to the enabled default — pushed to the engine too (the
+    // setter is a direct atomic publish), or a chain the loaded session
+    // defines on a previously chain-disabled lane would land silently muted.
+    // The rig's own flags are re-applied from its envelopes at the end of this
+    // method; the provenance markers drop with the takes they described (and
+    // likewise come back from the rig).
     for (final key in _laneChainEnabled.keys.toList()) {
       setLaneChainEnabled(channel: key.$1, lane: key.$2, enabled: true);
     }
@@ -1425,14 +1423,63 @@ class LooperRepository {
     // engine in lockstep (an empty chain pushes count 0 to the engine, wiping
     // any leftover engine-side chain a clear alone would have kept).
     for (final key in _laneEffects.keys.toList()) {
-      if (!rig.laneEffects.containsKey(key)) {
+      if (!rig.laneChains.containsKey(key)) {
         setLaneEffects(channel: key.$1, lane: key.$2, effects: const []);
       }
     }
-    rig.laneEffects.forEach(
-      (key, effects) =>
-          setLaneEffects(channel: key.$1, lane: key.$2, effects: effects),
-    );
+    rig.laneChains.forEach((key, chain) {
+      setLaneEffects(channel: key.$1, lane: key.$2, effects: chain.entries);
+      // The flag and the provenance marker ride the envelope (R15/R13), so
+      // they restore with the chain rather than staying at the reset default.
+      setLaneChainEnabled(
+        channel: key.$1,
+        lane: key.$2,
+        enabled: chain.chainEnabled,
+      );
+      setLaneChainMeta(
+        channel: key.$1,
+        lane: key.$2,
+        inheritedFrom: chain.meta?.inheritedFrom ?? const [],
+      );
+    });
+    // Track stage (per-track stereo bus), R17: the same leftover discipline as
+    // the lanes above — reset every remembered bus chain AND its flag the rig
+    // does not define, then apply the rig's. Snapshot the key union first (the
+    // setters mutate both maps), and include flag-only channels: a track with
+    // an empty chain but a disabled flag is remembered state that must not
+    // survive into the loaded session.
+    final rememberedTrackChannels = <int>{
+      ..._trackEffects.keys,
+      ..._trackChainEnabled.keys,
+    };
+    for (final channel in rememberedTrackChannels) {
+      // Skipped only when the rig defines a chain this engine can actually be
+      // given. An out-of-range remembered channel is reset even if the rig
+      // "defines" it, because the bounded apply below cannot push it — leaving
+      // the reset out would strand the leftover forever.
+      final applied =
+          rig.trackChains.containsKey(channel) &&
+          channel >= 0 &&
+          channel < trackCount;
+      if (applied) continue;
+      setTrackEffects(channel: channel, effects: const []);
+      setTrackChainEnabled(channel: channel, enabled: true);
+    }
+    rig.trackChains.forEach((channel, chain) {
+      // Bounded to `trackCount`, same rationale as `rig.primaryTrack` /
+      // `rig.oneShotChannels` above: a manifest saved on a build with more
+      // physical tracks than this engine must not poison the re-apply cache
+      // with a channel this engine can never own (the native call rejects it,
+      // but the cache would replay it on every restart and re-save it).
+      if (channel < 0 || channel >= trackCount) return;
+      setTrackEffects(channel: channel, effects: chain.entries);
+      setTrackChainEnabled(channel: channel, enabled: chain.chainEnabled);
+    });
+    // Master insert (R17): exactly one chain exists, so pushing the rig's
+    // value IS the reset — an undefined Master arrives as the empty enabled
+    // envelope and wipes whatever the previous session left on the bus.
+    setMasterEffects(effects: rig.masterChain.entries);
+    setMasterChainEnabled(enabled: rig.masterChain.chainEnabled);
     // Monitors: fully reset every remembered monitor the rig does not define —
     // not just its chain but its enable / routing / mix too, or an input
     // enabled under session A would keep monitoring under session B (the F2
@@ -1457,9 +1504,13 @@ class LooperRepository {
       setMonitorVolume(input: monitor.input, volume: monitor.volume);
       setMonitorMute(input: monitor.input, muted: monitor.muted);
       setMonitorEffects(input: monitor.input, effects: monitor.effects);
-      // The manifest carries no chain flag until 3b's formatVersion 5 —
-      // migration defaults every level to enabled (R15).
-      setMonitorChainEnabled(input: monitor.input, enabled: true);
+      // The chain flag comes from the monitor's own envelope (R15); a
+      // v4-or-earlier manifest decodes it as enabled, so migration still
+      // defaults every level to enabled.
+      setMonitorChainEnabled(
+        input: monitor.input,
+        enabled: monitor.chainEnabled,
+      );
     }
   }
 
@@ -1486,12 +1537,59 @@ class LooperRepository {
     return false;
   }
 
-  /// Every remembered non-empty lane effect chain, keyed by `(channel, lane)`
-  /// — what a session save captures (the live rig is the truth being saved).
-  Map<(int, int), List<TrackEffect>> allLaneEffects() => {
-    for (final entry in _laneEffects.entries)
-      entry.key: List<TrackEffect>.unmodifiable(entry.value),
-  };
+  /// Every remembered Loop-stage chain as the persisted [FxChainEnvelope],
+  /// keyed by `(channel, lane)` — what a session save captures (the live rig
+  /// is the truth being saved).
+  ///
+  /// The key set is the UNION of the chain, chain-flag and provenance maps, not
+  /// just the chain map: a lane whose chain is empty but whose flag is
+  /// disabled (or that carries an inheritance marker) has state worth saving.
+  /// A lane at every default appears in none of the three, so it is omitted —
+  /// and an omitted lane is RESET on the next apply, never inherited (F2).
+  Map<(int, int), FxChainEnvelope> allLaneChains() {
+    final keys = <(int, int)>{
+      ..._laneEffects.keys,
+      ..._laneChainEnabled.keys,
+      ..._laneChainMeta.keys,
+    };
+    return {
+      for (final key in keys)
+        key: FxChainEnvelope(
+          chainEnabled: laneChainEnabled(key.$1, key.$2),
+          // Null — not an empty marker — when the chain was never inherited,
+          // matching [FxChainEnvelope.meta]'s contract and `decodeFxChain`'s
+          // own normalization, so an envelope read back here equals the one a
+          // decode produces.
+          meta: _metaOrNull(laneChainInheritedFrom(key.$1, key.$2)),
+          entries: laneEffects(key.$1, key.$2),
+        ),
+    };
+  }
+
+  static FxChainMeta? _metaOrNull(List<int> inheritedFrom) =>
+      inheritedFrom.isEmpty ? null : FxChainMeta(inheritedFrom: inheritedFrom);
+
+  /// Every remembered Track-stage (stereo bus) chain as the persisted
+  /// envelope, keyed by track channel — the bus twin of [allLaneChains] (bus
+  /// chains carry no inheritance provenance, so their envelopes have no meta).
+  Map<int, FxChainEnvelope> allTrackChains() {
+    final channels = <int>{..._trackEffects.keys, ..._trackChainEnabled.keys};
+    return {
+      for (final channel in channels)
+        channel: FxChainEnvelope(
+          chainEnabled: trackChainEnabled(channel),
+          entries: trackEffects(channel),
+        ),
+    };
+  }
+
+  /// The Master insert chain as the persisted envelope. There is exactly one,
+  /// so — unlike [allTrackChains] — this always has a value: the empty enabled
+  /// envelope when no Master chain is configured.
+  FxChainEnvelope masterChainEnvelope() => FxChainEnvelope(
+    chainEnabled: _masterChainEnabled,
+    entries: masterEffects,
+  );
 
   /// Every **configured** live monitor, keyed by input — the union of all
   /// remembered monitor state (enable / routing / mix / effects), not just

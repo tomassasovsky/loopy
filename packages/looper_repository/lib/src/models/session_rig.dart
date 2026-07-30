@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:looper_repository/src/models/fx_chain_envelope.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:loopy_engine/loopy_engine.dart' show LooperMode;
 
@@ -82,7 +83,8 @@ class SessionRigTrack {
   final bool oneShot;
 }
 
-/// One hardware input's live-monitor configuration inside a [SessionRig].
+/// One hardware input's live-monitor configuration inside a [SessionRig] —
+/// the Input stage of the four-stage FX model.
 @immutable
 class SessionRigMonitor {
   /// Creates a [SessionRigMonitor].
@@ -93,6 +95,7 @@ class SessionRigMonitor {
     required this.volume,
     required this.muted,
     required this.effects,
+    this.chainEnabled = true,
   });
 
   /// Hardware input index.
@@ -113,6 +116,10 @@ class SessionRigMonitor {
 
   /// The monitor's effect chain (empty = the clean/dry path).
   final List<TrackEffect> effects;
+
+  /// Whether the monitor's WHOLE chain is engaged (R15). `true` for a
+  /// v4-or-earlier manifest — migration defaults every level to enabled.
+  final bool chainEnabled;
 }
 
 /// Everything a saved session defines, expressed in looper-domain types.
@@ -124,6 +131,14 @@ class SessionRigMonitor {
 /// manifest with no chains loads as "all chains cleared", never "whatever was
 /// lying around".
 ///
+/// Every one of the four FX stages travels here as a decoded
+/// [FxChainEnvelope] — entries plus the chain-enabled flag plus (for the Loop
+/// stage) inheritance provenance — because those flags live INSIDE the
+/// manifest's opaque chain string, not in manifest fields of their own (R15).
+/// The Input stage is the exception in shape only: a monitor already carries
+/// routing/mix, so its chain rides [SessionRigMonitor.effects] +
+/// [SessionRigMonitor.chainEnabled] rather than a nested envelope.
+///
 /// A transient apply-time DTO (built once from a decoded bundle, consumed once
 /// by `LooperRepository.applySession`); it is immutable but carries no value
 /// equality by design — it is never compared, only applied.
@@ -133,7 +148,9 @@ class SessionRig {
   const SessionRig({
     this.baseLengthFrames = 0,
     this.tracks = const [],
-    this.laneEffects = const {},
+    this.laneChains = const {},
+    this.trackChains = const {},
+    this.masterChain = const FxChainEnvelope(),
     this.monitors = const [],
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
@@ -146,12 +163,22 @@ class SessionRig {
   /// The tracks holding audio, with their restored mix.
   final List<SessionRigTrack> tracks;
 
-  /// Every lane effect chain the session defines, keyed by `(channel, lane)`.
-  /// Chains exist independently of audio, so keys may reference tracks with no
-  /// [tracks] entry.
-  final Map<(int, int), List<TrackEffect>> laneEffects;
+  /// Every Loop-stage (per-lane) chain the session defines, keyed by
+  /// `(channel, lane)`. Chains exist independently of audio, so keys may
+  /// reference tracks with no [tracks] entry.
+  final Map<(int, int), FxChainEnvelope> laneChains;
 
-  /// The per-input live monitors the session defines.
+  /// Every Track-stage (per-track stereo bus) chain the session defines, keyed
+  /// by track channel. Empty for a v4-or-earlier manifest, which could not
+  /// describe this stage — and an absent channel is RESET on apply, not left
+  /// carrying the previous session's bus chain (R17).
+  final Map<int, FxChainEnvelope> trackChains;
+
+  /// The session's single Master insert chain; the empty enabled envelope when
+  /// it defines none (a v4-or-earlier manifest always does).
+  final FxChainEnvelope masterChain;
+
+  /// The per-input live monitors (Input stage) the session defines.
   final List<SessionRigMonitor> monitors;
 
   /// The session's looper mode (schema v4, B5c). Restored unconditionally on

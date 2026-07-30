@@ -3622,6 +3622,170 @@ void main() {
       expect(engine.monitorFx, isEmpty);
     });
 
+    test('resets remembered TRACK-stage and MASTER chains the rig does not '
+        'define, chain flags included (R17, the F2 class extended to the bus '
+        'stages)', () async {
+      engine.nextSnapshot = clearedSnapshot(2);
+      // Session A: FX on two track buses and on the Master insert, with one
+      // bus chain-DISABLED and the Master chain-disabled too.
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        )
+        ..setTrackChainEnabled(channel: 1, enabled: false)
+        ..setMasterEffects(
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        )
+        ..setMasterChainEnabled(enabled: false);
+      addTearDown(repo.dispose);
+      expect(engine.trackFxCount[0], 1);
+      expect(engine.masterFxCount, 1);
+
+      // Session B defines neither bus stage.
+      await repo.applySession(
+        const SessionRig(),
+        clearPollInterval: Duration.zero,
+      );
+
+      // Engine chain lengths zeroed and every chain flag back to enabled.
+      expect(engine.trackFxCount[0], 0);
+      expect(engine.masterFxCount, 0);
+      expect(engine.trackFxChainEnabled[1], isTrue);
+      expect(engine.masterFxChainEnabled, isTrue);
+      // Repository caches clean.
+      expect(repo.trackEffects(0), isEmpty);
+      expect(repo.masterEffects, isEmpty);
+      expect(repo.trackChainEnabled(0), isTrue);
+      expect(repo.trackChainEnabled(1), isTrue);
+      expect(repo.masterChainEnabled, isTrue);
+      expect(repo.allTrackChains(), isEmpty);
+
+      // And a restart replays nothing stale.
+      engine.trackFx.clear();
+      engine.masterFx.clear();
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.trackFx, isEmpty);
+      expect(engine.masterFx, isEmpty);
+    });
+
+    test('applies the rig BUS stages, chain flags included (R17)', () async {
+      engine.nextSnapshot = clearedSnapshot(2);
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      await repo.applySession(
+        SessionRig(
+          trackChains: {
+            0: FxChainEnvelope(
+              entries: [BuiltInEffect(type: TrackEffectType.delay)],
+            ),
+            1: const FxChainEnvelope(chainEnabled: false),
+          },
+          masterChain: FxChainEnvelope(
+            chainEnabled: false,
+            entries: [BuiltInEffect(type: TrackEffectType.filter)],
+          ),
+        ),
+        clearPollInterval: Duration.zero,
+      );
+
+      expect(engine.trackFx[(0, 0)]?.code, TrackEffectType.delay.code);
+      expect(engine.trackFxCount[0], 1);
+      expect(engine.trackFxChainEnabled[1], isFalse);
+      expect(engine.masterFx[0]?.code, TrackEffectType.filter.code);
+      expect(engine.masterFxChainEnabled, isFalse);
+      expect(repo.trackChainEnabled(1), isFalse);
+      expect(repo.masterChainEnabled, isFalse);
+
+      // The caches are truthful: a restart reproduces the loaded bus chains.
+      engine.trackFx.clear();
+      engine.masterFx.clear();
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.trackFx[(0, 0)]?.code, TrackEffectType.delay.code);
+      expect(engine.masterFx[0]?.code, TrackEffectType.filter.code);
+    });
+
+    test('resets a remembered bus chain on a channel this engine cannot own, '
+        'even when the rig "defines" it — the bounded apply cannot push it, so '
+        'skipping the reset would strand the leftover', () async {
+      engine.nextSnapshot = clearedSnapshot(2);
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      // A chain remembered for a channel beyond this engine's track count —
+      // e.g. a cache left by a manifest saved on a build with more tracks.
+      repo.setTrackEffects(
+        channel: 5,
+        effects: [BuiltInEffect(type: TrackEffectType.drive)],
+      );
+      expect(repo.trackEffects(5), isNotEmpty);
+
+      await repo.applySession(
+        SessionRig(
+          trackChains: {
+            5: FxChainEnvelope(
+              entries: [BuiltInEffect(type: TrackEffectType.reverb)],
+            ),
+          },
+        ),
+        clearPollInterval: Duration.zero,
+      );
+
+      // Not applied (out of range) and therefore reset, not left behind.
+      expect(repo.trackEffects(5), isEmpty);
+      expect(repo.allTrackChains(), isEmpty);
+    });
+
+    test('restores a lane envelope whole — entries, chain flag, and the '
+        'inheritance marker (R13/R15)', () async {
+      engine.nextSnapshot = clearedSnapshot(2);
+      // A leftover disabled flag + marker on a DIFFERENT lane must not survive.
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneChainEnabled(channel: 1, lane: 0, enabled: false)
+        ..setLaneChainMeta(channel: 1, lane: 0, inheritedFrom: [7]);
+      addTearDown(repo.dispose);
+
+      await repo.applySession(
+        SessionRig(
+          laneChains: {
+            (0, 0): FxChainEnvelope(
+              chainEnabled: false,
+              meta: const FxChainMeta(inheritedFrom: [2, 3]),
+              entries: [BuiltInEffect(type: TrackEffectType.drive)],
+            ),
+          },
+          monitors: const [
+            SessionRigMonitor(
+              input: 0,
+              enabled: true,
+              outputMask: 0x3,
+              volume: 1,
+              muted: false,
+              effects: [],
+              chainEnabled: false,
+            ),
+          ],
+        ),
+        clearPollInterval: Duration.zero,
+      );
+
+      expect(repo.laneChainEnabled(0, 0), isFalse);
+      expect(repo.laneChainInheritedFrom(0, 0), [2, 3]);
+      expect(engine.laneFxChainEnabled[(0, 0)], isFalse);
+      // The undefined lane's leftover flag/marker are gone.
+      expect(repo.laneChainEnabled(1, 0), isTrue);
+      expect(repo.laneChainInheritedFrom(1, 0), isEmpty);
+      // A monitor's chain flag restores from its own envelope too.
+      expect(repo.monitorChainEnabled(0), isFalse);
+      expect(engine.monitorFxChainEnabled[0], isFalse);
+    });
+
     test('fully resets a leftover monitor the rig does not define — routing '
         'and mix, not just its chain (F2)', () async {
       engine.nextSnapshot = clearedSnapshot(2);
@@ -3687,8 +3851,10 @@ void main() {
 
         await repo.applySession(
           SessionRig(
-            laneEffects: {
-              (1, 0): [BuiltInEffect(type: TrackEffectType.delay)],
+            laneChains: {
+              (1, 0): FxChainEnvelope(
+                entries: [BuiltInEffect(type: TrackEffectType.delay)],
+              ),
             },
             monitors: [
               SessionRigMonitor(
@@ -3883,7 +4049,7 @@ void main() {
 
   group('chain and monitor read accessors', () {
     test(
-      'allLaneEffects and allMonitors expose the remembered chains',
+      'allLaneChains and allMonitors expose the remembered chains',
       () {
         final repo = buildRepo()
           ..setLaneEffects(
@@ -3897,12 +4063,13 @@ void main() {
           );
         addTearDown(repo.dispose);
 
-        final lanes = repo.allLaneEffects();
+        final lanes = repo.allLaneChains();
         expect(lanes.keys, [(1, 2)]);
         expect(
-          (lanes[(1, 2)]!.single as BuiltInEffect).type,
+          (lanes[(1, 2)]!.entries.single as BuiltInEffect).type,
           TrackEffectType.drive,
         );
+        expect(lanes[(1, 2)]!.chainEnabled, isTrue);
         final monitors = repo.allMonitors();
         expect(monitors.keys, [3]);
         expect(
@@ -3911,6 +4078,67 @@ void main() {
         );
       },
     );
+
+    test(
+      'allLaneChains enumerates a lane that carries ONLY a disabled chain '
+      'flag or an inheritance marker — state a chain-keyed enumeration would '
+      'silently drop on save',
+      () {
+        final repo = buildRepo()
+          ..setLaneChainEnabled(channel: 0, lane: 1, enabled: false)
+          ..setLaneChainMeta(channel: 2, lane: 0, inheritedFrom: [3]);
+        addTearDown(repo.dispose);
+
+        final lanes = repo.allLaneChains();
+        expect(lanes.keys.toSet(), {(0, 1), (2, 0)});
+        expect(lanes[(0, 1)]!.chainEnabled, isFalse);
+        expect(lanes[(0, 1)]!.entries, isEmpty);
+        expect(lanes[(2, 0)]!.meta?.inheritedFrom, [3]);
+      },
+    );
+
+    test(
+      'allTrackChains and masterChainEnvelope expose the remembered bus '
+      'stages, flag-only channels included',
+      () {
+        final repo = buildRepo()
+          ..setTrackEffects(
+            channel: 1,
+            effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+          )
+          ..setTrackChainEnabled(channel: 2, enabled: false)
+          ..setMasterEffects(
+            effects: [BuiltInEffect(type: TrackEffectType.filter)],
+          )
+          ..setMasterChainEnabled(enabled: false);
+        addTearDown(repo.dispose);
+
+        final tracks = repo.allTrackChains();
+        expect(tracks.keys.toSet(), {1, 2});
+        expect(
+          (tracks[1]!.entries.single as BuiltInEffect).type,
+          TrackEffectType.reverb,
+        );
+        expect(tracks[1]!.chainEnabled, isTrue);
+        expect(tracks[2]!.entries, isEmpty);
+        expect(tracks[2]!.chainEnabled, isFalse);
+
+        final master = repo.masterChainEnvelope();
+        expect(
+          (master.entries.single as BuiltInEffect).type,
+          TrackEffectType.filter,
+        );
+        expect(master.chainEnabled, isFalse);
+      },
+    );
+
+    test('masterChainEnvelope reads as the empty enabled envelope when no '
+        'Master chain is configured', () {
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+
+      expect(repo.masterChainEnvelope(), const FxChainEnvelope());
+    });
 
     test('allMonitors captures an enabled DRY monitor (no FX chain)', () {
       // The regression that dropped dry monitors on save: an enabled input with

@@ -20,7 +20,9 @@ void main() {
 
     setUp(() {
       looper = _MockLooperRepository();
-      when(looper.allLaneEffects).thenReturn(const {});
+      when(looper.allLaneChains).thenReturn(const {});
+      when(looper.allTrackChains).thenReturn(const {});
+      when(looper.masterChainEnvelope).thenReturn(const FxChainEnvelope());
       when(looper.allMonitors).thenReturn(const {});
     });
 
@@ -40,8 +42,8 @@ void main() {
       expect(monitor.outputMask, 0x2);
       expect(monitor.volume, 1.0);
       expect(monitor.muted, isFalse);
-      // A dry monitor encodes to the empty chain.
-      expect(decodeTrackEffects(monitor.encoded), isEmpty);
+      // A dry monitor encodes to the empty (enabled) envelope.
+      expect(decodeFxChain(monitor.encoded), const FxChainEnvelope());
     });
 
     test('carries a monitor FX chain through the encoding', () {
@@ -55,12 +57,84 @@ void main() {
 
       final chains = chainsFromLooper(looper);
 
-      final decoded = decodeTrackEffects(chains.monitors.single.encoded);
+      final decoded = decodeFxChain(chains.monitors.single.encoded).entries;
       expect((decoded.single as BuiltInEffect).type, TrackEffectType.reverb);
     });
 
     test('emits no monitors when none are configured', () {
       expect(chainsFromLooper(looper).monitors, isEmpty);
+    });
+
+    test('encodes every stage as the chain ENVELOPE — chain flag, per-slot '
+        'enabled bits and inheritance meta all inside the string (R15)', () {
+      when(looper.allLaneChains).thenReturn({
+        (0, 0): FxChainEnvelope(
+          chainEnabled: false,
+          meta: const FxChainMeta(inheritedFrom: [1, 2]),
+          entries: [
+            BuiltInEffect(
+              type: TrackEffectType.drive,
+              enabled: false,
+              slotId: 'aa-1',
+            ),
+          ],
+        ),
+      });
+      when(looper.allMonitors).thenReturn(const {
+        0: InputMonitor(input: 0, enabled: true, chainEnabled: false),
+      });
+
+      final chains = chainsFromLooper(looper);
+
+      final lane = decodeFxChain(chains.laneChains.single.encoded);
+      expect(lane.chainEnabled, isFalse);
+      expect(lane.meta?.inheritedFrom, [1, 2]);
+      final laneFx = lane.entries.single as BuiltInEffect;
+      expect(laneFx.enabled, isFalse);
+      expect(laneFx.slotId, 'aa-1');
+      // A dry monitor whose chain flag is off still persists that flag — the
+      // one place it can live is the envelope (no per-flag settings key).
+      expect(decodeFxChain(chains.monitors.single.encoded).chainEnabled, false);
+    });
+
+    test('captures the two BUS stages (Track + Master) as envelopes', () {
+      when(looper.allTrackChains).thenReturn({
+        1: FxChainEnvelope(
+          chainEnabled: false,
+          entries: [BuiltInEffect(type: TrackEffectType.reverb)],
+        ),
+      });
+      when(looper.masterChainEnvelope).thenReturn(
+        FxChainEnvelope(
+          entries: [BuiltInEffect(type: TrackEffectType.filter)],
+        ),
+      );
+
+      final chains = chainsFromLooper(looper);
+
+      expect(chains.trackChains.single.channel, 1);
+      final track = decodeFxChain(chains.trackChains.single.encoded);
+      expect(track.chainEnabled, isFalse);
+      expect(
+        (track.entries.single as BuiltInEffect).type,
+        TrackEffectType.reverb,
+      );
+      final master = decodeFxChain(chains.masterChain);
+      expect(master.chainEnabled, isTrue);
+      expect(
+        (master.entries.single as BuiltInEffect).type,
+        TrackEffectType.filter,
+      );
+    });
+
+    test("emits the manifest's empty-string Master spelling for a rig with no "
+        'Master state — one way to say "empty", and it still overwrites a '
+        'leftover on load', () {
+      final chains = chainsFromLooper(looper);
+
+      expect(chains.trackChains, isEmpty);
+      expect(chains.masterChain, '');
+      expect(decodeFxChain(chains.masterChain), const FxChainEnvelope());
     });
   });
 
@@ -69,16 +143,22 @@ void main() {
 
     setUp(() {
       looper = _MockLooperRepository();
-      when(looper.allLaneEffects).thenReturn(const {});
+      when(looper.allLaneChains).thenReturn(const {});
+      when(looper.allTrackChains).thenReturn(const {});
+      when(looper.masterChainEnvelope).thenReturn(const FxChainEnvelope());
       when(looper.allMonitors).thenReturn(const {});
       when(() => looper.limiterEnabled).thenReturn(true);
       when(() => looper.limiterCeiling).thenReturn(0.99);
     });
 
     test('maps every lane chain to its (channel, lane) address', () {
-      when(looper.allLaneEffects).thenReturn({
-        (0, 1): [BuiltInEffect(type: TrackEffectType.reverb)],
-        (2, 0): [BuiltInEffect(type: TrackEffectType.delay)],
+      when(looper.allLaneChains).thenReturn({
+        (0, 1): FxChainEnvelope(
+          entries: [BuiltInEffect(type: TrackEffectType.reverb)],
+        ),
+        (2, 0): FxChainEnvelope(
+          entries: [BuiltInEffect(type: TrackEffectType.delay)],
+        ),
       });
 
       final chains = performanceChainsFromLooper(looper);
@@ -92,13 +172,15 @@ void main() {
     test('carries built-in effect params across the engine boundary', () {
       // The manifest embeds the ENGINE models as canonical JSON, so the
       // per-effect params must survive the domain → engine conversion intact.
-      when(looper.allLaneEffects).thenReturn({
-        (0, 0): [
-          BuiltInEffect(
-            type: TrackEffectType.octaver,
-            params: const [7, 0.5],
-          ),
-        ],
+      when(looper.allLaneChains).thenReturn({
+        (0, 0): FxChainEnvelope(
+          entries: [
+            BuiltInEffect(
+              type: TrackEffectType.octaver,
+              params: const [7, 0.5],
+            ),
+          ],
+        ),
       });
 
       final effects = performanceChainsFromLooper(
@@ -111,19 +193,21 @@ void main() {
     });
 
     test('carries a plugin entry ref, state and name across the boundary', () {
-      when(looper.allLaneEffects).thenReturn({
-        (1, 0): [
-          const PluginEffect(
-            ref: PluginRef(
-              format: PluginFormat.vst3,
-              id: 'com.example.chorus',
-              version: 0x00020100,
+      when(looper.allLaneChains).thenReturn({
+        (1, 0): const FxChainEnvelope(
+          entries: [
+            PluginEffect(
+              ref: PluginRef(
+                format: PluginFormat.vst3,
+                id: 'com.example.chorus',
+                version: 0x00020100,
+              ),
+              paramValues: {3: 0.25},
+              state: 'YmFzZTY0',
+              name: 'Chorus',
             ),
-            paramValues: {3: 0.25},
-            state: 'YmFzZTY0',
-            name: 'Chorus',
-          ),
-        ],
+          ],
+        ),
       });
 
       final effects = performanceChainsFromLooper(
@@ -176,6 +260,49 @@ void main() {
       expect(monitor.input, 0);
       expect(monitor.enabled, isTrue);
       expect(monitor.effects, isEmpty);
+    });
+
+    test('records the BUS stages and every chain-enabled flag (R20/R3)', () {
+      when(looper.allLaneChains).thenReturn({
+        (0, 0): FxChainEnvelope(
+          chainEnabled: false,
+          entries: [BuiltInEffect(type: TrackEffectType.drive)],
+        ),
+      });
+      when(looper.allTrackChains).thenReturn({
+        1: FxChainEnvelope(
+          chainEnabled: false,
+          entries: [BuiltInEffect(type: TrackEffectType.reverb)],
+        ),
+      });
+      when(looper.masterChainEnvelope).thenReturn(
+        FxChainEnvelope(
+          chainEnabled: false,
+          entries: [
+            BuiltInEffect(type: TrackEffectType.filter, enabled: false),
+          ],
+        ),
+      );
+      when(looper.allMonitors).thenReturn(const {
+        0: InputMonitor(input: 0, enabled: true, chainEnabled: false),
+      });
+
+      final chains = performanceChainsFromLooper(looper);
+
+      // A bypassed chain must replay bypassed, so every flag is recorded —
+      // the manifest is the only place a replay can learn them from.
+      expect(chains.laneChains.single.chainEnabled, isFalse);
+      expect(chains.monitors.single.chainEnabled, isFalse);
+      expect(chains.trackChains.single.channel, 1);
+      expect(chains.trackChains.single.chainEnabled, isFalse);
+      expect(
+        (chains.trackChains.single.effects.single as le.BuiltInEffect).type,
+        le.TrackEffectType.reverb,
+      );
+      expect(chains.masterChainEnabled, isFalse);
+      final master = chains.masterEffects.single as le.BuiltInEffect;
+      expect(master.type, le.TrackEffectType.filter);
+      expect(master.enabled, isFalse);
     });
 
     test('reads the real master-limiter state, even for an empty rig', () {
@@ -255,13 +382,111 @@ void main() {
 
       final rig = rigFromBundle(bundle);
 
-      final laneChain = rig.laneEffects[(0, 0)]!;
+      final laneChain = rig.laneChains[(0, 0)]!.entries;
       expect((laneChain.single as BuiltInEffect).type, TrackEffectType.drive);
       final monitorChain = rig.monitors.single.effects;
       expect(
         (monitorChain.single as BuiltInEffect).type,
         TrackEffectType.reverb,
       );
+    });
+
+    test('decodes the v5 BUS stages into the rig, chain flags included', () {
+      final pcm = Float32List.fromList([1, 1, 1, 1]);
+      final bundle = (
+        session: Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 4,
+          tracks: [
+            SessionTrack(
+              channel: 0,
+              multiple: 1,
+              lengthFrames: 4,
+              lanes: [lane(0, 'track0_lane0_L0.wav')],
+            ),
+          ],
+          trackChains: [
+            SessionTrackChain(
+              channel: 0,
+              encoded: encodeFxChain(
+                FxChainEnvelope(
+                  chainEnabled: false,
+                  entries: [BuiltInEffect(type: TrackEffectType.reverb)],
+                ),
+              ),
+            ),
+          ],
+          masterChain: encodeFxChain(
+            FxChainEnvelope(
+              entries: [BuiltInEffect(type: TrackEffectType.filter)],
+            ),
+          ),
+        ),
+        laneStems: {
+          (0, 0): [pcm],
+        },
+      );
+
+      final rig = rigFromBundle(bundle);
+
+      final track = rig.trackChains[0]!;
+      expect(track.chainEnabled, isFalse);
+      expect(
+        (track.entries.single as BuiltInEffect).type,
+        TrackEffectType.reverb,
+      );
+      expect(rig.masterChain.chainEnabled, isTrue);
+      expect(
+        (rig.masterChain.entries.single as BuiltInEffect).type,
+        TrackEffectType.filter,
+      );
+    });
+
+    test('a v4 bundle (no bus-stage fields at all) yields empty bus stages, '
+        'every level enabled — the presence-keyed migration [R15]', () {
+      final pcm = Float32List.fromList([1, 1, 1, 1]);
+      final bundle = (
+        session: Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 4,
+          tracks: [
+            SessionTrack(
+              channel: 0,
+              multiple: 1,
+              lengthFrames: 4,
+              lanes: [lane(0, 'track0_lane0_L0.wav')],
+            ),
+          ],
+          // A v4 manifest's Loop chain: the bare entries array, no envelope.
+          laneChains: [
+            SessionLaneChain(
+              channel: 0,
+              lane: 0,
+              encoded: encodeTrackEffects([
+                BuiltInEffect(type: TrackEffectType.drive),
+              ]),
+            ),
+          ],
+        ),
+        laneStems: {
+          (0, 0): [pcm],
+        },
+      );
+
+      final rig = rigFromBundle(bundle);
+
+      expect(rig.trackChains, isEmpty);
+      expect(rig.masterChain, const FxChainEnvelope());
+      // The lane it DID describe loads enabled at both levels, with no
+      // inheritance marker — and no slot ids yet (the repository mints those).
+      final loop = rig.laneChains[(0, 0)]!;
+      expect(loop.chainEnabled, isTrue);
+      expect(loop.meta, isNull);
+      final loopFx = loop.entries.single as BuiltInEffect;
+      expect(loopFx.enabled, isTrue);
+      expect(loopFx.slotId, isNull);
     });
 
     test('maps every lane that has decoded audio', () {

@@ -20,15 +20,18 @@ class PerformanceLaneSnapshot {
     required this.deferred,
     this.pcmFile,
     this.effects = const [],
+    this.chainEnabled = true,
   });
 
-  /// Rebuilds a [PerformanceLaneSnapshot] from a decoded JSON map.
+  /// Rebuilds a [PerformanceLaneSnapshot] from a decoded JSON map. An absent
+  /// `chainEnabled` reads as engaged — see [chainEnabled].
   factory PerformanceLaneSnapshot.fromJson(Map<String, dynamic> json) =>
       PerformanceLaneSnapshot(
         lane: (json['lane'] as num).toInt(),
         lengthFrames: (json['lenFrames'] as num).toInt(),
         deferred: json['deferred'] as bool,
         pcmFile: json['pcmRef'] as String?,
+        chainEnabled: json['chainEnabled'] as bool? ?? true,
         effects: [
           for (final e in (json['effects'] as List<dynamic>? ?? const []))
             TrackEffect.fromJson(e as Map<String, dynamic>),
@@ -48,11 +51,24 @@ class PerformanceLaneSnapshot {
   /// `loops/track0-lane0.wav`), or `null` when [deferred] or empty.
   final String? pcmFile;
 
-  /// The lane's effect chain, in order. Only ever populated on an arm-time
-  /// snapshot ("chain at t=0" — the ER diagram's `FX_ENTRY`); a disarm-time
-  /// snapshot leaves this empty since chain changes are already logged
-  /// (D-LOG), not re-snapshotted.
+  /// The lane's effect chain, in order (each entry carrying its own `enabled`
+  /// bit). Only ever populated on an arm-time snapshot ("chain at t=0" — the
+  /// ER diagram's `FX_ENTRY`); a disarm-time snapshot leaves this empty since
+  /// chain changes are already logged (D-LOG), not re-snapshotted.
   final List<TrackEffect> effects;
+
+  /// Whether the lane's chain was engaged as a whole at arm time (R15/R3).
+  /// Written only when disabled, so an enabled chain leaves the manifest
+  /// byte-identical to what a pre-FX-v3 build wrote; a reader tells "absent
+  /// because enabled" from "absent because legacy" via
+  /// [PerformanceArmSnapshot.fxStagesVersion].
+  ///
+  /// **Arm-time only**, exactly like [effects] — a disarm-time snapshot never
+  /// reports it and so always leaves it at `true`. A reader reconciling the two
+  /// passes must take this flag (and [effects]) from the ARM entry even when it
+  /// prefers the disarm entry's PCM; reading it off a disarm entry would report
+  /// every bypassed chain as engaged.
+  final bool chainEnabled;
 
   /// Serializes this lane snapshot to a JSON map.
   Map<String, dynamic> toJson() => {
@@ -60,6 +76,7 @@ class PerformanceLaneSnapshot {
     'lenFrames': lengthFrames,
     'deferred': deferred,
     if (pcmFile != null) 'pcmRef': pcmFile,
+    if (!chainEnabled) 'chainEnabled': false,
     if (effects.isNotEmpty) 'effects': [for (final e in effects) e.toJson()],
   };
 }
@@ -122,9 +139,18 @@ class PerformanceTrackSnapshot {
 
 /// The arm-time snapshot (ARM_SNAPSHOT / TRACK_STATE / LANE_SNAPSHOT /
 /// FX_ENTRY in the umbrella plan's data model): clock position, transport +
-/// mix state, and every settled lane's PCM + effect chain, plus the monitor
-/// and master-bus state the engine snapshot alone cannot supply (see
+/// mix state, and every settled lane's PCM + effect chain, plus the monitor,
+/// bus-stage and master state the engine snapshot alone cannot supply (see
 /// [PerformanceChains]).
+///
+/// All four FX stages of the v3 model are recorded — Input ([monitors]), Loop
+/// (per-lane, inside [tracks]), Track ([trackChains]) and Master
+/// ([masterEffects] + [masterChainEnabled]) — each with its chain-enabled flag
+/// and each entry with its own `enabled` bit, so a replay seeds arm-time bypass
+/// state rather than assuming everything was audible (R3). [fxStagesVersion] is
+/// the presence-keyed marker that tells a legacy snapshot (written before those
+/// fields existed) from a current one whose defaults happen to be omitted
+/// (R20).
 @immutable
 class PerformanceArmSnapshot {
   /// Creates a [PerformanceArmSnapshot].
@@ -137,9 +163,18 @@ class PerformanceArmSnapshot {
     required this.latencyOffsetFrames,
     this.tracks = const [],
     this.monitors = const [],
+    this.trackChains = const [],
+    this.masterEffects = const [],
+    this.masterChainEnabled = true,
+    this.fxStagesVersion = currentFxStagesVersion,
   });
 
   /// Rebuilds a [PerformanceArmSnapshot] from a decoded JSON map.
+  ///
+  /// Presence-keyed, matching the session manifest's own migration style (no
+  /// version `switch`): an absent `fxStagesVersion` marks a LEGACY snapshot —
+  /// bus stages empty, every chain enabled — and the two bus fields are simply
+  /// absent there.
   factory PerformanceArmSnapshot.fromJson(Map<String, dynamic> json) =>
       PerformanceArmSnapshot(
         clockFrame: (json['clockFrame'] as num).toInt(),
@@ -148,6 +183,8 @@ class PerformanceArmSnapshot {
         limiterEnabled: json['limiterOn'] as bool,
         limiterCeiling: (json['limiterCeiling'] as num).toDouble(),
         latencyOffsetFrames: (json['latencyOffsetFrames'] as num).toInt(),
+        fxStagesVersion:
+            (json['fxStagesVersion'] as num?)?.toInt() ?? legacyFxStagesVersion,
         tracks: [
           for (final t in (json['tracks'] as List<dynamic>? ?? const []))
             PerformanceTrackSnapshot.fromJson(t as Map<String, dynamic>),
@@ -156,7 +193,25 @@ class PerformanceArmSnapshot {
           for (final m in (json['monitors'] as List<dynamic>? ?? const []))
             m as Map<String, dynamic>,
         ],
+        trackChains: [
+          for (final c in (json['trackChains'] as List<dynamic>? ?? const []))
+            PerformanceTrackChain.fromJson(c as Map<String, dynamic>),
+        ],
+        masterEffects: [
+          for (final e in (json['masterEffects'] as List<dynamic>? ?? const []))
+            TrackEffect.fromJson(e as Map<String, dynamic>),
+        ],
+        masterChainEnabled: json['masterChainEnabled'] as bool? ?? true,
       );
+
+  /// The FX-stage schema revision this code writes (R20): the four-stage model
+  /// with per-chain + per-slot enabled flags.
+  static const int currentFxStagesVersion = 1;
+
+  /// The revision a snapshot with NO `fxStagesVersion` marker reads as: a
+  /// pre-FX-v3 capture that knew only the Input and Loop stages and had no
+  /// concept of a disabled chain or slot.
+  static const int legacyFxStagesVersion = 0;
 
   /// Master playhead position at the arm instant.
   final int clockFrame;
@@ -179,11 +234,32 @@ class PerformanceArmSnapshot {
   /// Every track's state at arm time.
   final List<PerformanceTrackSnapshot> tracks;
 
-  /// Every monitor input's configuration at arm time, as pre-encoded JSON
-  /// maps (`{input, enabled, outputMask, volume, muted, effects}`).
+  /// Every monitor input's configuration at arm time (the Input stage), as
+  /// pre-encoded JSON maps (`{input, enabled, outputMask, volume, muted,
+  /// chainEnabled?, effects}`).
   final List<Map<String, dynamic>> monitors;
 
-  /// Serializes this snapshot to a JSON map.
+  /// Every track's Track-stage (stereo bus) chain at arm time. Empty for a
+  /// legacy snapshot ([legacyFxStagesVersion]) — and for a rig that simply has
+  /// no bus FX.
+  final List<PerformanceTrackChain> trackChains;
+
+  /// The Master insert chain's entries at arm time, in order.
+  final List<TrackEffect> masterEffects;
+
+  /// Whether the Master insert chain was engaged as a whole at arm time.
+  final bool masterChainEnabled;
+
+  /// Which FX-stage schema this snapshot was written under (R20):
+  /// [currentFxStagesVersion] for a four-stage capture,
+  /// [legacyFxStagesVersion] when the marker was absent. A reader uses it to
+  /// tell an omitted default from an unknowable legacy value.
+  final int fxStagesVersion;
+
+  /// Serializes this snapshot to a JSON map. The marker and the two bus fields
+  /// are omitted at their legacy/default values, so a rig with no bus FX writes
+  /// the same bytes a pre-FX-v3 build did — apart from the marker itself, which
+  /// is what makes that distinction readable.
   Map<String, dynamic> toJson() => {
     'clockFrame': clockFrame,
     'masterLenFrames': masterLengthFrames,
@@ -191,8 +267,15 @@ class PerformanceArmSnapshot {
     'limiterOn': limiterEnabled,
     'limiterCeiling': limiterCeiling,
     'latencyOffsetFrames': latencyOffsetFrames,
+    if (fxStagesVersion != legacyFxStagesVersion)
+      'fxStagesVersion': fxStagesVersion,
     'tracks': [for (final t in tracks) t.toJson()],
     'monitors': monitors,
+    if (trackChains.isNotEmpty)
+      'trackChains': [for (final c in trackChains) c.toJson()],
+    if (masterEffects.isNotEmpty)
+      'masterEffects': [for (final e in masterEffects) e.toJson()],
+    if (!masterChainEnabled) 'masterChainEnabled': false,
   };
 }
 

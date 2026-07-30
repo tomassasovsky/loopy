@@ -158,6 +158,11 @@ class PerformanceRepository {
       latencyOffsetFrames: snapshot.recordOffsetFrames,
       tracks: tracks,
       monitors: _monitorsJson(chains),
+      // The bus stages (FX v3, R20/R3): recorded so a replay can rebuild the
+      // whole four-stage rig, bypass state included.
+      trackChains: chains.trackChains,
+      masterEffects: chains.masterEffects,
+      masterChainEnabled: chains.masterChainEnabled,
     );
     await File(
       '$dir/$_armSnapshotFileName',
@@ -481,15 +486,17 @@ class PerformanceRepository {
             channels: 1,
           ),
         );
+        final laneChain = writeChains
+            ? _laneChain(chains, channel, laneIndex)
+            : null;
         lanes.add(
           PerformanceLaneSnapshot(
             lane: laneIndex,
             lengthFrames: pcm.length,
             deferred: false,
             pcmFile: filename,
-            effects: writeChains
-                ? _laneEffects(chains, channel, laneIndex)
-                : const [],
+            effects: laneChain?.effects ?? const [],
+            chainEnabled: laneChain?.chainEnabled ?? true,
           ),
         );
       }
@@ -508,15 +515,17 @@ class PerformanceRepository {
     return tracks;
   }
 
-  List<TrackEffect> _laneEffects(
+  /// Lane [lane] of [channel]'s chain among [chains], or `null` when the rig
+  /// defines none there (an all-default lane: dry and engaged).
+  PerformanceLaneChain? _laneChain(
     PerformanceChains chains,
     int channel,
     int lane,
   ) {
     for (final c in chains.laneChains) {
-      if (c.channel == channel && c.lane == lane) return c.effects;
+      if (c.channel == channel && c.lane == lane) return c;
     }
-    return const [];
+    return null;
   }
 
   List<Map<String, dynamic>> _monitorsJson(PerformanceChains chains) => [
@@ -527,6 +536,8 @@ class PerformanceRepository {
         'outputMask': m.outputMask,
         'volume': m.volume,
         'muted': m.muted,
+        // Omitted while engaged, like every other chain flag in the manifest.
+        if (!m.chainEnabled) 'chainEnabled': false,
         'effects': [for (final e in m.effects) e.toJson()],
       },
   ];

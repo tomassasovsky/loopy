@@ -283,12 +283,16 @@ class SessionTrack {
   );
 }
 
-/// One lane's effect chain within a [Session] (schema v2+).
+/// One lane's Loop-stage effect chain within a [Session] (schema v2+).
 ///
-/// The chain is stored as the opaque [encoded] string produced by the looper
-/// domain's `encodeTrackEffects` — the same wire format settings persist — so
-/// this data package never depends on the effect model. Chains exist
-/// independently of audio, so a [channel]/[lane] here may not match any
+/// The chain is stored as the opaque [encoded] string the looper domain
+/// produces — the same wire format settings persist — so this data package
+/// never depends on the effect model. Since schema v5 that string is the
+/// looper domain's chain ENVELOPE (`encodeFxChain`: the entries plus the
+/// chain-enabled flag and inheritance provenance); a v4-or-earlier manifest
+/// carries the bare entries array (`encodeTrackEffects`), which the same
+/// decoder still accepts. Either way the content stays opaque here. Chains
+/// exist independently of audio, so a [channel]/[lane] here may not match any
 /// [SessionTrack].
 @immutable
 class SessionLaneChain {
@@ -334,6 +338,48 @@ class SessionLaneChain {
 
   @override
   int get hashCode => Object.hash(channel, lane, encoded);
+}
+
+/// One track's Track-stage (stereo bus) effect chain within a [Session]
+/// (schema v5).
+///
+/// The Track stage sits downstream of a track's lanes, so — unlike a
+/// [SessionLaneChain] — one of these exists per track channel, with no lane
+/// coordinate. Stored as the same opaque [encoded] envelope string (see
+/// [SessionLaneChain]), so this data package still never depends on the effect
+/// model. Chains exist independently of audio, so a [channel] here may not
+/// match any [SessionTrack].
+@immutable
+class SessionTrackChain {
+  /// Creates a [SessionTrackChain].
+  const SessionTrackChain({required this.channel, required this.encoded});
+
+  /// Projects a [SessionTrackChain] from a decoded JSON map.
+  factory SessionTrackChain.fromJson(Map<String, dynamic> json) =>
+      SessionTrackChain(
+        channel: (json['channel'] as num).toInt(),
+        encoded: json['encoded'] as String,
+      );
+
+  /// Track channel whose stereo bus this chain sits on.
+  final int channel;
+
+  /// The chain as an opaque chain-envelope string.
+  final String encoded;
+
+  /// Serializes this chain to a JSON map.
+  Map<String, dynamic> toJson() => {'channel': channel, 'encoded': encoded};
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SessionTrackChain &&
+          runtimeType == other.runtimeType &&
+          channel == other.channel &&
+          encoded == other.encoded;
+
+  @override
+  int get hashCode => Object.hash(channel, encoded);
 }
 
 /// One hardware input's live-monitor configuration within a [Session] (schema
@@ -440,6 +486,20 @@ class SessionMonitor {
 /// for those fields: hoisted to session level, captured from every channel
 /// unconditionally (see `SessionRepository._sessionFrom`), independent of
 /// whether that channel has a [SessionTrack] entry at all.
+///
+/// Schema v5 (FX system v3, #351 part 3b) adds the two BUS stages of the
+/// four-stage FX model — [trackChains] (one per track channel) and the single
+/// [masterChain] — and re-documents the two chain fields it already had as the
+/// model's other two stages: [monitors] is the **Input** stage and
+/// [laneChains] the **Loop** stage. Those keep their v2 key names (renaming
+/// them would be churn with no presence-keyed payoff). Every chain string is
+/// now the looper domain's chain ENVELOPE, which carries the per-chain enabled
+/// flag, the per-slot enabled flags, stable slot ids, and inheritance
+/// provenance INSIDE the opaque string — so v5 adds no per-flag manifest
+/// fields, and a v4 manifest's bare entries array still decodes (with every
+/// level defaulting to enabled). Both new fields are presence-keyed: a
+/// v4-or-earlier manifest simply lacks them and loads with both bus stages
+/// EMPTY.
 @immutable
 class Session {
   /// Creates a [Session].
@@ -450,6 +510,8 @@ class Session {
     required this.tracks,
     this.laneChains = const [],
     this.monitors = const [],
+    this.trackChains = const [],
+    this.masterChain = '',
     this.tempoBpm = 0,
     this.tempoSource = TempoSource.none,
     this.tsNum = 4,
@@ -471,8 +533,13 @@ class Session {
   /// v3-or-earlier manifest (no tempo grid fields at all) loads with every new
   /// field at its grid-off default (see the class doc) — zero data loss, and
   /// indistinguishable from a v4 session someone deliberately saved with the
-  /// grid off. Throws [SessionUnsupportedVersion] for a manifest written by a
-  /// newer, incompatible schema version than this code understands.
+  /// grid off. A v4-or-earlier manifest (no `trackChains` / `masterChain`)
+  /// loads with both bus stages empty, on the same presence-keyed rule — and,
+  /// since its chain strings are pre-envelope bare arrays, every chain and
+  /// slot decodes ENABLED at the looper-domain envelope layer, which is what
+  /// makes a v4 load fingerprint-identical to the session that wrote it.
+  /// Throws [SessionUnsupportedVersion] for a manifest written by a newer,
+  /// incompatible schema version than this code understands.
   factory Session.fromJson(Map<String, dynamic> json) {
     final version = (json['version'] as num?)?.toInt() ?? formatVersion;
     if (version > formatVersion) {
@@ -497,6 +564,11 @@ class Session {
         for (final m in (json['monitors'] as List<dynamic>? ?? const []))
           SessionMonitor.fromJson(m as Map<String, dynamic>),
       ],
+      trackChains: [
+        for (final c in (json['trackChains'] as List<dynamic>? ?? const []))
+          SessionTrackChain.fromJson(c as Map<String, dynamic>),
+      ],
+      masterChain: json['masterChain'] as String? ?? '',
       tempoBpm: (json['tempoBpm'] as num?)?.toDouble() ?? 0,
       tempoSource: _tempoSourceFromJson(json['tempoSource'] as String?),
       tsNum: (json['tsNum'] as num?)?.toInt() ?? 4,
@@ -515,15 +587,18 @@ class Session {
     );
   }
 
-  /// The manifest schema version this code writes and accepts. v4 adds the
-  /// tempo-grid + click + count-in fields (see the class doc); every field is
-  /// additive and defaults to grid-off, so v3 (and earlier) manifests still
-  /// load losslessly. v3 replaced the per-track single `stem` with per-lane
-  /// [SessionTrack.lanes] (each holding ordered audio layers); v2 added the
-  /// lane + monitor effect chains. v1, v2, and v3 bundles still load — a
-  /// legacy track migrates to one lane-0 live layer, and a v1 bundle loads
-  /// with empty chains.
-  static const int formatVersion = 4;
+  /// The manifest schema version this code writes and accepts. v5 adds the
+  /// Track-stage + Master FX chains and moves every chain string to the
+  /// looper domain's chain envelope (see the class doc); both fields are
+  /// presence-keyed, so a v4 bundle loads with the bus stages empty and every
+  /// enabled flag defaulted true. v4 added the tempo-grid + click + count-in
+  /// fields; every one of those is additive and defaults to grid-off, so v3
+  /// (and earlier) manifests still load losslessly. v3 replaced the per-track
+  /// single `stem` with per-lane [SessionTrack.lanes] (each holding ordered
+  /// audio layers); v2 added the lane + monitor effect chains. v1 through v4
+  /// bundles all still load — a legacy track migrates to one lane-0 live
+  /// layer, and a v1 bundle loads with empty chains.
+  static const int formatVersion = 5;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';
@@ -540,11 +615,23 @@ class Session {
   /// The session's tracks (those that hold audio).
   final List<SessionTrack> tracks;
 
-  /// The lane effect chains the session defines (empty for a v1 bundle).
+  /// The Loop-stage (per-lane) effect chains the session defines (empty for a
+  /// v1 bundle).
   final List<SessionLaneChain> laneChains;
 
-  /// The per-input live monitors the session defines (empty for a v1 bundle).
+  /// The Input-stage per-input live monitors the session defines (empty for a
+  /// v1 bundle).
   final List<SessionMonitor> monitors;
+
+  /// The Track-stage (per-track stereo bus) effect chains the session defines
+  /// (schema v5; empty for a v4-or-earlier bundle, which could not describe
+  /// this stage at all).
+  final List<SessionTrackChain> trackChains;
+
+  /// The single Master insert chain as an opaque chain-envelope string (schema
+  /// v5); `''` when the session defines none — the same "no chain" state a
+  /// v4-or-earlier bundle loads with.
+  final String masterChain;
 
   /// Denominator-note beats per minute (schema v4, Phase A); `0` = unset (no
   /// tempo was ever set — mirrors `TransportState.tempoBpm`/
@@ -603,7 +690,7 @@ class Session {
   final List<int> oneShotChannels;
 
   /// Serializes this session manifest to a JSON map. Always writes the
-  /// current [formatVersion] (v4, per D12 — this code never writes v3).
+  /// current [formatVersion] (v5 — this code never writes an older schema).
   Map<String, dynamic> toJson() => {
     'version': formatVersion,
     'sampleRate': sampleRate,
@@ -612,6 +699,8 @@ class Session {
     'tracks': [for (final t in tracks) t.toJson()],
     'laneChains': [for (final c in laneChains) c.toJson()],
     'monitors': [for (final m in monitors) m.toJson()],
+    'trackChains': [for (final c in trackChains) c.toJson()],
+    'masterChain': masterChain,
     'tempoBpm': tempoBpm,
     'tempoSource': tempoSource.name,
     'tsNum': tsNum,
@@ -645,9 +734,11 @@ class Session {
           countInBars == other.countInBars &&
           looperMode == other.looperMode &&
           primaryTrack == other.primaryTrack &&
+          masterChain == other.masterChain &&
           _listEquals(tracks, other.tracks) &&
           _listEquals(laneChains, other.laneChains) &&
           _listEquals(monitors, other.monitors) &&
+          _listEquals(trackChains, other.trackChains) &&
           _listEquals(oneShotChannels, other.oneShotChannels);
 
   @override
@@ -666,9 +757,11 @@ class Session {
     countInBars,
     looperMode,
     primaryTrack,
+    masterChain,
     Object.hashAll(tracks),
     Object.hashAll(laneChains),
     Object.hashAll(monitors),
+    Object.hashAll(trackChains),
     Object.hashAll(oneShotChannels),
   );
 }
