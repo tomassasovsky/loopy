@@ -50,6 +50,9 @@
 #define atomic_load_explicit(slot, mo) (*(slot))
 #undef atomic_store_explicit
 #define atomic_store_explicit(slot, v, mo) ((void)(*(slot) = (v)))
+/* le_audio_rev_bump below; plugins never call it but the compiler parses it. */
+#undef atomic_fetch_add_explicit
+#define atomic_fetch_add_explicit(slot, v, mo) ((void)(*(slot) += (v)))
 #endif
 
 #include "audio_ring.h"        /* le_audio_ring (performance-recording taps) */
@@ -235,6 +238,29 @@ typedef struct le_fx_state {
   le_plugin_slot *_Atomic plugin[LE_FX_MAX];
 } le_fx_state;
 
+/* One rendered Loop-stage wet-cache entry (FX v3 part 2): a lane's full loop,
+ * pre-rendered through its record-route chain at the volume baked into the key,
+ * as INTERLEAVED STEREO floats (chains decorrelate a mono source, so entries
+ * are stereo by design [R5] — memory accounting is 2x frames). Immutable once
+ * published: the control thread allocates and fully writes it, publishes it
+ * via le_lane.a_wet (release), and the audio thread only ever loads + reads it
+ * within one buffer. Reclamation is control-thread-only and NON-BLOCKING:
+ * retract, then free only after two processed-buffer boundaries (a_frames)
+ * have been observed to pass — the engine_plugin.c clear-slot safety rule,
+ * observed passively via engine_cache.c's graveyard list rather than a
+ * control-thread sleep — so no free can race a load. The key is the full
+ * {audio_rev, chain_fp, vol_bits, len} tuple [R1]: the audio thread re-derives
+ * the lane's current key every buffer and plays the entry only while every
+ * field matches — any mismatch is the same-buffer live fallback. */
+typedef struct le_wet_entry {
+  uint32_t audio_rev; /* le_track.a_audio_rev at render */
+  uint64_t chain_fp;  /* le_engine_lane_fx_fingerprint at render */
+  uint32_t vol_bits;  /* le_lane.a_vol_bits at render (D-VOL: pre-chain) */
+  int32_t len;        /* frames; == the lane's a_len at render */
+  float* pcm;         /* interleaved stereo wet, 2*len floats */
+  uint64_t last_used; /* control-side LRU stamp (tick counter) */
+} le_wet_entry;
+
 /* One recordable input lane — the fundamental unit of captured audio.
  *
  * A lane records exactly one hardware input (a_input_channel, -1 = none) into
@@ -298,6 +324,20 @@ typedef struct le_lane {
   int32_t fx_count_pushed;
   int32_t fx_type_pushed[LE_FX_MAX];
   le_fx_state fx;
+
+  /* Loop-stage wet cache (FX v3 part 2). a_wet is the published cache entry
+   * for this lane, or NULL: control-thread single-writer (publish/retract in
+   * engine_cache.c, mirroring the fx.plugin[] discipline), audio-thread
+   * loaded ONCE per buffer (acquire) and key-checked against the lane's
+   * current {a_audio_rev, fingerprint, a_vol_bits, a_len} before any read.
+   * a_cache_active is written only by the audio thread: 1 while cached
+   * playback is engaged (engages only at the loop boundary; any key mismatch
+   * clears it the same buffer — the live fallback). Atomic (relaxed) solely
+   * because the control thread reads it for telemetry
+   * (le_engine_get_lane_cache's `engaged`) — no ordering is carried, it just
+   * keeps the cross-thread read defined and TSan-clean. */
+  le_wet_entry* _Atomic a_wet;
+  _Atomic int32_t a_cache_active;
 } le_lane;
 
 /* One hardware input's live monitor (engine-level, one slot per input).
@@ -499,6 +539,63 @@ typedef struct le_track {
   uint32_t dub_generation; /* bumped on clear; audio mirrors it in handle_clear
                             * and tags retire events, so a stale event from
                             * before a clear is dropped, never re-pushed */
+
+  /* Content revision counter (FX v3 part 2, [R1]): bumped on EVERY event that
+   * changes which audio this track's lanes play — the identity half of the
+   * wet-cache key. "Which audio" means the mapping from a playback position to
+   * a sample: a_live swaps, in-place content writes, and length changes all
+   * bump; config that only colors playback (FX params/enabled, volume) is
+   * keyed separately (fingerprint + a_vol_bits) and does NOT bump.
+   *
+   * WHY NOT THE POOL SLOT INDEX: pool slots RECYCLE (LE_POOL_SLOTS above —
+   * past the cap the oldest undo layer is evicted and its slot reused, and
+   * undo/redo/clear reclaim and re-arm slots freely), so the same slot index
+   * names different audio at different times. A cache keyed on slot identity
+   * would replay a recycled slot's OLD content as current. Only a
+   * monotonically-advancing revision can key "which audio".
+   *
+   * AUDITED BUMP-SITE TABLE — one row per site, with the thread that bumps.
+   * An unaudited content write is a stale-audio bug by definition; any new
+   * content-mutation path MUST add a row here and a bump there.
+   *
+   *   The rule for WHICH thread bumps: the bump lives where the content
+   *   actually changes. a_live swaps are control-thread stores (content
+   *   changes the instant the store lands), so their bumps are control-side;
+   *   state flips and in-place writes apply on the audio thread, so theirs
+   *   are audio-side. Both threads bump the one atomic (fetch_add).
+   *
+   *   event                        | thread  | bumping function
+   *   -----------------------------+---------+------------------------------
+   *   record finalize (defining)   | audio   | finalize_master
+   *   record finalize (later trk)  | audio   | finalize_new_track
+   *   entry into OVERDUBBING       | audio   | le_dub_session_start
+   *   each retired overdub pass    | audio   | le_dub_boundary,
+   *                                |         | le_dub_block_update (drain)
+   *   undo swap (in-track)         | control | le_undo_swap
+   *   undo to empty                | audio   | apply_command
+   *                                |         | (LE_CMD_UNDO_TO_EMPTY)
+   *   redo swap (in-track)         | control | le_engine_redo
+   *   redo-from-empty              | control | le_engine_redo (the a_live
+   *                                |         | swap; the audio flip follows)
+   *   clear                        | audio   | handle_clear
+   *   clear-restore (#219)         | control | le_restore_clear (the a_live
+   *                                |         | swap; the audio flip follows)
+   *   session load (import)        | control | le_engine_import_track_lane
+   *   session load (layered)       | control | le_engine_finalize_layers
+   *                                |         | (covers le_engine_import_layer:
+   *                                |         | layers fill while EMPTY and
+   *                                |         | publish only at finalize)
+   *
+   * Overdub coverage: the OVERDUBBING-entry bump lands in the same command
+   * drain that flips the state, BEFORE the first in-place write of that
+   * block's frame loop, so a control-thread reader that still observes the
+   * old revision cannot be reading mid-overdub content; punch-out fade-tail
+   * and drain writes are bracketed by a_layer_in_flight (the enqueue gate)
+   * and closed out by the retire bumps. Cross-thread: fetch_add release,
+   * read acquire — the enqueue copy re-checks the revision after copying
+   * (seqlock shape) and the publish step re-checks it again, so a torn copy
+   * can never publish. */
+  _Atomic uint32_t a_audio_rev;
 
   _Atomic int32_t a_state;
   _Atomic int32_t a_undo_depth; /* published PEELABLE layer count — see
@@ -840,6 +937,20 @@ struct le_engine {
   le_track tracks[LE_MAX_TRACKS];
   int32_t track_count;
 
+  /* Loop-stage wet cache (FX v3 part 2): opaque control/worker state owned by
+   * engine_cache.c (scheduler bookkeeping, job queue, the single render
+   * worker [B6]) — the same opaque-pointer shape as perf.drain/perf.render.
+   * NULL until le_cache_init (end of configure); torn down (worker JOINED
+   * before any pool or wet-buffer free [R2]) by le_cache_shutdown from
+   * le_engine_stop, the top of le_engine_configure, and le_engine_destroy.
+   * The audio thread never touches this pointer — its whole cache surface is
+   * le_lane.a_wet + le_track.a_audio_rev. a_fx_cache_cap is the configurable
+   * memory budget in BYTES (entries at 2x frames, toggled pairs, and
+   * in-flight enqueue copies all count); 0 disables caching outright. A
+   * SETTING: seeded in le_engine_create, persists across configure. */
+  struct le_fx_cache* cache;
+  _Atomic int64_t a_fx_cache_cap;
+
   /* Command ring + pre-allocated backing storage. */
   le_ring ring;
   le_command ring_storage[LE_RING_CAPACITY];
@@ -1056,6 +1167,23 @@ static inline int32_t load_i32(_Atomic int32_t* slot) {
 }
 static inline void store_i32(_Atomic int32_t* slot, int32_t v) {
   atomic_store_explicit(slot, v, memory_order_relaxed);
+}
+
+/* Bumps a track's content revision (FX v3 part 2, [R1]) — call at every row of
+ * the a_audio_rev bump-site table (see its declaration). `static inline` here
+ * because BOTH threads bump (audio: finalize/dub sites in engine_process.c;
+ * control: undo/redo/clear/import sites in engine_commands.c /
+ * engine_session.c). Release orders the content mutation that PRECEDES a bump
+ * before it for an acquire reader; it deliberately does NOT order writes that
+ * FOLLOW an audio-side bump (overdub entry bumps before the pass's in-place
+ * writes) — for that window the LOAD-BEARING guard is the wet cache's
+ * collect-time re-check [B5] (engine_cache.c le_cache_collect): a render is
+ * published only if the revision still equals the enqueue-time read, so a
+ * copy torn by post-bump writes is discarded, never published. The enqueue
+ * copy's own seqlock-style re-read narrows the same window earlier as a
+ * cheap first line of defence. */
+static inline void le_audio_rev_bump(le_track* t) {
+  atomic_fetch_add_explicit(&t->a_audio_rev, 1u, memory_order_release);
 }
 
 /* Track [ch]'s effective forced loop multiple: its per-track override, or the

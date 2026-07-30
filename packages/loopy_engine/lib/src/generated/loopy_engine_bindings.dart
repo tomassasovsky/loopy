@@ -2851,6 +2851,109 @@ class LoopyEngineBindings {
       _le_engine_set_master_fx_chain_enabledPtr
           .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Fills [out] with lane [lane] of track [channel]'s cache telemetry. Control
+  /// thread; also drains events / runs a scheduler tick first, so polling this is
+  /// enough to drive the cache forward in a device-free test.
+  int le_engine_get_lane_cache(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    ffi.Pointer<le_lane_cache_info> out,
+  ) {
+    return _le_engine_get_lane_cache(
+      engine,
+      channel,
+      lane,
+      out,
+    );
+  }
+
+  late final _le_engine_get_lane_cachePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<le_lane_cache_info>,
+          )
+        >
+      >('le_engine_get_lane_cache');
+  late final _le_engine_get_lane_cache = _le_engine_get_lane_cachePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          int,
+          ffi.Pointer<le_lane_cache_info>,
+        )
+      >();
+
+  /// Sets the wet-cache memory budget in BYTES (stereo entries at 2x frames,
+  /// toggled pairs, and in-flight enqueue copies all count against it). 0
+  /// disables caching and frees every entry (every lane plays live); negative is
+  /// clamped to 0. Direct store + an immediate eviction pass on the control
+  /// thread — no ring command (no heap pointer crosses to the audio thread
+  /// here; entries publish through their own atomic seam). The default is
+  /// appliance-tuned (LE_CACHE_DEFAULT_CAP_BYTES, 64 MiB).
+  int le_engine_set_fx_cache_cap(
+    ffi.Pointer<le_engine> engine,
+    int bytes,
+  ) {
+    return _le_engine_set_fx_cache_cap(
+      engine,
+      bytes,
+    );
+  }
+
+  late final _le_engine_set_fx_cache_capPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int64)
+        >
+      >('le_engine_set_fx_cache_cap');
+  late final _le_engine_set_fx_cache_cap = _le_engine_set_fx_cache_capPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Current wet-cache memory accounting in bytes (entries + in-flight copies).
+  /// Log/test-only telemetry.
+  int le_engine_fx_cache_used_bytes(
+    ffi.Pointer<le_engine> engine,
+  ) {
+    return _le_engine_fx_cache_used_bytes(
+      engine,
+    );
+  }
+
+  late final _le_engine_fx_cache_used_bytesPtr =
+      _lookup<ffi.NativeFunction<ffi.Int64 Function(ffi.Pointer<le_engine>)>>(
+        'le_engine_fx_cache_used_bytes',
+      );
+  late final _le_engine_fx_cache_used_bytes = _le_engine_fx_cache_used_bytesPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>)>();
+
+  /// Track [channel]'s current content revision (a_audio_rev [R1]) — exposed so
+  /// the bump-site audit tests can assert every content mutation bumps. Returns
+  /// 0 for an out-of-range channel.
+  int le_engine_track_audio_rev(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+  ) {
+    return _le_engine_track_audio_rev(
+      engine,
+      channel,
+    );
+  }
+
+  late final _le_engine_track_audio_revPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Uint32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_track_audio_rev');
+  late final _le_engine_track_audio_rev = _le_engine_track_audio_revPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// ---- structural output gate ---- *
   /// Turns hardware output [output] on/off as a routing target. A disabled output is
   /// skipped in the mix fan-out regardless of any lane/monitor mask pointing at it,
@@ -4680,6 +4783,86 @@ final class le_plugin_param_info extends ffi.Struct {
   external int flags;
 }
 
+/// Per-lane cache telemetry states (le_lane_cache_info.state).
+enum le_cache_state {
+  /// no valid entry; playing live
+  LE_CACHE_LIVE(0),
+
+  /// a render for the current key is in flight
+  LE_CACHE_RENDERING(1),
+
+  /// a published entry matches the current key
+  LE_CACHE_CACHED(2),
+
+  /// last render failed (e.g. OOM); will retry
+  LE_CACHE_FAILED_RETRYING(3),
+
+  /// permanently live; see `reason`
+  LE_CACHE_GAVE_UP(4);
+
+  final int value;
+  const le_cache_state(this.value);
+
+  static le_cache_state fromValue(int value) => switch (value) {
+    0 => LE_CACHE_LIVE,
+    1 => LE_CACHE_RENDERING,
+    2 => LE_CACHE_CACHED,
+    3 => LE_CACHE_FAILED_RETRYING,
+    4 => LE_CACHE_GAVE_UP,
+    _ => throw ArgumentError('Unknown value for le_cache_state: $value'),
+  };
+}
+
+/// Why a lane's cache gave up (le_lane_cache_info.reason; NONE otherwise).
+enum le_cache_reason {
+  LE_CACHE_REASON_NONE(0),
+
+  /// chain hosts a plugin slot: an offline render
+  /// would pass it dry, so the lane stays live
+  LE_CACHE_REASON_PLUGIN(1),
+
+  /// repeated render failures
+  LE_CACHE_REASON_RENDER_FAILED(2);
+
+  final int value;
+  const le_cache_reason(this.value);
+
+  static le_cache_reason fromValue(int value) => switch (value) {
+    0 => LE_CACHE_REASON_NONE,
+    1 => LE_CACHE_REASON_PLUGIN,
+    2 => LE_CACHE_REASON_RENDER_FAILED,
+    _ => throw ArgumentError('Unknown value for le_cache_reason: $value'),
+  };
+}
+
+/// Snapshot of one lane's cache state (le_engine_get_lane_cache).
+final class le_lane_cache_info extends ffi.Struct {
+  /// le_cache_state
+  @ffi.Int32()
+  external int state;
+
+  /// le_cache_reason (meaningful when state == GAVE_UP)
+  @ffi.Int32()
+  external int reason;
+
+  /// 1 while the audio thread is playing cached (racy
+  /// telemetry read of an audio-thread-local flag)
+  @ffi.Int32()
+  external int engaged;
+
+  /// published entry length in frames (0 = none)
+  @ffi.Int32()
+  external int entry_frames;
+
+  /// completed renders for this lane (cache-hot asserts)
+  @ffi.Int32()
+  external int renders;
+
+  /// the track's current content revision [R1]
+  @ffi.Uint32()
+  external int audio_rev;
+}
+
 /// A MIDI input port discovered by le_midi_enumerate.
 ///
 /// `id` is a per-OS stable token for re-selecting the same device across replug:
@@ -4743,3 +4926,5 @@ const int LE_MAX_LANES = 8;
 const double LE_MAX_GAIN = 2.0;
 
 const int LE_VIZ_POINTS = 512;
+
+const int LE_CACHE_DEFAULT_CAP_BYTES = 67108864;

@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include "audio_ring.h"  /* le_audio_ring_init (performance-recording rings) */
+#include "engine_cache.h" /* le_cache_tick (wet-cache scheduler heartbeat) */
 #include "engine_core.h" /* le_push, valid_channel, le_lanes_active, le_*_reset */
 #include "engine_fx.h"   /* le_fx_ensure_hann, LE_PV_N / LE_PV_BINS */
 #include "engine_private.h"
@@ -242,6 +243,7 @@ static void le_undo_swap(le_track* t) {
   const int32_t lanes = le_lanes_active(t);
   (void)le_redo_push(t, le_hist_layer(load_i32(&t->lanes[0].a_live)));
   for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, prev);
+  le_audio_rev_bump(t); /* [R1] undo swap: a_live now names other audio */
   le_publish_undo_depth(t);
   store_i32(&t->a_redo_depth, t->redo_count);
 }
@@ -269,19 +271,10 @@ static void le_drop_clear_history(le_track* t) {
   le_publish_undo_depth(t);
 }
 
-/* The track's effective state for control-side decisions: the target of a
- * posted-but-unapplied state-flip command (UNDO_TO_EMPTY / REDO_FROM_EMPTY /
- * CLEAR), or the published a_state once everything posted has been acked.
- * Ring FIFO makes this deterministic — no observation race. */
-static int32_t le_effective_state(le_track* t) {
-  /* Acquire pairs with the audio thread's release on the ack bump, so once the
-   * counters match, the a_state store that preceded the ack is visible. */
-  if (t->state_cmds_posted >
-      atomic_load_explicit(&t->a_state_acks, memory_order_acquire)) {
-    return t->pending_target;
-  }
-  return load_i32(&t->a_state);
-}
+/* le_effective_state — the track's effective state for control-side decisions
+ * — moved to engine_core.h (static inline): the wet-cache scheduler's enqueue
+ * gate (engine_cache.c) decides from the same predicate and the two must
+ * never diverge. */
 
 /* Marks a successfully posted state-flip command (control thread). */
 static void le_mark_state_cmd(le_track* t, int32_t target) {
@@ -492,6 +485,11 @@ void le_engine_drain_events(le_engine* engine) {
     }
     le_apply_queued_undo(engine, ch);
   }
+  /* Loop-stage wet cache (FX v3 part 2): one scheduler pass per drain — the
+   * UI's snapshot poll is the cache's control-thread heartbeat (collect
+   * finished renders, publish [B5], debounce + enqueue [B2][B3], enforce the
+   * memory cap). No-op until le_cache_init has run. */
+  le_cache_tick(engine);
 }
 
 /* Zeroes every active lane's live buffer (control thread) before a fresh capture
@@ -992,6 +990,7 @@ static int32_t le_restore_clear(le_engine* engine, int32_t channel) {
   /* Cannot fail: one entry off the undo stack for the one added here. */
   (void)le_redo_push(t, e);
   for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, e.slot);
+  le_audio_rev_bump(t); /* [R1] clear-restore: the erased take is back */
   /* Leftover armed shadows may be sized for a different loop; the audio thread
    * drops them when the command applies (same reclaim rule as redo-from-empty:
    * an EMPTY track has no layer in flight, so no retire event can be
@@ -1140,6 +1139,7 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
     }
     const int32_t next = t->redo_stack[--t->redo_count].slot;
     for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, next);
+    le_audio_rev_bump(t); /* [R1] redo-from-empty: content reinstated */
     t->empty_len = 0;
     /* Leftover armed shadows may be sized for a different loop; the audio
      * thread drops them when the command applies. Same no-in-flight argument
@@ -1154,6 +1154,7 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
   const int32_t lanes = le_lanes_active(t);
   t->undo_stack[t->undo_count++] = le_hist_layer(load_i32(&t->lanes[0].a_live));
   for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, next);
+  le_audio_rev_bump(t); /* [R1] redo swap: a_live now names other audio */
   le_publish_undo_depth(t);
   store_i32(&t->a_redo_depth, t->redo_count);
   le_plog_push_ctrl(engine,

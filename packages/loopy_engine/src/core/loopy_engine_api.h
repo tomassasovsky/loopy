@@ -1680,6 +1680,73 @@ LE_EXPORT int32_t le_engine_set_master_fx_enabled(le_engine* engine,
 LE_EXPORT int32_t le_engine_set_master_fx_chain_enabled(le_engine* engine,
                                                         int32_t enabled);
 
+/* ---- Loop-stage wet cache (FX v3 part 2) ---- *
+ * A background worker renders a stable lane chain's whole loop offline; the
+ * audio thread plays the cached stereo result at zero FX CPU and falls back
+ * to live processing the same buffer on ANY key change (param edit, enable
+ * flip, volume move, content revision bump). The cache is invisible in the
+ * signal contract — "when in doubt, play live" — and this surface is
+ * log/test-only in v3 (the lane-card debug glyph is a later part [R27]). */
+
+/* Default wet-cache memory budget in bytes (appliance-tuned: ~5 stereo 30 s
+ * entries at 48 kHz). Seeded once in le_engine_create; persists across
+ * configure like the tempo/click settings. */
+#define LE_CACHE_DEFAULT_CAP_BYTES (64ll * 1024 * 1024)
+
+/* Per-lane cache telemetry states (le_lane_cache_info.state). */
+typedef enum le_cache_state {
+  LE_CACHE_LIVE = 0,            /* no valid entry; playing live */
+  LE_CACHE_RENDERING = 1,       /* a render for the current key is in flight */
+  LE_CACHE_CACHED = 2,          /* a published entry matches the current key */
+  LE_CACHE_FAILED_RETRYING = 3, /* last render failed (e.g. OOM); will retry */
+  LE_CACHE_GAVE_UP = 4,         /* permanently live; see `reason` */
+} le_cache_state;
+
+/* Why a lane's cache gave up (le_lane_cache_info.reason; NONE otherwise). */
+typedef enum le_cache_reason {
+  LE_CACHE_REASON_NONE = 0,
+  LE_CACHE_REASON_PLUGIN = 1, /* chain hosts a plugin slot: an offline render
+                               * would pass it dry, so the lane stays live */
+  LE_CACHE_REASON_RENDER_FAILED = 2, /* repeated render failures */
+} le_cache_reason;
+
+/* Snapshot of one lane's cache state (le_engine_get_lane_cache). */
+typedef struct le_lane_cache_info {
+  int32_t state;      /* le_cache_state */
+  int32_t reason;     /* le_cache_reason (meaningful when state == GAVE_UP) */
+  int32_t engaged;    /* 1 while the audio thread is playing cached (racy
+                       * telemetry read of an audio-thread-local flag) */
+  int32_t entry_frames; /* published entry length in frames (0 = none) */
+  int32_t renders;    /* completed renders for this lane (cache-hot asserts) */
+  uint32_t audio_rev; /* the track's current content revision [R1] */
+} le_lane_cache_info;
+
+/* Fills [out] with lane [lane] of track [channel]'s cache telemetry. Control
+ * thread; also drains events / runs a scheduler tick first, so polling this is
+ * enough to drive the cache forward in a device-free test. */
+LE_EXPORT int32_t le_engine_get_lane_cache(le_engine* engine, int32_t channel,
+                                           int32_t lane,
+                                           le_lane_cache_info* out);
+
+/* Sets the wet-cache memory budget in BYTES (stereo entries at 2x frames,
+ * toggled pairs, and in-flight enqueue copies all count against it). 0
+ * disables caching and frees every entry (every lane plays live); negative is
+ * clamped to 0. Direct store + an immediate eviction pass on the control
+ * thread — no ring command (no heap pointer crosses to the audio thread
+ * here; entries publish through their own atomic seam). The default is
+ * appliance-tuned (LE_CACHE_DEFAULT_CAP_BYTES, 64 MiB). */
+LE_EXPORT int32_t le_engine_set_fx_cache_cap(le_engine* engine, int64_t bytes);
+
+/* Current wet-cache memory accounting in bytes (entries + in-flight copies).
+ * Log/test-only telemetry. */
+LE_EXPORT int64_t le_engine_fx_cache_used_bytes(le_engine* engine);
+
+/* Track [channel]'s current content revision (a_audio_rev [R1]) — exposed so
+ * the bump-site audit tests can assert every content mutation bumps. Returns
+ * 0 for an out-of-range channel. */
+LE_EXPORT uint32_t le_engine_track_audio_rev(le_engine* engine,
+                                             int32_t channel);
+
 /* ---- structural output gate ---- *
  * Turns hardware output [output] on/off as a routing target. A disabled output is
  * skipped in the mix fan-out regardless of any lane/monitor mask pointing at it,

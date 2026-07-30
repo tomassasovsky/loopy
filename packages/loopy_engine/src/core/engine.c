@@ -33,6 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "engine_cache.h" /* le_cache_init/shutdown (wet-cache lifecycle) */
 #include "engine_core.h" /* shared low-level helpers: le_push, valid_channel, ... */
 #include "../host/plugin_slot.h" /* le_plugin_slot_destroy (teardown of slots) */
 #include "engine_fx.h" /* effects DSP island: chain runner, reset/free, latency */
@@ -136,6 +137,15 @@ int valid_channel(le_engine* e, int32_t ch) {
  * allocation. Used at configure and when a lane is (re)activated by a growing
  * lane count. */
 void le_lane_reset(le_lane* ln, int32_t input_channel) {
+  /* Wet cache (part 2): a reset lane has no cached identity, so retract any
+   * published entry pointer. Never a leak: the entry object itself stays
+   * owned (and eventually freed) by engine_cache.c's per-lane bookkeeping —
+   * configure's reset runs after le_cache_shutdown already freed and nulled
+   * everything, and a mid-session (re)activation via le_engine_set_lane_count
+   * leaves the entry in the cache's tables for the tick's deactivated-lane
+   * reclaim / LRU to collect. */
+  atomic_store_explicit(&ln->a_wet, NULL, memory_order_release);
+  store_i32(&ln->a_cache_active, 0);
   atomic_store_explicit(&ln->a_input_channel, input_channel,
                         memory_order_relaxed);
   atomic_store_explicit(&ln->a_output_mask, 0x3u, memory_order_relaxed);
@@ -249,6 +259,13 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
                             int32_t input_channels, int32_t output_channels,
                             int32_t max_loop_frames) {
   if (engine == NULL) return LE_ERR_INVALID;
+
+  /* Loop-stage wet cache (part 2, [R2](d)): join the render worker and free
+   * every cache allocation BEFORE any pool buffer below is freed — the
+   * worker's enqueue copies read pool memory, and the entries' wet buffers
+   * are about to lose their owner struct. Re-initialized at the end of this
+   * function once the fresh pools exist. */
+  le_cache_shutdown(engine);
 
   /* Performance-recording capture: stop and join the drain thread — if
    * still armed here, the engine is being reconfigured mid-session (a
@@ -506,6 +523,10 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
 
   store_i32(&engine->a_master_len, 0);
   store_i32(&engine->a_master_pos, 0);
+  /* Loop-stage wet cache (part 2): fresh state + worker for the new session.
+   * The cap (a_fx_cache_cap) is a SETTING seeded in le_engine_create and
+   * deliberately not reset here, like the tempo/click settings above. */
+  le_cache_init(engine);
   atomic_store_explicit(&engine->a_configured, 1, memory_order_release);
   return LE_OK;
 }
@@ -676,6 +697,11 @@ le_engine* le_engine_create(void) {
   store_f32(&engine->a_overdub_fb_bits, 1.0f); /* classic additive overdub */
   atomic_store_explicit(&engine->a_output_enabled_mask, 0xFFFFFFFFu,
                         memory_order_relaxed); /* all outputs on until set */
+  /* Loop-stage wet cache budget (part 2): a SETTING with the seeded-once
+   * persistence of the tempo/click settings above. The appliance-tuned
+   * default; 0 disables caching outright (le_engine_set_fx_cache_cap). */
+  atomic_store_explicit(&engine->a_fx_cache_cap, LE_CACHE_DEFAULT_CAP_BYTES,
+                        memory_order_relaxed);
   return engine;
 }
 
@@ -687,6 +713,12 @@ void le_engine_destroy(le_engine* engine) {
   if (engine->backend != NULL) {
     engine->backend->close(engine);
   }
+  /* Loop-stage wet cache (part 2, [R2](d)): the device is closed (no audio
+   * thread), so join the render worker and free every cache allocation
+   * BEFORE the pool frees below — a destroy that lands mid-render must
+   * never free a buffer the worker still reads (the ASan
+   * destroy-during-active-render test pins exactly this ordering). */
+  le_cache_shutdown(engine);
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     for (int l = 0; l < LE_MAX_LANES; ++l) {
       le_lane* ln = &engine->tracks[t].lanes[l];
@@ -888,6 +920,12 @@ int32_t le_engine_stop(le_engine* engine) {
     le_fx_bus_settle_bypass(&engine->tracks[t].bus);
   }
   le_fx_bus_settle_bypass(&engine->master_fx);
+  /* Loop-stage wet cache (part 2, [R2](d)): the device (and its callback) is
+   * stopped, so join the render worker and release every cache allocation
+   * now — no pool or wet buffer may be freed with the worker alive, and a
+   * stopped engine has no cached playback to serve. The next start's
+   * configure re-initializes it. */
+  le_cache_shutdown(engine);
   /* Per-OS teardown on stop (not only destroy) so a forced quantum doesn't
    * outlive a running engine for other PipeWire clients. No-op off Linux. */
   le_platform_on_engine_teardown();

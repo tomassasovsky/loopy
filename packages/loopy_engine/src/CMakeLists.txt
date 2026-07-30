@@ -81,6 +81,7 @@ add_library(loopy_engine SHARED
   core/engine_snapshot.c     # published-state snapshots + visualization reads
   core/engine_process.c      # THE audio-thread TU (le_engine_process + transport)
   core/engine_commands.c     # control-thread command producers
+  core/engine_cache.c        # Loop-stage wet cache (scheduler + render worker)
   # The miniaudio device backend (le_device_backend.h), compiled unconditionally
   # — the only device backend this build ships; ASIO slots in behind
   # le_select_backend.

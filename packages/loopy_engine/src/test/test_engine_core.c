@@ -25,6 +25,7 @@
 #include "audio_ring.h"       /* le_audio_ring (performance-recording capture) */
 #include "engine_core.h"      /* le_push (raw ring pushes for the tempo tests) */
 #include "engine_fx.h" /* LE_FX_ENABLE_RAMP_MS (FX enable-flag tests) */
+#include "engine_cache.h" /* LE_CACHE_SETTLE_MS (wet-cache tests) */
 #include "engine_internal.h"
 #include "engine_private.h"   /* LE_POOL_SLOTS (per-pass undo pool cap) */
 #include "engine_miniaudio.h" /* le_miniaudio_backend (le_select_backend target) */
@@ -18156,6 +18157,789 @@ static void test_track_master_fx_lifecycle(void) {
   le_engine_destroy(e);
 }
 
+/* ---- Loop-stage wet cache (FX v3 part 2) ----
+ *
+ * Harness notes. The cache's control side advances only on scheduler ticks
+ * (le_cache_tick, run from le_engine_drain_events — i.e. le_engine_get_snapshot
+ * / le_engine_get_lane_cache / the transport calls), and its settle debounce is
+ * measured in PROCESSED FRAMES (a_frames), so a test is fully deterministic:
+ * tick once after an edit to register the key, pump the settle window
+ * (CACHE_SETTLE frames > 250 ms at 48 kHz), then spin on
+ * le_engine_get_lane_cache — the spin ticks without advancing frames, so the
+ * publish lands at a known position. The parity tests run a TWIN pair: engine
+ * A cached (default cap) and engine B with cap 0 (pure live), driven through
+ * byte-identical command/pump timelines — equality of their outputs IS the
+ * "cached ~= live, never stale" contract. The chain engages at a loop top, so
+ * at the next top the live chain's state equals the render's kept second pass
+ * exactly (render-twice-keep-second), making the comparison near-bit-exact. */
+
+#define CACHE_LOOP 14000 /* > settle window, so publish lands in loop 1 */
+/* The settle window in frames at the tests' 48 kHz, derived from the engine's
+ * own constant (engine_cache.h) plus a margin, so a tuning change moves every
+ * cache test with it. */
+#define CACHE_SETTLE ((48000 * LE_CACHE_SETTLE_MS) / 1000 + 200)
+#define CACHE_TOL 1e-4f
+/* Frames skipped after a live fallback before twin outputs are compared: the
+ * one-time ~LE_FX_ENABLE_RAMP_MS re-enable ramp (240 frames at 48 kHz) on the
+ * cached engine's chain, plus a small margin. */
+#define CACHE_RAMP_SKIP 300
+
+static le_engine* cache_engine(int64_t cap_bytes) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 20000);
+  le_engine_set_fx_cache_cap(e, cap_bytes);
+  return e;
+}
+
+/* Records the defining loop: [len] frames of [value], finalized through the
+ * seam-crossfade deferral (the same value keeps the folded seam constant). */
+static void cache_record_loop(le_engine* e, int32_t len, float value) {
+  le_engine_record(e, 0);
+  pump_frames(e, value, len);
+  le_engine_record(e, 0);
+  drain(e);
+  pump_frames(e, value, 600); /* crossfade overlap -> finalize -> PLAYING */
+}
+
+static int32_t cache_master_pos(le_engine* e) {
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  return s.master_position_frames;
+}
+
+/* Spins (1 ms sleeps, no frame advance) until lane (ch, lane) reports cache
+ * state [want]; every poll is also a scheduler tick. */
+static int cache_wait_state(le_engine* e, int32_t ch, int32_t lane,
+                            int32_t want, int timeout_ms) {
+  le_lane_cache_info info;
+  for (int k = 0; k < timeout_ms; ++k) {
+    CHECK(le_engine_get_lane_cache(e, ch, lane, &info) == LE_OK);
+    if (info.state == want) return 1;
+    test_sleep_ms(1);
+  }
+  return 0;
+}
+
+static int32_t cache_renders(le_engine* e, int32_t ch, int32_t lane) {
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(e, ch, lane, &info);
+  return info.renders;
+}
+
+static int32_t cache_engaged(le_engine* e, int32_t ch, int32_t lane) {
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(e, ch, lane, &info);
+  return info.engaged;
+}
+
+/* Pumps [frames] of constant [value], capturing the mono output into out[]. */
+static void pump_capture(le_engine* e, float value, int frames, float* out) {
+  float in[64];
+  float buf[64];
+  for (int i = 0; i < 64; ++i) in[i] = value;
+  int off = 0;
+  while (frames > 0) {
+    const int n = frames > 64 ? 64 : frames;
+    le_engine_process(e, buf, in, (uint32_t)n);
+    memcpy(out + off, buf, (size_t)n * sizeof(float));
+    off += n;
+    frames -= n;
+  }
+}
+
+static float cache_max_diff(const float* x, const float* y, int n, int skip) {
+  float m = 0.0f;
+  for (int i = skip; i < n; ++i) {
+    const float d = fabsf(x[i] - y[i]);
+    if (d > m) m = d;
+  }
+  return m;
+}
+
+/* Builds the twin harness through the published render: A cached, B live
+ * (cap 0), identical timelines — defining loop of 1.0f, a [count]-slot chain
+ * of [types] engaged at a loop top, one tick to register the key, the settle
+ * window pumped, then A's render spun to CACHED. On return both engines sit
+ * at position CACHE_SETTLE of a loop (A not yet engaged: engagement waits
+ * for the next loop top). */
+static void cache_pair_prepare_chain(le_engine** pa, le_engine** pb,
+                                     const int32_t* types, int32_t count) {
+  le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  le_engine* b = cache_engine(0);
+  cache_record_loop(a, CACHE_LOOP, 1.0f);
+  cache_record_loop(b, CACHE_LOOP, 1.0f);
+  const int32_t need = (CACHE_LOOP - cache_master_pos(a)) % CACHE_LOOP;
+  if (need > 0) {
+    pump_frames(a, 0.0f, need);
+    pump_frames(b, 0.0f, need);
+  }
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, count) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(b, 0, 0, count) == LE_OK);
+  for (int32_t s = 0; s < count; ++s) {
+    CHECK(le_engine_set_lane_fx(a, 0, 0, s, types[s]) == LE_OK);
+    CHECK(le_engine_set_lane_fx(b, 0, 0, s, types[s]) == LE_OK);
+  }
+  drain(a);
+  drain(b);
+  /* One tick registers the new key (starts the settle window). */
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  pump_frames(a, 0.0f, CACHE_SETTLE);
+  pump_frames(b, 0.0f, CACHE_SETTLE);
+  CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
+  CHECK(cache_renders(a, 0, 0) == 1);
+  *pa = a;
+  *pb = b;
+}
+
+static void cache_pair_prepare(le_engine** pa, le_engine** pb, int32_t type) {
+  cache_pair_prepare_chain(pa, pb, &type, 1);
+}
+
+/* Cached ~= live for one chain: capture a window straddling the swap-in
+ * seam (64 frames before the loop top, then the whole cached loop) from both
+ * twins and compare sample-by-sample — boundary continuity and cached parity
+ * in one assertion. */
+static void cache_check_chain_parity(const int32_t* types, int32_t count) {
+  le_engine* a;
+  le_engine* b;
+  cache_pair_prepare_chain(&a, &b, types, count);
+  const int32_t pre = 64;
+  const int32_t n = pre + CACHE_LOOP;
+  pump_frames(a, 0.0f, CACHE_LOOP - CACHE_SETTLE - pre);
+  pump_frames(b, 0.0f, CACHE_LOOP - CACHE_SETTLE - pre);
+  float* oa = (float*)malloc((size_t)n * sizeof(float));
+  float* ob = (float*)malloc((size_t)n * sizeof(float));
+  pump_capture(a, 0.0f, n, oa);
+  pump_capture(b, 0.0f, n, ob);
+  CHECK(cache_engaged(a, 0, 0) == 1); /* swapped in at the boundary */
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  CHECK(info.entry_frames == CACHE_LOOP);
+  const float d = cache_max_diff(oa, ob, n, 0);
+  if (d > CACHE_TOL) {
+    printf("  FAIL: chain [%d..] (%d slots) cached-vs-live max diff %g "
+           "(line %d)\n",
+           types[0], count, (double)d, __LINE__);
+    g_failures++;
+  }
+  free(oa);
+  free(ob);
+  le_engine_destroy(a);
+  le_engine_destroy(b);
+}
+
+static void test_cache_cached_matches_live_every_builtin(void) {
+  printf("test_cache_cached_matches_live_every_builtin\n");
+  const int32_t types[] = {LE_FX_DRIVE,   LE_FX_FILTER, LE_FX_DELAY,
+                           LE_FX_TREMOLO, LE_FX_OCTAVER, LE_FX_ECHO,
+                           LE_FX_REVERB};
+  for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); ++i) {
+    cache_check_chain_parity(&types[i], 1);
+  }
+}
+
+/* Cached ~= live for a MULTI-slot chain (order-sensitive state across slots),
+ * through the same twin harness as the per-built-in runs. */
+static void test_cache_cached_matches_live_multi_slot_chain(void) {
+  printf("test_cache_cached_matches_live_multi_slot_chain\n");
+  const int32_t chain[] = {LE_FX_DRIVE, LE_FX_DELAY, LE_FX_TREMOLO};
+  cache_check_chain_parity(chain, 3);
+}
+
+/* Advances a prepared twin pair to 64 frames past the next loop top, where A
+ * is engaged (cached) and B is live. */
+static void cache_pair_engage(le_engine* a, le_engine* b) {
+  pump_frames(a, 0.0f, CACHE_LOOP - CACHE_SETTLE + 64);
+  pump_frames(b, 0.0f, CACHE_LOOP - CACHE_SETTLE + 64);
+  CHECK(cache_engaged(a, 0, 0) == 1);
+}
+
+/* D-VOL: a volume move during cached playback falls back live the same
+ * buffer, re-keys, and the re-render bakes the new volume — the twin equality
+ * holds through the whole move, so the stale-volume entry can never have
+ * played. */
+static void test_cache_volume_move_invalidates(void) {
+  printf("test_cache_volume_move_invalidates\n");
+  le_engine* a;
+  le_engine* b;
+  cache_pair_prepare(&a, &b, LE_FX_DRIVE);
+  cache_pair_engage(a, b);
+  CHECK(le_engine_set_lane_volume(a, 0, 0, 0.5f) == LE_OK);
+  CHECK(le_engine_set_lane_volume(b, 0, 0, 0.5f) == LE_OK);
+  const int32_t n = 2048;
+  float* oa = (float*)malloc((size_t)n * sizeof(float));
+  float* ob = (float*)malloc((size_t)n * sizeof(float));
+  pump_capture(a, 0.0f, n, oa);
+  pump_capture(b, 0.0f, n, ob);
+  CHECK(cache_engaged(a, 0, 0) == 0); /* fell back within one buffer */
+  /* Skip the ~5 ms re-enable ramp after the fallback reset [B4] (B's slot
+   * never ramps — it stayed live); DRIVE is memoryless, so everything after
+   * the ramp must match exactly. */
+  CHECK(cache_max_diff(oa, ob, n, CACHE_RAMP_SKIP) <= CACHE_TOL);
+  free(oa);
+  free(ob);
+  /* Re-keys: after the settle window the new-volume render publishes. */
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  pump_frames(a, 0.0f, CACHE_SETTLE);
+  pump_frames(b, 0.0f, CACHE_SETTLE);
+  CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
+  CHECK(cache_renders(a, 0, 0) == 2);
+  /* And the re-engaged cached loop still equals live at the new volume. */
+  const int32_t pos = cache_master_pos(a);
+  const int32_t to_top = (CACHE_LOOP - pos) % CACHE_LOOP;
+  pump_frames(a, 0.0f, to_top);
+  pump_frames(b, 0.0f, to_top);
+  const int32_t m = 4096;
+  float* pa2 = (float*)malloc((size_t)m * sizeof(float));
+  float* pb2 = (float*)malloc((size_t)m * sizeof(float));
+  pump_capture(a, 0.0f, m, pa2);
+  pump_capture(b, 0.0f, m, pb2);
+  CHECK(cache_engaged(a, 0, 0) == 1);
+  CHECK(cache_max_diff(pa2, pb2, m, 0) <= CACHE_TOL);
+  free(pa2);
+  free(pb2);
+  le_engine_destroy(a);
+  le_engine_destroy(b);
+}
+
+/* A param edit falls back live within one buffer (the first buffer after the
+ * edit is live-processed) and the twin equality holds throughout. */
+static void test_cache_param_edit_falls_back_within_one_buffer(void) {
+  printf("test_cache_param_edit_falls_back_within_one_buffer\n");
+  le_engine* a;
+  le_engine* b;
+  cache_pair_prepare(&a, &b, LE_FX_DRIVE);
+  cache_pair_engage(a, b);
+  /* Direct atomic param store: takes effect at the very next buffer. */
+  CHECK(le_engine_set_lane_fx_param(a, 0, 0, 0, 0, 0.9f) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(b, 0, 0, 0, 0, 0.9f) == LE_OK);
+  float oa[64];
+  float ob[64];
+  pump_capture(a, 0.0f, 64, oa);
+  pump_capture(b, 0.0f, 64, ob);
+  CHECK(cache_engaged(a, 0, 0) == 0); /* the FIRST buffer was live */
+  const int32_t n = 2048;
+  float* pa2 = (float*)malloc((size_t)n * sizeof(float));
+  float* pb2 = (float*)malloc((size_t)n * sizeof(float));
+  pump_capture(a, 0.0f, n, pa2);
+  pump_capture(b, 0.0f, n, pb2);
+  CHECK(cache_max_diff(pa2, pb2, n, CACHE_RAMP_SKIP) <= CACHE_TOL);
+  free(pa2);
+  free(pb2);
+  le_engine_destroy(a);
+  le_engine_destroy(b);
+}
+
+/* [A7] Overdub invalidates and never plays stale audio: the whole overdub is
+ * live (twin-equal), the revision bumps, and the retired pass re-keys into a
+ * fresh render — at no point can a buffer have come from the pre-overdub
+ * entry, because A tracked the always-live B throughout. */
+static void test_cache_overdub_invalidates_never_stale(void) {
+  printf("test_cache_overdub_invalidates_never_stale\n");
+  le_engine* a;
+  le_engine* b;
+  cache_pair_prepare(&a, &b, LE_FX_DRIVE);
+  cache_pair_engage(a, b);
+  const uint32_t rev0 = le_engine_track_audio_rev(a, 0);
+  /* Punch in: the entry bump lands with the state flip, so playback is live
+   * from the same block. */
+  CHECK(le_engine_record(a, 0) == LE_OK);
+  CHECK(le_engine_record(b, 0) == LE_OK);
+  drain(a);
+  drain(b);
+  CHECK(le_engine_track_audio_rev(a, 0) != rev0);
+  const int32_t n = CACHE_LOOP;
+  float* oa = (float*)malloc((size_t)n * sizeof(float));
+  float* ob = (float*)malloc((size_t)n * sizeof(float));
+  pump_capture(a, 0.5f, n, oa); /* one full overdub pass, live on both */
+  pump_capture(b, 0.5f, n, ob);
+  CHECK(cache_engaged(a, 0, 0) == 0);
+  CHECK(cache_max_diff(oa, ob, n, CACHE_RAMP_SKIP) <= CACHE_TOL);
+  free(oa);
+  free(ob);
+  /* Punch out; let the fade tail decay and the layer retire (identical fixed
+   * pump counts on both twins keep the timelines aligned). */
+  CHECK(le_engine_record(a, 0) == LE_OK);
+  CHECK(le_engine_record(b, 0) == LE_OK);
+  drain(a);
+  drain(b);
+  pump_frames(a, 0.0f, 4000);
+  pump_frames(b, 0.0f, 4000);
+  drain(a);
+  drain(b);
+  /* Re-render of the new content, then cached playback equals live again. */
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  pump_frames(a, 0.0f, CACHE_SETTLE);
+  pump_frames(b, 0.0f, CACHE_SETTLE);
+  CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
+  const int32_t pos = cache_master_pos(a);
+  const int32_t to_top = (CACHE_LOOP - pos) % CACHE_LOOP;
+  pump_frames(a, 0.0f, to_top);
+  pump_frames(b, 0.0f, to_top);
+  const int32_t m = 4096;
+  float* pa2 = (float*)malloc((size_t)m * sizeof(float));
+  float* pb2 = (float*)malloc((size_t)m * sizeof(float));
+  pump_capture(a, 0.0f, m, pa2);
+  pump_capture(b, 0.0f, m, pb2);
+  CHECK(cache_engaged(a, 0, 0) == 1);
+  CHECK(cache_max_diff(pa2, pb2, m, 0) <= CACHE_TOL);
+  free(pa2);
+  free(pb2);
+  le_engine_destroy(a);
+  le_engine_destroy(b);
+}
+
+/* [B2] Toggled-pair retention: disable renders the bypassed key once; the
+ * re-enable (and every later flip) hits the retained pair with ZERO
+ * re-render. */
+static void test_cache_toggle_round_trip_cache_hot(void) {
+  printf("test_cache_toggle_round_trip_cache_hot\n");
+  le_engine* a;
+  le_engine* b;
+  cache_pair_prepare(&a, &b, LE_FX_DRIVE);
+  le_engine_destroy(b); /* twin not needed here */
+  CHECK(le_engine_set_lane_fx_enabled(a, 0, 0, 0, 0) == LE_OK);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info); /* register the new key */
+  pump_frames(a, 0.0f, CACHE_SETTLE);
+  CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
+  CHECK(cache_renders(a, 0, 0) == 2);
+  /* [B2] the retained pair counts TWICE against the cap. */
+  CHECK(le_engine_fx_cache_used_bytes(a) ==
+        2ll * 2ll * CACHE_LOOP * (int64_t)sizeof(float));
+  /* Both directions are now retained: flips republish with no render and no
+   * settle wait (the match path bypasses the debounce). */
+  CHECK(le_engine_set_lane_fx_enabled(a, 0, 0, 0, 1) == LE_OK);
+  CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 100));
+  CHECK(cache_renders(a, 0, 0) == 2);
+  CHECK(le_engine_set_lane_fx_enabled(a, 0, 0, 0, 0) == LE_OK);
+  CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 100));
+  CHECK(cache_renders(a, 0, 0) == 2);
+  le_engine_destroy(a);
+}
+
+/* [R5] Mute during cached playback routes nothing but STAYS cached; unmute
+ * resumes cached playback with zero re-render. */
+static void test_cache_mute_stays_cached(void) {
+  printf("test_cache_mute_stays_cached\n");
+  le_engine* a;
+  le_engine* b;
+  cache_pair_prepare(&a, &b, LE_FX_DRIVE);
+  le_engine_destroy(b);
+  pump_frames(a, 0.0f, CACHE_LOOP - CACHE_SETTLE + 64);
+  CHECK(cache_engaged(a, 0, 0) == 1);
+  CHECK(le_engine_set_lane_mute(a, 0, 0, 1) == LE_OK);
+  float out[256];
+  pump_capture(a, 0.0f, 256, out);
+  CHECK(cache_engaged(a, 0, 0) == 1); /* mute is not part of the key */
+  for (int i = 64; i < 256; ++i) CHECK(fabsf(out[i]) < 1e-6f);
+  CHECK(le_engine_set_lane_mute(a, 0, 0, 0) == LE_OK);
+  pump_capture(a, 0.0f, 256, out);
+  CHECK(cache_engaged(a, 0, 0) == 1);
+  float peak = 0.0f;
+  for (int i = 64; i < 256; ++i) {
+    if (fabsf(out[i]) > peak) peak = fabsf(out[i]);
+  }
+  CHECK(peak > 0.01f); /* cached playback resumed audibly */
+  CHECK(cache_renders(a, 0, 0) == 1);
+  le_engine_destroy(a);
+}
+
+/* [B2][B3][B5] Invalidation storm: rapid param/volume/enable churn — no
+ * crash, no stale publish (A never re-engages mid-storm), the settle debounce
+ * holds every render off, and the output stays live-correct (twin-equal)
+ * throughout. */
+static void test_cache_invalidation_storm(void) {
+  printf("test_cache_invalidation_storm\n");
+  le_engine* a;
+  le_engine* b;
+  cache_pair_prepare(&a, &b, LE_FX_DRIVE);
+  cache_pair_engage(a, b);
+  const int32_t renders0 = cache_renders(a, 0, 0);
+  const int32_t n = 250;
+  float oa[256];
+  float ob[256];
+  int en = 1;
+  for (int k = 0; k < 40; ++k) {
+    const float p = (float)(k % 10) / 10.0f;
+    const float v = 0.4f + 0.01f * (float)(k % 7);
+    CHECK(le_engine_set_lane_fx_param(a, 0, 0, 0, 0, p) == LE_OK);
+    CHECK(le_engine_set_lane_fx_param(b, 0, 0, 0, 0, p) == LE_OK);
+    CHECK(le_engine_set_lane_volume(a, 0, 0, v) == LE_OK);
+    CHECK(le_engine_set_lane_volume(b, 0, 0, v) == LE_OK);
+    if (k % 5 == 4) {
+      en = !en;
+      CHECK(le_engine_set_lane_fx_enabled(a, 0, 0, 0, en) == LE_OK);
+      CHECK(le_engine_set_lane_fx_enabled(b, 0, 0, 0, en) == LE_OK);
+    }
+    pump_capture(a, 0.0f, n, oa);
+    pump_capture(b, 0.0f, n, ob);
+    /* Twin-equal past the one-time fallback ramp of the first iteration. */
+    const int skip = k == 0 ? 250 : 0;
+    if (cache_max_diff(oa, ob, n, skip) > CACHE_TOL) {
+      printf("  FAIL: storm iter %d diverged (line %d)\n", k, __LINE__);
+      g_failures++;
+      break;
+    }
+    CHECK(cache_engaged(a, 0, 0) == 0); /* never re-engages mid-storm */
+    CHECK(cache_renders(a, 0, 0) == renders0); /* debounce holds */
+  }
+  /* Storm over: the last key settles and re-caches (leave the toggle at its
+   * final value; the settle window restarts from the last edit). */
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  pump_frames(a, 0.0f, CACHE_SETTLE);
+  pump_frames(b, 0.0f, CACHE_SETTLE);
+  CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
+  CHECK(cache_renders(a, 0, 0) == renders0 + 1);
+  le_engine_destroy(a);
+  le_engine_destroy(b);
+}
+
+/* Debounce: no render before the settle window elapses; a key change mid-wait
+ * restarts it. */
+static void test_cache_settle_debounce_gates_render(void) {
+  printf("test_cache_settle_debounce_gates_render\n");
+  le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  cache_record_loop(a, CACHE_LOOP, 1.0f);
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  drain(a);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info); /* register the key */
+  pump_frames(a, 0.0f, 6000); /* < settle */
+  test_sleep_ms(20);          /* give a (wrongly scheduled) render time */
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  CHECK(info.renders == 0);
+  CHECK(info.state != LE_CACHE_CACHED);
+  /* A volume move (D-VOL) restarts the window. */
+  CHECK(le_engine_set_lane_volume(a, 0, 0, 0.8f) == LE_OK);
+  drain(a);
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  pump_frames(a, 0.0f, 8000); /* past the ORIGINAL window, not the new one */
+  test_sleep_ms(20);
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  CHECK(info.renders == 0);
+  pump_frames(a, 0.0f, 5000); /* now past the restarted window */
+  CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
+  CHECK(cache_renders(a, 0, 0) == 1);
+  le_engine_destroy(a);
+}
+
+/* Memory cap + LRU eviction: over-cap evicts down (used <= cap), the evicted
+ * lane plays live, an infeasible budget schedules nothing (no thrash), and a
+ * raised cap re-renders on demand. */
+static void test_cache_eviction_lru_and_recover(void) {
+  printf("test_cache_eviction_lru_and_recover\n");
+  le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  cache_record_loop(a, CACHE_LOOP, 1.0f);
+  /* Second track records over the master and rounds to the same length. */
+  CHECK(le_engine_record(a, 1) == LE_OK);
+  pump_frames(a, 0.8f, CACHE_LOOP);
+  CHECK(le_engine_record(a, 1) == LE_OK);
+  drain(a);
+  for (int t = 0; t < 2; ++t) {
+    CHECK(le_engine_set_lane_fx_count(a, t, 0, 1) == LE_OK);
+    CHECK(le_engine_set_lane_fx(a, t, 0, 0, LE_FX_DRIVE) == LE_OK);
+  }
+  drain(a);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  pump_frames(a, 0.0f, CACHE_SETTLE);
+  CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
+  CHECK(cache_wait_state(a, 1, 0, LE_CACHE_CACHED, 3000));
+  const int64_t entry = 2ll * CACHE_LOOP * (int64_t)sizeof(float);
+  CHECK(le_engine_fx_cache_used_bytes(a) == 2 * entry);
+  /* Room for one entry but NOT for one entry + a new render's footprint:
+   * eviction must settle at exactly one survivor with no render thrash. */
+  const int64_t small = entry + entry / 4;
+  CHECK(le_engine_set_fx_cache_cap(a, small) == LE_OK);
+  CHECK(le_engine_fx_cache_used_bytes(a) <= small);
+  le_lane_cache_info i0;
+  le_lane_cache_info i1;
+  le_engine_get_lane_cache(a, 0, 0, &i0);
+  le_engine_get_lane_cache(a, 1, 0, &i1);
+  CHECK((i0.state == LE_CACHE_CACHED) != (i1.state == LE_CACHE_CACHED));
+  test_sleep_ms(30); /* no background render may sneak in (infeasible) */
+  le_engine_get_lane_cache(a, 0, 0, &i0);
+  le_engine_get_lane_cache(a, 1, 0, &i1);
+  CHECK((i0.state == LE_CACHE_CACHED) != (i1.state == LE_CACHE_CACHED));
+  /* The evicted lane keeps playing (live) without incident. */
+  pump_frames(a, 0.0f, 2048);
+  /* Raising the cap re-renders the evicted lane on demand. */
+  CHECK(le_engine_set_fx_cache_cap(a, LE_CACHE_DEFAULT_CAP_BYTES) == LE_OK);
+  CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
+  CHECK(cache_wait_state(a, 1, 0, LE_CACHE_CACHED, 3000));
+  le_engine_destroy(a);
+}
+
+/* Plugin-bearing chains are never cached: the offline render would pass the
+ * plugin dry, so the lane reports the distinct gave-up reason and never
+ * publishes an entry. */
+static void test_cache_plugin_chain_excluded(void) {
+  printf("test_cache_plugin_chain_excluded\n");
+  le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  cache_record_loop(a, CACHE_LOOP, 1.0f);
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 2) == LE_OK);
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  drain(a);
+  /* The public setter rejects LE_FX_PLUGIN (plugins install via the plugin
+   * path, which needs a real scanned plugin); publish the type directly —
+   * the scheduler and fingerprint read the same published atomic either
+   * way. */
+  store_i32(&a->tracks[0].lanes[0].a_fx_type[1], LE_FX_PLUGIN);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  pump_frames(a, 0.0f, CACHE_SETTLE + 2000);
+  test_sleep_ms(30);
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  CHECK(info.state == LE_CACHE_GAVE_UP);
+  CHECK(info.reason == LE_CACHE_REASON_PLUGIN);
+  CHECK(info.renders == 0);
+  CHECK(info.entry_frames == 0); /* nothing was ever published */
+  /* The gave-up reason PERSISTS across ticks (the telemetry contract: reason
+   * is meaningful while state == GAVE_UP; only a key change clears it). */
+  for (int k = 0; k < 5; ++k) {
+    le_engine_get_lane_cache(a, 0, 0, &info);
+    CHECK(info.state == LE_CACHE_GAVE_UP);
+    CHECK(info.reason == LE_CACHE_REASON_PLUGIN);
+  }
+  le_engine_destroy(a);
+}
+
+/* Setting the cap to 0 on an actively cached+engaged lane frees everything,
+ * falls back live (twin-equal), and reports LIVE with zero bytes held. */
+static void test_cache_cap_zero_disables_engaged_lane(void) {
+  printf("test_cache_cap_zero_disables_engaged_lane\n");
+  le_engine* a;
+  le_engine* b;
+  cache_pair_prepare(&a, &b, LE_FX_DRIVE);
+  cache_pair_engage(a, b);
+  CHECK(le_engine_set_fx_cache_cap(a, 0) == LE_OK);
+  CHECK(le_engine_fx_cache_used_bytes(a) == 0);
+  const int32_t n = 2048;
+  float* oa = (float*)malloc((size_t)n * sizeof(float));
+  float* ob = (float*)malloc((size_t)n * sizeof(float));
+  pump_capture(a, 0.0f, n, oa);
+  pump_capture(b, 0.0f, n, ob);
+  CHECK(cache_engaged(a, 0, 0) == 0); /* retraction fell the lane back live */
+  CHECK(cache_max_diff(oa, ob, n, CACHE_RAMP_SKIP) <= CACHE_TOL);
+  free(oa);
+  free(ob);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  CHECK(info.state == LE_CACHE_LIVE);
+  CHECK(info.entry_frames == 0);
+  le_engine_destroy(a);
+  le_engine_destroy(b);
+}
+
+/* [B5] The worker aborts an in-flight render when the lane's a_audio_rev
+ * bumps mid-render: the render is discarded (renders never increments) and
+ * the lane simply schedules fresh once the new content settles. */
+static void test_cache_midrender_rev_bump_aborts(void) {
+  printf("test_cache_midrender_rev_bump_aborts\n");
+  le_engine* a = le_engine_create();
+  le_engine_configure(a, 48000, 1, 1, 200000);
+  le_engine_set_fx_cache_cap(a, LE_CACHE_DEFAULT_CAP_BYTES);
+  const int32_t len = 190000; /* long + heavy: the render outlives the test's
+                               * punch-in by orders of magnitude */
+  le_engine_record(a, 0);
+  pump_frames(a, 1.0f, len);
+  le_engine_record(a, 0);
+  drain(a);
+  pump_frames(a, 1.0f, 600);
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 3) == LE_OK);
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_REVERB) == LE_OK);
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 1, LE_FX_OCTAVER) == LE_OK);
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 2, LE_FX_ECHO) == LE_OK);
+  drain(a);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info); /* register the key */
+  pump_frames(a, 0.0f, CACHE_SETTLE);
+  le_engine_get_lane_cache(a, 0, 0, &info); /* tick: enqueue the render */
+  CHECK(info.state == LE_CACHE_RENDERING);
+  test_sleep_ms(2); /* let the worker enter the render loop */
+  /* Punch in: the OVERDUBBING-entry bump lands within the worker's next
+   * per-block abort check. */
+  CHECK(le_engine_record(a, 0) == LE_OK);
+  drain(a);
+  test_sleep_ms(150); /* far longer than one abort-check interval */
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  CHECK(info.renders == 0); /* aborted, not completed-and-discarded */
+  CHECK(info.state != LE_CACHE_CACHED);
+  le_engine_destroy(a);
+}
+
+/* Queue overflow: with more lanes wanting renders than job slots
+ * (LE_CACHE_JOB_SLOTS < LE_MAX_TRACKS), the overflow lanes degrade to live
+ * for that tick and retry — everyone ends up cached. */
+static void test_cache_job_queue_full_degrades_then_retries(void) {
+  printf("test_cache_job_queue_full_degrades_then_retries\n");
+  le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  const int32_t tracks = 6; /* > LE_CACHE_JOB_SLOTS (4) */
+  cache_record_loop(a, CACHE_LOOP, 1.0f);
+  for (int32_t t = 1; t < tracks; ++t) {
+    CHECK(le_engine_record(a, t) == LE_OK);
+    pump_frames(a, 0.8f, CACHE_LOOP);
+    CHECK(le_engine_record(a, t) == LE_OK);
+    drain(a);
+  }
+  for (int32_t t = 0; t < tracks; ++t) {
+    CHECK(le_engine_set_lane_fx_count(a, t, 0, 1) == LE_OK);
+    CHECK(le_engine_set_lane_fx(a, t, 0, 0, LE_FX_DRIVE) == LE_OK);
+  }
+  drain(a);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info); /* register every key (one tick) */
+  pump_frames(a, 0.0f, CACHE_SETTLE);
+  /* The FIRST tick after settle schedules t0..t3 into the 4 slots; t4/t5 hit
+   * the full queue and degrade to live for this tick. Reading t5's info from
+   * that same call keeps the assertion race-free (collect ran before
+   * schedule, so no slot freed mid-tick). */
+  le_engine_get_lane_cache(a, tracks - 1, 0, &info);
+  CHECK(info.state == LE_CACHE_LIVE);
+  /* Retry converges: every lane ends up cached. */
+  for (int32_t t = 0; t < tracks; ++t) {
+    CHECK(cache_wait_state(a, t, 0, LE_CACHE_CACHED, 3000));
+  }
+  le_engine_destroy(a);
+}
+
+/* [R2] Destroy / reconfigure / stop while a render is active: the worker is
+ * joined before any pool or wet-buffer free at ALL THREE join sites
+ * (le_engine_destroy, le_engine_configure, le_engine_stop). Run under ASan
+ * (EXTRA_CFLAGS="-fsanitize=address -g") this pins no use-after-free, no
+ * leak, no unjoined thread. */
+static void test_cache_destroy_during_active_render(void) {
+  printf("test_cache_destroy_during_active_render\n");
+  for (int variant = 0; variant < 3; ++variant) {
+    le_engine* a = le_engine_create();
+    le_engine_configure(a, 48000, 1, 1, 200000);
+    le_engine_set_fx_cache_cap(a, LE_CACHE_DEFAULT_CAP_BYTES);
+    const int32_t len = 190000; /* a long, heavy render */
+    le_engine_record(a, 0);
+    pump_frames(a, 1.0f, len);
+    le_engine_record(a, 0);
+    drain(a);
+    pump_frames(a, 1.0f, 600);
+    CHECK(le_engine_set_lane_fx_count(a, 0, 0, 3) == LE_OK);
+    CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_REVERB) == LE_OK);
+    CHECK(le_engine_set_lane_fx(a, 0, 0, 1, LE_FX_OCTAVER) == LE_OK);
+    CHECK(le_engine_set_lane_fx(a, 0, 0, 2, LE_FX_ECHO) == LE_OK);
+    drain(a);
+    le_lane_cache_info info;
+    le_engine_get_lane_cache(a, 0, 0, &info);
+    pump_frames(a, 0.0f, CACHE_SETTLE);
+    le_engine_get_lane_cache(a, 0, 0, &info); /* tick: enqueue the render */
+    CHECK(info.state == LE_CACHE_RENDERING);
+    test_sleep_ms(2); /* let the worker enter the render */
+    if (variant == 1) {
+      /* Reconfigure mid-render first (joins + reinitializes), THEN destroy. */
+      CHECK(le_engine_configure(a, 48000, 1, 1, 1000) == LE_OK);
+    } else if (variant == 2) {
+      /* Stop mid-render (the third [R2](d) join site). The engine never
+       * opened a device in this harness, so mark it started first — stop's
+       * backend hook is NULL-safe and the join runs regardless. */
+      le_engine_mark_started(a);
+      CHECK(le_engine_stop(a) == LE_OK);
+    }
+    le_engine_destroy(a);
+  }
+}
+
+/* [R1] Bump-site audit: every row of the a_audio_rev table changes the
+ * revision. Cap 0 keeps the cache itself out of the way — this is a pure
+ * revision-mechanics test. */
+static void test_cache_audio_rev_bump_sites(void) {
+  printf("test_cache_audio_rev_bump_sites\n");
+  le_engine* a = cache_engine(0);
+  const int32_t len = 4800;
+  uint32_t prev = le_engine_track_audio_rev(a, 0);
+
+  /* record finalize (defining). */
+  cache_record_loop(a, len, 1.0f);
+  uint32_t now = le_engine_track_audio_rev(a, 0);
+  CHECK(now != prev);
+  prev = now;
+
+  /* entry into OVERDUBBING (punch-in). */
+  CHECK(le_engine_record(a, 0) == LE_OK);
+  drain(a);
+  now = le_engine_track_audio_rev(a, 0);
+  CHECK(now != prev);
+  prev = now;
+
+  /* each retired overdub pass (one full pass + punch-out tail/drain). */
+  pump_frames(a, 0.5f, len);
+  CHECK(le_engine_record(a, 0) == LE_OK);
+  drain(a);
+  pump_frames(a, 0.0f, 2000);
+  drain(a);
+  settle_layers(a);
+  now = le_engine_track_audio_rev(a, 0);
+  CHECK(now != prev);
+  prev = now;
+
+  /* undo swap (peels the dub layer). */
+  CHECK(le_engine_undo(a, 0) == LE_OK);
+  now = le_engine_track_audio_rev(a, 0);
+  CHECK(now != prev);
+  prev = now;
+
+  /* redo swap. */
+  CHECK(le_engine_redo(a, 0) == LE_OK);
+  now = le_engine_track_audio_rev(a, 0);
+  CHECK(now != prev);
+  prev = now;
+
+  /* undo to empty (peel, then the to-empty flip on the audio thread). */
+  CHECK(le_engine_undo(a, 0) == LE_OK);
+  prev = le_engine_track_audio_rev(a, 0);
+  CHECK(le_engine_undo(a, 0) == LE_OK);
+  drain(a);
+  now = le_engine_track_audio_rev(a, 0);
+  CHECK(now != prev);
+  prev = now;
+
+  /* redo-from-empty (control-side a_live swap bumps immediately). */
+  CHECK(le_engine_redo(a, 0) == LE_OK);
+  now = le_engine_track_audio_rev(a, 0);
+  CHECK(now != prev);
+  prev = now;
+  drain(a);
+
+  /* clear. */
+  CHECK(le_engine_clear(a, 0) == LE_OK);
+  drain(a);
+  now = le_engine_track_audio_rev(a, 0);
+  CHECK(now != prev);
+  prev = now;
+
+  /* clear-restore (#219): undoable clear, then undo restores the take. */
+  cache_record_loop(a, len, 1.0f);
+  CHECK(le_engine_clear_undoable(a, 0) == LE_OK);
+  drain(a);
+  prev = le_engine_track_audio_rev(a, 0);
+  CHECK(le_engine_undo(a, 0) == LE_OK);
+  now = le_engine_track_audio_rev(a, 0);
+  CHECK(now != prev);
+  drain(a);
+
+  /* session load (import into an EMPTY sibling track). */
+  prev = le_engine_track_audio_rev(a, 1);
+  float pcm[512];
+  for (int i = 0; i < 512; ++i) pcm[i] = 0.25f;
+  CHECK(le_engine_import_track(a, 1, pcm, 512) == LE_OK);
+  now = le_engine_track_audio_rev(a, 1);
+  CHECK(now != prev);
+
+  le_engine_destroy(a);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_lane_setters_reject_invalid_args();
@@ -18596,6 +19380,23 @@ int main(void) {
   test_track_master_fx_prepare_entry_reuse();
   test_track_master_fx_setters_push_no_plog();
   test_track_master_fx_lifecycle();
+
+  test_cache_cached_matches_live_every_builtin();
+  test_cache_cached_matches_live_multi_slot_chain();
+  test_cache_volume_move_invalidates();
+  test_cache_param_edit_falls_back_within_one_buffer();
+  test_cache_overdub_invalidates_never_stale();
+  test_cache_toggle_round_trip_cache_hot();
+  test_cache_mute_stays_cached();
+  test_cache_invalidation_storm();
+  test_cache_settle_debounce_gates_render();
+  test_cache_eviction_lru_and_recover();
+  test_cache_plugin_chain_excluded();
+  test_cache_cap_zero_disables_engaged_lane();
+  test_cache_midrender_rev_bump_aborts();
+  test_cache_job_queue_full_degrades_then_retries();
+  test_cache_destroy_during_active_render();
+  test_cache_audio_rev_bump_sites();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");

@@ -31,6 +31,7 @@ structs:
     - 'le_midi_info'
     - 'le_plugin_desc'
     - 'le_plugin_param_info'
+    - 'le_lane_cache_info'
 enums:
   include:
     - 'le_result'
@@ -40,6 +41,8 @@ enums:
     - 'le_loopback_kind'
     - 'le_plugin_format'
     - 'le_plugin_param_flags'
+    - 'le_cache_state'
+    - 'le_cache_reason'
 preamble: |
   // ignore_for_file: type=lint, doc_directive_unknown
   // coverage:ignore-file
