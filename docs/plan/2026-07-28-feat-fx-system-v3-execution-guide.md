@@ -30,26 +30,31 @@ issue: 351
 
 ## Status
 
-**Next up:** merge gates on part 2 (PR #385, build green — human merges; the
-[B4] A/B listen note is the open exit-bar item) and part 3b (PR #388, CI green,
-awaiting `/code-review`). With 3a merged (#386) and 3b in review, **4b** (deps
-3a + 4a) is next on the critical chain — run 4a (deletion, `auto`) first since
-4b stacks on it. 5a / 6a have no in-epic dependencies and can run in parallel
-any time.
+**Next up:** the engine + domain + persistence foundation and the dead-code
+sweep are all merged (0, 1a, 1b, 2, 3a, 3b, 4a). **4b** is unblocked and next
+on the critical chain — and the first part a user can see: the Track and Master
+stages exist in the engine, the domain and the session format today with no UI
+to reach them. 5a (needs the #331 prereq) and 6a have no in-epic dependencies
+and can run in parallel any time.
 
-Deferred out of 3b, needs a direction call before it can be scheduled:
-[#389](https://github.com/tomassasovsky/loopy/issues/389) — a session load never
-writes chains back to settings, so a cold boot restores the pre-load chains
-(pre-existing on the Loop stage; both bus stages inherited it in 3b).
+Open items carried out of merged parts, neither blocking a new part:
+- [#389](https://github.com/tomassasovsky/loopy/issues/389) (`plan-gate`, from
+  3b) — a session load never writes the applied chains back to settings, so a
+  cold boot after a load resurrects the previous session's **bus** chains and
+  brings the Loop stage back **dry**. Needs a direction call on whether a
+  session load owns the settings keys; schedule it before 4b if the Signal
+  surface is meant to show trustworthy post-restart state.
+- Part 2's [B4] A/B listen check — the human exit-bar item on the wet cache,
+  which no CI job can stand in for.
 
 | Part | Scope | Model / effort | Autonomy | Depends on | Status |
 |------|-------|----------------|----------|------------|--------|
 | 0 | arm() fix (standalone bug) | Opus · medium | `auto` | — | merged (#375) |
 | 1a | engine bypass + ramp | **Fable · high** | `merge-gate` | — | merged (#379) |
 | 1b | track bus + master insert | **Fable · high** | `merge-gate` | 1a | merged (#382) |
-| 2 | loop-stage wet cache | **Fable · extra-high** | `merge-gate` | 1a, 1b | in review (#385) |
+| 2 | loop-stage wet cache | **Fable · extra-high** | `merge-gate` | 1a, 1b | merged (#385) |
 | 3a | domain model + shared types + CI jobs | **Fable · high** | `merge-gate` | 1a, 1b | merged (#386) |
-| 3b | session v5 migration + manifest stages | Opus · medium | `merge-gate` | 3a, 0 | in-review (#388) |
+| 3b | session v5 migration + manifest stages | Opus · medium | `merge-gate` | 3a, 0 | merged (#388) |
 | 4a | delete dead FX code | Sonnet · low | `auto` | — | merged (#392) |
 | 4b | four-stage Signal surface | Opus · medium | `merge-gate` | 3a, 4a | pending |
 | 5a | protocol v3 wire + version discovery | **Fable · high** | `merge-gate` | — (#331 prereq) | pending |
