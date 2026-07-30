@@ -105,6 +105,7 @@ class _InputRow extends StatelessWidget {
             child: SignalFxSummary(
               summaryKey: Key('signalInFx_${row.input}'),
               effects: m.effects,
+              chainEnabled: m.chainEnabled,
               onEdit: onEditFx,
             ),
           ),
@@ -203,10 +204,31 @@ class _TakeRow extends StatelessWidget {
           const SizedBox(height: 10),
           _FieldRow(
             label: l10n.signalFieldFx,
-            child: SignalFxSummary(
-              summaryKey: Key('signalTakeFx_${take.track}_${take.laneIndex}'),
-              effects: lane.effects,
-              onEdit: onEditFx,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: SignalFxSummary(
+                    summaryKey: Key(
+                      'signalTakeFx_${take.track}_${take.laneIndex}',
+                    ),
+                    effects: lane.effects,
+                    chainEnabled: lane.chainEnabled,
+                    onEdit: onEditFx,
+                  ),
+                ),
+                // Provenance (A6): this take's chain was copied from an input
+                // when it was recorded. A marker, never a live link.
+                if (lane.inheritedFrom.isNotEmpty) ...[
+                  const SizedBox(width: 6),
+                  InheritedFxBadge(
+                    badgeKey: Key(
+                      'signalInherited_${take.track}_${take.laneIndex}',
+                    ),
+                    inputs: lane.inheritedFrom,
+                  ),
+                ],
+              ],
             ),
           ),
           const SizedBox(height: 8),

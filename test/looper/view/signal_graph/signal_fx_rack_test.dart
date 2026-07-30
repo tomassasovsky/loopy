@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/looper/view/signal_graph/signal_fx_rack.dart';
 import 'package:loopy/looper/view/signal_graph/signal_knob.dart';
+import 'package:loopy/theme/surface_theme.dart';
 
 import '../../../helpers/helpers.dart';
 
@@ -14,14 +15,15 @@ void main() {
       void Function(int index, int paramId, double value)? onSetPluginParam,
       void Function(int index)? onOpenPluginEditor,
       void Function(int oldIndex, int newIndex)? onReorder,
-      VoidCallback? onAddEffect,
+      ValueChanged<TrackEffectType>? onAddEffect,
       void Function(int index, TrackEffectType type)? onSetType,
       void Function(int index)? onRemoveEffect,
+      void Function(int index, {required bool enabled})? onSetEffectEnabled,
     }) => Scaffold(
       body: SignalFxRack(
         keyPrefix: 'signalGraph_lane',
         effects: effects,
-        onAddEffect: onAddEffect ?? () {},
+        onAddEffect: onAddEffect ?? (_) {},
         onAddPlugin: () {},
         onRemoveEffect: onRemoveEffect ?? (_) {},
         onSetType: onSetType ?? (_, _) {},
@@ -30,8 +32,94 @@ void main() {
         onOpenPluginEditor: onOpenPluginEditor ?? (_) {},
         onRelinkPlugin: (_) {},
         onReorder: onReorder ?? (_, _) {},
+        onSetEffectEnabled: onSetEffectEnabled ?? (_, {required enabled}) {},
       ),
     );
+
+    testWidgets('the power control turns a built-in device off and on', (
+      tester,
+    ) async {
+      final calls = <(int, bool)>[];
+      await tester.pumpApp(
+        build(
+          effects: [
+            BuiltInEffect(type: TrackEffectType.delay),
+            BuiltInEffect(type: TrackEffectType.reverb, enabled: false),
+          ],
+          onSetEffectEnabled: (i, {required enabled}) =>
+              calls.add((i, enabled)),
+        ),
+      );
+
+      await tester.tap(
+        find.byKey(const Key('signalGraph_lane_device_0_power')),
+      );
+      await tester.tap(
+        find.byKey(const Key('signalGraph_lane_device_1_power')),
+      );
+      await tester.pump();
+
+      expect(calls, [(0, false), (1, true)]);
+    });
+
+    testWidgets('a powered-off device dims its body, not its header', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        build(
+          effects: [
+            BuiltInEffect(type: TrackEffectType.delay, enabled: false),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // R26: the dim comes from the SurfaceTheme token...
+      final dim = tester.widget<AnimatedOpacity>(
+        find.descendant(
+          of: find.byKey(const Key('signalGraph_lane_device_0')),
+          matching: find.byType(AnimatedOpacity),
+        ),
+      );
+      expect(dim.opacity, SurfaceTheme.dark.disabledOpacity);
+      // ...and the header stays outside it, so the card is still workable.
+      expect(
+        find.descendant(
+          of: find.byType(AnimatedOpacity),
+          matching: find.byKey(const Key('signalGraph_lane_device_0_power')),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets('an engaged device is not dimmed', (tester) async {
+      await tester.pumpApp(
+        build(effects: [BuiltInEffect(type: TrackEffectType.delay)]),
+      );
+      await tester.pumpAndSettle();
+
+      final dim = tester.widget<AnimatedOpacity>(
+        find.descendant(
+          of: find.byKey(const Key('signalGraph_lane_device_0')),
+          matching: find.byType(AnimatedOpacity),
+        ),
+      );
+      expect(dim.opacity, 1.0);
+    });
+
+    testWidgets('the power control announces its state', (tester) async {
+      await tester.pumpApp(
+        build(effects: [BuiltInEffect(type: TrackEffectType.delay)]),
+      );
+      expect(
+        tester
+            .getSemantics(
+              find.byKey(const Key('signalGraph_lane_device_0_power')),
+            )
+            .label,
+        contains('Effect on'),
+      );
+    });
 
     testWidgets('renders one knob per continuous param', (tester) async {
       await tester.pumpApp(
@@ -180,16 +268,15 @@ void main() {
       expect(reorders, [(2, 0)]);
     });
 
-    testWidgets('the device browser adds the picked type at the chain end', (
+    testWidgets('the device browser adds the picked type as ONE action', (
       tester,
     ) async {
-      var added = 0;
+      final added = <TrackEffectType>[];
       final retypes = <(int, TrackEffectType)>[];
       await tester.pumpApp(
         build(
-          // One device already in the chain, so the new one lands at index 1.
           effects: [BuiltInEffect(type: TrackEffectType.delay)],
-          onAddEffect: () => added++,
+          onAddEffect: added.add,
           onSetType: (i, t) => retypes.add((i, t)),
         ),
       );
@@ -200,9 +287,11 @@ void main() {
       await tester.tap(find.text('Reverb').last);
       await tester.pumpAndSettle();
 
-      // Add-of-type = append a default device, then retype it at its index.
-      expect(added, 1);
-      expect(retypes, [(1, TrackEffectType.reverb)]);
+      // The pick travels as one intent — the rack never appends a default and
+      // then retypes an index it had to guess, which cannot compose on a
+      // backing store that applies the append a frame later.
+      expect(added, [TrackEffectType.reverb]);
+      expect(retypes, isEmpty);
     });
 
     testWidgets('the add-device "Add plugin…" button fires onAddPlugin', (
@@ -214,7 +303,7 @@ void main() {
           body: SignalFxRack(
             keyPrefix: 'signalGraph_lane',
             effects: [BuiltInEffect(type: TrackEffectType.delay)],
-            onAddEffect: () {},
+            onAddEffect: (_) {},
             onAddPlugin: () => addedPlugin++,
             onRemoveEffect: (_) {},
             onSetType: (_, _) {},
@@ -223,6 +312,7 @@ void main() {
             onOpenPluginEditor: (_) {},
             onRelinkPlugin: (_) {},
             onReorder: (_, _) {},
+            onSetEffectEnabled: (_, {required enabled}) {},
           ),
         ),
       );
@@ -340,11 +430,12 @@ void main() {
       void Function(int index)? onRemoveEffect,
       String? Function(int index, int paramId, double value)?
       onFormatPluginValue,
+      void Function(int index, {required bool enabled})? onSetEffectEnabled,
     }) => Scaffold(
       body: SignalFxRack(
         keyPrefix: 'signalGraph_lane',
         effects: [fx],
-        onAddEffect: () {},
+        onAddEffect: (_) {},
         onAddPlugin: () {},
         onRemoveEffect: onRemoveEffect ?? (_) {},
         onSetType: (_, _) {},
@@ -353,6 +444,7 @@ void main() {
         onOpenPluginEditor: onOpenPluginEditor ?? (_) {},
         onRelinkPlugin: onRelinkPlugin ?? (_) {},
         onReorder: (_, _) {},
+        onSetEffectEnabled: onSetEffectEnabled ?? (_, {required enabled}) {},
         onFormatPluginValue: onFormatPluginValue,
       ),
     );
@@ -556,55 +648,142 @@ void main() {
       expect(calls.last.$3, lessThanOrEqualTo(10));
     });
 
-    testWidgets('a bypass param drives the header toggle', (tester) async {
-      final calls = <(int, int, double)>[];
-      await tester.pumpApp(
-        build(
-          // A bypass control (automatable + bypass flag), currently off.
-          fx: plugin(
-            params: [param(99, 'Bypass', flags: 0x01 | 0x04, def: 0)],
-          ),
-          onSetPluginParam: (i, id, v) => calls.add((i, id, v)),
-        ),
-      );
-
-      // The bypass param has its own header toggle, not a knob.
-      expect(find.byType(SignalKnob), findsNothing);
-      await tester.tap(
-        find.byKey(const Key('signalGraph_lane_device_0_bypass')),
-      );
-      await tester.pump();
-      expect(calls, [(0, 99, 1.0)]);
-    });
-
-    testWidgets('an already-bypassed plugin toggles back on', (tester) async {
-      final calls = <(int, int, double)>[];
-      await tester.pumpApp(
-        build(
-          // Bypass param present and currently engaged (value 1 >= 0.5).
-          fx: plugin(
-            params: [param(99, 'Bypass', flags: 0x01 | 0x04, def: 0)],
-            values: {99: 1},
-          ),
-          onSetPluginParam: (i, id, v) => calls.add((i, id, v)),
-        ),
-      );
-      await tester.tap(
-        find.byKey(const Key('signalGraph_lane_device_0_bypass')),
-      );
-      await tester.pump();
-      // Tapping a bypassed plugin clears the bypass (0).
-      expect(calls, [(0, 99, 0.0)]);
-    });
-
-    testWidgets('the bypass toggle is disabled without a bypass param', (
+    testWidgets('the plugin card carries the power control, not a bypass', (
       tester,
     ) async {
-      await tester.pumpApp(build(fx: plugin(params: [param(10, 'A')])));
-      final toggle = tester.widget<IconButton>(
-        find.byKey(const Key('signalGraph_lane_device_0_bypass')),
+      final calls = <(int, bool)>[];
+      final params = <(int, int, double)>[];
+      await tester.pumpApp(
+        build(
+          // A plugin exposing its OWN bypass param (automatable + bypass flag).
+          fx: plugin(
+            params: [param(99, 'Bypass', flags: 0x01 | 0x04, def: 0)],
+          ),
+          onSetPluginParam: (i, id, v) => params.add((i, id, v)),
+          onSetEffectEnabled: (i, {required enabled}) =>
+              calls.add((i, enabled)),
+        ),
       );
-      expect(toggle.onPressed, isNull);
+
+      // D-POWER (R23): the retired bypass toggle is gone, exactly one power
+      // control is present, and the plugin's own bypass param earns no control
+      // of its own (it stays in the plugin's native editor).
+      expect(
+        find.byKey(const Key('signalGraph_lane_device_0_bypass')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const Key('signalGraph_lane_device_0_power')),
+        findsOneWidget,
+      );
+      expect(find.byType(SignalKnob), findsNothing);
+
+      await tester.tap(
+        find.byKey(const Key('signalGraph_lane_device_0_power')),
+      );
+      await tester.pump();
+      // The host enable flipped; the plugin's bypass param was never touched.
+      expect(calls, [(0, false)]);
+      expect(params, isEmpty);
+    });
+
+    testWidgets('a powered-off plugin toggles back on', (tester) async {
+      final calls = <(int, bool)>[];
+      await tester.pumpApp(
+        build(
+          fx: plugin().copyWith(enabled: false),
+          onSetEffectEnabled: (i, {required enabled}) =>
+              calls.add((i, enabled)),
+        ),
+      );
+      await tester.tap(
+        find.byKey(const Key('signalGraph_lane_device_0_power')),
+      );
+      await tester.pump();
+      expect(calls, [(0, true)]);
+    });
+
+    testWidgets('an unavailable plugin keeps its power control', (
+      tester,
+    ) async {
+      final calls = <(int, bool)>[];
+      await tester.pumpApp(
+        build(
+          fx: plugin().copyWith(unavailable: true),
+          onSetEffectEnabled: (i, {required enabled}) =>
+              calls.add((i, enabled)),
+        ),
+      );
+      // The D-MISS placeholder is still a card, so it still powers off.
+      expect(
+        find.byKey(const Key('signalGraph_lane_device_0_reason')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const Key('signalGraph_lane_device_0_power')),
+      );
+      await tester.pump();
+      expect(calls, [(0, false)]);
+    });
+
+    testWidgets('a powered-off plugin card dims its body, not its header', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        build(
+          fx: plugin(params: [param(10, 'A')]).copyWith(enabled: false),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final dim = tester.widget<AnimatedOpacity>(
+        find.descendant(
+          of: find.byKey(const Key('signalGraph_lane_device_0')),
+          matching: find.byType(AnimatedOpacity),
+        ),
+      );
+      expect(dim.opacity, SurfaceTheme.dark.disabledOpacity);
+      // The header — name, editor, power, remove — stays at full strength.
+      expect(
+        find.descendant(
+          of: find.byType(AnimatedOpacity),
+          matching: find.byKey(const Key('signalGraph_lane_device_0_power')),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets('an engaged plugin card is not dimmed', (tester) async {
+      await tester.pumpApp(build(fx: plugin(params: [param(10, 'A')])));
+      await tester.pumpAndSettle();
+
+      final dim = tester.widget<AnimatedOpacity>(
+        find.descendant(
+          of: find.byKey(const Key('signalGraph_lane_device_0')),
+          matching: find.byType(AnimatedOpacity),
+        ),
+      );
+      expect(dim.opacity, 1.0);
+    });
+
+    testWidgets('a powered-off placeholder keeps its warning dominant', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        build(fx: plugin().copyWith(unavailable: true, enabled: false)),
+      );
+      await tester.pumpAndSettle();
+
+      // R26: the disabled dim never buries the state the user must act on, so
+      // the placeholder card is deliberately not dimmed.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('signalGraph_lane_device_0')),
+          matching: find.byType(AnimatedOpacity),
+        ),
+        findsNothing,
+      );
+      expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
     });
 
     testWidgets('the × button removes the plugin entry', (tester) async {

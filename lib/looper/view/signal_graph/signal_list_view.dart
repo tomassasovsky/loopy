@@ -10,6 +10,7 @@ import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/tracks_cubit.dart';
 import 'package:loopy/looper/view/fx_editor/fx_dock.dart';
 import 'package:loopy/looper/view/fx_editor/fx_scope.dart';
+import 'package:loopy/looper/view/signal_graph/signal_fx_chrome.dart';
 import 'package:loopy/looper/view/signal_graph/signal_fx_summary.dart';
 import 'package:loopy/looper/view/signal_graph/signal_knob.dart';
 import 'package:loopy/looper/view/signal_graph/signal_routing_chips.dart';
@@ -103,6 +104,12 @@ class _SignalListViewState extends State<SignalListView> {
   /// The chain currently open in the bottom FX dock, or null when the dock is
   /// closed. Tapping a row's FX summary sets it; the dock's close clears it.
   FxScope? _editedScope;
+
+  /// The tracks whose lane list is expanded to every lane rather than just the
+  /// recorded ones (A11) — view-local, like the trace selection. Replaced
+  /// wholesale rather than mutated, so the value a pane receives changes with
+  /// the pane rather than under it.
+  Set<int> _allLanesTracks = const {};
 
   MonitorCubit get _monitor => context.read<MonitorCubit>();
   LooperBloc get _bloc => context.read<LooperBloc>();
@@ -263,18 +270,27 @@ class _SignalListViewState extends State<SignalListView> {
                       ),
                       onEditFx: (take) =>
                           _editLaneFx(take.track, take.laneIndex),
+                      onEditTrackFx: _editTrackFx,
+                      expandedTracks: _allLanesTracks,
+                      onToggleAllLanes: _toggleAllLanes,
                       onMuteToggled: (take) => _bloc.add(
                         LooperLaneMuteToggled(take.track, take.laneIndex),
                       ),
                       onVolumeChanged: (take, v) => _bloc.add(
                         LooperLaneVolumeChanged(take.track, take.laneIndex, v),
                       ),
-                      onAddLane: (track) => _bloc.add(
-                        LooperLaneCountChanged(
-                          track,
-                          _laneCount(looper, track) + 1,
-                        ),
-                      ),
+                      onAddLane: (track) {
+                        // A fresh lane holds no audio, so the recorded-only
+                        // drill-in would swallow it and "Add lane" would read
+                        // as a no-op. Reveal the track's full lane list.
+                        _expandAllLanes(track);
+                        _bloc.add(
+                          LooperLaneCountChanged(
+                            track,
+                            _laneCount(looper, track) + 1,
+                          ),
+                        );
+                      },
                       onRemoveLane: (track) => _bloc.add(
                         LooperLaneCountChanged(
                           track,
@@ -292,6 +308,7 @@ class _SignalListViewState extends State<SignalListView> {
                       onToggleGate: (o, {required enabled}) => _bloc.add(
                         LooperOutputEnabledToggled(o, enabled: enabled),
                       ),
+                      onEditMasterFx: _editMasterFx,
                     ),
                   ];
                   if (stacked) {
@@ -329,6 +346,20 @@ class _SignalListViewState extends State<SignalListView> {
   int _laneCount(LooperState looper, int track) =>
       track < looper.tracks.length ? looper.tracks[track].lanes.length : 1;
 
+  /// Flips [track] between its recorded takes and all its lanes (A11).
+  void _toggleAllLanes(int track) => setState(() {
+    _allLanesTracks = _allLanesTracks.contains(track)
+        ? {
+            for (final t in _allLanesTracks)
+              if (t != track) t,
+          }
+        : {..._allLanesTracks, track};
+  });
+
+  /// Reveals every lane of [track] (used when a lane is added).
+  void _expandAllLanes(int track) =>
+      setState(() => _allLanesTracks = {..._allLanesTracks, track});
+
   /// Opens the bottom FX dock on input [input]'s live-monitor chain.
   void _editInputFx(int input) {
     setState(() {
@@ -349,6 +380,26 @@ class _SignalListViewState extends State<SignalListView> {
         repository: context.read<LooperRepository>(),
         track: track,
         lane: lane,
+      );
+    });
+  }
+
+  /// Opens the bottom FX dock on track [track]'s stereo-bus chain.
+  void _editTrackFx(int track) {
+    setState(() {
+      _editedScope = StageFxScope(
+        looper: _bloc,
+        address: FxAddress(stage: FxStage.track, index: track),
+      );
+    });
+  }
+
+  /// Opens the bottom FX dock on the single Master insert chain.
+  void _editMasterFx() {
+    setState(() {
+      _editedScope = StageFxScope(
+        looper: _bloc,
+        address: const FxAddress(stage: FxStage.master),
       );
     });
   }

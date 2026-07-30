@@ -9,11 +9,15 @@ void main() {
   Widget summary({
     required List<TrackEffect> effects,
     VoidCallback? onEdit,
+    bool chainEnabled = true,
+    String? semanticLabel,
   }) => Scaffold(
     body: Center(
       child: SignalFxSummary(
         summaryKey: const Key('sum'),
         effects: effects,
+        chainEnabled: chainEnabled,
+        semanticLabel: semanticLabel,
         onEdit: onEdit ?? () {},
       ),
     ),
@@ -57,5 +61,123 @@ void main() {
     final node = tester.getSemantics(find.byKey(const Key('sum')));
     expect(node, isSemantics(isButton: true));
     handle.dispose();
+  });
+
+  testWidgets('a powered-off entry strikes through its own chip', (
+    tester,
+  ) async {
+    await tester.pumpApp(
+      summary(
+        effects: [
+          BuiltInEffect(type: TrackEffectType.drive, enabled: false),
+          BuiltInEffect(type: TrackEffectType.reverb),
+        ],
+      ),
+    );
+
+    Text chip(String label) => tester.widget<Text>(find.text(label));
+    expect(chip('Drive').style?.decoration, TextDecoration.lineThrough);
+    expect(chip('Reverb').style?.decoration, isNull);
+  });
+
+  testWidgets('a disabled chain marks the whole row off, not just dims it', (
+    tester,
+  ) async {
+    await tester.pumpApp(
+      summary(
+        effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        chainEnabled: false,
+      ),
+    );
+
+    // The state is spelled out, so it never rests on the dim alone.
+    expect(find.text('Chain off'), findsOneWidget);
+    // ...and every entry reads as silenced, even one whose own flag is on.
+    expect(
+      tester.widget<Text>(find.text('Drive')).style?.decoration,
+      TextDecoration.lineThrough,
+    );
+  });
+
+  testWidgets('an enabled chain shows no chain-off marker', (tester) async {
+    await tester.pumpApp(
+      summary(effects: [BuiltInEffect(type: TrackEffectType.drive)]),
+    );
+    expect(find.text('Chain off'), findsNothing);
+  });
+
+  testWidgets('an unavailable plugin flags itself on the overview row', (
+    tester,
+  ) async {
+    await tester.pumpApp(
+      summary(
+        effects: [
+          const PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'x', version: 1),
+            name: 'Ghost',
+            unavailable: true,
+          ),
+        ],
+      ),
+    );
+
+    // err-1: the placeholder state is visible without opening the dock.
+    expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
+    expect(
+      tester.widget<Tooltip>(find.byType(Tooltip)).message,
+      'Plugin unavailable',
+    );
+  });
+
+  testWidgets('an unsupported plugin says so, distinctly from missing', (
+    tester,
+  ) async {
+    await tester.pumpApp(
+      summary(
+        effects: [
+          const PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'x', version: 1),
+            name: 'Ghost',
+            unavailable: true,
+            unsupported: true,
+          ),
+        ],
+      ),
+    );
+    expect(
+      tester.widget<Tooltip>(find.byType(Tooltip)).message,
+      'Plugin unsupported',
+    );
+  });
+
+  testWidgets('a still-scanning plugin reads as loading, not failed', (
+    tester,
+  ) async {
+    await tester.pumpApp(
+      summary(
+        effects: [
+          const PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'x', version: 1),
+            name: 'Ghost',
+            loading: true,
+          ),
+        ],
+      ),
+    );
+    expect(find.byIcon(Icons.hourglass_empty), findsOneWidget);
+    expect(find.byIcon(Icons.warning_amber_rounded), findsNothing);
+  });
+
+  testWidgets('a stage row can name its own tap target', (tester) async {
+    await tester.pumpApp(
+      summary(
+        effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        semanticLabel: 'Edit the master FX chain',
+      ),
+    );
+    expect(
+      tester.getSemantics(find.byKey(const Key('sum'))).label,
+      contains('Edit the master FX chain'),
+    );
   });
 }

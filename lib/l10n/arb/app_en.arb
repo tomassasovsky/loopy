@@ -551,7 +551,6 @@
     "addLane": "Add lane",
     "removeEffectTooltip": "Remove effect",
     "signalPluginOpenEditorTooltip": "Open the plugin's editor window",
-    "signalPluginBypassTooltip": "Bypass plugin",
     "signalPluginUnknownName": "Plugin",
     "signalPluginToggleOn": "On",
     "signalPluginToggleOff": "Off",
@@ -576,6 +575,28 @@
     "signalAddPlugin": "Add plugin…",
     "signalEditFx": "Edit FX chain",
     "signalNoFx": "No FX",
+    "signalFieldBusFx": "BUS",
+    "signalMasterFxLabel": "MASTER",
+    "signalEditTrackFx": "Edit the track bus FX chain",
+    "signalEditMasterFx": "Edit the master FX chain",
+    "signalChainOff": "Chain off",
+    "signalShowAllLanes": "All lanes",
+    "signalShowRecordedLanes": "Recorded lanes",
+    "signalInherited": "Inherited",
+    "signalInheritedFrom": "Copied from {inputs} when this take was recorded",
+    "@signalInheritedFrom": {
+        "placeholders": {
+            "inputs": { "type": "String" }
+        }
+    },
+    "fxEffectPowerOnTooltip": "Turn this effect on",
+    "fxEffectPowerOffTooltip": "Turn this effect off",
+    "fxChainPowerOnTooltip": "Turn this chain on",
+    "fxChainPowerOffTooltip": "Turn this chain off",
+    "a11yFxEffectOn": "Effect on",
+    "a11yFxEffectOff": "Effect off",
+    "a11yFxChainOn": "Chain on",
+    "a11yFxChainOff": "Chain off",
     "fxEditorInputTitle": "Input {number}",
     "@fxEditorInputTitle": {
         "placeholders": {
@@ -584,6 +605,22 @@
     },
     "fxEditorInputConsequence": "prints into new takes",
     "fxEditorLaneConsequence": "shapes playback, non-destructive",
+    "fxEditorTrackTitle": "Track {number} bus",
+    "@fxEditorTrackTitle": {
+        "placeholders": {
+            "number": { "type": "int" }
+        }
+    },
+    "fxEditorMasterTitle": "Master",
+    "fxEditorTrackConsequence": "shapes the whole track, after its lanes",
+    "fxEditorMasterConsequence": "shapes the whole mix, before the limiter",
+    "fxChainOffInputConsequence": "chain off \u2014 this input monitors dry, and new takes print dry",
+    "fxChainOffLoopConsequence": "chain off \u2014 this take plays dry",
+    "fxChainOffTrackConsequence": "chain off \u2014 this track passes through its bus dry",
+    "fxChainOffMasterConsequence": "chain off \u2014 the whole mix passes through dry",
+    "fxResyncFromInput": "Re-sync from input",
+    "fxResyncFromInputTooltip": "Copy the routed input\u2019s chain onto this take again. Other takes are untouched.",
+    "fxOverdubMismatchHint": "The input chain no longer matches this take \u2014 this overdub is captured dry and does not re-inherit.",
     "fxEditorScopeGone": "This chain no longer exists.",
     "fxEditorEditBlock": "Edit {name}",
     "@fxEditorEditBlock": {

@@ -268,7 +268,6 @@
     "addLane": "Añadir carril",
     "removeEffectTooltip": "Eliminar efecto",
     "signalPluginOpenEditorTooltip": "Abrir la ventana del editor del plugin",
-    "signalPluginBypassTooltip": "Omitir plugin",
     "signalPluginUnknownName": "Plugin",
     "signalPluginToggleOn": "Sí",
     "signalPluginToggleOff": "No",
@@ -293,6 +292,28 @@
     "signalAddPlugin": "Añadir plugin…",
     "signalEditFx": "Editar cadena de FX",
     "signalNoFx": "Sin FX",
+    "signalFieldBusFx": "BUS",
+    "signalMasterFxLabel": "MASTER",
+    "signalEditTrackFx": "Editar la cadena de FX del bus de la pista",
+    "signalEditMasterFx": "Editar la cadena de FX del master",
+    "signalChainOff": "Cadena apagada",
+    "signalShowAllLanes": "Todos los carriles",
+    "signalShowRecordedLanes": "Carriles grabados",
+    "signalInherited": "Heredada",
+    "signalInheritedFrom": "Copiada de {inputs} al grabar esta toma",
+    "@signalInheritedFrom": {
+        "placeholders": {
+            "inputs": { "type": "String" }
+        }
+    },
+    "fxEffectPowerOnTooltip": "Encender este efecto",
+    "fxEffectPowerOffTooltip": "Apagar este efecto",
+    "fxChainPowerOnTooltip": "Encender esta cadena",
+    "fxChainPowerOffTooltip": "Apagar esta cadena",
+    "a11yFxEffectOn": "Efecto encendido",
+    "a11yFxEffectOff": "Efecto apagado",
+    "a11yFxChainOn": "Cadena encendida",
+    "a11yFxChainOff": "Cadena apagada",
     "fxEditorInputTitle": "Entrada {number}",
     "@fxEditorInputTitle": {
         "placeholders": {
@@ -301,6 +322,22 @@
     },
     "fxEditorInputConsequence": "se graba en las nuevas tomas",
     "fxEditorLaneConsequence": "moldea la reproducción, no destructivo",
+    "fxEditorTrackTitle": "Bus de la pista {number}",
+    "@fxEditorTrackTitle": {
+        "placeholders": {
+            "number": { "type": "int" }
+        }
+    },
+    "fxEditorMasterTitle": "Master",
+    "fxEditorTrackConsequence": "moldea toda la pista, despu\u00e9s de sus carriles",
+    "fxEditorMasterConsequence": "moldea toda la mezcla, antes del limitador",
+    "fxChainOffInputConsequence": "cadena apagada \u2014 esta entrada se monitorea en seco y las nuevas tomas se graban en seco",
+    "fxChainOffLoopConsequence": "cadena apagada \u2014 esta toma suena en seco",
+    "fxChainOffTrackConsequence": "cadena apagada \u2014 esta pista pasa por su bus en seco",
+    "fxChainOffMasterConsequence": "cadena apagada \u2014 toda la mezcla pasa en seco",
+    "fxResyncFromInput": "Resincronizar desde la entrada",
+    "fxResyncFromInputTooltip": "Vuelve a copiar la cadena de la entrada enrutada sobre esta toma. Las dem\u00e1s tomas no se tocan.",
+    "fxOverdubMismatchHint": "La cadena de la entrada ya no coincide con esta toma \u2014 esta sobregrabaci\u00f3n se captura en seco y no vuelve a heredar.",
     "fxEditorScopeGone": "Esta cadena ya no existe.",
     "fxEditorEditBlock": "Editar {name}",
     "@fxEditorEditBlock": {

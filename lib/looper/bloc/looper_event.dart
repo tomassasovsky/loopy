@@ -402,6 +402,210 @@ final class LooperLanePluginEditorClosed extends LooperLaneEvent {
   List<Object?> get props => [channel, lane, index];
 }
 
+/// Entry [index] of lane [lane] of track [channel]'s chain was toggled to
+/// [enabled] — the loop-stage twin of [LooperTrackEffectEnabledToggled]
+/// (per-slot flag; click-free ramp engine-side).
+final class LooperLaneEffectEnabledToggled extends LooperLaneEvent {
+  /// Creates a [LooperLaneEffectEnabledToggled].
+  const LooperLaneEffectEnabledToggled(
+    super.channel,
+    super.lane,
+    this.index, {
+    required this.enabled,
+  });
+
+  /// The chain entry index (`0..kTrackEffectMax-1`).
+  final int index;
+
+  /// The new flag value.
+  final bool enabled;
+
+  @override
+  List<Object?> get props => [channel, lane, index, enabled];
+}
+
+/// Lane [lane] of track [channel]'s WHOLE chain was toggled to [enabled] in
+/// one atomic flip (per-entry flags untouched).
+final class LooperLaneChainEnabledToggled extends LooperLaneEvent {
+  /// Creates a [LooperLaneChainEnabledToggled].
+  const LooperLaneChainEnabledToggled(
+    super.channel,
+    super.lane, {
+    required this.enabled,
+  });
+
+  /// The new flag value.
+  final bool enabled;
+
+  @override
+  List<Object?> get props => [channel, lane, enabled];
+}
+
+/// Re-copies lane [lane] of track [channel]'s routed input chain onto the lane
+/// by value, with a fresh provenance stamp (A6/R13). Explicit and user
+/// initiated — inheritance is never automatic, and an overdub never
+/// re-inherits (A7).
+final class LooperLaneChainResyncedFromInput extends LooperLaneEvent {
+  /// Creates a [LooperLaneChainResyncedFromInput].
+  const LooperLaneChainResyncedFromInput(super.channel, super.lane);
+}
+
+/// Base for the **bus-stage** chain edits — the Track stereo bus and the
+/// Master insert — addressed by [FxAddress] rather than by a stage-specific
+/// event pair, since the stage is data (A9/R19) and the two differ only in
+/// which chain the handler reads and writes.
+///
+/// Every one of these carries an *intent*, never a computed chain: the bloc
+/// composes the next list from the repository's current chain while it handles
+/// the event. Composing in the UI instead would read `LooperState`, which lags
+/// each write by the bloc's async hop, so two edits dispatched in one frame
+/// (the rack's add-then-retype) would collapse into one.
+sealed class LooperBusChainEvent extends LooperEvent {
+  /// Creates a [LooperBusChainEvent] for the chain at [address].
+  const LooperBusChainEvent(this.address);
+
+  /// The bus chain being edited ([FxStage.track] or [FxStage.master]).
+  final FxAddress address;
+
+  @override
+  List<Object?> get props => [address];
+}
+
+/// Appends a built-in effect to the bus chain at [address]. [type] carries the
+/// device browser's pick, so add-of-type is ONE intent rather than an append
+/// followed by a retype of an index the UI had to guess.
+final class LooperBusEffectAdded extends LooperBusChainEvent {
+  /// Creates a [LooperBusEffectAdded]; [type] defaults to drive.
+  const LooperBusEffectAdded(super.address, {this.type});
+
+  /// The device type to add, or null for the default (drive).
+  final TrackEffectType? type;
+
+  @override
+  List<Object?> get props => [address, type];
+}
+
+/// Removes entry [index] from the bus chain at [address].
+final class LooperBusEffectRemoved extends LooperBusChainEvent {
+  /// Creates a [LooperBusEffectRemoved].
+  const LooperBusEffectRemoved(super.address, this.index);
+
+  /// The chain entry index.
+  final int index;
+
+  @override
+  List<Object?> get props => [address, index];
+}
+
+/// Moves entry [from] to [to] in the bus chain at [address] (the processing
+/// order is the signal order, so a move re-sequences the FX).
+final class LooperBusEffectMoved extends LooperBusChainEvent {
+  /// Creates a [LooperBusEffectMoved].
+  const LooperBusEffectMoved(super.address, this.from, this.to);
+
+  /// The entry's current index.
+  final int from;
+
+  /// The post-removal target index.
+  final int to;
+
+  @override
+  List<Object?> get props => [address, from, to];
+}
+
+/// Retypes built-in entry [index] of the bus chain at [address] to [type]
+/// (resets its DSP state and seeds default params).
+final class LooperBusEffectTypeChanged extends LooperBusChainEvent {
+  /// Creates a [LooperBusEffectTypeChanged].
+  const LooperBusEffectTypeChanged(super.address, this.index, this.type);
+
+  /// The chain entry index.
+  final int index;
+
+  /// The new device type.
+  final TrackEffectType type;
+
+  @override
+  List<Object?> get props => [address, index, type];
+}
+
+/// Sets built-in parameter [param] of entry [index] of the bus chain at
+/// [address] to the normalized [value], without a structural reset.
+final class LooperBusEffectParamChanged extends LooperBusChainEvent {
+  /// Creates a [LooperBusEffectParamChanged].
+  const LooperBusEffectParamChanged(
+    super.address,
+    this.index,
+    this.param,
+    this.value,
+  );
+
+  /// The chain entry index.
+  final int index;
+
+  /// The positional built-in parameter index.
+  final int param;
+
+  /// The new normalized (`0..1`) value.
+  final double value;
+
+  @override
+  List<Object?> get props => [address, index, param, value];
+}
+
+/// Appends the hosted plugin [ref] to the bus chain at [address]. The domain
+/// preserves the entry but marks it unsupported until a bus-stage slot ABI
+/// lands, so it renders as a placeholder rather than as controls.
+final class LooperBusPluginInserted extends LooperBusChainEvent {
+  /// Creates a [LooperBusPluginInserted].
+  const LooperBusPluginInserted(super.address, this.ref);
+
+  /// The plugin's identity.
+  final PluginRef ref;
+
+  @override
+  List<Object?> get props => [address, ref];
+}
+
+/// Sets hosted-plugin parameter [paramId] of entry [index] of the bus chain at
+/// [address] to the plain [value].
+final class LooperBusPluginParamChanged extends LooperBusChainEvent {
+  /// Creates a [LooperBusPluginParamChanged].
+  const LooperBusPluginParamChanged(
+    super.address,
+    this.index,
+    this.paramId,
+    this.value,
+  );
+
+  /// The chain entry index.
+  final int index;
+
+  /// The stable plugin parameter id.
+  final int paramId;
+
+  /// The plain (already-scaled) parameter value.
+  final double value;
+
+  @override
+  List<Object?> get props => [address, index, paramId, value];
+}
+
+/// Relinks plugin entry [index] of the bus chain at [address] to [ref].
+final class LooperBusPluginRelinked extends LooperBusChainEvent {
+  /// Creates a [LooperBusPluginRelinked].
+  const LooperBusPluginRelinked(super.address, this.index, this.ref);
+
+  /// The chain entry index.
+  final int index;
+
+  /// The replacement plugin's identity.
+  final PluginRef ref;
+
+  @override
+  List<Object?> get props => [address, index, ref];
+}
+
 /// Track [channel]'s Track-stage (stereo bus) chain was replaced with
 /// [effects] — the bus twin of the lane chain-set path (FX v3 part 3a). The
 /// bloc owns Track/Master chain state: it pushes through the repository and

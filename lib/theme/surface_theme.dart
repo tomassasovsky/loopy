@@ -1,3 +1,5 @@
+import 'dart:ui' show lerpDouble;
+
 import 'package:flutter/material.dart';
 
 /// The neutral "setup surface" design tokens (onboarding, settings, and the
@@ -38,6 +40,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     required this.pageGlow,
     required this.knobFaceTop,
     required this.knobFaceBottom,
+    required this.disabledOpacity,
   });
 
   /// The neutral surface palette.
@@ -98,6 +101,13 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   final Color knobFaceTop;
   final Color knobFaceBottom;
 
+  /// The opacity a **disabled** control renders at (R26): a bypassed FX card's
+  /// body, a disabled effect's summary chip, a chain-disabled summary row. The
+  /// single source for disabled dimming, so no widget hardcodes an opacity —
+  /// and so the high-contrast variant can dim less aggressively and keep the
+  /// dimmed text legible (WCAG 1.4.3).
+  final double disabledOpacity;
+
   /// The display/body typeface — a geometric grotesque that gives the surfaces
   /// their instrument-panel character (bundled under `assets/fonts/`).
   static const String displayFont = 'Space Grotesk';
@@ -142,6 +152,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     Color? pageGlow,
     Color? knobFaceTop,
     Color? knobFaceBottom,
+    double? disabledOpacity,
   }) => SurfaceTheme(
     background: background ?? this.background,
     surface: surface ?? this.surface,
@@ -170,6 +181,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     pageGlow: pageGlow ?? this.pageGlow,
     knobFaceTop: knobFaceTop ?? this.knobFaceTop,
     knobFaceBottom: knobFaceBottom ?? this.knobFaceBottom,
+    disabledOpacity: disabledOpacity ?? this.disabledOpacity,
   );
 
   @override
@@ -206,6 +218,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       pageGlow: c(pageGlow, other.pageGlow),
       knobFaceTop: c(knobFaceTop, other.knobFaceTop),
       knobFaceBottom: c(knobFaceBottom, other.knobFaceBottom),
+      disabledOpacity:
+          lerpDouble(disabledOpacity, other.disabledOpacity, t) ??
+          disabledOpacity,
       lanePalette: [
         for (var i = 0; i < lanePalette.length; i++)
           c(
@@ -262,6 +277,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     pageGlow: Color(0xFF11111B),
     knobFaceTop: Color(0xFF23232B),
     knobFaceBottom: Color(0xFF121217),
+    disabledOpacity: 0.4,
   );
 
   /// High-contrast variant of [dark], selected automatically when the OS
@@ -306,6 +322,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     pageGlow: Color(0xFF0B0B18),
     knobFaceTop: Color(0xFF2E2E3A),
     knobFaceBottom: Color(0xFF17171D),
+    // Dim less than [dark]: a disabled control must still clear the contrast
+    // floor under the high-contrast preference.
+    disabledOpacity: 0.62,
   );
 }
 

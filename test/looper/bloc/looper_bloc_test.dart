@@ -1071,6 +1071,180 @@ void main() {
       );
 
       blocTest<LooperBloc, LooperState>(
+        'a bus add-of-type composes from the repository, so an add and a '
+        'retype dispatched together do not clobber each other',
+        setUp: () {
+          // The repository is the authority each handler composes from; the
+          // fake starts empty and accumulates, exactly like the real one.
+          var chain = <TrackEffect>[];
+          when(() => repository.trackEffects(0)).thenAnswer((_) => chain);
+          when(
+            () => repository.setTrackEffects(
+              channel: any(named: 'channel'),
+              effects: any(named: 'effects'),
+            ),
+          ).thenAnswer((invocation) {
+            chain = invocation.namedArguments[#effects] as List<TrackEffect>;
+            return EngineResult.ok;
+          });
+        },
+        build: () => LooperBloc(repository: repository, settings: settings),
+        act: (bloc) => bloc
+          ..add(
+            const LooperBusEffectAdded(
+              FxAddress(stage: FxStage.track),
+              type: TrackEffectType.reverb,
+            ),
+          )
+          ..add(
+            const LooperBusEffectAdded(
+              FxAddress(stage: FxStage.track),
+              type: TrackEffectType.echo,
+            ),
+          ),
+        verify: (_) {
+          final pushes = verify(
+            () => repository.setTrackEffects(
+              channel: 0,
+              effects: captureAny(named: 'effects'),
+            ),
+          ).captured.cast<List<TrackEffect>>();
+          // Both adds landed, each carrying its own picked type — the second
+          // did not overwrite the first from a stale base.
+          expect(pushes.last, hasLength(2));
+          expect(
+            pushes.last.map((fx) => (fx as BuiltInEffect).type),
+            [TrackEffectType.reverb, TrackEffectType.echo],
+          );
+        },
+      );
+
+      blocTest<LooperBloc, LooperState>(
+        'a bus edit on the master stage writes the Master insert',
+        setUp: () {
+          when(
+            () => repository.masterEffects,
+          ).thenReturn([BuiltInEffect(type: TrackEffectType.drive)]);
+        },
+        build: () => LooperBloc(repository: repository, settings: settings),
+        act: (bloc) => bloc.add(
+          const LooperBusEffectTypeChanged(
+            FxAddress(stage: FxStage.master),
+            0,
+            TrackEffectType.reverb,
+          ),
+        ),
+        verify: (_) {
+          final pushed =
+              verify(
+                    () => repository.setMasterEffects(
+                      effects: captureAny(named: 'effects'),
+                    ),
+                  ).captured.single
+                  as List<TrackEffect>;
+          expect(
+            (pushed.single as BuiltInEffect).type,
+            TrackEffectType.reverb,
+          );
+          verify(() => settings.saveMasterFxChain(any())).called(1);
+        },
+      );
+
+      blocTest<LooperBloc, LooperState>(
+        'a bus edit past the end of the chain is ignored',
+        setUp: () =>
+            when(() => repository.trackEffects(0)).thenReturn(const []),
+        build: () => LooperBloc(repository: repository, settings: settings),
+        act: (bloc) => bloc.add(
+          const LooperBusEffectRemoved(FxAddress(stage: FxStage.track), 3),
+        ),
+        verify: (_) {
+          verifyNever(
+            () => repository.setTrackEffects(
+              channel: any(named: 'channel'),
+              effects: any(named: 'effects'),
+            ),
+          );
+        },
+      );
+
+      blocTest<LooperBloc, LooperState>(
+        'LooperLaneEffectEnabledToggled flips the slot and re-persists',
+        setUp: () {
+          when(
+            () => repository.setLaneEffectEnabled(
+              channel: any(named: 'channel'),
+              lane: any(named: 'lane'),
+              index: any(named: 'index'),
+              enabled: any(named: 'enabled'),
+            ),
+          ).thenReturn(EngineResult.ok);
+        },
+        build: () => LooperBloc(repository: repository, settings: settings),
+        act: (bloc) => bloc.add(
+          const LooperLaneEffectEnabledToggled(0, 1, 2, enabled: false),
+        ),
+        verify: (_) {
+          verify(
+            () => repository.setLaneEffectEnabled(
+              channel: 0,
+              lane: 1,
+              index: 2,
+              enabled: false,
+            ),
+          ).called(1);
+          verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
+        },
+      );
+
+      blocTest<LooperBloc, LooperState>(
+        'LooperLaneChainEnabledToggled flips the chain flag and re-persists',
+        setUp: () {
+          when(
+            () => repository.setLaneChainEnabled(
+              channel: any(named: 'channel'),
+              lane: any(named: 'lane'),
+              enabled: any(named: 'enabled'),
+            ),
+          ).thenReturn(EngineResult.ok);
+        },
+        build: () => LooperBloc(repository: repository, settings: settings),
+        act: (bloc) =>
+            bloc.add(const LooperLaneChainEnabledToggled(0, 1, enabled: false)),
+        verify: (_) {
+          verify(
+            () => repository.setLaneChainEnabled(
+              channel: 0,
+              lane: 1,
+              enabled: false,
+            ),
+          ).called(1);
+          verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
+        },
+      );
+
+      blocTest<LooperBloc, LooperState>(
+        'LooperLaneChainResyncedFromInput re-copies the routed input chain',
+        setUp: () {
+          when(
+            () => repository.resyncLaneChainFromInput(
+              channel: any(named: 'channel'),
+              lane: any(named: 'lane'),
+            ),
+          ).thenReturn(true);
+        },
+        build: () => LooperBloc(repository: repository, settings: settings),
+        act: (bloc) => bloc.add(const LooperLaneChainResyncedFromInput(0, 1)),
+        verify: (_) {
+          // Explicit and user initiated (A6) — the repository owns the copy and
+          // notifies back for persistence, so the bloc adds no second write.
+          verify(
+            () => repository.resyncLaneChainFromInput(channel: 0, lane: 1),
+          ).called(1);
+        },
+      );
+
+      blocTest<LooperBloc, LooperState>(
         'LooperTrackEffectEnabledToggled flips the slot and re-persists',
         build: () => LooperBloc(repository: repository, settings: settings),
         act: (bloc) => bloc.add(

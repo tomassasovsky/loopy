@@ -312,6 +312,42 @@ class MonitorCubit extends Cubit<MonitorState> {
     unawaited(_settings.saveMonitorEffects(input, _encodedChain(input, next)));
   }
 
+  /// Enables/disables monitor [input]'s chain entry [index] without losing its
+  /// type or parameters (R16; click-free ramp engine-side) — the input-stage
+  /// half of the universal per-slot power control.
+  void setEffectEnabled(int input, int index, {required bool enabled}) {
+    final monitor = state.forInput(input);
+    if (index < 0 || index >= monitor.effects.length) return;
+    // Write first, then emit what actually landed — the repository owns the
+    // flag flip across the sealed entry hierarchy, so re-reading it is more
+    // honest than reproducing that dispatch here. [setChainEnabled] keeps the
+    // same order for the same reason.
+    _repository.setMonitorEffectEnabled(
+      input: input,
+      index: index,
+      enabled: enabled,
+    );
+    final next = _repository.monitorEffects(input);
+    emit(state.withInput(monitor.copyWith(effects: next)));
+    unawaited(_settings.saveMonitorEffects(input, _encodedChain(input, next)));
+  }
+
+  /// Enables/disables monitor [input]'s WHOLE chain in one atomic flip, leaving
+  /// the per-entry flags intact (R15). A chain-disabled monitor sounds dry and
+  /// stops being snapshot-copied onto recording lanes (D-CHAINDIS, R18).
+  void setChainEnabled(int input, {required bool enabled}) {
+    final monitor = state.forInput(input);
+    // Write, then emit — the same order as [setEffectEnabled].
+    _repository.setMonitorChainEnabled(input: input, enabled: enabled);
+    emit(state.withInput(monitor.copyWith(chainEnabled: enabled)));
+    unawaited(
+      _settings.saveMonitorEffects(
+        input,
+        _encodedChain(input, monitor.effects),
+      ),
+    );
+  }
+
   /// Opens the native editor window for monitor [input]'s plugin chain entry
   /// [index] (D-WIN) and starts the ≤10 Hz inbound sync poll (D-SYNC): each
   /// tick mirrors editor-driven param moves onto the in-app knobs.

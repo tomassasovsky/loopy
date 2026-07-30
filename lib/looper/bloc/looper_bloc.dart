@@ -191,6 +191,106 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         ),
       );
     });
+    on<LooperLaneEffectEnabledToggled>((event, _) {
+      _repository.setLaneEffectEnabled(
+        channel: event.channel,
+        lane: event.lane,
+        index: event.index,
+        enabled: event.enabled,
+      );
+      _persistLaneChain(event.channel, event.lane);
+    });
+    on<LooperLaneChainEnabledToggled>((event, _) {
+      _repository.setLaneChainEnabled(
+        channel: event.channel,
+        lane: event.lane,
+        enabled: event.enabled,
+      );
+      _persistLaneChain(event.channel, event.lane);
+    });
+    on<LooperLaneChainResyncedFromInput>((event, _) {
+      // The repository notifies `onLaneChainChanged` on a successful re-copy,
+      // which persists the fresh envelope — nothing to persist here when it
+      // declines (there was nothing inheritable to copy).
+      _repository.resyncLaneChainFromInput(
+        channel: event.channel,
+        lane: event.lane,
+      );
+    });
+    // Bus-stage chain surgery (Track + Master). Each handler composes the next
+    // chain from the REPOSITORY's current one — never from `state`, which lags
+    // by this hop — so edits dispatched together in one frame compose instead
+    // of clobbering one another.
+    on<LooperBusEffectAdded>((event, _) {
+      final chain = _busChain(event.address);
+      if (chain.length >= kTrackEffectMax) return;
+      _pushBusChain(event.address, [
+        ...chain,
+        BuiltInEffect(type: event.type ?? TrackEffectType.drive),
+      ]);
+    });
+    on<LooperBusEffectRemoved>((event, _) {
+      final chain = _busChain(event.address);
+      if (event.index < 0 || event.index >= chain.length) return;
+      _pushBusChain(event.address, [...chain]..removeAt(event.index));
+    });
+    on<LooperBusEffectMoved>((event, _) {
+      final chain = _busChain(event.address);
+      if (event.from < 0 || event.from >= chain.length) return;
+      final to = event.to.clamp(0, chain.length - 1);
+      if (event.from == to) return;
+      final next = [...chain];
+      next.insert(to, next.removeAt(event.from));
+      _pushBusChain(event.address, next);
+    });
+    on<LooperBusEffectTypeChanged>((event, _) {
+      final chain = _busChain(event.address);
+      if (event.index < 0 || event.index >= chain.length) return;
+      _pushBusChain(
+        event.address,
+        [...chain]..[event.index] = BuiltInEffect(type: event.type),
+      );
+    });
+    on<LooperBusEffectParamChanged>((event, _) {
+      final chain = _busChain(event.address);
+      if (event.index < 0 || event.index >= chain.length) return;
+      final fx = chain[event.index];
+      if (fx is! BuiltInEffect) return;
+      if (event.param < 0 || event.param >= fx.params.length) return;
+      final params = List<double>.of(fx.params)..[event.param] = event.value;
+      _pushBusChain(
+        event.address,
+        [...chain]..[event.index] = fx.copyWith(params: params),
+      );
+    });
+    on<LooperBusPluginInserted>((event, _) {
+      final chain = _busChain(event.address);
+      if (chain.length >= kTrackEffectMax) return;
+      _pushBusChain(event.address, [...chain, PluginEffect(ref: event.ref)]);
+    });
+    on<LooperBusPluginParamChanged>((event, _) {
+      final chain = _busChain(event.address);
+      if (event.index < 0 || event.index >= chain.length) return;
+      final fx = chain[event.index];
+      if (fx is! PluginEffect) return;
+      final values = Map<int, double>.of(fx.paramValues)
+        ..[event.paramId] = event.value;
+      _pushBusChain(
+        event.address,
+        [...chain]..[event.index] = fx.copyWith(paramValues: values),
+      );
+    });
+    on<LooperBusPluginRelinked>((event, _) {
+      final chain = _busChain(event.address);
+      if (event.index < 0 || event.index >= chain.length) return;
+      if (chain[event.index] is! PluginEffect) return;
+      // A bus-stage plugin never instantiates (no slot ABI yet), so it holds no
+      // captured state to carry over — the relink is a re-identification.
+      _pushBusChain(
+        event.address,
+        [...chain]..[event.index] = PluginEffect(ref: event.ref),
+      );
+    });
     on<LooperTrackEffectsChanged>((event, _) {
       _repository.setTrackEffects(
         channel: event.channel,
@@ -427,6 +527,25 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       entries: _repository.laneEffects(channel, lane),
     ),
   );
+
+  /// The current chain at bus [address], read from the repository (the
+  /// authority that every bus write lands in synchronously) rather than from
+  /// the projected [LooperState].
+  List<TrackEffect> _busChain(FxAddress address) =>
+      address.stage == FxStage.master
+      ? _repository.masterEffects
+      : _repository.trackEffects(address.index);
+
+  /// Writes [next] to the bus chain at [address] and persists its envelope.
+  void _pushBusChain(FxAddress address, List<TrackEffect> next) {
+    if (address.stage == FxStage.master) {
+      _repository.setMasterEffects(effects: next);
+      _persistMasterChain();
+    } else {
+      _repository.setTrackEffects(channel: address.index, effects: next);
+      _persistTrackChain(address.index);
+    }
+  }
 
   /// Persists track [channel]'s Track-stage chain envelope (the bus twin of
   /// [_encodedLaneChain]; bus chains carry no inheritance meta).

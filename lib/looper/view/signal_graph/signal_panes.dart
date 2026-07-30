@@ -269,10 +269,13 @@ class _TracksPane extends _Pane {
     required this.onToggleRoute,
     required this.onReassignInput,
     required this.onEditFx,
+    required this.onEditTrackFx,
     required this.onMuteToggled,
     required this.onVolumeChanged,
     required this.onAddLane,
     required this.onRemoveLane,
+    required this.expandedTracks,
+    required this.onToggleAllLanes,
   });
 
   final SignalRows rows;
@@ -283,6 +286,10 @@ class _TracksPane extends _Pane {
   final void Function(TakeRow take, int output) onToggleRoute;
   final void Function(TakeRow take, int input) onReassignInput;
   final ValueChanged<TakeRow> onEditFx;
+
+  /// Opens the FX dock on the given track's Track-stage (stereo bus) chain.
+  final ValueChanged<int> onEditTrackFx;
+
   final ValueChanged<TakeRow> onMuteToggled;
   final void Function(TakeRow take, double volume) onVolumeChanged;
 
@@ -291,6 +298,12 @@ class _TracksPane extends _Pane {
 
   /// Removes the given track's last lane (when it has more than one).
   final ValueChanged<int> onRemoveLane;
+
+  /// The tracks showing every lane rather than just their recorded ones (A11).
+  final Set<int> expandedTracks;
+
+  /// Flips the given track between "recorded lanes" and "all lanes".
+  final ValueChanged<int> onToggleAllLanes;
 
   @override
   String header(AppLocalizations l10n) => l10n.signalSectionTracks;
@@ -338,13 +351,36 @@ class _TracksPane extends _Pane {
           onVolumeChanged: (v) => onVolumeChanged(t, v),
         ),
       );
+      final trackFx = _TrackFxRow(
+        group: g,
+        onEdit: () => onEditTrackFx(g.track),
+      );
+      // Loop-stage drill-in (A11): a track's recorded takes are what you came
+      // to shape, so lanes with no audio hide behind the "all lanes" expander.
+      // A track with NOTHING recorded shows all its lanes regardless — hiding
+      // them would take its routing and mix off the surface entirely.
+      final recorded = g.recordedTakes;
+      final expanded = expandedTracks.contains(g.track) || recorded.isEmpty;
+      final visible = expanded ? g.takes : recorded;
+      final hidesLanes =
+          recorded.isNotEmpty && recorded.length < g.takes.length;
       if (g.single) {
-        // A single-lane track is its own card; its add-lane control sits just
-        // under the row (there is no track header to carry it).
+        // A single-lane track is its own card; its bus FX row and add-lane
+        // control sit just under it (there is no track header to carry them).
         out.add(
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [takeRow(g.takes.first), controls],
+          Padding(
+            padding: const EdgeInsets.only(bottom: 11),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                takeRow(g.takes.first),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
+                  child: trackFx,
+                ),
+                controls,
+              ],
+            ),
           ),
         );
       } else {
@@ -391,6 +427,12 @@ class _TracksPane extends _Pane {
                     ],
                   ),
                 ),
+                // The track's own stereo-bus chain, on the group header: it
+                // sits downstream of every take nested below it.
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 7),
+                  child: trackFx,
+                ),
                 // .take: nested takes hang off a left rule.
                 Container(
                   margin: const EdgeInsets.only(left: 10),
@@ -400,7 +442,15 @@ class _TracksPane extends _Pane {
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [for (final t in g.takes) takeRow(t)],
+                    children: [
+                      for (final t in visible) takeRow(t),
+                      if (hidesLanes)
+                        _AllLanesToggle(
+                          track: g.track,
+                          expanded: expanded,
+                          onToggle: () => onToggleAllLanes(g.track),
+                        ),
+                    ],
                   ),
                 ),
               ],
@@ -422,6 +472,7 @@ class _OutputsPane extends _Pane {
     required this.trackNames,
     required this.onTapRow,
     required this.onToggleGate,
+    required this.onEditMasterFx,
   });
 
   final SignalRows rows;
@@ -431,6 +482,9 @@ class _OutputsPane extends _Pane {
   final List<String> trackNames;
   final ValueChanged<int> onTapRow;
   final void Function(int output, {required bool enabled}) onToggleGate;
+
+  /// Opens the FX dock on the Master insert chain.
+  final VoidCallback onEditMasterFx;
 
   @override
   String header(AppLocalizations l10n) => l10n.signalSectionOutputs;
@@ -444,6 +498,13 @@ class _OutputsPane extends _Pane {
     return [
       if (noActiveOutputs)
         _NoActiveOutputsNotice(message: l10n.noActiveOutputsNotice),
+      // The Master insert heads the outputs pane: it is the last thing every
+      // track passes through before the hardware outputs listed below it.
+      _MasterFxRow(
+        effects: rows.masterEffects,
+        chainEnabled: rows.masterChainEnabled,
+        onEdit: onEditMasterFx,
+      ),
       for (final o in rows.outputs)
         _TraceDim(
           trace: trace,
@@ -459,5 +520,125 @@ class _OutputsPane extends _Pane {
           ),
         ),
     ];
+  }
+}
+
+/// The **Track-stage** FX row on a track group: the track's own stereo-bus
+/// chain, downstream of every lane in the group. Reads exactly like a lane's
+/// FX row (same summary chips, same "No FX" affordance) — the stage is what
+/// differs, not the interaction.
+class _TrackFxRow extends StatelessWidget {
+  const _TrackFxRow({required this.group, required this.onEdit});
+
+  final TrackGroup group;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return _FieldRow(
+      label: l10n.signalFieldBusFx,
+      child: SignalFxSummary(
+        summaryKey: Key('signalTrackFx_${group.track}'),
+        effects: group.effects,
+        chainEnabled: group.chainEnabled,
+        semanticLabel: l10n.signalEditTrackFx,
+        onEdit: onEdit,
+      ),
+    );
+  }
+}
+
+/// The **Master-stage** strip at the head of the outputs pane — the one Master
+/// insert, on the summed mix before gain and limiter.
+class _MasterFxRow extends StatelessWidget {
+  const _MasterFxRow({
+    required this.effects,
+    required this.chainEnabled,
+    required this.onEdit,
+  });
+
+  final List<TrackEffect> effects;
+  final bool chainEnabled;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    return _RowCard(
+      rowKey: const Key('signalMaster'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l10n.signalMasterFxLabel,
+            style: signalMono(
+              color: surface.textPrimary,
+              size: 12.5,
+              weight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _FieldRow(
+            label: l10n.signalFieldFx,
+            child: SignalFxSummary(
+              summaryKey: const Key('signalMasterFx'),
+              effects: effects,
+              chainEnabled: chainEnabled,
+              semanticLabel: l10n.signalEditMasterFx,
+              onEdit: onEdit,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The loop drill-in's "all lanes" expander (A11): flips a track between its
+/// recorded takes (the default) and every lane it has.
+class _AllLanesToggle extends StatelessWidget {
+  const _AllLanesToggle({
+    required this.track,
+    required this.expanded,
+    required this.onToggle,
+  });
+
+  final int track;
+
+  /// Whether every lane is currently shown.
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final l10n = context.l10n;
+    final label = expanded
+        ? l10n.signalShowRecordedLanes
+        : l10n.signalShowAllLanes;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Semantics(
+        container: true,
+        button: true,
+        expanded: expanded,
+        child: TextButton.icon(
+          key: Key('signalAllLanes_$track'),
+          onPressed: onToggle,
+          icon: Icon(
+            expanded ? Icons.expand_less : Icons.expand_more,
+            size: 16,
+          ),
+          label: Text(label, style: signalLabel(color: surface.textSecondary)),
+          style: TextButton.styleFrom(
+            foregroundColor: surface.textSecondary,
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+          ),
+        ),
+      ),
+    );
   }
 }

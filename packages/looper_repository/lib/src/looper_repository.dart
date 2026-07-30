@@ -936,55 +936,91 @@ class LooperRepository {
     // read of ring-deferred engine state.
     final count = _laneCount[channel] ?? 1;
     for (var lane = 0; lane < count; lane++) {
-      final input = _laneInput[(channel, lane)] ?? lane;
-      final chain = (input >= 0 && input < kMaxInputs)
-          ? _monitorEffects[input]
-          : null;
-      if (chain == null || chain.isEmpty) continue;
-      // D-CHAINDIS (R18): a chain-disabled monitor chain is treated as dry —
-      // same bail as the empty chain above, the lane keeps its prior chain.
-      if (!monitorChainEnabled(input)) continue;
-      // D-P1: a plugin in the monitor chain can't be value-copied — capture
-      // its live opaque state so the lane re-instantiates a frozen instance
-      // from that exact state on playback. The recorded audio is dry either
-      // way, so a capture failure just drops the entry (bypassed) without
-      // affecting the take.
-      final captured = <TrackEffect>[];
-      for (var i = 0; i < chain.length; i++) {
-        final fx = _capturePluginForLane(chain[i], input, i);
-        if (fx != null) captured.add(fx);
-      }
-      // The take's entries are new identities (A9): fresh slot ids, never the
-      // input chain's.
-      final snapshot = withFreshSlotIds(captured);
-      if (snapshot.isEmpty) {
-        // Every entry of a non-empty monitored chain failed to capture (all
-        // plugins, all bypassed): the monitored chain still overwrites the lane
-        // (D2), reducing it to empty. Push that too (below) so a stale
-        // staged/persisted engine chain can't outlive it and diverge. An empty
-        // chain is dry — no provenance to keep.
-        _laneEffects.remove((channel, lane));
-        _laneChainMeta.remove((channel, lane));
-      } else {
-        _laneEffects[(channel, lane)] = snapshot;
-        // Provenance (R13/A8): today one routed input feeds a lane, so the
-        // list is one element; a future multi-input mix concatenates via
-        // `concatenateInheritedChains` and lists every source here.
-        _laneChainMeta[(channel, lane)] = List<int>.unmodifiable([input]);
-      }
-      // The monitored chain was chain-ENABLED (the disabled shape bailed
-      // above), and the copy is by value — the take's chain flag matches.
-      setLaneChainEnabled(channel: channel, lane: lane, enabled: true);
-      // Push it to the engine's lane FX like any other lane edit (plugin
-      // entries carry the frozen state captured above) — the pure-sink push
-      // that lands the take's chain regardless of ring-drain timing.
-      _applyLaneEffects(channel, lane);
-      // The take's chain just changed under the repository's own hand — notify
-      // so the bloc persists it (F3: without this, a restart replays the
-      // pre-take chain from settings).
-      onLaneChainChanged?.call(channel, lane);
+      _inheritMonitorChainOntoLane(channel, lane);
     }
   }
+
+  /// Copies lane [lane] of track [channel]'s routed input chain onto the lane
+  /// by value, with a fresh provenance stamp — the one inheritance mechanism,
+  /// shared by the record-time snapshot ([_snapshotMonitorChainsOntoLanes])
+  /// and part 4's explicit re-sync ([resyncLaneChainFromInput]). Returns
+  /// whether the lane's chain was replaced; both dry input shapes bail (see
+  /// [laneCanInheritFromInput]) and leave the lane untouched.
+  bool _inheritMonitorChainOntoLane(int channel, int lane) {
+    final input = _laneInput[(channel, lane)] ?? lane;
+    final chain = _inheritableChain(channel, lane);
+    if (chain == null) return false;
+    // D-P1: a plugin in the monitor chain can't be value-copied — capture
+    // its live opaque state so the lane re-instantiates a frozen instance
+    // from that exact state on playback. The recorded audio is dry either
+    // way, so a capture failure just drops the entry (bypassed) without
+    // affecting the take.
+    final captured = <TrackEffect>[];
+    for (var i = 0; i < chain.length; i++) {
+      final fx = _capturePluginForLane(chain[i], input, i);
+      if (fx != null) captured.add(fx);
+    }
+    // The take's entries are new identities (A9): fresh slot ids, never the
+    // input chain's.
+    final snapshot = withFreshSlotIds(captured);
+    if (snapshot.isEmpty) {
+      // Every entry of a non-empty monitored chain failed to capture (all
+      // plugins, all bypassed): the monitored chain still overwrites the lane
+      // (D2), reducing it to empty. Push that too (below) so a stale
+      // staged/persisted engine chain can't outlive it and diverge. An empty
+      // chain is dry — no provenance to keep.
+      _laneEffects.remove((channel, lane));
+      _laneChainMeta.remove((channel, lane));
+    } else {
+      _laneEffects[(channel, lane)] = snapshot;
+      // Provenance (R13/A8): today one routed input feeds a lane, so the
+      // list is one element; a future multi-input mix concatenates via
+      // `concatenateInheritedChains` and lists every source here.
+      _laneChainMeta[(channel, lane)] = List<int>.unmodifiable([input]);
+    }
+    // The monitored chain was chain-ENABLED (the disabled shape bailed
+    // above), and the copy is by value — the take's chain flag matches.
+    setLaneChainEnabled(channel: channel, lane: lane, enabled: true);
+    // Push it to the engine's lane FX like any other lane edit (plugin
+    // entries carry the frozen state captured above) — the pure-sink push
+    // that lands the take's chain regardless of ring-drain timing.
+    _applyLaneEffects(channel, lane);
+    // The take's chain just changed under the repository's own hand — notify
+    // so the bloc persists it (F3: without this, a restart replays the
+    // pre-take chain from settings).
+    onLaneChainChanged?.call(channel, lane);
+    return true;
+  }
+
+  /// Lane [lane] of track [channel]'s routed input chain when there is
+  /// something to inherit, else null — the ONE place the "is there anything to
+  /// copy" rule lives, so the predicate and the copy can never disagree.
+  ///
+  /// Null covers every non-inheritable shape: no such input, and the two dry
+  /// ones the record-time snapshot bails on (an empty chain, and a
+  /// chain-DISABLED one — D2/D-CHAINDIS, R18).
+  List<TrackEffect>? _inheritableChain(int channel, int lane) {
+    final input = _laneInput[(channel, lane)] ?? lane;
+    if (input < 0 || input >= kMaxInputs) return null;
+    final chain = _monitorEffects[input];
+    if (chain == null || chain.isEmpty) return null;
+    return monitorChainEnabled(input) ? chain : null;
+  }
+
+  /// Whether lane [lane] of track [channel] has an inheritable routed input
+  /// chain (see [_inheritableChain]). Gates part 4's re-sync action so it is
+  /// never offered when it would do nothing.
+  bool laneCanInheritFromInput(int channel, int lane) =>
+      _inheritableChain(channel, lane) != null;
+
+  /// Re-copies lane [lane] of track [channel]'s routed input chain onto the
+  /// lane by value with a fresh provenance stamp (A6/R13) — part 4's explicit,
+  /// user-initiated re-sync. Never automatic: an overdub never re-inherits
+  /// (A7), and nothing here propagates to any other take. Returns whether the
+  /// chain was replaced (`false` when there is nothing inheritable — see
+  /// [laneCanInheritFromInput]).
+  bool resyncLaneChainFromInput({required int channel, required int lane}) =>
+      _inheritMonitorChainOntoLane(channel, lane);
 
   /// Snapshots one monitor chain entry onto a recording lane. Built-in effects
   /// copy by value; a plugin captures its live state blob from monitor slot

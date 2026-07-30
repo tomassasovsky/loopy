@@ -8,6 +8,7 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/view/fx_editor/fx_scope.dart';
 import 'package:loopy/looper/view/signal_graph/plugin_browser.dart';
+import 'package:loopy/looper/view/signal_graph/signal_fx_chrome.dart';
 import 'package:loopy/looper/view/signal_graph/signal_fx_rack.dart';
 import 'package:loopy/looper/view/signal_graph/signal_style.dart';
 import 'package:loopy/theme/surface_theme.dart';
@@ -69,11 +70,11 @@ class _FxDockState extends State<FxDock> {
         // otherwise centre under the default cross-axis alignment).
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _FxDockHeader(
-            title: _scope.label(l10n),
-            consequence: _scope.consequence(l10n),
-            onClose: widget.onClose,
-          ),
+          _FxDockHeader(scope: _scope, onClose: widget.onClose),
+          // A7: an overdub never re-inherits, so a chain that has drifted from
+          // its input since the take is worth saying out loud, while it counts.
+          if (_scope.overdubMismatch)
+            _OverdubMismatchHint(message: l10n.fxOverdubMismatchHint),
           Expanded(
             child: _scope.isPresent
                 ? _editor(context)
@@ -91,7 +92,7 @@ class _FxDockState extends State<FxDock> {
       child: SignalFxRack(
         keyPrefix: 'fxDock',
         effects: _scope.effects,
-        onAddEffect: _scope.addEffect,
+        onAddEffect: _scope.addEffectOfType,
         onAddPlugin: () => unawaited(_addPlugin()),
         onRemoveEffect: _scope.removeEffect,
         onSetType: _scope.setType,
@@ -100,6 +101,7 @@ class _FxDockState extends State<FxDock> {
         onOpenPluginEditor: _scope.openPluginEditor,
         onRelinkPlugin: (index) => unawaited(_relink(index)),
         onReorder: _scope.moveEffect,
+        onSetEffectEnabled: _scope.setEffectEnabled,
         onFormatPluginValue: _scope.formatPluginValue,
       ),
     );
@@ -119,23 +121,25 @@ class _FxDockState extends State<FxDock> {
   }
 }
 
-/// The dock's header — the scope title, the plain consequence of editing this
-/// chain, and a close affordance.
+/// The dock's header — the scope title, its inherited badge and re-sync action
+/// (loop stage), the plain consequence line, the chain-level power control, and
+/// a close affordance.
+///
+/// The consequence line is stage-aware in both directions: while the chain is
+/// engaged it says what editing here does, and once the chain is switched off
+/// it says what that silence costs ([FxScope.chainDisabledConsequence]) — the
+/// state you are in is always spelled out, never left to a lit icon (R15/R23).
 class _FxDockHeader extends StatelessWidget {
-  const _FxDockHeader({
-    required this.title,
-    required this.consequence,
-    required this.onClose,
-  });
+  const _FxDockHeader({required this.scope, required this.onClose});
 
-  final String title;
-  final String consequence;
+  final FxScope scope;
   final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
     final l10n = context.l10n;
+    final chainOn = scope.chainEnabled;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
       decoration: BoxDecoration(
@@ -147,24 +151,60 @@ class _FxDockHeader extends StatelessWidget {
             child: Row(
               children: [
                 Text(
-                  title,
+                  scope.label(l10n),
                   style: signalLabel(
                     color: surface.textPrimary,
                     size: 15,
                     weight: FontWeight.w600,
                   ),
                 ),
+                if (scope.inheritedFrom.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  InheritedFxBadge(
+                    badgeKey: const Key('fxDock_inherited'),
+                    inputs: scope.inheritedFrom,
+                  ),
+                ],
                 const SizedBox(width: 10),
                 Flexible(
                   child: Text(
-                    consequence,
+                    chainOn
+                        ? scope.consequence(l10n)
+                        : scope.chainDisabledConsequence(l10n),
+                    key: const Key('fxDock_consequence'),
                     overflow: TextOverflow.ellipsis,
-                    style: signalLabel(color: surface.textTertiary, size: 12),
+                    style: signalLabel(
+                      color: chainOn ? surface.textTertiary : surface.warning,
+                      size: 12,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
+          // Explicit, user-initiated re-inherit (A6): offered only while the
+          // routed input actually has an audible chain to copy.
+          if (scope.canResyncFromInput)
+            Semantics(
+              button: true,
+              label: l10n.fxResyncFromInput,
+              child: IconButton(
+                key: const Key('fxDock_resync'),
+                onPressed: scope.resyncFromInput,
+                icon: const Icon(Icons.sync),
+                iconSize: 17,
+                color: surface.textSecondary,
+                tooltip: l10n.fxResyncFromInputTooltip,
+              ),
+            ),
+          // A chain whose target is gone has nothing to switch: writing through
+          // a vanished input would mint a phantom monitor and persist a key
+          // that comes back on the next boot.
+          if (scope.isPresent)
+            _ChainPowerToggle(
+              enabled: chainOn,
+              onChanged: (enabled) => scope.setChainEnabled(enabled: enabled),
+            ),
           IconButton(
             key: const Key('fxDock_close'),
             onPressed: onClose,
@@ -172,6 +212,63 @@ class _FxDockHeader extends StatelessWidget {
             iconSize: 18,
             color: surface.textSecondary,
             tooltip: l10n.close,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The chain-level power control (R15): one atomic flip of the WHOLE chain,
+/// leaving every per-slot flag intact. The same [FxPowerToggle] the device
+/// cards carry, worded for a chain — the two power controls are one widget so
+/// they cannot drift apart.
+class _ChainPowerToggle extends StatelessWidget {
+  const _ChainPowerToggle({required this.enabled, required this.onChanged});
+
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return FxPowerToggle(
+      toggleKey: const Key('fxDock_chainPower'),
+      enabled: enabled,
+      onChanged: ({required enabled}) => onChanged(enabled),
+      iconSize: 18,
+      semanticLabel: enabled ? l10n.a11yFxChainOn : l10n.a11yFxChainOff,
+      tooltip: enabled
+          ? l10n.fxChainPowerOffTooltip
+          : l10n.fxChainPowerOnTooltip,
+    );
+  }
+}
+
+/// The overdub hint (A7): while a take is being overdubbed onto and its chain
+/// no longer sounds like the routed input's, say plainly that the new layer is
+/// captured dry and will not re-inherit. Warning-toned, never blocking.
+class _OverdubMismatchHint extends StatelessWidget {
+  const _OverdubMismatchHint({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Container(
+      key: const Key('fxDock_overdubHint'),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+      color: surface.warning.withValues(alpha: 0.12),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, size: 14, color: surface.warning),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: signalLabel(color: surface.warning),
+            ),
           ),
         ],
       ),
