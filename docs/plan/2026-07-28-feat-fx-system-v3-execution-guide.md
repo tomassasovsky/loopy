@@ -50,7 +50,7 @@ writes chains back to settings, so a cold boot restores the pre-load chains
 | 2 | loop-stage wet cache | **Fable · extra-high** | `merge-gate` | 1a, 1b | in review (#385) |
 | 3a | domain model + shared types + CI jobs | **Fable · high** | `merge-gate` | 1a, 1b | merged (#386) |
 | 3b | session v5 migration + manifest stages | Opus · medium | `merge-gate` | 3a, 0 | in-review (#388) |
-| 4a | delete dead FX code | Sonnet · low | `auto` | — | in-review (#392) |
+| 4a | delete dead FX code | Sonnet · low | `auto` | — | merged (#392) |
 | 4b | four-stage Signal surface | Opus · medium | `merge-gate` | 3a, 4a | pending |
 | 5a | protocol v3 wire + version discovery | **Fable · high** | `merge-gate` | — (#331 prereq) | pending |
 | 5b | FX interaction mode (app) | Opus · high | `merge-gate` (physical slice `blocked-verify`) | 5a, 3a, 1a | pending |
