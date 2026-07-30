@@ -81,9 +81,10 @@ playable deliverable of this part.
 
 The state captured at the arm instant — everything the offline renderer and
 `.als` generator need to establish t=0, since the engine snapshot alone
-cannot supply lane FX chains, monitor configuration, or the limiter state
-(those live in `performance_repository`'s caller-supplied `PerformanceChains`,
-mirroring how `session_repository`'s `SessionChains` works for session saves).
+cannot supply the FX chains of any stage, monitor configuration, or the limiter
+state (those live in `performance_repository`'s caller-supplied
+`PerformanceChains`, mirroring how `session_repository`'s `SessionChains` works
+for session saves).
 
 ```jsonc
 {
@@ -93,10 +94,16 @@ mirroring how `session_repository`'s `SessionChains` works for session saves).
   "limiterOn": true,
   "limiterCeiling": 0.99,
   "latencyOffsetFrames": 128,
+  "fxStagesVersion": 1,
   "tracks": [ /* see below */ ],
   "monitors": [
-    { "input": 0, "enabled": true, "outputMask": 3, "volume": 1.0, "muted": false, "effects": [ /* see FX entries */ ] }
-  ]
+    { "input": 0, "enabled": true, "outputMask": 3, "volume": 1.0, "muted": false, "chainEnabled": false, "effects": [ /* see FX entries */ ] }
+  ],
+  "trackChains": [
+    { "channel": 0, "chainEnabled": false, "effects": [ /* see FX entries */ ] }
+  ],
+  "masterEffects": [ /* see FX entries */ ],
+  "masterChainEnabled": false
 }
 ```
 
@@ -107,8 +114,31 @@ mirroring how `session_repository`'s `SessionChains` works for session saves).
 | `masterGain` | Master output gain at arm time. |
 | `limiterOn` / `limiterCeiling` | Master peak limiter state at arm time. |
 | `latencyOffsetFrames` | The active device profile's record-offset latency compensation. |
-| `tracks` | One entry per **non-empty** track (empty tracks are omitted). |
-| `monitors` | One entry per hardware input the caller supplied chain/routing state for. |
+| `fxStagesVersion` | FX-stage schema revision (FX v3, R20): `1` = the four-stage model below. **Absent = a legacy snapshot** written before those fields existed; see "FX stages" below. |
+| `tracks` | One entry per **non-empty** track (empty tracks are omitted); carries the **Loop** stage, per lane. |
+| `monitors` | The **Input** stage: one entry per hardware input the caller supplied chain/routing state for. Each entry's `chainEnabled` is that monitor chain's bypass flag, written only when `false` (absent = engaged, or legacy — see the marker below); `enabled` beside it is the input's own monitor gate, not an FX flag. |
+| `trackChains` | The **Track** stage: one entry per track channel with bus FX or a non-default chain flag. Omitted when there are none. |
+| `masterEffects` / `masterChainEnabled` | The **Master** insert's entries and chain flag. `masterEffects` is omitted when empty; `masterChainEnabled` is omitted while engaged (i.e. absent = `true`). |
+
+### FX stages and the presence-keyed version marker
+
+The snapshot records all four FX stages of the v3 model, each with its
+chain-level bypass flag alongside its entries (which carry their own `enabled`
+bits): Input (`monitors[]`), Loop (`tracks[].lanes[]`), Track (`trackChains[]`)
+and Master (`masterEffects`/`masterChainEnabled`). A replay seeds arm-time
+bypass state from these rather than assuming everything was audible (R3).
+
+Every flag is written **only when disabled**, so a rig with no bypassed chain
+produces the same bytes a pre-FX-v3 build did. `fxStagesVersion` is what makes
+that ambiguity readable: it is always written by current code, so
+
+- marker present, flag absent → the chain was **engaged**;
+- marker absent → a **legacy** snapshot: the bus stages were not captured at all
+  and no chain or slot could be bypassed, so a reader defaults the bus stages
+  empty and everything enabled.
+
+There is no version `switch` on the read side — the parse is presence-keyed
+field by field, matching the session manifest's own migration style.
 
 ### `tracks[]` entries
 
@@ -122,16 +152,17 @@ mirroring how `session_repository`'s `SessionChains` works for session saves).
 ### `lanes[]` entries — the ER diagram's `LANE_SNAPSHOT` + `FX_ENTRY`
 
 ```jsonc
-{ "lane": 0, "lenFrames": 96000, "deferred": false, "pcmRef": "loops/track0-lane0.wav", "effects": [ { "type": 3, "params": [0.35, 0.35, 0.35, 0.0] } ] }
+{ "lane": 0, "lenFrames": 96000, "deferred": false, "pcmRef": "loops/track0-lane0.wav", "chainEnabled": false, "effects": [ { "type": 3, "params": [0.35, 0.35, 0.35, 0.0], "slotId": "3f2a91c7-4" } ] }
 ```
 
 | Field | Notes |
 |---|---|
 | `lane` | Lane index within the track. |
 | `lenFrames` | Captured length in frames; `0` when `deferred`. |
+| `chainEnabled` | The lane chain's per-chain bypass flag, written only when `false` (absent = engaged, or legacy — see the marker above). |
 | `deferred` | `true` when this lane was mid-overdub at snapshot time (D-SNAP) — the audio thread was still writing its buffer, so there is no stable PCM to export here. Its content instead reaches disk via the retired-layer path (`layers[]` above) once the pass retires, or via `disarmSnapshot` if it finishes before disarm. |
 | `pcmRef` | The lane's exported WAV filename, relative to the bundle directory (e.g. `loops/track0-lane0.wav`). Absent when `deferred`, or when the lane was empty. |
-| `effects` | The lane's effect chain, in order, **only on an arm-time snapshot** ("chain at t=0"). Each entry is a `TrackEffect.toJson()` map verbatim: `{type, params}` for a built-in effect (`type` = the native `le_fx_type` code, `params` = up to 4 normalized `0..1` values), or `{type: 8, plugin: {...}, paramValues?, state?, name?}` for a hosted VST3/CLAP plugin (`PluginRef` identity — `daw_export`'s `fx-chains.txt`, part 10, reads this for third-party plugin identity + passthrough notes). Absent (not an empty array) when there is nothing to report. |
+| `effects` | The lane's effect chain, in order, **only on an arm-time snapshot** ("chain at t=0"). Each entry is a `TrackEffect.toJson()` map verbatim: `{type, params}` for a built-in effect (`type` = the native `le_fx_type` code, `params` = up to 4 normalized `0..1` values), or `{type: 8, plugin: {...}, paramValues?, state?, name?}` for a hosted VST3/CLAP plugin (`PluginRef` identity — `daw_export`'s `fx-chains.txt`, part 10, reads this for third-party plugin identity + passthrough notes). Any entry may also carry `"enabled": false` (its own bypass; absent = audible) and `"slotId"` (its stable per-slot identity, the same id pedal bindings address). Absent (not an empty array) when there is nothing to report. |
 
 A `disarmSnapshot` lane entry never carries `effects` — chain changes made
 during the performance are already in `events.log` (D-LOG), not

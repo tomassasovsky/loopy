@@ -65,6 +65,20 @@ void main() {
         encoded: '[{"t":2}]',
       ),
     ],
+    // The two bus stages (schema v5). Their strings are opaque here, exactly
+    // like the lane/monitor ones above — a chain-envelope shape stands in for
+    // the real `encodeFxChain` output the app-side mapper produces.
+    trackChains: [
+      SessionTrackChain(
+        channel: 0,
+        encoded: '{"chainEnabled":false,"entries":[{"t":3}]}',
+      ),
+      SessionTrackChain(
+        channel: 1,
+        encoded: '{"chainEnabled":true,"entries":[]}',
+      ),
+    ],
+    masterChain: '{"chainEnabled":true,"entries":[{"t":9}]}',
     tempoBpm: 128.5,
     tempoSource: TempoSource.manual,
     tsNum: 6,
@@ -88,12 +102,122 @@ void main() {
       expect(Session.fromJson(json as Map<String, dynamic>), session);
     });
 
-    test('serializes the manifest version (v4)', () {
+    test('serializes the manifest version (v5)', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['version'], 4);
+      expect(json['version'], 5);
       expect(json['baseLengthFrames'], 96000);
     });
+
+    test('serializes the schema-v5 bus stages (Track + Master)', () {
+      final json = session.toJson();
+      expect(json['trackChains'], [
+        {
+          'channel': 0,
+          'encoded': '{"chainEnabled":false,"entries":[{"t":3}]}',
+        },
+        {'channel': 1, 'encoded': '{"chainEnabled":true,"entries":[]}'},
+      ]);
+      expect(json['masterChain'], '{"chainEnabled":true,"entries":[{"t":9}]}');
+    });
+
+    test('v5 round-trips the bus stages, chain strings byte-intact', () {
+      final json = jsonDecode(jsonEncode(session.toJson()));
+      final loaded = Session.fromJson(json as Map<String, dynamic>);
+      expect(loaded.trackChains, hasLength(2));
+      expect(loaded.trackChains[0].channel, 0);
+      expect(
+        loaded.trackChains[0].encoded,
+        '{"chainEnabled":false,"entries":[{"t":3}]}',
+      );
+      // A track whose chain is empty but whose flag is set still round-trips —
+      // the flag lives inside the string, so an "empty" chain is not nothing.
+      expect(
+        loaded.trackChains[1].encoded,
+        '{"chainEnabled":true,"entries":[]}',
+      );
+      expect(loaded.masterChain, '{"chainEnabled":true,"entries":[{"t":9}]}');
+      expect(loaded, session);
+    });
+
+    test(
+      'save -> load -> save is byte-idempotent at v5 (the manifest a load '
+      're-serializes is the manifest it read; slot ids ride the opaque chain '
+      'strings, so nothing is re-minted here)',
+      () {
+        final written = jsonEncode(session.toJson());
+        final reloaded = Session.fromJson(
+          jsonDecode(written) as Map<String, dynamic>,
+        );
+        expect(jsonEncode(reloaded.toJson()), written);
+      },
+    );
+
+    test(
+      'a v4 manifest (no bus stages, bare-array chain strings) loads with '
+      'both bus stages EMPTY and its chain content byte-identical — the '
+      'presence-keyed v4 -> v5 migration, zero data loss',
+      () {
+        final v4 = {
+          'version': 4,
+          'sampleRate': 48000,
+          'channels': 1,
+          'baseLengthFrames': 96000,
+          'tracks': [
+            {
+              'channel': 0,
+              'multiple': 1,
+              'lengthFrames': 96000,
+              'lanes': [
+                {
+                  'lane': 0,
+                  'volume': 0.8,
+                  'muted': false,
+                  'outputMask': 0x3,
+                  'inputChannel': 0,
+                  'layers': [
+                    {'file': 'track0_lane0_L0.wav'},
+                  ],
+                },
+              ],
+            },
+          ],
+          // Pre-envelope wire format: the bare entries array. It stays opaque
+          // here; the looper domain's decoder defaults every level to enabled.
+          'laneChains': [
+            {'channel': 0, 'lane': 0, 'encoded': '[{"t":1}]'},
+          ],
+          'monitors': [
+            {
+              'input': 0,
+              'enabled': true,
+              'outputMask': 0x3,
+              'volume': 0.9,
+              'muted': false,
+              'encoded': '[{"t":2}]',
+            },
+          ],
+          'tempoBpm': 128.5,
+          'looperMode': 'band',
+        };
+
+        final loaded = Session.fromJson(v4);
+
+        expect(loaded.trackChains, isEmpty);
+        expect(loaded.masterChain, '');
+        // Everything v4 DID describe survives untouched.
+        expect(loaded.laneChains.single.encoded, '[{"t":1}]');
+        expect(loaded.monitors.single.encoded, '[{"t":2}]');
+        expect(loaded.tempoBpm, 128.5);
+        expect(loaded.looperMode, LooperMode.band);
+        expect(loaded.tracks.single.lanes.single.volume, 0.8);
+        // And re-saving stamps v5 without inventing bus-stage content.
+        final resaved = loaded.toJson();
+        expect(resaved['version'], 5);
+        expect(resaved['trackChains'], isEmpty);
+        expect(resaved['masterChain'], '');
+      },
+    );
 
     test('serializes every schema-v4 tempo/click/count-in field', () {
       final json = session.toJson();
@@ -337,6 +461,13 @@ void main() {
       );
       expect(session.laneChains.first, isNot(session.laneChains[1]));
       expect(session.monitors.first, session.monitors.first);
+      expect(session.trackChains.first, isNot(session.trackChains[1]));
+      const sameTrackChain = SessionTrackChain(
+        channel: 0,
+        encoded: '{"chainEnabled":false,"entries":[{"t":3}]}',
+      );
+      expect(session.trackChains.first, sameTrackChain);
+      expect(session.trackChains.first.hashCode, sameTrackChain.hashCode);
     });
 
     test('liveIndex tracks undoCount', () {
@@ -368,11 +499,11 @@ void main() {
     });
 
     test(
-      'rejects a hypothetical v5 manifest (an extra unknown field does not '
+      'rejects a hypothetical v6 manifest (an extra unknown field does not '
       'change the outcome) via the existing version-gate check',
       () {
         final json = session.toJson()
-          ..['version'] = 5
+          ..['version'] = 6
           // A field a hypothetical future schema might add — proves the
           // rejection is purely the version-number gate, not incidentally
           // triggered by an unparseable shape.
@@ -383,8 +514,8 @@ void main() {
           () => Session.fromJson(json),
           throwsA(
             isA<SessionUnsupportedVersion>()
-                .having((e) => e.version, 'version', 5)
-                .having((e) => e.supported, 'supported', 4),
+                .having((e) => e.version, 'version', 6)
+                .having((e) => e.supported, 'supported', 5),
           ),
         );
       },

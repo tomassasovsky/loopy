@@ -20,21 +20,36 @@ typedef SessionBundle = ({
 });
 
 /// The effect-chain data a [SessionRepository.save] persists that the engine
-/// snapshot alone cannot supply: the lane chains and monitor configurations.
+/// snapshot alone cannot supply: all four FX stages' chains (schema v5) —
+/// Input ([monitors]), Loop ([laneChains]), Track ([trackChains]) and Master
+/// ([masterChain]).
 ///
 /// The bloc layer gathers these from the looper repository (the live rig is
 /// the truth being saved) and hands them to [SessionRepository.save]. Kept as
-/// pre-built manifest models so this package never depends on the effect model.
+/// pre-built manifest models so this package never depends on the effect model:
+/// each chain arrives as an already-encoded opaque envelope string.
 @immutable
 class SessionChains {
   /// Creates a [SessionChains].
-  const SessionChains({this.laneChains = const [], this.monitors = const []});
+  const SessionChains({
+    this.laneChains = const [],
+    this.monitors = const [],
+    this.trackChains = const [],
+    this.masterChain = '',
+  });
 
-  /// The lane effect chains to persist.
+  /// The Loop-stage (per-lane) effect chains to persist.
   final List<SessionLaneChain> laneChains;
 
-  /// The per-input monitor configurations to persist.
+  /// The Input-stage per-input monitor configurations to persist.
   final List<SessionMonitor> monitors;
+
+  /// The Track-stage (per-track stereo bus) effect chains to persist.
+  final List<SessionTrackChain> trackChains;
+
+  /// The Master insert chain to persist as an opaque envelope string; `''`
+  /// when the rig has none.
+  final String masterChain;
 }
 
 /// Saves Loopy sessions, reads them back, and exports audio.
@@ -431,6 +446,11 @@ class SessionRepository {
       tracks: captured.tracks,
       laneChains: chains.laneChains,
       monitors: chains.monitors,
+      // The two BUS stages (schema v5): like the chains above, these are the
+      // live rig's — handed in already encoded, since a chain's insides are
+      // the looper domain's business, not this package's.
+      trackChains: chains.trackChains,
+      masterChain: chains.masterChain,
       // Tempo/signature/quantize/click/count-in are session-level settings,
       // not derived-from-track-content state, so — unlike baseLengthFrames
       // above — they persist regardless of whether any track has content.

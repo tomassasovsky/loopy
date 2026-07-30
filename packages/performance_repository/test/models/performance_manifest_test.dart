@@ -97,6 +97,199 @@ void main() {
       expect(decoded.tracks, hasLength(1));
       expect(decoded.monitors, hasLength(1));
       expect(decoded.monitors.single['input'], 0);
+      // A snapshot this code writes always carries the FX-stage marker, even
+      // with no bus FX to record (R20).
+      expect(
+        decoded.fxStagesVersion,
+        PerformanceArmSnapshot.currentFxStagesVersion,
+      );
+      expect(decoded.trackChains, isEmpty);
+      expect(decoded.masterEffects, isEmpty);
+      expect(decoded.masterChainEnabled, isTrue);
+    });
+
+    test(
+      'round-trips the BUS stages with disabled entries and disabled chain '
+      'flags (R20/R3)',
+      () {
+        final snapshot = PerformanceArmSnapshot(
+          clockFrame: 0,
+          masterLengthFrames: 480,
+          masterGain: 1,
+          limiterEnabled: false,
+          limiterCeiling: 0.99,
+          latencyOffsetFrames: 0,
+          tracks: [
+            PerformanceTrackSnapshot(
+              channel: 0,
+              state: TrackState.playing,
+              volume: 1,
+              muted: false,
+              multiple: 1,
+              lanes: [
+                PerformanceLaneSnapshot(
+                  lane: 0,
+                  lengthFrames: 480,
+                  deferred: false,
+                  // A chain-disabled lane with an individually-disabled entry:
+                  // both bits must survive so a replay seeds bypass state.
+                  chainEnabled: false,
+                  effects: [
+                    BuiltInEffect(
+                      type: TrackEffectType.delay,
+                      enabled: false,
+                      slotId: 'ab-1',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+          trackChains: [
+            PerformanceTrackChain(
+              channel: 0,
+              chainEnabled: false,
+              effects: [
+                BuiltInEffect(type: TrackEffectType.reverb, slotId: 'ab-2'),
+              ],
+            ),
+            const PerformanceTrackChain(channel: 1),
+          ],
+          masterEffects: [
+            BuiltInEffect(type: TrackEffectType.filter, enabled: false),
+          ],
+          masterChainEnabled: false,
+        );
+
+        final decoded = PerformanceArmSnapshot.fromJson(snapshot.toJson());
+
+        final lane = decoded.tracks.single.lanes.single;
+        expect(lane.chainEnabled, isFalse);
+        final laneFx = lane.effects.single as BuiltInEffect;
+        expect(laneFx.enabled, isFalse);
+        // Slot ids ride the entries, so a replay can address the same slot.
+        expect(laneFx.slotId, 'ab-1');
+        expect(decoded.trackChains, hasLength(2));
+        expect(decoded.trackChains[0].channel, 0);
+        expect(decoded.trackChains[0].chainEnabled, isFalse);
+        final busFx = decoded.trackChains[0].effects.single as BuiltInEffect;
+        expect(busFx.typeCode, TrackEffectType.reverb.code);
+        expect(busFx.slotId, 'ab-2');
+        // A track that is only in the list because it exists reads as dry +
+        // engaged.
+        expect(decoded.trackChains[1].effects, isEmpty);
+        expect(decoded.trackChains[1].chainEnabled, isTrue);
+        expect(
+          (decoded.masterEffects.single as BuiltInEffect).enabled,
+          isFalse,
+        );
+        expect(decoded.masterChainEnabled, isFalse);
+      },
+    );
+
+    test(
+      'a LEGACY arm snapshot (no fxStagesVersion marker) still parses, with '
+      'the bus stages empty and every chain enabled (R20)',
+      () {
+        final legacy = <String, dynamic>{
+          'clockFrame': 10,
+          'masterLenFrames': 480,
+          'masterGain': 1.0,
+          'limiterOn': false,
+          'limiterCeiling': 0.99,
+          'latencyOffsetFrames': 0,
+          'tracks': [
+            {
+              'channel': 0,
+              'state': 'playing',
+              'volume': 1.0,
+              'muted': false,
+              'multiple': 1,
+              'lanes': [
+                {
+                  'lane': 0,
+                  'lenFrames': 480,
+                  'deferred': false,
+                  'pcmRef': 'loops/track0-lane0.wav',
+                  'effects': [
+                    {'type': TrackEffectType.reverb.code},
+                  ],
+                },
+              ],
+            },
+          ],
+          'monitors': [
+            {
+              'input': 0,
+              'enabled': true,
+              'outputMask': 3,
+              'volume': 1.0,
+              'muted': false,
+              'effects': <Map<String, dynamic>>[],
+            },
+          ],
+        };
+
+        final decoded = PerformanceArmSnapshot.fromJson(legacy);
+
+        expect(
+          decoded.fxStagesVersion,
+          PerformanceArmSnapshot.legacyFxStagesVersion,
+        );
+        expect(decoded.trackChains, isEmpty);
+        expect(decoded.masterEffects, isEmpty);
+        expect(decoded.masterChainEnabled, isTrue);
+        // Everything the legacy schema DID describe is intact, defaulted to
+        // audible — the pre-FX-v3 world had no other possibility.
+        final lane = decoded.tracks.single.lanes.single;
+        expect(lane.chainEnabled, isTrue);
+        final laneFx = lane.effects.single as BuiltInEffect;
+        expect(laneFx.enabled, isTrue);
+        expect(laneFx.slotId, isNull);
+      },
+    );
+
+    test(
+      'omits the bus fields and every engaged flag when at their defaults',
+      () {
+        const snapshot = PerformanceArmSnapshot(
+          clockFrame: 0,
+          masterLengthFrames: 0,
+          masterGain: 1,
+          limiterEnabled: false,
+          limiterCeiling: 0.99,
+          latencyOffsetFrames: 0,
+        );
+
+        final json = snapshot.toJson();
+
+        expect(json.containsKey('trackChains'), isFalse);
+        expect(json.containsKey('masterEffects'), isFalse);
+        expect(json.containsKey('masterChainEnabled'), isFalse);
+        // …but the marker itself is always written, or a current snapshot
+        // with no bus FX would be indistinguishable from a legacy one.
+        expect(
+          json['fxStagesVersion'],
+          PerformanceArmSnapshot.currentFxStagesVersion,
+        );
+      },
+    );
+  });
+
+  group('PerformanceTrackChain', () {
+    test('round-trips through JSON, omitting the engaged flag', () {
+      final chain = PerformanceTrackChain(
+        channel: 3,
+        effects: [BuiltInEffect(type: TrackEffectType.drive)],
+      );
+
+      final json = chain.toJson();
+      expect(json.containsKey('chainEnabled'), isFalse);
+
+      final decoded = PerformanceTrackChain.fromJson(json);
+      expect(decoded.channel, 3);
+      expect(decoded.chainEnabled, isTrue);
+      expect(decoded.effects.single.typeCode, TrackEffectType.drive.code);
     });
   });
 

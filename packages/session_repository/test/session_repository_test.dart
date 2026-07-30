@@ -119,6 +119,50 @@ void main() {
   );
 
   test(
+    'save persists the two BUS stages (Track + Master, schema v5), read '
+    'returns them byte-intact',
+    () async {
+      final source = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+      final dir = '${tempDir.path}/bus-fx';
+
+      const chains = SessionChains(
+        trackChains: [
+          SessionTrackChain(
+            channel: 0,
+            // A chain-DISABLED Track stage: the flag rides inside the opaque
+            // envelope, so persisting it needs no manifest field of its own.
+            encoded: '{"chainEnabled":false,"entries":[{"t":1}]}',
+          ),
+        ],
+        masterChain: '{"chainEnabled":true,"entries":[{"t":7}]}',
+      );
+      final session = await repoFor(source).save(dir, chains: chains);
+      expect(session.trackChains, chains.trackChains);
+      expect(session.masterChain, chains.masterChain);
+
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      expect(bundle.session.trackChains, chains.trackChains);
+      expect(bundle.session.masterChain, chains.masterChain);
+    },
+  );
+
+  test(
+    'save without bus-stage chains writes both stages empty (never null)',
+    () async {
+      final source = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+      final dir = '${tempDir.path}/no-bus-fx';
+
+      await repoFor(source).save(dir);
+
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      expect(bundle.session.trackChains, isEmpty);
+      expect(bundle.session.masterChain, '');
+    },
+  );
+
+  test(
     'save threads the engine snapshot tempo grid + click + count-in into '
     'the v4 manifest, read decodes it back',
     () async {

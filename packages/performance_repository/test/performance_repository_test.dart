@@ -162,6 +162,113 @@ void main() {
     );
 
     test(
+      'writes the BUS stages and every chain-enabled flag into the '
+      'arm-snapshot (R20/R3)',
+      () async {
+        engine.seedLane(0, 0, Float32List.fromList([1, 1]));
+
+        await repo.arm(
+          chains: PerformanceChains(
+            laneChains: [
+              PerformanceLaneChain(
+                channel: 0,
+                lane: 0,
+                chainEnabled: false,
+                effects: [BuiltInEffect(type: TrackEffectType.delay)],
+              ),
+            ],
+            monitors: [
+              PerformanceMonitorState(
+                input: 0,
+                enabled: true,
+                outputMask: 0x3,
+                volume: 1,
+                muted: false,
+                chainEnabled: false,
+                effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+              ),
+            ],
+            trackChains: [
+              PerformanceTrackChain(
+                channel: 0,
+                chainEnabled: false,
+                effects: [BuiltInEffect(type: TrackEffectType.drive)],
+              ),
+            ],
+            masterEffects: [BuiltInEffect(type: TrackEffectType.filter)],
+            masterChainEnabled: false,
+          ),
+        );
+
+        final dir = repo.armedDirectory!;
+        final armSnapshot = PerformanceArmSnapshot.fromJson(
+          jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
+              as Map<String, dynamic>,
+        );
+
+        // The marker, so a reader can tell these omissions from a legacy
+        // snapshot's silence.
+        expect(
+          armSnapshot.fxStagesVersion,
+          PerformanceArmSnapshot.currentFxStagesVersion,
+        );
+        // Loop stage: the lane's chain flag reached the file, keyed to the
+        // right (channel, lane).
+        expect(armSnapshot.tracks.single.lanes.single.chainEnabled, isFalse);
+        // Input stage.
+        expect(armSnapshot.monitors.single['chainEnabled'], isFalse);
+        // Track stage.
+        expect(armSnapshot.trackChains.single.channel, 0);
+        expect(armSnapshot.trackChains.single.chainEnabled, isFalse);
+        expect(
+          armSnapshot.trackChains.single.effects.single.typeCode,
+          TrackEffectType.drive.code,
+        );
+        // Master insert.
+        expect(
+          armSnapshot.masterEffects.single.typeCode,
+          TrackEffectType.filter.code,
+        );
+        expect(armSnapshot.masterChainEnabled, isFalse);
+      },
+    );
+
+    test(
+      'a lane the rig defines NO chain for is written dry and engaged, not '
+      "given a sibling lane's chain",
+      () async {
+        engine
+          ..seedLane(0, 0, Float32List.fromList([1, 1]))
+          ..seedLane(1, 0, Float32List.fromList([1, 1]));
+
+        await repo.arm(
+          chains: PerformanceChains(
+            laneChains: [
+              PerformanceLaneChain(
+                channel: 1,
+                lane: 0,
+                chainEnabled: false,
+                effects: [BuiltInEffect(type: TrackEffectType.delay)],
+              ),
+            ],
+          ),
+        );
+
+        final dir = repo.armedDirectory!;
+        final armSnapshot = PerformanceArmSnapshot.fromJson(
+          jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
+              as Map<String, dynamic>,
+        );
+
+        final track0 = armSnapshot.tracks.firstWhere((t) => t.channel == 0);
+        expect(track0.lanes.single.effects, isEmpty);
+        expect(track0.lanes.single.chainEnabled, isTrue);
+        final track1 = armSnapshot.tracks.firstWhere((t) => t.channel == 1);
+        expect(track1.lanes.single.chainEnabled, isFalse);
+      },
+    );
+
+    test(
       'is idempotent while already armed: no new directory, no re-arm',
       () async {
         await repo.arm();

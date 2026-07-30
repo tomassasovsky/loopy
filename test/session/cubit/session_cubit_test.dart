@@ -39,7 +39,9 @@ void main() {
     performance = _MockPerformanceRepository();
     // Default chain getters so the save path's _captureChains() has something
     // to read; individual tests override as needed.
-    when(looper.allLaneEffects).thenReturn(const {});
+    when(looper.allLaneChains).thenReturn(const {});
+    when(looper.allTrackChains).thenReturn(const {});
+    when(looper.masterChainEnvelope).thenReturn(const FxChainEnvelope());
     when(looper.allMonitors).thenReturn(const {});
     // loadNamed's auto-disarm-before-load orchestration; a no-op success by
     // default since nothing is armed in these tests.
