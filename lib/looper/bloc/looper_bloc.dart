@@ -102,7 +102,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     on<LooperLaneEffectAdded>((event, _) {
       _pushLaneEffects(event.channel, event.lane, [
         ..._repository.laneEffects(event.channel, event.lane),
-        BuiltInEffect(type: TrackEffectType.drive),
+        BuiltInEffect(type: event.type ?? TrackEffectType.drive),
       ]);
     });
     on<LooperLaneEffectRemoved>((event, _) {
@@ -189,6 +189,138 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
           event.lane,
           _encodedLaneChain(event.channel, event.lane),
         ),
+      );
+    });
+    on<LooperLaneEffectEnabledToggled>((event, _) {
+      _repository.setLaneEffectEnabled(
+        channel: event.channel,
+        lane: event.lane,
+        index: event.index,
+        enabled: event.enabled,
+      );
+      _persistLaneChain(event.channel, event.lane);
+    });
+    on<LooperLaneChainEnabledToggled>((event, _) {
+      _repository.setLaneChainEnabled(
+        channel: event.channel,
+        lane: event.lane,
+        enabled: event.enabled,
+      );
+      _persistLaneChain(event.channel, event.lane);
+    });
+    on<LooperLaneChainResyncedFromInput>((event, _) {
+      // A re-copy replaces every entry and reseats the lane's slots, so any
+      // editor-sync poll keyed by a now-stale chain index must be cancelled —
+      // otherwise it rebinds to whatever plugin lands at that index and the
+      // replaced instance is destroyed with its native window still open.
+      _cancelLaneEditorTimers(event.channel, event.lane);
+      // The repository notifies `onLaneChainChanged` on a successful re-copy,
+      // which persists the fresh envelope — nothing to persist here when it
+      // declines (there was nothing inheritable to copy).
+      _repository.resyncLaneChainFromInput(
+        channel: event.channel,
+        lane: event.lane,
+      );
+    });
+    // Bus-stage chain surgery (Track + Master). Each handler composes the next
+    // chain from the REPOSITORY's current one — never from `state`, which lags
+    // by this hop — so edits dispatched together in one frame compose instead
+    // of clobbering one another.
+    on<LooperBusEffectAdded>((event, _) {
+      final chain = _busChain(event.address);
+      if (chain.length >= kTrackEffectMax) return;
+      _pushBusChain(event.address, [
+        ...chain,
+        BuiltInEffect(type: event.type ?? TrackEffectType.drive),
+      ]);
+    });
+    on<LooperBusEffectRemoved>((event, _) {
+      final chain = _busChain(event.address);
+      if (event.index < 0 || event.index >= chain.length) return;
+      _pushBusChain(event.address, [...chain]..removeAt(event.index));
+    });
+    on<LooperBusEffectMoved>((event, _) {
+      final chain = _busChain(event.address);
+      if (event.from < 0 || event.from >= chain.length) return;
+      final to = event.to.clamp(0, chain.length - 1);
+      if (event.from == to) return;
+      final next = [...chain];
+      next.insert(to, next.removeAt(event.from));
+      _pushBusChain(event.address, next);
+    });
+    on<LooperBusEffectTypeChanged>((event, _) {
+      final chain = _busChain(event.address);
+      if (event.index < 0 || event.index >= chain.length) return;
+      final old = chain[event.index];
+      _pushBusChain(
+        event.address,
+        [...chain]
+          ..[event.index] = BuiltInEffect(
+            type: event.type,
+            // A retype changes the DEVICE, not the user's power decision or the
+            // slot's identity: keeping both means a powered-off device stays
+            // off (D-POWER/R23) and bindings targeting the slot survive (A9).
+            enabled: old.enabled,
+            slotId: old.slotId,
+          ),
+      );
+    });
+    on<LooperBusEffectParamChanged>((event, _) {
+      // Granular, NOT a whole-chain push: re-pushing the chain would re-send
+      // every slot's type, and the engine resets a slot's DSP state on every
+      // type push — so a knob drag would clear the bus's reverb tails and
+      // delay lines at pointer-move rate.
+      if (event.address.stage == FxStage.master) {
+        _repository.setMasterEffectParam(
+          index: event.index,
+          param: event.param,
+          value: event.value,
+        );
+      } else {
+        _repository.setTrackEffectParam(
+          channel: event.address.index,
+          index: event.index,
+          param: event.param,
+          value: event.value,
+        );
+      }
+      _persistBusChain(event.address);
+    });
+    on<LooperBusPluginInserted>((event, _) {
+      final chain = _busChain(event.address);
+      if (chain.length >= kTrackEffectMax) return;
+      _pushBusChain(event.address, [...chain, PluginEffect(ref: event.ref)]);
+    });
+    on<LooperBusPluginParamChanged>((event, _) {
+      final chain = _busChain(event.address);
+      if (event.index < 0 || event.index >= chain.length) return;
+      final fx = chain[event.index];
+      if (fx is! PluginEffect) return;
+      final values = Map<int, double>.of(fx.paramValues)
+        ..[event.paramId] = event.value;
+      _pushBusChain(
+        event.address,
+        [...chain]..[event.index] = fx.copyWith(paramValues: values),
+      );
+    });
+    on<LooperBusPluginRelinked>((event, _) {
+      final chain = _busChain(event.address);
+      if (event.index < 0 || event.index >= chain.length) return;
+      final old = chain[event.index];
+      if (old is! PluginEffect) return;
+      // Re-identify the entry and clear the D-MISS placeholder flags, but keep
+      // everything the user owns: the persisted state blob, their parameter
+      // tweaks, the power decision, and the slot id. A bus plugin's Relink is
+      // its ONLY action, so dropping those would destroy them irrecoverably.
+      _pushBusChain(
+        event.address,
+        [...chain]
+          ..[event.index] = old.copyWith(
+            ref: event.ref,
+            unavailable: false,
+            unsupported: false,
+            versionChanged: false,
+          ),
       );
     });
     on<LooperTrackEffectsChanged>((event, _) {
@@ -427,6 +559,35 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       entries: _repository.laneEffects(channel, lane),
     ),
   );
+
+  /// The current chain at bus [address], read from the repository (the
+  /// authority that every bus write lands in synchronously) rather than from
+  /// the projected [LooperState].
+  List<TrackEffect> _busChain(FxAddress address) =>
+      address.stage == FxStage.master
+      ? _repository.masterEffects
+      : _repository.trackEffects(address.index);
+
+  /// Writes [next] to the bus chain at [address] and persists its envelope.
+  void _pushBusChain(FxAddress address, List<TrackEffect> next) {
+    if (address.stage == FxStage.master) {
+      _repository.setMasterEffects(effects: next);
+    } else {
+      _repository.setTrackEffects(channel: address.index, effects: next);
+    }
+    _persistBusChain(address);
+  }
+
+  /// Persists the bus chain envelope at [address] — used on its own by the
+  /// granular param path, which writes through the repository rather than
+  /// replacing the chain.
+  void _persistBusChain(FxAddress address) {
+    if (address.stage == FxStage.master) {
+      _persistMasterChain();
+    } else {
+      _persistTrackChain(address.index);
+    }
+  }
 
   /// Persists track [channel]'s Track-stage chain envelope (the bus twin of
   /// [_encodedLaneChain]; bus chains carry no inheritance meta).

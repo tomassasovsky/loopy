@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/l10n/l10n.dart';
+import 'package:loopy/looper/view/signal_graph/signal_fx_chrome.dart';
 import 'package:loopy/looper/view/signal_graph/signal_knob.dart';
 import 'package:loopy/looper/view/signal_graph/signal_style.dart';
 import 'package:loopy/theme/surface_theme.dart';
@@ -46,6 +47,8 @@ class SignalFxRack extends StatefulWidget {
     required this.onOpenPluginEditor,
     required this.onRelinkPlugin,
     required this.onReorder,
+    required this.onSetEffectEnabled,
+    this.chainEnabled = true,
     this.onFormatPluginValue,
     super.key,
   });
@@ -56,7 +59,15 @@ class SignalFxRack extends StatefulWidget {
   /// The chain, in processing order.
   final List<TrackEffect> effects;
 
-  final VoidCallback onAddEffect;
+  /// Whether the WHOLE chain is engaged (R15). A disabled chain silences every
+  /// card regardless of its own flag, so the cards read the same way the
+  /// surface's summary chips already do rather than staying lit while the
+  /// chain they belong to is off.
+  final bool chainEnabled;
+
+  /// Appends a built-in effect of the picked type, as one action — the rack
+  /// never composes an append with a retype of an index it had to guess.
+  final ValueChanged<TrackEffectType> onAddEffect;
 
   /// Opens the plugin browser to add a hosted plugin to the chain.
   final VoidCallback onAddPlugin;
@@ -79,6 +90,11 @@ class SignalFxRack extends StatefulWidget {
   /// The processing order is the signal order, so a drag re-sequences the FX.
   final void Function(int oldIndex, int newIndex) onReorder;
 
+  /// Powers the chain entry at `index` on/off — the ONE power control per card
+  /// (D-POWER, R23), identical for built-ins and hosted plugins. A plugin's own
+  /// bypass parameter is part of its sound and never drives this.
+  final void Function(int index, {required bool enabled}) onSetEffectEnabled;
+
   /// Formats plugin chain entry `index`'s parameter `paramId` at the plain
   /// `value` to the plugin's own display string, or null when unavailable —
   /// drives the in-app knob readout in the plugin's real units. Optional.
@@ -95,21 +111,31 @@ class _SignalFxRackState extends State<SignalFxRack> {
   int? _landedAt;
   int _dropGen = 0;
 
+  /// What the user HEARS from slot [i]: its own power flag AND its chain's.
+  /// The power control still reflects the slot's own flag, so switching the
+  /// chain back on restores exactly the per-slot picture the user left.
+  bool _audible(int i) => widget.effects[i].enabled && widget.chainEnabled;
+
   /// A card is built up to three times by [_DraggableDevice] (in place, as the
   /// lifted feedback, and as the faded gap left behind) — one builder for all.
   Widget _card(int i) {
     final fx = widget.effects[i];
+    void togglePower({required bool enabled}) =>
+        widget.onSetEffectEnabled(i, enabled: enabled);
+    final audible = _audible(i);
     if (fx is PluginEffect) {
       return _PluginDeviceCard(
         cardKey: Key('${widget.keyPrefix}_device_$i'),
         keyPrefix: '${widget.keyPrefix}_device_$i',
         fx: fx,
+        audible: audible,
         onSetParam: (id, v) => widget.onSetPluginParam(i, id, v),
         onFormatValue: (paramId, value) =>
             widget.onFormatPluginValue?.call(i, paramId, value),
         onOpenEditor: () => widget.onOpenPluginEditor(i),
         onRelink: () => widget.onRelinkPlugin(i),
         onRemove: () => widget.onRemoveEffect(i),
+        onSetEnabled: togglePower,
       );
     }
     if (fx is! BuiltInEffect) return const SizedBox.shrink();
@@ -117,9 +143,11 @@ class _SignalFxRackState extends State<SignalFxRack> {
       cardKey: Key('${widget.keyPrefix}_device_$i'),
       keyPrefix: '${widget.keyPrefix}_device_$i',
       fx: fx,
+      audible: audible,
       onSetType: (t) => widget.onSetType(i, t),
       onSetParam: (p, v) => widget.onSetParam(i, p, v),
       onRemove: () => widget.onRemoveEffect(i),
+      onSetEnabled: togglePower,
     );
   }
 
@@ -169,6 +197,7 @@ class _SignalFxRackState extends State<SignalFxRack> {
                 index: i,
                 height: rackHeight,
                 card: _card(i),
+                dimmed: !_audible(i),
                 landingKey: i == _landedAt ? ValueKey(_dropGen) : null,
               ),
             ],
@@ -180,14 +209,7 @@ class _SignalFxRackState extends State<SignalFxRack> {
             ),
             _AddDeviceCard(
               cardKey: Key('${keyPrefix}_addDevice'),
-              // Add-of-type needs no new engine call: append a default device,
-              // then retype it to the picked type at its (now known) index.
-              onAddEffectType: full
-                  ? null
-                  : (type) {
-                      widget.onAddEffect();
-                      widget.onSetType(effects.length, type);
-                    },
+              onAddEffectType: full ? null : widget.onAddEffect,
               onAddPlugin: full ? null : widget.onAddPlugin,
             ),
           ],
@@ -205,10 +227,15 @@ class _DraggableDevice extends StatelessWidget {
     required this.index,
     required this.height,
     required this.card,
+    required this.dimmed,
     this.landingKey,
   });
 
   final int index;
+
+  /// Whether [card] already renders dimmed (silenced), so the drag gap must not
+  /// dim it a second time.
+  final bool dimmed;
 
   /// The shared device-card height for this chain (the rack's resolved height).
   final double height;
@@ -225,7 +252,11 @@ class _DraggableDevice extends StatelessWidget {
       data: index,
       affinity: Axis.horizontal,
       feedback: _LiftedCard(height: height, child: card),
-      childWhenDragging: Opacity(opacity: 0.3, child: card),
+      // A card whose body already carries the disabled dim is left as-is: a
+      // second opacity layer here would multiply with it and sink its controls
+      // far below the disabled token (which the high-contrast variant raises
+      // precisely to stay legible).
+      childWhenDragging: dimmed ? card : Opacity(opacity: 0.3, child: card),
       child: inPlace,
     );
   }
@@ -342,17 +373,25 @@ class _DeviceCard extends StatelessWidget {
     required this.cardKey,
     required this.keyPrefix,
     required this.fx,
+    required this.audible,
     required this.onSetType,
     required this.onSetParam,
     required this.onRemove,
+    required this.onSetEnabled,
   });
 
   final Key cardKey;
   final String keyPrefix;
   final BuiltInEffect fx;
+
+  /// Whether this slot is heard — its own power flag AND its chain's.
+  final bool audible;
   final ValueChanged<TrackEffectType> onSetType;
   final void Function(int param, double value) onSetParam;
   final VoidCallback onRemove;
+
+  /// Powers this device on/off (D-POWER, R23).
+  final void Function({required bool enabled}) onSetEnabled;
 
   /// Slot widths so every control lands on an even grid; a two-state mode gets
   /// a wider slot for its switch + algorithm names, with enough margin that the
@@ -369,9 +408,10 @@ class _DeviceCard extends StatelessWidget {
     final surface = context.surface;
     final params = fx.type.params;
     final bodyWidth = params.fold<double>(0, (a, p) => a + _slotWidth(p));
-    // 20 = 16 body padding + 2 border + 2 slack; the 132 floor keeps the header
-    // (type + remove) from cramping on a one- or two-knob effect.
-    final cardWidth = bodyWidth + 20 < 132 ? 132.0 : bodyWidth + 20;
+    // 20 = 16 body padding + 2 border + 2 slack; the 158 floor keeps the header
+    // (type + power + remove) from cramping on a one- or two-knob effect —
+    // wide enough that the type name is not elided by its own controls.
+    final cardWidth = bodyWidth + 20 < 158 ? 158.0 : bodyWidth + 20;
     return Container(
       key: cardKey,
       width: cardWidth,
@@ -467,6 +507,11 @@ class _DeviceCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  _CardPowerToggle(
+                    keyPrefix: keyPrefix,
+                    enabled: fx.enabled,
+                    onChanged: onSetEnabled,
+                  ),
                   IconButton(
                     key: Key('${keyPrefix}_remove'),
                     padding: EdgeInsets.zero,
@@ -485,32 +530,45 @@ class _DeviceCard extends StatelessWidget {
               ),
             ),
           ),
-          // The device's parameters as knobs.
+          // The device's parameters as knobs — dimmed while powered off, with
+          // the header above left at full strength (R26).
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-              child: params.isEmpty
-                  ? Center(
-                      child: Text(
-                        l10n.emDash,
-                        style: signalMono(color: surface.textTertiary),
-                      ),
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        for (var p = 0; p < params.length; p++)
-                          SizedBox(
-                            width: _slotWidth(params[p]),
-                            child: _ParamControl(
-                              keyPrefix: keyPrefix,
-                              fx: fx,
-                              param: p,
-                              onSetParam: onSetParam,
-                            ),
+            // Inert while silenced, not merely dimmed: an opacity wrapper still
+            // hit-tests, so without this the knobs of a card the UI is showing
+            // as off would keep writing (and persisting) parameter changes.
+            child: IgnorePointer(
+              ignoring: !audible,
+              child: FxDisabledDim(
+                enabled: audible,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 10,
+                  ),
+                  child: params.isEmpty
+                      ? Center(
+                          child: Text(
+                            l10n.emDash,
+                            style: signalMono(color: surface.textTertiary),
                           ),
-                      ],
-                    ),
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            for (var p = 0; p < params.length; p++)
+                              SizedBox(
+                                width: _slotWidth(params[p]),
+                                child: _ParamControl(
+                                  keyPrefix: keyPrefix,
+                                  fx: fx,
+                                  param: p,
+                                  onSetParam: onSetParam,
+                                ),
+                              ),
+                          ],
+                        ),
+                ),
+              ),
             ),
           ),
         ],
@@ -520,8 +578,11 @@ class _DeviceCard extends StatelessWidget {
 }
 
 /// A hosted-plugin device card (sibling to [_DeviceCard]): the plugin's name +
-/// bypass + an **Open Editor** button (opens the plugin's native window), with
-/// every automatable, non-hidden param as an in-app knob. The knob strip
+/// the universal power control + an **Open Editor** button (opens the plugin's
+/// native window), with every automatable, non-hidden param as an in-app knob.
+/// The plugin's OWN bypass parameter is deliberately absent from the header
+/// (D-POWER, R23): it is part of the plugin's sound, it is still reachable in
+/// the native editor, and it never drives the host's enable. The knob strip
 /// scrolls horizontally once it would push the card past
 /// [kPluginCardMaxBodyWidth], so a many-param plugin shows all its controls
 /// without running off the rack. A plugin that exposes no such params shows
@@ -531,16 +592,21 @@ class _PluginDeviceCard extends StatelessWidget {
     required this.cardKey,
     required this.keyPrefix,
     required this.fx,
+    required this.audible,
     required this.onSetParam,
     required this.onOpenEditor,
     required this.onRelink,
     required this.onRemove,
+    required this.onSetEnabled,
     this.onFormatValue,
   });
 
   final Key cardKey;
   final String keyPrefix;
   final PluginEffect fx;
+
+  /// Whether this slot is heard — its own power flag AND its chain's.
+  final bool audible;
   final void Function(int paramId, double value) onSetParam;
 
   /// Formats a parameter's plain value to the plugin's own display string (e.g.
@@ -552,19 +618,21 @@ class _PluginDeviceCard extends StatelessWidget {
   final VoidCallback onRelink;
   final VoidCallback onRemove;
 
+  /// Powers this plugin slot on/off (D-POWER, R23) — the host-side enable,
+  /// never the plugin's own bypass parameter.
+  final void Function({required bool enabled}) onSetEnabled;
+
   static const double _knobSlot = 60;
   static const double _enumSlot = 108;
   static const double _cellHeight = 92; // one control + its label/readout
   static const double _headerHeight = 33;
   static const double _bodyVPad = 16; // 8 top + 8 bottom
 
-  /// The plugin's bypass control, if it exposes one — drives the header toggle.
-  PluginParamInfo? get _bypassParam =>
-      fx.params.where((p) => p.isBypass).firstOrNull;
-
   /// The params that earn an in-app control: every user-visible (automatable
-  /// and not hidden) param, except the bypass control (it has its own header
-  /// toggle). Each renders as a switch / dropdown / knob per its kind.
+  /// and not hidden) param, except the plugin's own bypass — that one belongs
+  /// to the plugin's sound and stays in its native editor, so the card's single
+  /// power control is unambiguously the host enable (D-POWER, R23). Each
+  /// renders as a switch / dropdown / knob per its kind.
   static List<PluginParamInfo> _visibleControls(PluginEffect fx) =>
       fx.params.where((p) => p.isUserVisible && !p.isBypass).toList();
 
@@ -627,12 +695,13 @@ class _PluginDeviceCard extends StatelessWidget {
             : (fx.ref.id.isEmpty ? l10n.signalPluginUnknownName : fx.ref.id),
         loading: fx.loading,
         unsupported: fx.unsupported,
+        enabled: fx.enabled,
         onRelink: onRelink,
         onRemove: onRemove,
+        onSetEnabled: onSetEnabled,
       );
     }
     final controls = _controlParams;
-    final bypass = _bypassParam;
     // The full control strip, clamped so a many-param plugin scrolls inside the
     // card instead of stretching the rack. Knobs turn on a vertical drag, so a
     // horizontal scroll of the strip never fights the knob gesture.
@@ -711,14 +780,10 @@ class _PluginDeviceCard extends StatelessWidget {
                     icon: const Icon(Icons.open_in_new),
                     onPressed: onOpenEditor,
                   ),
-                  _BypassToggle(
-                    toggleKey: Key('${keyPrefix}_bypass'),
-                    bypass: bypass,
-                    value: bypass == null
-                        ? 0
-                        : fx.paramValues[bypass.id] ?? bypass.def,
-                    onChanged: (v) => onSetParam(bypass!.id, v),
-                    tooltip: l10n.signalPluginBypassTooltip,
+                  _CardPowerToggle(
+                    keyPrefix: keyPrefix,
+                    enabled: fx.enabled,
+                    onChanged: onSetEnabled,
                   ),
                   IconButton(
                     key: Key('${keyPrefix}_remove'),
@@ -739,41 +804,54 @@ class _PluginDeviceCard extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              child: controls.isEmpty
-                  ? Center(
-                      child: Text(
-                        l10n.emDash,
-                        style: signalMono(color: surface.textTertiary),
-                      ),
-                    )
-                  // Every control is shown: they wrap into rows and the rack
-                  // grew to fit. A very dense plugin scrolls vertically here
-                  // (the native editor stays the full-control surface).
-                  : SingleChildScrollView(
-                      key: Key('${keyPrefix}_params'),
-                      child: Wrap(
-                        alignment: WrapAlignment.center,
-                        runAlignment: WrapAlignment.center,
-                        children: [
-                          for (var k = 0; k < controls.length; k++)
-                            SizedBox(
-                              width: _slotWidth(controls[k]),
-                              height: _cellHeight,
-                              child: _PluginParamControl(
-                                controlKey: Key('${keyPrefix}_param_$k'),
-                                spec: controls[k],
-                                value:
-                                    fx.paramValues[controls[k].id] ??
-                                    controls[k].def,
-                                onChanged: (v) => onSetParam(controls[k].id, v),
-                                onFormatValue: onFormatValue,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
+            // Inert while silenced — see the built-in card for why dimming
+            // alone would still let the knobs write.
+            child: IgnorePointer(
+              ignoring: !audible,
+              child: FxDisabledDim(
+                enabled: audible,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 8,
+                  ),
+                  child: controls.isEmpty
+                      ? Center(
+                          child: Text(
+                            l10n.emDash,
+                            style: signalMono(color: surface.textTertiary),
+                          ),
+                        )
+                      // Every control is shown: they wrap into rows and the
+                      // rack grew to fit. A very dense plugin scrolls
+                      // vertically here (the native editor is the full
+                      // control surface).
+                      : SingleChildScrollView(
+                          key: Key('${keyPrefix}_params'),
+                          child: Wrap(
+                            alignment: WrapAlignment.center,
+                            runAlignment: WrapAlignment.center,
+                            children: [
+                              for (var k = 0; k < controls.length; k++)
+                                SizedBox(
+                                  width: _slotWidth(controls[k]),
+                                  height: _cellHeight,
+                                  child: _PluginParamControl(
+                                    controlKey: Key('${keyPrefix}_param_$k'),
+                                    spec: controls[k],
+                                    value:
+                                        fx.paramValues[controls[k].id] ??
+                                        controls[k].def,
+                                    onChanged: (v) =>
+                                        onSetParam(controls[k].id, v),
+                                    onFormatValue: onFormatValue,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                ),
+              ),
             ),
           ),
         ],
@@ -785,14 +863,20 @@ class _PluginDeviceCard extends StatelessWidget {
 /// The D-MISS placeholder for an unresolved plugin (uninstalled / moved): keeps
 /// the slot visible with its id, a relink action, and remove — the entry's
 /// identity + opaque state are preserved in the model, never silently dropped.
+///
+/// It carries the same power control as a resolved card (D-POWER, R23) but is
+/// deliberately NOT dimmed when powered off: the warning state is what the user
+/// must act on, so it stays visually dominant over the disabled dim (R26).
 class _PluginPlaceholderCard extends StatelessWidget {
   const _PluginPlaceholderCard({
     required this.cardKey,
     required this.keyPrefix,
     required this.title,
     required this.unsupported,
+    required this.enabled,
     required this.onRelink,
     required this.onRemove,
+    required this.onSetEnabled,
     this.loading = false,
   });
 
@@ -807,8 +891,14 @@ class _PluginPlaceholderCard extends StatelessWidget {
   /// Whether the plugin is installed but rejected (unsupported topology, D-BUS)
   /// rather than simply missing — selects the explanatory message.
   final bool unsupported;
+
+  /// Whether the slot is powered on (D-POWER, R23).
+  final bool enabled;
   final VoidCallback onRelink;
   final VoidCallback onRemove;
+
+  /// Powers this slot on/off.
+  final void Function({required bool enabled}) onSetEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -864,6 +954,11 @@ class _PluginPlaceholderCard extends StatelessWidget {
                     ),
                   ),
                 ),
+                _CardPowerToggle(
+                  keyPrefix: keyPrefix,
+                  enabled: enabled,
+                  onChanged: onSetEnabled,
+                ),
                 IconButton(
                   key: Key('${keyPrefix}_remove'),
                   padding: EdgeInsets.zero,
@@ -889,11 +984,11 @@ class _PluginPlaceholderCard extends StatelessWidget {
                 children: [
                   Text(
                     key: Key('${keyPrefix}_reason'),
-                    loading
-                        ? l10n.signalPluginLoading
-                        : (unsupported
-                              ? l10n.signalPluginUnsupported
-                              : l10n.signalPluginUnavailable),
+                    fxPluginPlaceholderReason(
+                      l10n,
+                      loading: loading,
+                      unsupported: unsupported,
+                    ),
                     textAlign: TextAlign.center,
                     style: signalLabel(color: surface.textTertiary, size: 10),
                   ),
@@ -931,41 +1026,30 @@ class _PluginPlaceholderCard extends StatelessWidget {
   }
 }
 
-/// The plugin card's bypass control: an accent-lit toggle when the plugin
-/// exposes a bypass param, or a disabled icon when it does not (so the chrome
-/// stays consistent across plugins).
-class _BypassToggle extends StatelessWidget {
-  const _BypassToggle({
-    required this.toggleKey,
-    required this.bypass,
-    required this.value,
+/// A device card's power control — the shared [FxPowerToggle] with the card's
+/// key namespace and the per-effect wording.
+class _CardPowerToggle extends StatelessWidget {
+  const _CardPowerToggle({
+    required this.keyPrefix,
+    required this.enabled,
     required this.onChanged,
-    required this.tooltip,
   });
 
-  final Key toggleKey;
-  final PluginParamInfo? bypass;
-
-  /// The bypass param's current plain value (`>= 0.5` = bypassed).
-  final double value;
-  final ValueChanged<double> onChanged;
-  final String tooltip;
+  final String keyPrefix;
+  final bool enabled;
+  final void Function({required bool enabled}) onChanged;
 
   @override
   Widget build(BuildContext context) {
-    final surface = context.surface;
-    final bypassed = bypass != null && value >= 0.5;
-    return IconButton(
-      key: toggleKey,
-      padding: EdgeInsets.zero,
-      visualDensity: VisualDensity.compact,
-      constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-      iconSize: 15,
-      color: bypassed ? surface.accent : surface.textTertiary,
-      tooltip: tooltip,
-      icon: Icon(bypassed ? Icons.power_settings_new : Icons.power_off),
-      // Disabled (null) when there is no bypass param to drive.
-      onPressed: bypass == null ? null : () => onChanged(bypassed ? 0 : 1),
+    final l10n = context.l10n;
+    return FxPowerToggle(
+      toggleKey: Key('${keyPrefix}_power'),
+      enabled: enabled,
+      onChanged: onChanged,
+      semanticLabel: enabled ? l10n.a11yFxEffectOn : l10n.a11yFxEffectOff,
+      tooltip: enabled
+          ? l10n.fxEffectPowerOffTooltip
+          : l10n.fxEffectPowerOnTooltip,
     );
   }
 }

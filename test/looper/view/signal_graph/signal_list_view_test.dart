@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -222,6 +224,332 @@ void main() {
       expect(find.byKey(const Key('fx_dock')), findsOneWidget);
       // The dock opened for the lane scope (its header reads "Lane 1").
       expect(find.text('Lane 1'), findsOneWidget);
+    });
+
+    testWidgets('the track FX row opens the dock on that track bus chain', (
+      tester,
+    ) async {
+      seed(stateWith());
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('signalTrackFx_0')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('fx_dock')), findsOneWidget);
+      expect(find.text('Track 1 bus'), findsOneWidget);
+    });
+
+    testWidgets('the master strip opens the dock on the Master insert', (
+      tester,
+    ) async {
+      seed(stateWith());
+      await pump(tester);
+
+      // The Master insert heads the outputs pane — no new page, no new tile.
+      expect(find.byKey(const Key('signalMaster')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('signalMasterFx')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('fx_dock')), findsOneWidget);
+      expect(find.text('Master'), findsOneWidget);
+    });
+
+    testWidgets('the track FX row summarises the bus chain', (tester) async {
+      seed(
+        stateWith(
+          tracks: [
+            Track(
+              lanes: const [Lane(inputChannel: 1)],
+              effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+            ),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      // The bus chain is named on the surface, not only inside the dock.
+      expect(find.text('Reverb'), findsOneWidget);
+    });
+
+    testWidgets('a multi-lane track hides empty lanes behind "all lanes"', (
+      tester,
+    ) async {
+      seed(
+        stateWith(
+          tracks: const [
+            Track(
+              lanes: [
+                Lane(inputChannel: 0, lengthFrames: 1000),
+                Lane(inputChannel: 1),
+              ],
+            ),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      // A11: the recorded take is what you came to shape; the empty lane waits
+      // behind the expander.
+      expect(find.byKey(const Key('signalTake_0_0')), findsOneWidget);
+      expect(find.byKey(const Key('signalTake_0_1')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('signalAllLanes_0')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('signalTake_0_1')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('signalAllLanes_0')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('signalTake_0_1')), findsNothing);
+    });
+
+    testWidgets('a track with nothing recorded still shows all its lanes', (
+      tester,
+    ) async {
+      seed(
+        stateWith(
+          tracks: const [
+            Track(
+              lanes: [Lane(inputChannel: 0), Lane(inputChannel: 1)],
+            ),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      // Hiding them would take the track's routing and mix off the surface.
+      expect(find.byKey(const Key('signalTake_0_0')), findsOneWidget);
+      expect(find.byKey(const Key('signalTake_0_1')), findsOneWidget);
+      expect(find.byKey(const Key('signalAllLanes_0')), findsNothing);
+    });
+
+    testWidgets('an inherited take carries its provenance badge', (
+      tester,
+    ) async {
+      seed(
+        stateWith(
+          tracks: const [
+            Track(
+              lanes: [
+                Lane(inputChannel: 1, lengthFrames: 10, inheritedFrom: [1]),
+              ],
+            ),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      expect(find.byKey(const Key('signalInherited_0_0')), findsOneWidget);
+      expect(find.text('Inherited'), findsOneWidget);
+    });
+
+    testWidgets(
+      'the provenance badge follows the domain through detach and re-sync',
+      (tester) async {
+        // The lifecycle end to end, driven by real state EMISSIONS rather than
+        // three static fixtures: a badge that stopped rebuilding when the
+        // backing chain changed would pass the fixtures and fail here.
+        LooperState withLane(Lane lane) => stateWith(
+          tracks: [
+            Track(lanes: [lane]),
+          ],
+        );
+        final states = StreamController<LooperState>.broadcast();
+        addTearDown(states.close);
+        const inherited = Lane(
+          inputChannel: 1,
+          lengthFrames: 10,
+          inheritedFrom: [1],
+        );
+        whenListen(
+          bloc,
+          states.stream,
+          initialState: withLane(inherited),
+        );
+        await pump(tester);
+        expect(find.byKey(const Key('signalInherited_0_0')), findsOneWidget);
+
+        // Detach: the domain drops the marker on a wholesale replacement, and
+        // the badge goes with it — the badge never asserts a link of its own.
+        states.add(
+          withLane(
+            Lane(
+              inputChannel: 1,
+              lengthFrames: 10,
+              effects: [BuiltInEffect(type: TrackEffectType.echo)],
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('signalInherited_0_0')), findsNothing);
+
+        // Re-sync stamps fresh provenance, and the badge comes back.
+        states.add(
+          withLane(
+            Lane(
+              inputChannel: 1,
+              lengthFrames: 10,
+              effects: [BuiltInEffect(type: TrackEffectType.drive)],
+              inheritedFrom: const [1],
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('signalInherited_0_0')), findsOneWidget);
+      },
+    );
+
+    testWidgets('the re-sync action reaches the domain from the dock', (
+      tester,
+    ) async {
+      // Wire the real repository so the dock's re-sync affordance is offered
+      // for the reason it would be in the app: the lane's ROUTED input has an
+      // audible chain to copy.
+      repository
+        ..setLaneInput(channel: 0, lane: 0, inputChannel: 1)
+        ..setMonitorEffects(
+          input: 1,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        );
+      seed(
+        stateWith(
+          tracks: const [
+            Track(
+              lanes: [
+                Lane(inputChannel: 1, lengthFrames: 10, inheritedFrom: [1]),
+              ],
+            ),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('signalTakeFx_0_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('fxDock_resync')));
+      await tester.pump();
+
+      verify(
+        () => bloc.add(const LooperLaneChainResyncedFromInput(0, 0)),
+      ).called(1);
+    });
+
+    testWidgets('re-sync is withheld when the input has nothing audible', (
+      tester,
+    ) async {
+      repository.setLaneInput(channel: 0, lane: 0, inputChannel: 1);
+      seed(
+        stateWith(
+          tracks: const [
+            Track(
+              lanes: [
+                Lane(inputChannel: 1, lengthFrames: 10, inheritedFrom: [1]),
+              ],
+            ),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('signalTakeFx_0_0')));
+      await tester.pumpAndSettle();
+
+      // An empty input chain is dry: copying it would do nothing.
+      expect(find.byKey(const Key('fxDock_resync')), findsNothing);
+    });
+
+    testWidgets('adding a lane reveals it even on a track with a take', (
+      tester,
+    ) async {
+      seed(
+        stateWith(
+          tracks: const [
+            Track(
+              lanes: [
+                Lane(inputChannel: 0, lengthFrames: 1000),
+                Lane(inputChannel: 1),
+              ],
+            ),
+          ],
+        ),
+      );
+      await pump(tester);
+      // Collapsed by default: only the recorded take shows.
+      expect(find.byKey(const Key('signalTake_0_1')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('signalGraph_addLane_0')));
+      await tester.pumpAndSettle();
+
+      // A fresh lane holds no audio, so without this the button would read as
+      // a no-op — the track expands so the new lane is visible.
+      expect(find.byKey(const Key('signalTake_0_1')), findsOneWidget);
+    });
+
+    testWidgets('remove-lane is withheld when the last lane holds audio', (
+      tester,
+    ) async {
+      seed(
+        stateWith(
+          tracks: const [
+            Track(
+              lanes: [Lane(inputChannel: 0), Lane(lengthFrames: 1000)],
+            ),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      // Lanes are a stack, so removal drops the LAST one — and the drill-in
+      // may be hiding it. One tap must not destroy an unseen take.
+      expect(find.byKey(const Key('signalGraph_removeLane_0')), findsNothing);
+    });
+
+    testWidgets('remove-lane stays available when the last lane is empty', (
+      tester,
+    ) async {
+      seed(
+        stateWith(
+          tracks: const [
+            Track(
+              lanes: [Lane(lengthFrames: 1000), Lane(inputChannel: 1)],
+            ),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('signalGraph_removeLane_0')));
+      await tester.pump();
+      verify(() => bloc.add(const LooperLaneCountChanged(0, 1))).called(1);
+    });
+
+    testWidgets('a recording track shows every lane, even empty ones', (
+      tester,
+    ) async {
+      seed(
+        stateWith(
+          tracks: const [
+            Track(
+              state: TrackState.recording,
+              lanes: [
+                Lane(inputChannel: 0, lengthFrames: 1000),
+                Lane(inputChannel: 1),
+              ],
+            ),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      // A lane being recorded right now has no captured length yet; hiding it
+      // would take the take you are cutting off the surface.
+      expect(find.byKey(const Key('signalTake_0_1')), findsOneWidget);
+      expect(find.byKey(const Key('signalAllLanes_0')), findsNothing);
+    });
+
+    testWidgets('a detached take carries no provenance badge', (tester) async {
+      seed(stateWith());
+      await pump(tester);
+      expect(find.byKey(const Key('signalInherited_0_0')), findsNothing);
     });
 
     testWidgets('the dock closes via its close affordance', (tester) async {

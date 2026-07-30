@@ -83,6 +83,9 @@ class TrackGroup {
     required this.track,
     required this.single,
     required this.takes,
+    required this.effects,
+    required this.chainEnabled,
+    required this.capturing,
   });
 
   /// The track index.
@@ -93,6 +96,28 @@ class TrackGroup {
 
   /// The track's takes, in lane order (always at least one).
   final List<TakeRow> takes;
+
+  /// The Track-stage (stereo bus) chain, downstream of every lane above.
+  final List<TrackEffect> effects;
+
+  /// Whether the Track-stage chain is engaged (R15).
+  final bool chainEnabled;
+
+  /// Whether the track is recording or overdubbing right now — a lane that is
+  /// mid-take has no captured length yet, so the drill-in must not filter it
+  /// out while it is being recorded.
+  final bool capturing;
+
+  /// The takes the loop drill-in shows by default (A11): the ones holding
+  /// recorded audio. While the track is [capturing] every lane stays visible —
+  /// a lane being recorded right now is exactly what you want on screen, and
+  /// it does not report [Lane.hasContent] until the take is finalized.
+  List<TakeRow> get recordedTakes => capturing
+      ? takes
+      : [
+          for (final t in takes)
+            if (t.lane.hasContent) t,
+        ];
 }
 
 /// One hardware output's row.
@@ -123,6 +148,8 @@ class SignalRows {
     required this.outputs,
     required this.inputCount,
     required this.outputCount,
+    required this.masterEffects,
+    required this.masterChainEnabled,
   });
 
   /// Flattens [monitor] + [looper] into list rows.
@@ -183,7 +210,14 @@ class SignalRows {
         );
       }
       tracks.add(
-        TrackGroup(track: t, single: lanes.length == 1, takes: takes),
+        TrackGroup(
+          track: t,
+          single: lanes.length == 1,
+          takes: takes,
+          effects: looper.tracks[t].effects,
+          chainEnabled: looper.tracks[t].chainEnabled,
+          capturing: looper.tracks[t].isCapturing,
+        ),
       );
     }
 
@@ -202,6 +236,8 @@ class SignalRows {
       outputs: outputs,
       inputCount: inCount,
       outputCount: outCount,
+      masterEffects: looper.masterEffects,
+      masterChainEnabled: looper.masterChainEnabled,
     );
   }
 
@@ -218,6 +254,13 @@ class SignalRows {
   /// when the engine is stopped, mirroring the old graph).
   final int inputCount;
   final int outputCount;
+
+  /// The Master insert chain — the fourth stage, rendered as a strip at the
+  /// head of the outputs pane (there is exactly one).
+  final List<TrackEffect> masterEffects;
+
+  /// Whether the Master insert chain is engaged (R15).
+  final bool masterChainEnabled;
 
   /// The set of inputs routed to output [o] (its "fed by" feeders), derived at
   /// call time — never materialized on [OutputRow].

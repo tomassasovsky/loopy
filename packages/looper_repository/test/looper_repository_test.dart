@@ -4949,6 +4949,80 @@ void main() {
     });
   });
 
+  group('bus-stage granular params', () {
+    test('a track param write pokes the one param, not the whole chain', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: [
+            BuiltInEffect(type: TrackEffectType.reverb),
+            BuiltInEffect(type: TrackEffectType.delay),
+          ],
+        );
+      addTearDown(repo.dispose);
+      engine.calls.clear();
+
+      expect(
+        repo.setTrackEffectParam(
+          channel: 0,
+          index: 1,
+          param: 0,
+          value: 0.75,
+        ),
+        EngineResult.ok,
+      );
+
+      // Re-pushing the chain would re-send every slot's TYPE, and the engine
+      // resets a slot's DSP state on every type push — the audible cost this
+      // setter exists to avoid.
+      expect(engine.calls, contains('setTrackFxParam'));
+      expect(engine.calls, isNot(contains('setTrackFx')));
+      expect(
+        (repo.trackEffects(0)[1] as BuiltInEffect).params[0],
+        0.75,
+      );
+      // The untouched sibling keeps its params.
+      expect(
+        (repo.trackEffects(0)[0] as BuiltInEffect).params,
+        BuiltInEffect(type: TrackEffectType.reverb).params,
+      );
+    });
+
+    test('a master param write behaves the same', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMasterEffects(
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        );
+      addTearDown(repo.dispose);
+      engine.calls.clear();
+
+      expect(
+        repo.setMasterEffectParam(index: 0, param: 0, value: 0.4),
+        EngineResult.ok,
+      );
+
+      expect(engine.calls, contains('setMasterFxParam'));
+      expect(engine.calls, isNot(contains('setMasterFx')));
+      expect((repo.masterEffects.single as BuiltInEffect).params[0], 0.4);
+    });
+
+    test('an out-of-range bus param write is rejected', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      expect(
+        repo.setTrackEffectParam(channel: 0, index: 0, param: 0, value: 1),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setMasterEffectParam(index: 4, param: 0, value: 1),
+        EngineResult.invalid,
+      );
+    });
+  });
+
   group('inheritance rules (R13/R18/A7/A8)', () {
     EngineSnapshot emptyTrackSnapshot() => const EngineSnapshot(
       isRunning: true,
@@ -4963,6 +5037,115 @@ void main() {
       measuredLatencyMs: -1,
       tracks: [TrackSnapshot.empty()],
     );
+
+    test('re-sync re-copies the routed input chain with a fresh stamp, '
+        'and touches nothing else (A6)', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+
+      // The take drifts from its input: the input chain is re-shaped after it.
+      repo.setMonitorEffects(
+        input: 0,
+        effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+      );
+      expect(
+        (repo.laneEffects(0, 0).single as BuiltInEffect).type,
+        TrackEffectType.delay,
+      );
+
+      expect(repo.resyncLaneChainFromInput(channel: 0, lane: 0), isTrue);
+
+      // By value, with a fresh provenance stamp — and fresh slot ids, since
+      // the take's entries are new identities (A9).
+      expect(
+        (repo.laneEffects(0, 0).single as BuiltInEffect).type,
+        TrackEffectType.reverb,
+      );
+      expect(repo.laneChainInheritedFrom(0, 0), [0]);
+      expect(repo.laneEffects(0, 0).single.slotId, isNotNull);
+      expect(
+        repo.laneEffects(0, 0).single.slotId,
+        isNot(repo.monitorEffects(0).single.slotId),
+      );
+    });
+
+    test(
+      're-sync restores the chain flag of an intentionally silenced take',
+      () {
+        engine.nextSnapshot = emptyTrackSnapshot();
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setMonitorEffects(
+            input: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.delay)],
+          )
+          ..record()
+          ..setLaneChainEnabled(channel: 0, lane: 0, enabled: false);
+        addTearDown(repo.dispose);
+
+        repo.resyncLaneChainFromInput(channel: 0, lane: 0);
+
+        // The copy is by value, and the source chain was engaged.
+        expect(repo.laneChainEnabled(0, 0), isTrue);
+      },
+    );
+
+    test('re-sync declines on both dry input shapes, leaving the take alone '
+        '(R18)', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+      final take = repo.laneEffects(0, 0);
+
+      // Dry shape 1: an empty input chain.
+      repo.setMonitorEffects(input: 0, effects: const []);
+      expect(repo.laneCanInheritFromInput(0, 0), isFalse);
+      expect(repo.resyncLaneChainFromInput(channel: 0, lane: 0), isFalse);
+      expect(repo.laneEffects(0, 0), take);
+
+      // Dry shape 2: a chain-disabled input chain.
+      repo
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        )
+        ..setMonitorChainEnabled(input: 0, enabled: false);
+      expect(repo.laneCanInheritFromInput(0, 0), isFalse);
+      expect(repo.resyncLaneChainFromInput(channel: 0, lane: 0), isFalse);
+      expect(repo.laneEffects(0, 0), take);
+    });
+
+    test('re-sync notifies so the fresh envelope is persisted (F3)', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final changed = <(int, int)>[];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+
+      repo
+        ..onLaneChainChanged = ((c, l) => changed.add((c, l)))
+        ..resyncLaneChainFromInput(channel: 0, lane: 0);
+
+      expect(changed, [(0, 0)]);
+    });
 
     test('record copies by value with provenance: editing the input chain '
         'afterwards never alters the take (R13)', () {

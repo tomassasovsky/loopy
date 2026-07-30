@@ -409,6 +409,118 @@ void main() {
       );
     });
 
+    group('monitor power controls (D-POWER)', () {
+      blocTest<MonitorCubit, MonitorState>(
+        'setEffectEnabled flips one slot, pushes it, and re-persists',
+        setUp: () {
+          // Model the repository: it owns the flag flip across the sealed
+          // entry hierarchy, and the cubit re-reads what actually landed.
+          var chain = <TrackEffect>[];
+          when(() => repository.monitorEffects(0)).thenAnswer((_) => chain);
+          when(
+            () => repository.setMonitorEffects(
+              input: any(named: 'input'),
+              effects: any(named: 'effects'),
+            ),
+          ).thenAnswer((invocation) {
+            chain = invocation.namedArguments[#effects] as List<TrackEffect>;
+            return EngineResult.ok;
+          });
+          when(
+            () => repository.setMonitorEffectEnabled(
+              input: any(named: 'input'),
+              index: any(named: 'index'),
+              enabled: any(named: 'enabled'),
+            ),
+          ).thenAnswer((invocation) {
+            final index = invocation.namedArguments[#index] as int;
+            final enabled = invocation.namedArguments[#enabled] as bool;
+            final fx = chain[index] as BuiltInEffect;
+            chain = [...chain]..[index] = fx.copyWith(enabled: enabled);
+            return EngineResult.ok;
+          });
+        },
+        build: build,
+        act: (cubit) {
+          cubit
+            ..addEffect(0)
+            ..setEffectEnabled(0, 0, enabled: false);
+        },
+        verify: (_) async {
+          verify(
+            () => repository.setMonitorEffectEnabled(
+              input: 0,
+              index: 0,
+              enabled: false,
+            ),
+          ).called(1);
+          // The flag rides the persisted envelope, not just "something wrote".
+          final encoded = await settings.loadMonitorEffects(0);
+          expect(decodeFxChain(encoded).entries.single.enabled, isFalse);
+        },
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
+        'setChainEnabled ignores an input with no configured monitor',
+        build: build,
+        act: (cubit) => cubit.setChainEnabled(3, enabled: false),
+        expect: () => <MonitorState>[],
+        verify: (_) async {
+          // Never materialize (or persist) a monitor the user never created —
+          // the restore path would resurrect it on every subsequent boot.
+          verifyNever(
+            () => repository.setMonitorChainEnabled(
+              input: any(named: 'input'),
+              enabled: any(named: 'enabled'),
+            ),
+          );
+          expect(await settings.loadMonitorEffects(3), isNull);
+        },
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
+        'setEffectEnabled ignores an out-of-range slot',
+        build: build,
+        act: (cubit) => cubit.setEffectEnabled(0, 3, enabled: false),
+        expect: () => <MonitorState>[],
+        verify: (_) {
+          verifyNever(
+            () => repository.setMonitorEffectEnabled(
+              input: any(named: 'input'),
+              index: any(named: 'index'),
+              enabled: any(named: 'enabled'),
+            ),
+          );
+        },
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
+        'setChainEnabled flips the whole chain and persists the envelope',
+        build: build,
+        act: (cubit) => cubit
+          // Configure the input first: the flip only applies to a monitor the
+          // user actually has (see the phantom-monitor guard).
+          ..addEffect(0)
+          ..setChainEnabled(0, enabled: false),
+        expect: () => [
+          isA<MonitorState>(),
+          isA<MonitorState>().having(
+            (s) => s.forInput(0).chainEnabled,
+            'chainEnabled',
+            isFalse,
+          ),
+        ],
+        verify: (_) async {
+          verify(
+            () => repository.setMonitorChainEnabled(input: 0, enabled: false),
+          ).called(1);
+          // R15: the flag rides the one monitor-fx key beside the entries.
+          final encoded = await settings.loadMonitorEffects(0);
+          expect(decodeFxChain(encoded).chainEnabled, isFalse);
+        },
+      );
+    });
+
     group('monitor effects', () {
       blocTest<MonitorCubit, MonitorState>(
         'addEffect appends a default drive, applies, and persists',

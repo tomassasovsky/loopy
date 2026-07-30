@@ -76,6 +76,39 @@ void main() {
       expect(ratio(hc.line, hc.card), greaterThanOrEqualTo(3));
     });
 
+    test('the disabled dim is a token, and high contrast dims less', () {
+      // R26: disabled rendering resolves from the theme, never from an ad-hoc
+      // opacity constant in a widget — and it must stay legible under the
+      // high-contrast preference, so that variant dims less.
+      expect(SurfaceTheme.dark.disabledOpacity, greaterThan(0));
+      expect(SurfaceTheme.dark.disabledOpacity, lessThan(1));
+      expect(
+        SurfaceTheme.highContrast.disabledOpacity,
+        greaterThan(SurfaceTheme.dark.disabledOpacity),
+      );
+    });
+
+    test('the disabled dim survives copyWith and lerps between variants', () {
+      expect(
+        SurfaceTheme.dark.copyWith(disabledOpacity: 0.5).disabledOpacity,
+        0.5,
+      );
+      expect(
+        SurfaceTheme.dark.copyWith().disabledOpacity,
+        SurfaceTheme.dark.disabledOpacity,
+      );
+      final mid = SurfaceTheme.dark.lerp(SurfaceTheme.highContrast, 0.5);
+      expect(
+        mid.disabledOpacity,
+        closeTo(
+          (SurfaceTheme.dark.disabledOpacity +
+                  SurfaceTheme.highContrast.disabledOpacity) /
+              2,
+          1e-9,
+        ),
+      );
+    });
+
     test('highContrast registers a LooperTheme', () {
       expect(
         AppTheme.highContrast.extension<LooperTheme>(),

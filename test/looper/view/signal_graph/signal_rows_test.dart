@@ -131,6 +131,48 @@ void main() {
       expect(rows.inputsFeeding(0), isEmpty);
     });
 
+    test('carries each track bus chain and the single Master insert', () {
+      final rows = SignalRows.from(
+        const MonitorState(),
+        LooperState(
+          tracks: [
+            Track(
+              lanes: const [Lane()],
+              effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+              chainEnabled: false,
+            ),
+          ],
+          masterEffects: [BuiltInEffect(type: TrackEffectType.drive)],
+        ),
+      );
+
+      // The two bus stages ride the same view-model as inputs and lanes.
+      expect(rows.tracks.single.effects, hasLength(1));
+      expect(rows.tracks.single.chainEnabled, isFalse);
+      expect(rows.masterEffects, hasLength(1));
+      expect(rows.masterChainEnabled, isTrue);
+    });
+
+    test('recordedTakes is the loop drill-in default (A11)', () {
+      final rows = SignalRows.from(
+        const MonitorState(),
+        const LooperState(
+          tracks: [
+            Track(
+              lanes: [Lane(lengthFrames: 4800), Lane(), Lane(lengthFrames: 1)],
+            ),
+          ],
+        ),
+      );
+
+      expect(rows.tracks.single.takes, hasLength(3));
+      // Only the lanes holding audio, in lane order.
+      expect(
+        rows.tracks.single.recordedTakes.map((t) => t.laneIndex),
+        [0, 2],
+      );
+    });
+
     test('falls back to 4 in / 2 out when the engine is stopped', () {
       final rows = SignalRows.from(
         const MonitorState(),
