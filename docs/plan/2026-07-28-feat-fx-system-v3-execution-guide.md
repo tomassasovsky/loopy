@@ -30,10 +30,18 @@ issue: 351
 
 ## Status
 
-**Next up:** everything through the four-stage Signal surface is merged (0,
-1a, 1b, 2, 3a, 3b, 4a, 4b). **5a** (protocol v3 wire) is in review; with it
-out, the critical chain continues at **5b** (deps 5a, 3a, 1a). 6a still has
-no in-epic dependencies and can run in parallel any time.
+**Next up:** everything through the wire protocol is merged (0, 1a, 1b, 2,
+3a, 3b, 4a, 4b, 5a). The critical chain continues at **5b** (deps 5a, 3a,
+1a — all merged, so 5b is unblocked). 6a still has no in-epic dependencies
+and can run in parallel any time.
+
+Note for 5b (B10 amendment, from #399's review): the codec-level downgrade
+degrades **both** v3-only values below v3 — mode fx → play AND
+`PedalTrackLed.blue` → green — because pre-5a firmware rejects a frame
+carrying an unknown LED index wholesale. 5b's projection emits blue
+unconditionally; the codec owns the per-version degrade. The part-5a plan's
+original [B10] wording ("only the mode-field downgrade differs") predates
+this amendment; `PedalCodec`'s doc comments are the authority.
 
 Open items carried out of merged parts, neither blocking a new part:
 - [#389](https://github.com/tomassasovsky/loopy/issues/389) (`plan-gate`, from
@@ -55,7 +63,7 @@ Open items carried out of merged parts, neither blocking a new part:
 | 3b | session v5 migration + manifest stages | Opus · medium | `merge-gate` | 3a, 0 | merged (#388) |
 | 4a | delete dead FX code | Sonnet · low | `auto` | — | merged (#392) |
 | 4b | four-stage Signal surface | Opus · medium | `merge-gate` | 3a, 4a | merged (#395) |
-| 5a | protocol v3 wire + version discovery | **Fable · high** | `merge-gate` | — (#331 prereq) | in-review (#399) |
+| 5a | protocol v3 wire + version discovery | **Fable · high** | `merge-gate` | — (#331 prereq) | merged (#399) |
 | 5b | FX interaction mode (app) | Opus · high | `merge-gate` (physical slice `blocked-verify`) | 5a, 3a, 1a | pending |
 | 6a | faceplate presentational extraction | Sonnet · medium | `auto` | — | pending |
 | 6b | remap bindings + momentary | Opus · high | `merge-gate` | 6a, 5b, 3a | pending |
