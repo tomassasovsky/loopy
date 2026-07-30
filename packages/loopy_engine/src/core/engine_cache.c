@@ -14,8 +14,10 @@
  *      copies pool[a_live] into a worker-owned buffer, only while the track is
  *      not RECORDING/OVERDUBBING and no overdub layer is in flight (the fade
  *      tail and drain both hold a_layer_in_flight), tagged with the
- *      a_audio_rev it copied under and re-checked after the copy (seqlock
- *      shape). A finished render whose revision moved is discarded. In-flight
+ *      a_audio_rev it copied under and re-checked at copy completion (seqlock
+ *      shape). The copy is CHUNKED across ticks (le_cache_copy_step, bounded
+ *      per call) so the UI-poll drain path never stalls behind one giant
+ *      memcpy. A finished render whose revision moved is discarded. In-flight
  *      copies count against the memory cap. The control thread owns all pool
  *      management (alloc/shrink/a_live swaps), so a control-side copy can
  *      never race a pool free.
@@ -132,9 +134,12 @@ static void le_ca_sleep_ms(int ms) {
 
 /* ---- state ---- */
 
-/* SPSC job lifecycle. Control writes EMPTY->QUEUED and *->EMPTY; the worker
- * writes QUEUED->RUNNING->DONE/ABORTED/FAILED. All transitions release; all
- * cross-thread reads acquire. */
+/* SPSC job lifecycle. Control writes EMPTY->COPYING->QUEUED and *->EMPTY;
+ * the worker writes QUEUED->RUNNING->DONE/ABORTED/FAILED. All transitions
+ * release; all cross-thread reads acquire. COPYING is control-private: the
+ * enqueue dry copy advances one bounded chunk per tick (le_cache_copy_step)
+ * so a long loop can never stall the control thread behind one giant memcpy;
+ * the worker and the collector both ignore the state. */
 enum {
   LE_CACHE_JOB_EMPTY = 0,
   LE_CACHE_JOB_QUEUED = 1,
@@ -142,7 +147,14 @@ enum {
   LE_CACHE_JOB_DONE = 3,
   LE_CACHE_JOB_ABORTED = 4,
   LE_CACHE_JOB_FAILED = 5,
+  LE_CACHE_JOB_COPYING = 6,
 };
+
+/* Copy-at-enqueue chunk size, in frames (~192 KB, ~1 s of audio): the most
+ * dry PCM one tick will copy per job, bounding the UI-poll drain path's
+ * per-call cost. A typical loop stages in one or two ticks; a maximal 8-min
+ * loop takes ~50 ticks — irrelevant next to the 250 ms settle debounce. */
+#define LE_CACHE_COPY_CHUNK_FRAMES 48000
 
 /* One render job. `dry` is control-allocated at enqueue and control-freed at
  * collection (the worker only reads it); `wet` is worker-allocated and either
@@ -165,6 +177,7 @@ typedef struct le_cache_job {
   int32_t fx_type[LE_FX_MAX];
   float fx_params[LE_FX_MAX][LE_FX_PARAMS];
   int32_t fx_effective[LE_FX_MAX]; /* chain_on && slot enabled (D-EFFBITS) */
+  int32_t copy_pos; /* frames of dry staged so far (COPYING state only) */
   float* dry;
   float* wet;
 } le_cache_job;
@@ -293,18 +306,24 @@ static void le_cache_drop_entry(le_engine* e, struct le_fx_cache* c, int t,
   }
   c->used_bytes -= le_ca_entry_bytes(ent);
   c->lanes[t][l].entries[i] = NULL;
-  for (int g = 0; g < LE_CACHE_GRAVEYARD; ++g) {
-    if (c->graveyard[g].ent == NULL) {
-      c->graveyard[g].ent = ent;
-      c->graveyard[g].stamp =
-          atomic_load_explicit(&e->a_frames, memory_order_acquire);
-      c->graveyard[g].boundaries = 0;
-      return;
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    for (int g = 0; g < LE_CACHE_GRAVEYARD; ++g) {
+      if (c->graveyard[g].ent == NULL) {
+        c->graveyard[g].ent = ent;
+        c->graveyard[g].stamp =
+            atomic_load_explicit(&e->a_frames, memory_order_acquire);
+        c->graveyard[g].boundaries = 0;
+        return;
+      }
     }
+    /* Unreachable by sizing (see LE_CACHE_GRAVEYARD). If the sizing
+     * invariant ever breaks, sweep and retry once — and if the graveyard is
+     * somehow STILL full, deliberately LEAK the entry rather than free it:
+     * a raw free here would skip the quiescent window [R2](c) while the
+     * audio thread may still hold the pointer for the current buffer. A
+     * bounded leak beats a use-after-free. */
+    le_cache_sweep_graveyard(e, c, 0);
   }
-  /* Unreachable by sizing (see LE_CACHE_GRAVEYARD); never leak regardless. */
-  free(ent->pcm);
-  free(ent);
 }
 
 /* Retracts every entry (the cap-disabled path and shutdown's prelude). */
@@ -325,6 +344,9 @@ static void le_cache_free_all_entries(le_engine* e, struct le_fx_cache* c) {
  * the budget fits. */
 static int le_cache_ensure_budget(le_engine* e, struct le_fx_cache* c,
                                   int64_t cap, int64_t needed) {
+  /* The overwhelmingly common case — already under budget — pays one
+   * comparison, not the 128-slot scans below (this runs on every tick). */
+  if (c->used_bytes + needed <= cap) return 1;
   /* Feasibility first: only entries are evictable (in-flight job bytes are
    * not), so if evicting EVERYTHING still would not fit, fail without
    * destroying entries that could keep serving — an infeasible render must
@@ -377,9 +399,9 @@ static void le_cache_install(le_engine* e, struct le_fx_cache* c,
   int slot = -1;
   for (int i = 0; i < LE_CACHE_ENTRIES_PER_LANE; ++i) {
     le_wet_entry* ent = lc->entries[i];
-    if (ent != NULL && ent->audio_rev == job->audio_rev &&
-        ent->chain_fp == job->chain_fp && ent->vol_bits == job->vol_bits &&
-        ent->len == job->len) {
+    if (ent != NULL &&
+        le_wet_entry_key_matches(ent, job->audio_rev, job->chain_fp,
+                                 job->vol_bits, job->len)) {
       slot = i; /* same key rendered twice (races resolve here): replace */
       break;
     }
@@ -450,8 +472,11 @@ static void le_cache_collect(le_engine* e, struct le_fx_cache* c,
       const uint32_t vol =
           atomic_load_explicit(&ln->a_vol_bits, memory_order_relaxed);
       const int32_t len = load_i32(&ln->a_len);
-      if (cap > 0 && rev == job->audio_rev && fp == job->chain_fp &&
-          vol == job->vol_bits && len == job->len) {
+      const le_wet_entry probe = {.audio_rev = job->audio_rev,
+                                  .chain_fp = job->chain_fp,
+                                  .vol_bits = job->vol_bits,
+                                  .len = job->len};
+      if (cap > 0 && le_wet_entry_key_matches(&probe, rev, fp, vol, len)) {
         le_cache_install(e, c, job);
       } else {
         free(job->wet); /* the key moved mid-render: discard, never publish */
@@ -564,8 +589,7 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   for (int i = 0; i < LE_CACHE_ENTRIES_PER_LANE; ++i) {
     le_wet_entry* ent = lc->entries[i];
     if (ent == NULL) continue;
-    if (ent->audio_rev == rev && ent->chain_fp == fp &&
-        ent->vol_bits == vol_bits && ent->len == len) {
+    if (le_wet_entry_key_matches(ent, rev, fp, vol_bits, len)) {
       ent->last_used = c->lru_clock;
       if (atomic_load_explicit(&ln->a_wet, memory_order_relaxed) != ent) {
         atomic_store_explicit(&ln->a_wet, ent, memory_order_release);
@@ -630,10 +654,13 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
     return;
   }
 
-  /* Copy-at-enqueue [R2](a), seqlock shape: the revision is re-read after
-   * the copy; any content mutation that began mid-copy bumped it first (the
-   * bump-site table, engine_private.h), so a torn copy can never proceed —
-   * and the [B5] publish re-check would discard it even if it rendered. */
+  /* Copy-at-enqueue [R2](a), CHUNKED: the dry buffer is allocated here, but
+   * the PCM stages one bounded chunk per tick (le_cache_copy_step) so this
+   * UI-poll-driven path never blocks on one giant memcpy. The seqlock
+   * revision re-check runs at copy COMPLETION — any content mutation landing
+   * anywhere in the chunked window bumps a_audio_rev first (the bump-site
+   * table, engine_private.h), so a torn copy is discarded before it can
+   * render, and the [B5] publish re-check backstops it regardless. */
   float* dry = (float*)malloc((size_t)len * sizeof(float));
   if (dry == NULL) {
     lc->fail_count++;
@@ -643,13 +670,6 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
     if (lc->state == LE_CACHE_GAVE_UP) {
       lc->reason = LE_CACHE_REASON_RENDER_FAILED;
     }
-    return;
-  }
-  memcpy(dry, src, (size_t)len * sizeof(float));
-  atomic_thread_fence(memory_order_acquire);
-  if (atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire) != rev) {
-    free(dry); /* content moved mid-copy: torn — drop and retry later */
-    lc->state = LE_CACHE_LIVE;
     return;
   }
 
@@ -670,30 +690,65 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
       job->fx_params[s][p] = params[s][p];
     }
   }
+  job->copy_pos = 0;
   job->dry = dry;
   job->wet = NULL;
   c->used_bytes += job_bytes;
   lc->job_pending = 1;
   lc->state = LE_CACHE_RENDERING;
-  atomic_store_explicit(&job->a_state, LE_CACHE_JOB_QUEUED,
+  atomic_store_explicit(&job->a_state, LE_CACHE_JOB_COPYING,
                         memory_order_release);
 }
 
-/* ---- the render worker [B6] ---- */
-
-/* Frees a heap le_fx_state's owned buffers (delay rings + octaver heap) —
- * the perf_render.c teardown, duplicated per TU by that file's own
- * convention. This state is worker-private; no live-engine path ever sees
- * it. */
-static void le_ca_fx_state_free(le_fx_state* fx) {
-  for (int s = 0; s < LE_FX_MAX; ++s) {
-    free(fx->delay[s][0]);
-    fx->delay[s][0] = NULL;
-    free(fx->delay[s][1]);
-    fx->delay[s][1] = NULL;
-    le_fx_free_octaver(fx, s);
+/* Advances every COPYING job by one bounded chunk [R2](a). The source
+ * pointer is re-resolved per chunk on this same control thread — the only
+ * thread that swaps a_live or reallocs pool slots — so a chunk can never
+ * read a freed buffer; a revision bump observed between chunks (or at the
+ * completion re-check) discards the job outright. On completion the job
+ * becomes QUEUED and the worker takes over. */
+static void le_cache_copy_step(le_engine* e, struct le_fx_cache* c) {
+  for (int j = 0; j < LE_CACHE_JOB_SLOTS; ++j) {
+    le_cache_job* job = &c->jobs[j];
+    if (atomic_load_explicit(&job->a_state, memory_order_relaxed) !=
+        LE_CACHE_JOB_COPYING) {
+      continue;
+    }
+    le_track* tr = &e->tracks[job->channel];
+    le_lane* ln = &tr->lanes[job->lane];
+    const float* src = ln->pool[load_i32(&ln->a_live)];
+    int discard =
+        src == NULL ||
+        atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire) !=
+            job->audio_rev;
+    if (!discard) {
+      int32_t n = job->len - job->copy_pos;
+      if (n > LE_CACHE_COPY_CHUNK_FRAMES) n = LE_CACHE_COPY_CHUNK_FRAMES;
+      memcpy(job->dry + job->copy_pos, src + job->copy_pos,
+             (size_t)n * sizeof(float));
+      job->copy_pos += n;
+      if (job->copy_pos < job->len) continue; /* more chunks next tick */
+      /* Completion: the seqlock re-check (the fence orders the copied reads
+       * before the revision load). */
+      atomic_thread_fence(memory_order_acquire);
+      discard = atomic_load_explicit(&tr->a_audio_rev,
+                                     memory_order_acquire) != job->audio_rev;
+    }
+    if (discard) {
+      c->used_bytes -= 3ll * (int64_t)job->len * (int64_t)sizeof(float);
+      free(job->dry);
+      job->dry = NULL;
+      c->lanes[job->channel][job->lane].job_pending = 0;
+      c->lanes[job->channel][job->lane].state = LE_CACHE_LIVE;
+      atomic_store_explicit(&job->a_state, LE_CACHE_JOB_EMPTY,
+                            memory_order_release);
+      continue;
+    }
+    atomic_store_explicit(&job->a_state, LE_CACHE_JOB_QUEUED,
+                          memory_order_release);
   }
 }
+
+/* ---- the render worker [B6] ---- */
 
 /* Picks the next queued job, playing lanes first [B6]: a lane currently
  * audible always renders before a stopped one. */
@@ -784,7 +839,7 @@ static void le_cache_render(le_engine* e, struct le_fx_cache* c,
     }
   }
 
-  le_ca_fx_state_free(fx);
+  le_fx_state_free_buffers(fx); /* the shared offline-state teardown */
   free(fx);
   if (failed || aborted) {
     free(wet);
@@ -801,12 +856,20 @@ static void le_cache_render(le_engine* e, struct le_fx_cache* c,
 static void le_ca_worker_main(void* arg) {
   le_engine* e = (le_engine*)arg;
   struct le_fx_cache* c = e->cache; /* stable: shutdown joins before free */
+  /* Idle backoff: 1 ms while work is flowing, doubling to a 32 ms ceiling
+   * when the queue stays empty — ~30 wakeups/s idle instead of ~1000, which
+   * matters on the battery/appliance targets. Pickup latency stays far below
+   * the 250 ms settle debounce, and shutdown join latency is bounded by one
+   * ceiling sleep. */
+  int idle_ms = 1;
   while (!atomic_load_explicit(&c->a_shutdown, memory_order_acquire)) {
     le_cache_job* job = le_cache_pick(e, c);
     if (job == NULL) {
-      le_ca_sleep_ms(1);
+      le_ca_sleep_ms(idle_ms);
+      if (idle_ms < 32) idle_ms *= 2;
       continue;
     }
+    idle_ms = 1;
     le_cache_render(e, c, job);
   }
 }
@@ -863,6 +926,7 @@ void le_cache_tick(le_engine* engine) {
       atomic_load_explicit(&engine->a_fx_cache_cap, memory_order_relaxed);
   c->lru_clock++;
   le_cache_sweep_graveyard(engine, c, 0); /* passive quiescent frees [R2](c) */
+  le_cache_copy_step(engine, c);          /* chunked enqueue copies [R2](a) */
   le_cache_collect(engine, c, cap);
   if (cap <= 0) {
     /* Caching disabled: free everything; lanes report live. In-flight jobs

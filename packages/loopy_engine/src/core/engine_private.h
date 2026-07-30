@@ -261,6 +261,21 @@ typedef struct le_wet_entry {
   uint64_t last_used; /* control-side LRU stamp (tick counter) */
 } le_wet_entry;
 
+/* THE wet-cache key predicate: whether [ent] was rendered for exactly the
+ * key {audio_rev, chain_fp, vol_bits, len}. The single definition every
+ * comparison site uses — the audio thread's per-buffer verdict
+ * (snapshot_lane_cache) and the control side's install/collect/schedule
+ * checks (engine_cache.c). When the key grows a dimension, it grows HERE and
+ * every site moves together; a hand-expanded comparison that missed a field
+ * would be the stale-audio bug class this key exists to preclude. */
+static inline int le_wet_entry_key_matches(const le_wet_entry* ent,
+                                           uint32_t audio_rev,
+                                           uint64_t chain_fp,
+                                           uint32_t vol_bits, int32_t len) {
+  return ent->audio_rev == audio_rev && ent->chain_fp == chain_fp &&
+         ent->vol_bits == vol_bits && ent->len == len;
+}
+
 /* One recordable input lane — the fundamental unit of captured audio.
  *
  * A lane records exactly one hardware input (a_input_channel, -1 = none) into
@@ -338,7 +353,36 @@ typedef struct le_lane {
    * keeps the cross-thread read defined and TSan-clean. */
   le_wet_entry* _Atomic a_wet;
   _Atomic int32_t a_cache_active;
+  /* Chain-edit generation: bumped (relaxed fetch_add) by EVERY path that can
+   * change this lane's chain fingerprint, so the audio thread's per-buffer
+   * cache check can skip the full fingerprint refold while nothing changed
+   * (snapshot_lane_cache caches its last verdict keyed on {entry, gen}).
+   * BUMP SITES — a missed one lets a stale verdict play stale audio, so this
+   * list is audited like the a_audio_rev table above: the five lane FX
+   * setters in engine_commands.c (type, count, param, enabled,
+   * chain_enabled), the lane plugin install/clear (engine_plugin.c),
+   * le_lane_reset (engine.c), and the audio thread's LE_CMD_SET_LANE_FX /
+   * _FX_COUNT handlers (engine_process.c — covers the raw
+   * le_engine_post_command escape hatch that bypasses the setters). Every
+   * chain mutation flows through one of those. Safety direction: a spurious
+   * bump merely re-verifies the fingerprint once; only a MISSING bump is a
+   * bug. */
+  _Atomic uint32_t a_fx_gen;
+  /* Audio-thread-LOCAL fingerprint-verdict cache (plain fields, never read
+   * by control): the entry pointer and a_fx_gen value at which the full
+   * fingerprint comparison last PASSED. While both still match (and the
+   * cheap rev/vol/len fields do too), the per-buffer check skips the ~40
+   * atomic loads + FNV refold — the standing cost of a cached steady state
+   * drops to one relaxed load. */
+  const le_wet_entry* cache_fp_entry;
+  uint32_t cache_fp_gen;
 } le_lane;
+
+/* Bumps a lane's chain-edit generation (see a_fx_gen above). Both threads
+ * bump: control setters and the audio-thread ring handlers. */
+static inline void le_lane_fx_gen_bump(le_lane* ln) {
+  atomic_fetch_add_explicit(&ln->a_fx_gen, 1u, memory_order_relaxed);
+}
 
 /* One hardware input's live monitor (engine-level, one slot per input).
  *
@@ -585,6 +629,12 @@ typedef struct le_track {
    *                                |         | (covers le_engine_import_layer:
    *                                |         | layers fill while EMPTY and
    *                                |         | publish only at finalize)
+   *
+   *   STRUCTURAL NOTE: every control-side row that re-points a_live (the
+   *   undo/redo swaps, redo-from-empty, clear-restore, layered finalize)
+   *   funnels through le_track_publish_live (engine_core.h), which performs
+   *   the swap and the bump as one motion — new history features must use it
+   *   rather than hand-rolling the a_live store loop.
    *
    * Overdub coverage: the OVERDUBBING-entry bump lands in the same command
    * drain that flips the state, BEFORE the first in-place write of that

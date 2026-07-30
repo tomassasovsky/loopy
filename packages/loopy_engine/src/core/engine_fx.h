@@ -90,6 +90,15 @@ void le_fx_enable_force_bypass(le_fx_state* fx, int slot);
  * nulls them. Control-thread only (lane/monitor reset, engine destroy). */
 void le_fx_free_octaver(le_fx_state* fx, int slot);
 
+/* Frees EVERY heap buffer a standalone le_fx_state owns (both delay rings per
+ * slot + the octaver heap) and nulls the pointers — the one teardown for
+ * worker-private offline states (the wet-cache render, the perf_render
+ * stems). Does NOT free the le_fx_state struct itself, and must not be used
+ * on a LIVE chain owner's state (those interleave per-slot plugin teardown —
+ * see le_engine_destroy). A future heap-owning effect adds its free HERE,
+ * once, and every offline consumer inherits it. */
+void le_fx_state_free_buffers(le_fx_state* fx);
+
 /* Added latency (frames) of chain slot [slot]'s effect of [type] on `fx`, looked
  * up through the effect vtable — 0 for types that add none. Generic so a future
  * latency-bearing effect (or hosted plugin) reports through the same seam. Folded

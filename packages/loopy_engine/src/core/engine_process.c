@@ -2113,6 +2113,10 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       store_i32(&ln->a_fx_type[index], cmd->fx.type);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&ln->fx, index);
+      /* Wet-cache fast path: the published type just moved, so the chain
+       * identity did too. The control setter already bumped, but a raw
+       * le_engine_post_command bypasses it — this bump covers that hatch. */
+      le_lane_fx_gen_bump(ln);
       break;
     }
     case LE_CMD_SET_LANE_FX_COUNT: {
@@ -2124,6 +2128,8 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       if (count < 0) count = 0;
       if (count > LE_FX_MAX) count = LE_FX_MAX;
       store_i32(&e->tracks[ch].lanes[lane].a_fx_count, count);
+      /* Wet-cache fast path: covers the raw-post hatch (see SET_LANE_FX). */
+      le_lane_fx_gen_bump(&e->tracks[ch].lanes[lane]);
       break;
     }
     /* ---- multi-lane routing commands ----
@@ -3203,12 +3209,29 @@ static inline void snapshot_lane_cache(
           atomic_load_explicit(&ln->a_wet, memory_order_acquire);
       int ok = w != NULL;
       if (ok) {
-        ok = w->len == load_i32(&ln->a_len) &&
-             w->audio_rev == atomic_load_explicit(&tr->a_audio_rev,
-                                                  memory_order_acquire) &&
-             w->vol_bits == atomic_load_explicit(&ln->a_vol_bits,
-                                                 memory_order_relaxed) &&
-             w->chain_fp == le_engine_lane_fx_fingerprint(e, t, l);
+        /* The full key check via the ONE shared predicate — with the
+         * fingerprint term served from the audio-local verdict cache while
+         * the lane's chain-edit generation (a_fx_gen) is unchanged, so a
+         * cached steady state costs one relaxed load instead of a ~40-load
+         * FNV refold per buffer. Any chain edit bumps the generation and
+         * forces the full refold the same buffer. */
+        const uint32_t rev =
+            atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire);
+        const uint32_t vol =
+            atomic_load_explicit(&ln->a_vol_bits, memory_order_relaxed);
+        const int32_t len = load_i32(&ln->a_len);
+        const uint32_t gen =
+            atomic_load_explicit(&ln->a_fx_gen, memory_order_relaxed);
+        if (w == ln->cache_fp_entry && gen == ln->cache_fp_gen) {
+          ok = le_wet_entry_key_matches(w, rev, w->chain_fp, vol, len);
+        } else {
+          ok = le_wet_entry_key_matches(
+              w, rev, le_engine_lane_fx_fingerprint(e, t, l), vol, len);
+          if (ok) { /* remember the passed fp verdict for this {entry, gen} */
+            ln->cache_fp_entry = w;
+            ln->cache_fp_gen = gen;
+          }
+        }
       }
       if (ok) {
         cache_ent[t][l] = w;
@@ -3665,7 +3688,11 @@ static inline void mix_tracks_frame(
        * volume while it sounds, silence otherwise, run through the lane's whole
        * (stageless) effects chain on its `fx` state. Effects run every frame the
        * lane has them (even on silence) so delay tails and LFO phase stay
-       * continuous; the wet result is routed only while the lane is audible. */
+       * continuous; the wet result is routed only while the lane is audible.
+       * EXCEPTION (part 2): while cached playback is engaged below, the live
+       * chain is skipped entirely — its state was settled to bypass at the
+       * engage edge, and a fallback re-enters through the clean re-enable
+       * path instead of resuming a stale tail. */
       const int audible =
           (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
           !mut[t][l];
@@ -3684,10 +3711,24 @@ static inline void mix_tracks_frame(
        * plays verbatim (volume is baked into the render, D-VOL). Mute routes
        * nothing but stays engaged; unmute resumes cached (tails are part of
        * the periodic render — the small documented difference from live
-       * [R5]). Meters above keep reading the dry loopsample either way. */
+       * [R5]). Meters above keep reading the dry loopsample either way.
+       *
+       * PERIODIC-RENDER SEMANTICS (the general form of that [R5] note, part
+       * of the [B4] listen check): cached playback replays ONE baked lap, so
+       * anything in the chain that free-runs across laps diverges from an
+       * uncached engine over time — an LFO whose rate is not loop-locked
+       * repeats the baked sweep each lap instead of evolving, and a tail
+       * longer than the loop carries exactly one lap of accumulation instead
+       * of building wash. Inherent to caching a loop (not a bug); the parity
+       * tests pin the first cached lap, and the listen check owns the rest.
+       *
+       * Engagement additionally requires the track to be PLAYING: engaging a
+       * STOPPED lane would force-bypass its silently-ticking chain (wiping
+       * tail/LFO continuity) for playback nobody hears. */
       const le_wet_entry* wce = cache_ent[t][l];
       const int32_t rp = seg_base[t] + trk_pos[t];
-      if (wce != NULL && !load_i32(&ln->a_cache_active) && rp == 0) {
+      if (wce != NULL && st[t] == LE_TRACK_PLAYING &&
+          !load_i32(&ln->a_cache_active) && rp == 0) {
         store_i32(&ln->a_cache_active, 1);
         for (int s = 0; s < LE_FX_MAX; ++s) {
           le_fx_enable_force_bypass(&ln->fx, s);

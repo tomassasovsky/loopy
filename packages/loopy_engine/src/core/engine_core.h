@@ -83,6 +83,19 @@ static inline int32_t le_effective_state(le_track* t) {
   return load_i32(&t->a_state);
 }
 
+/* Publishes pool slot [slot] as every active lane's live buffer AND bumps the
+ * track's content revision in the same motion — the STRUCTURAL half of the
+ * a_audio_rev bump-site table (engine_private.h): every control-side history
+ * operation that re-points a_live (undo/redo swaps, redo-from-empty,
+ * clear-restore, layered session finalize) MUST go through this helper, so
+ * the [R1] bump can never be forgotten when the next history feature copies
+ * the swap. Control thread only (a_live's sole writer). */
+static inline void le_track_publish_live(le_track* t, int32_t slot) {
+  const int32_t lanes = le_lanes_active(t);
+  for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, slot);
+  le_audio_rev_bump(t); /* [R1] a_live now names other audio */
+}
+
 /* Whether `ch` is a usable track index. Defined in engine.c. */
 int valid_channel(le_engine* e, int32_t ch);
 

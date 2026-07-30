@@ -146,6 +146,9 @@ void le_lane_reset(le_lane* ln, int32_t input_channel) {
    * reclaim / LRU to collect. */
   atomic_store_explicit(&ln->a_wet, NULL, memory_order_release);
   store_i32(&ln->a_cache_active, 0);
+  ln->cache_fp_entry = NULL; /* audio-local fp-verdict cache dies with it */
+  ln->cache_fp_gen = 0;
+  le_lane_fx_gen_bump(ln); /* the reset rewrites the whole chain below */
   atomic_store_explicit(&ln->a_input_channel, input_channel,
                         memory_order_relaxed);
   atomic_store_explicit(&ln->a_output_mask, 0x3u, memory_order_relaxed);

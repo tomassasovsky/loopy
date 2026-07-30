@@ -253,13 +253,11 @@ int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
   t->redo_count = redo_count;
   t->empty_len = 0;
   t->start_iter = 0;
-  const int32_t live = undo_count;
-  for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, live);
   /* [R1] session load (layered): the reconstructed stack's live slot is
    * published here — the layers imported while EMPTY (le_engine_import_layer)
    * become playable content at this swap, so this is the one bump for the
-   * whole layered reconstruction. */
-  le_audio_rev_bump(t);
+   * whole layered reconstruction (structural via le_track_publish_live). */
+  le_track_publish_live(t, undo_count);
   store_i32(&t->a_undo_depth, undo_count);
   store_i32(&t->a_redo_depth, redo_count);
   return LE_OK;

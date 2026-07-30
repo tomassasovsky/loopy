@@ -952,19 +952,9 @@ static void le_pr_fx_chain_init_from_lane(le_pr_fx_chain* c,
   }
 }
 
-/* Frees a heap-allocated le_fx_state's owned buffers (delay rings + octaver
- * phase-vocoder heap), mirroring engine.c's own per-slot teardown at engine
- * destroy — this render's `fx` is never seen by the live engine, so it owns
- * this teardown itself rather than routing through any live-engine path. */
-static void le_pr_fx_state_free(le_fx_state* fx) {
-  for (int s = 0; s < LE_FX_MAX; ++s) {
-    free(fx->delay[s][0]);
-    fx->delay[s][0] = NULL;
-    free(fx->delay[s][1]);
-    fx->delay[s][1] = NULL;
-    le_fx_free_octaver(fx, s);
-  }
-}
+/* This render's heap le_fx_state teardown is the shared offline-state one
+ * (le_fx_state_free_buffers, engine_fx.c) — a future heap-owning effect adds
+ * its free there once and this renderer inherits it. */
 
 /* Renders channel `channel`'s wet stem into a freshly malloc'd buffer of
  * `capture_frames` samples (caller frees), or NULL with `*out_failed` set on
@@ -1033,7 +1023,7 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
 
   float* wet = (float*)calloc((size_t)m->capture_frames, sizeof(float));
   if (wet == NULL) {
-    le_pr_fx_state_free(fx);
+    le_fx_state_free_buffers(fx);
     free(fx);
     *out_failed = 1;
     return NULL;
@@ -1164,7 +1154,7 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
     wet[f] = l;
   }
 
-  le_pr_fx_state_free(fx);
+  le_fx_state_free_buffers(fx);
   free(fx);
   if (prepare_failed) {
     *out_failed = 1;
