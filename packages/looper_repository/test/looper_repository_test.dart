@@ -3711,6 +3711,36 @@ void main() {
       expect(engine.masterFx[0]?.code, TrackEffectType.filter.code);
     });
 
+    test('resets a remembered bus chain on a channel this engine cannot own, '
+        'even when the rig "defines" it — the bounded apply cannot push it, so '
+        'skipping the reset would strand the leftover', () async {
+      engine.nextSnapshot = clearedSnapshot(2);
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      // A chain remembered for a channel beyond this engine's track count —
+      // e.g. a cache left by a manifest saved on a build with more tracks.
+      repo.setTrackEffects(
+        channel: 5,
+        effects: [BuiltInEffect(type: TrackEffectType.drive)],
+      );
+      expect(repo.trackEffects(5), isNotEmpty);
+
+      await repo.applySession(
+        SessionRig(
+          trackChains: {
+            5: FxChainEnvelope(
+              entries: [BuiltInEffect(type: TrackEffectType.reverb)],
+            ),
+          },
+        ),
+        clearPollInterval: Duration.zero,
+      );
+
+      // Not applied (out of range) and therefore reset, not left behind.
+      expect(repo.trackEffects(5), isEmpty);
+      expect(repo.allTrackChains(), isEmpty);
+    });
+
     test('restores a lane envelope whole — entries, chain flag, and the '
         'inheritance marker (R13/R15)', () async {
       engine.nextSnapshot = clearedSnapshot(2);

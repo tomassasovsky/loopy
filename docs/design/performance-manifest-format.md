@@ -164,10 +164,15 @@ field by field, matching the session manifest's own migration style.
 | `pcmRef` | The lane's exported WAV filename, relative to the bundle directory (e.g. `loops/track0-lane0.wav`). Absent when `deferred`, or when the lane was empty. |
 | `effects` | The lane's effect chain, in order, **only on an arm-time snapshot** ("chain at t=0"). Each entry is a `TrackEffect.toJson()` map verbatim: `{type, params}` for a built-in effect (`type` = the native `le_fx_type` code, `params` = up to 4 normalized `0..1` values), or `{type: 8, plugin: {...}, paramValues?, state?, name?}` for a hosted VST3/CLAP plugin (`PluginRef` identity — `daw_export`'s `fx-chains.txt`, part 10, reads this for third-party plugin identity + passthrough notes). Any entry may also carry `"enabled": false` (its own bypass; absent = audible) and `"slotId"` (its stable per-slot identity, the same id pedal bindings address). Absent (not an empty array) when there is nothing to report. |
 
-A `disarmSnapshot` lane entry never carries `effects` — chain changes made
-during the performance are already in `events.log` (D-LOG), not
-re-snapshotted; re-deriving "the chain at disarm" from the log plus the arm
+A `disarmSnapshot` lane entry never carries `effects` **or `chainEnabled`** —
+chain changes made during the performance are already in `events.log` (D-LOG),
+not re-snapshotted; re-deriving "the chain at disarm" from the log plus the arm
 snapshot is a downstream reader's job if it ever needs it.
+
+This matters for the reconciliation rule below: a reader that prefers the
+disarm entry (correct for **PCM**) must still read `effects` and `chainEnabled`
+from the **arm** entry. A disarm entry omits `chainEnabled` unconditionally, so
+taking the flag from there would report every bypassed chain as engaged.
 
 ## `disarmSnapshot`
 

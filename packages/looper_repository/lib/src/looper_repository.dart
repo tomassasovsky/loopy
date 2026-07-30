@@ -1453,7 +1453,15 @@ class LooperRepository {
       ..._trackChainEnabled.keys,
     };
     for (final channel in rememberedTrackChannels) {
-      if (rig.trackChains.containsKey(channel)) continue;
+      // Skipped only when the rig defines a chain this engine can actually be
+      // given. An out-of-range remembered channel is reset even if the rig
+      // "defines" it, because the bounded apply below cannot push it — leaving
+      // the reset out would strand the leftover forever.
+      final applied =
+          rig.trackChains.containsKey(channel) &&
+          channel >= 0 &&
+          channel < trackCount;
+      if (applied) continue;
       setTrackEffects(channel: channel, effects: const []);
       setTrackChainEnabled(channel: channel, enabled: true);
     }

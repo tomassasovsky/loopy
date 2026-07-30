@@ -62,6 +62,12 @@ class PerformanceLaneSnapshot {
   /// byte-identical to what a pre-FX-v3 build wrote; a reader tells "absent
   /// because enabled" from "absent because legacy" via
   /// [PerformanceArmSnapshot.fxStagesVersion].
+  ///
+  /// **Arm-time only**, exactly like [effects] — a disarm-time snapshot never
+  /// reports it and so always leaves it at `true`. A reader reconciling the two
+  /// passes must take this flag (and [effects]) from the ARM entry even when it
+  /// prefers the disarm entry's PCM; reading it off a disarm entry would report
+  /// every bypassed chain as engaged.
   final bool chainEnabled;
 
   /// Serializes this lane snapshot to a JSON map.
