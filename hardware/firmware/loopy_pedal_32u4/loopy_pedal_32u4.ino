@@ -275,18 +275,6 @@ static CRGB ledColor(uint8_t led) {
   }
 }
 
-// The tri-state mode indicator's color per decoded interaction mode (A1):
-// Rec green (ready to record), Play/mute amber, FX blue — matching the
-// chain-enabled track-LED blue. Rendered verbatim from the frame's 2-bit
-// mode; loopy remains the single source of truth.
-static CRGB modeColor(uint8_t mode) {
-  switch (mode) {
-    case PEDAL_MODE_PLAY: return CRGB(255, 150, 0); // amber, as GLOBAL_AMBER
-    case PEDAL_MODE_FX:   return CRGB::Blue;
-    default:              return CRGB::Green; // PEDAL_MODE_REC
-  }
-}
-
 static CRGB globalColor(uint8_t color) {
   switch (color) {
     case PEDAL_GLOBAL_GREEN: return CRGB::Green;
@@ -294,6 +282,18 @@ static CRGB globalColor(uint8_t color) {
     case PEDAL_GLOBAL_AMBER: return CRGB(255, 150, 0);
     case PEDAL_GLOBAL_BLUE:  return CRGB::Blue;
     default:                 return CRGB::Black;
+  }
+}
+
+// The tri-state mode indicator's color per decoded interaction mode (A1):
+// Rec green (ready to record), Play/mute amber, FX blue — matching the
+// chain-enabled track-LED blue. Rendered verbatim from the frame's 2-bit
+// mode; loopy remains the single source of truth.
+static CRGB modeColor(uint8_t mode) {
+  switch (mode) {
+    case PEDAL_MODE_PLAY: return globalColor(PEDAL_GLOBAL_AMBER); // one amber
+    case PEDAL_MODE_FX:   return CRGB::Blue;
+    default:              return CRGB::Green; // PEDAL_MODE_REC
   }
 }
 
@@ -497,7 +497,9 @@ static void render() {
       // The tri-state mode indicator (A1): rec green / play amber / fx blue
       // from the decoded 2-bit mode. Transport activity lives on the ring;
       // the performance-armed red BLINK above keeps precedence (D-PEDAL).
-      g_ind[kIndMode] = modeColor(g_frame.play_mode);
+      // The goodbye frame darkens everything, this LED included.
+      g_ind[kIndMode] = g_frame.goodbye ? CRGB::Black
+                                        : modeColor(g_frame.play_mode);
     }
     g_ind[kIndClear] = g_frame.clear_fade ? CRGB::Red : CRGB::Black;
     g_ind[kIndBank] = (g_frame.active_bank == 1) ? CRGB(0, 0, 80) : CRGB::Black;

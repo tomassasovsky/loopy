@@ -51,7 +51,15 @@
  * value #331's version discovery will read). Decoded frames instead
  * re-emit at whatever version they arrived at (see
  * pedal_frame.protocol_version) so the host contract test's
- * decode-then-reencode round trip is version-preserving. */
+ * decode-then-reencode round trip is version-preserving.
+ *
+ * NOTE this deliberately does NOT mirror the Dart side's encode default:
+ * PedalCodec.protocolVersion stays pinned at v2 as the app's R6 safety
+ * floor (an app must never send v3 to a pedal that has not negotiated it),
+ * while this constant tracks the newest version the FIRMWARE decodes.
+ * pedal_encode_frame is host-test-only today; any future runtime C encode
+ * path must pass an explicitly negotiated protocol_version rather than
+ * relying on this newest-version fallback. */
 #define PEDAL_PROTOCOL_VERSION PEDAL_PROTOCOL_VERSION_V3
 #define PEDAL_MSG_TYPE_STATE 0x01
 #define PEDAL_SYSEX_START 0xF0

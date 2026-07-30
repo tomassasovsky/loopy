@@ -58,9 +58,12 @@ import 'package:pedal_repository/src/pedal_state_frame.dart';
 /// the bound firmware is known to speak: at v1 the looper-mode/counting-in
 /// fields are silently omitted ("tempo state invisible" per D11, not an
 /// error); at v1/v2 a [PedalMode.fx] frame writes its mode bit as play
-/// (mute) while **every other byte is encoded exactly as the v3 path
-/// would** — the B10 downgrade projection, so chain-state [PedalTrackLed]
-/// bytes still reach an older pedal. [decodeFrame] accepts v1/v2/v3: a
+/// (mute) and any [PedalTrackLed.blue] degrades to [PedalTrackLed.green] —
+/// pre-v3 firmware validates LED indices against a 3-value table and would
+/// reject the **whole frame** otherwise — while every other byte is encoded
+/// exactly as the v3 path would (the B10 downgrade projection, so
+/// chain-enabled state still reaches an older pedal, as green).
+/// [decodeFrame] accepts v1/v2/v3: a
 /// v1 frame always decodes with [PedalStateFrame.looperMode] `multi` and
 /// [PedalStateFrame.countingIn] `false`, and a v1/v2 frame can never decode
 /// to [PedalMode.fx] (the wire had no bit for it).
@@ -148,8 +151,10 @@ abstract final class PedalCodec {
   /// silently left off the wire (encoded as if `multi` / not counting in) —
   /// v1 has no bits budgeted for them, not an error. At v1/v2 a frame whose
   /// mode is [PedalMode.fx] writes the mode bit as [PedalMode.play] (mute)
-  /// while every other byte — including chain-state [PedalTrackLed] bytes —
-  /// is encoded identically to the v3 path (the B10 downgrade projection).
+  /// and any chain-state [PedalTrackLed.blue] degrades to
+  /// [PedalTrackLed.green] (pre-v3 firmware rejects the whole frame on an
+  /// unknown LED index); every other byte is encoded identically to the v3
+  /// path (the B10 downgrade projection).
   static Uint8List encodeFrame(
     PedalStateFrame frame, {
     int targetVersion = protocolVersion,
@@ -186,7 +191,15 @@ abstract final class PedalCodec {
     payload[2] = frame.activeBank | (modeHighBit << 1);
     payload[3] = frame.selectedTrack;
     for (var i = 0; i < PedalStateFrame.trackCount; i++) {
-      payload[4 + i] = frame.trackLeds[i].index;
+      final led = frame.trackLeds[i];
+      // Chain-state blue is a v3 color: pre-v3 firmware validates LED
+      // indices against a 3-value table and rejects the WHOLE frame on an
+      // unknown index, so below v3 blue degrades to green (chain-enabled
+      // still reads as a lit LED) rather than darkening the pedal (B10).
+      payload[4 +
+          i] = (led == PedalTrackLed.blue && targetVersion < protocolVersionV3)
+          ? PedalTrackLed.green.index
+          : led.index;
     }
     final us = frame.loopLengthMicros;
     payload[12] = us & 0xFF;
@@ -280,12 +293,13 @@ abstract final class PedalCodec {
     final activeBank = bankByte & 0x01;
     if (selectedTrack >= PedalStateFrame.trackCount) return null;
 
-    // The 2-bit mode: low bit in flags bit 0, high bit in byte 2 bit 1 (v3
-    // only — a v1/v2 frame can never decode to fx). The reserved fourth
-    // value is rejected like any other out-of-range enum index.
-    final modeIndex =
-        (flags & 0x01) |
-        (version >= protocolVersionV3 ? ((bankByte >> 1) & 0x01) << 1 : 0);
+    // The 2-bit mode: low bit in flags bit 0, high bit in byte 2 bit 1. The
+    // high bit needs no version gate: the range check above already rejects
+    // any v1/v2 frame with byte-2 bits beyond the bank bit, so it is
+    // provably zero on those wires — a v1/v2 frame can never decode to fx.
+    // The reserved fourth value is rejected like any other out-of-range
+    // enum index.
+    final modeIndex = (flags & 0x01) | (((bankByte >> 1) & 0x01) << 1);
     if (modeIndex >= PedalMode.values.length) return null;
 
     // v1 frames never carried these fields — bits 4-7 are reserved zero on

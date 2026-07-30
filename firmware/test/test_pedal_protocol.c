@@ -214,7 +214,9 @@ static void test_looper_mode_round_trip_every_value(void) {
     frame.counting_in = 1;
     frame.master_gain = 255;
     /* protocol_version left 0 -> pedal_encode_frame targets the newest
-     * (v2), the only version that carries looper_mode at all. */
+     * (v3, PEDAL_PROTOCOL_VERSION), which carries looper_mode just as v2
+     * did. NOTE the Dart codec's own unset default deliberately stays v2
+     * (the app-side R6 floor) -- see PEDAL_PROTOCOL_VERSION's doc. */
 
     uint8_t buf[PEDAL_FRAME_MAX_BYTES];
     const int len = pedal_encode_frame(&frame, buf);
@@ -248,12 +250,14 @@ static void test_decode_fields_fx_mode_v3(void) {
   CHECK(f.protocol_version == PEDAL_PROTOCOL_VERSION_V3);
 }
 
-/* B10: the committed downgrade fixtures are byte-for-byte what the v3 twin
- * encodes with only the mode field changed -- decode fx_mode_v3, flip its
- * mode to PLAY (what the downgrade writes), re-encode at v2/v1, and the
- * bytes must equal the committed fx_mode_v2 / fx_mode_v1 fixtures. Proves
- * the chain-state (blue) trackLeds bytes still reach an older wire
- * unchanged; only the mode degrades. */
+/* B10: the committed downgrade fixtures are byte-for-byte what the encoder
+ * itself produces from the unmodified v3 frame -- decode fx_mode_v3, then
+ * re-encode it (mode still FX, LEDs still blue in the struct) at v2/v1,
+ * and the bytes must equal the committed fx_mode_v2 / fx_mode_v1 fixtures.
+ * This exercises the production downgrade path directly: below v3 the
+ * encoder writes the mode bit as PLAY (mute) and degrades blue chain LEDs
+ * to green (pre-5a firmware has PEDAL_LED_COUNT 3 and would reject the
+ * whole frame on index 3). Every other byte is unchanged. */
 static void test_fx_downgrade_twins(void) {
   printf("test_fx_downgrade_twins\n");
   pedal_frame fx;
@@ -272,19 +276,20 @@ static void test_fx_downgrade_twins(void) {
         read_fixture(kTwins[i].fixture, expected, sizeof(expected));
     if (explen < 0) continue;
 
-    pedal_frame twin = fx;
-    twin.play_mode = PEDAL_MODE_PLAY; /* the B10 downgrade: fx -> mute */
+    pedal_frame twin = fx; /* mode FX, blue LEDs -- the encoder degrades */
     twin.protocol_version = kTwins[i].version;
     uint8_t reencoded[PEDAL_FRAME_MAX_BYTES];
     const int rlen = pedal_encode_frame(&twin, reencoded);
     CHECK(rlen == explen);
     CHECK(memcmp(reencoded, expected, (size_t)explen) == 0);
 
-    /* And the downgraded wire decodes to PLAY with the LEDs intact. */
+    /* And the downgraded wire decodes to PLAY with chain state as green --
+     * exactly what pre-5a firmware (which has no blue) can render. */
     pedal_frame decoded;
     CHECK(pedal_decode_frame(expected, explen, &decoded) == 1);
     CHECK(decoded.play_mode == PEDAL_MODE_PLAY);
-    CHECK(decoded.track_leds[0] == PEDAL_LED_BLUE);
+    CHECK(decoded.track_leds[0] == PEDAL_LED_GREEN);
+    CHECK(decoded.track_leds[1] == PEDAL_LED_OFF);
   }
 }
 
@@ -328,31 +333,22 @@ static void test_mode_round_trip_and_reserved_value(void) {
   CHECK(pedal_decode_frame(buf, len, &decoded) == 0);
 }
 
-/* Mirrors what a device still running v1 firmware does: v1's decoder
- * hardcoded `version == PEDAL_PROTOCOL_VERSION` where that constant was
- * 0x01 (see git history before B5a) -- it rejects anything else before it
- * even looks at the payload. The payload layout is otherwise identical
- * between v1 and v2 (D11 fits the new fields in existing flags-byte
- * headroom), so gating on the version byte here reproduces old-firmware
- * behavior exactly, without hand-duplicating the rest of pedal_decode_frame.
- * Test-only: this is not a second production decoder. */
-static int legacy_v1_decode_frame(const uint8_t* msg, int len,
-                                   pedal_frame* out) {
-  if (len < 3 || msg[2] != PEDAL_PROTOCOL_VERSION_V1) return 0;
-  return pedal_decode_frame(msg, len, out);
-}
-
-/* Likewise for a device running v2 (pre-part-5a) firmware: its decoder
- * accepted versions 0x01 and 0x02 only. Gating on the version byte
- * reproduces that acceptance exactly. Caveat: real pre-5a firmware also had
- * PEDAL_LED_COUNT 3, so a downgraded FX frame carrying the blue chain LED
- * (index 3) would additionally be rejected on the LED range -- the "pedal
- * firmware update available" banner (part 5b / #331) covers that pairing;
- * this gate proves the version acceptance half. Test-only. */
-static int legacy_v2_decode_frame(const uint8_t* msg, int len,
-                                   pedal_frame* out) {
-  if (len < 3 || (msg[2] != PEDAL_PROTOCOL_VERSION_V1 &&
-                  msg[2] != PEDAL_PROTOCOL_VERSION_V2)) {
+/* Mirrors what a device still running older firmware does: each firmware
+ * generation's decoder rejects any version byte newer than the newest it
+ * was built for, before it even looks at the payload (v1 hardcoded
+ * `version == 0x01`; pre-5a v2 accepted 0x01/0x02). The payload layout is
+ * otherwise identical across versions (each bump only claimed reserved
+ * bits), so gating on the version byte reproduces old-firmware acceptance
+ * exactly, without hand-duplicating the rest of pedal_decode_frame; a v4
+ * bump extends this by argument, not by another copy. Caveat: real pre-5a
+ * firmware also had PEDAL_LED_COUNT 3 and would reject a frame carrying
+ * the blue chain LED on the LED range -- which is why the encoder degrades
+ * blue to green below v3 (see test_fx_downgrade_twins). Test-only: this is
+ * not a second production decoder. */
+static int legacy_decode_frame_upto(const uint8_t* msg, int len,
+                                    pedal_frame* out, uint8_t max_version) {
+  if (len < 3 || msg[2] < PEDAL_PROTOCOL_VERSION_V1 ||
+      msg[2] > max_version) {
     return 0;
   }
   return pedal_decode_frame(msg, len, out);
@@ -378,14 +374,14 @@ static void test_version_pairings(void) {
 
   /* app v1 -> firmware v1 (the pre-B5a baseline pairing): decodes, no v2
    * fields -- must stay bit-identical to pre-B5a behavior. */
-  CHECK(legacy_v1_decode_frame(v1_bytes, v1_len, &f) == 1);
+  CHECK(legacy_decode_frame_upto(v1_bytes, v1_len, &f, PEDAL_PROTOCOL_VERSION_V1) == 1);
   CHECK(f.looper_mode == PEDAL_LOOPER_MODE_MULTI);
   CHECK(f.counting_in == 0);
 
   /* app v1 -> firmware v2 / v3: still decodes, degrades the same way --
    * the wire never carried anything else at v1, so there is nothing more
    * to lose. A v1 frame can never decode to PEDAL_MODE_FX. */
-  CHECK(legacy_v2_decode_frame(v1_bytes, v1_len, &f) == 1);
+  CHECK(legacy_decode_frame_upto(v1_bytes, v1_len, &f, PEDAL_PROTOCOL_VERSION_V2) == 1);
   CHECK(f.looper_mode == PEDAL_LOOPER_MODE_MULTI);
   CHECK(pedal_decode_frame(v1_bytes, v1_len, &f) == 1);
   CHECK(f.looper_mode == PEDAL_LOOPER_MODE_MULTI);
@@ -395,10 +391,10 @@ static void test_version_pairings(void) {
   /* app v2 -> firmware v1: rejected outright by the version gate -- this is
    * *why* the app must detect old firmware and downgrade what it sends,
    * rather than relying on a soft per-field degrade at the receiver. */
-  CHECK(legacy_v1_decode_frame(v2_bytes, v2_len, &f) == 0);
+  CHECK(legacy_decode_frame_upto(v2_bytes, v2_len, &f, PEDAL_PROTOCOL_VERSION_V1) == 0);
 
   /* app v2 -> firmware v2 / v3: full v2 fidelity; never fx. */
-  CHECK(legacy_v2_decode_frame(v2_bytes, v2_len, &f) == 1);
+  CHECK(legacy_decode_frame_upto(v2_bytes, v2_len, &f, PEDAL_PROTOCOL_VERSION_V2) == 1);
   CHECK(f.looper_mode == PEDAL_LOOPER_MODE_SYNC);
   CHECK(f.counting_in == 1);
   CHECK(pedal_decode_frame(v2_bytes, v2_len, &f) == 1);
@@ -410,8 +406,8 @@ static void test_version_pairings(void) {
    * why the app never encodes above the negotiated version (R6): unknown
    * firmware gets v2, and FX mode reaches an older pedal only as the
    * downgraded (mode = play) v2/v1 frame (see test_fx_downgrade_twins). */
-  CHECK(legacy_v1_decode_frame(v3_bytes, v3_len, &f) == 0);
-  CHECK(legacy_v2_decode_frame(v3_bytes, v3_len, &f) == 0);
+  CHECK(legacy_decode_frame_upto(v3_bytes, v3_len, &f, PEDAL_PROTOCOL_VERSION_V1) == 0);
+  CHECK(legacy_decode_frame_upto(v3_bytes, v3_len, &f, PEDAL_PROTOCOL_VERSION_V2) == 0);
 
   /* app v3 -> firmware v3: full fidelity, fx included. */
   CHECK(pedal_decode_frame(v3_bytes, v3_len, &f) == 1);

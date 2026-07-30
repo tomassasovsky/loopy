@@ -91,13 +91,10 @@ class PedalRepository {
   int get targetProtocolVersion {
     final known = firmwareProtocolVersion;
     if (known == null) return PedalCodec.protocolVersion;
-    if (known < PedalCodec.protocolVersionV1) {
-      return PedalCodec.protocolVersionV1;
-    }
-    if (known > PedalCodec.protocolVersionMax) {
-      return PedalCodec.protocolVersionMax;
-    }
-    return known;
+    return known.clamp(
+      PedalCodec.protocolVersionV1,
+      PedalCodec.protocolVersionMax,
+    );
   }
 
   /// The host's available MIDI output destinations, as domain models (mapped

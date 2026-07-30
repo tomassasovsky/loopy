@@ -89,7 +89,15 @@ int pedal_encode_frame(const pedal_frame* frame, uint8_t* buf) {
   payload[2] = (uint8_t)(frame->active_bank | (mode_high << 1));
   payload[3] = frame->armed_track;
   for (int i = 0; i < PEDAL_TRACK_COUNT; i++) {
-    payload[4 + i] = frame->track_leds[i];
+    /* Chain-state BLUE is a v3 color: pre-v3 firmware validates LED indices
+     * against a 3-value table and rejects the WHOLE frame on an unknown
+     * index, so below v3 blue degrades to green (chain-enabled still reads
+     * as a lit LED) rather than darkening the pedal (B10). */
+    const uint8_t led = frame->track_leds[i];
+    payload[4 + i] = (uint8_t)((led == PEDAL_LED_BLUE &&
+                                version < PEDAL_PROTOCOL_VERSION_V3)
+                                   ? PEDAL_LED_GREEN
+                                   : led);
   }
   const uint32_t us = frame->loop_length_micros;
   payload[12] = (uint8_t)(us & 0xFFu);
@@ -170,13 +178,14 @@ int pedal_decode_frame(const uint8_t* msg, int len, pedal_frame* out) {
     return 0;
   }
   /* The 2-bit interaction mode: low bit in flags bit 0, high bit in byte 2
-   * bit 1 (v3 only -- a v1/v2 frame can never decode to PEDAL_MODE_FX). The
-   * reserved fourth value (3) is rejected like any other out-of-range enum
-   * index, here alongside every other pre-write validation. */
+   * bit 1. The high bit needs no version gate: the range check above
+   * already rejects any v1/v2 frame with byte-2 bits beyond the bank bit,
+   * so it is provably zero on those wires -- a v1/v2 frame can never decode
+   * to PEDAL_MODE_FX. The reserved fourth value (3) is rejected like any
+   * other out-of-range enum index, here alongside every other pre-write
+   * validation. */
   const uint8_t mode = (uint8_t)((payload[0] & 0x01u) |
-                                 ((version >= PEDAL_PROTOCOL_VERSION_V3)
-                                      ? (((bank_byte >> 1) & 0x01u) << 1)
-                                      : 0));
+                                 (((bank_byte >> 1) & 0x01u) << 1));
   if (mode >= PEDAL_MODE_COUNT) return 0;
 
   out->play_mode = mode;

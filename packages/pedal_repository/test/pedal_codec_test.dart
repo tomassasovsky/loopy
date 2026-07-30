@@ -275,28 +275,39 @@ void main() {
       expect(decoded.activeBank, 1);
     });
 
-    test('PedalTrackLed.blue round-trips at every version', () {
-      final frame = PedalStateFrame.blank().copyWith(
-        trackLeds: [
-          PedalTrackLed.blue,
-          ...List.filled(PedalStateFrame.trackCount - 1, PedalTrackLed.off),
-        ],
-      );
-      for (final version in [
-        PedalCodec.protocolVersionV1,
-        PedalCodec.protocolVersionV2,
-        PedalCodec.protocolVersionV3,
-      ]) {
-        final decoded = PedalCodec.decodeFrame(
-          PedalCodec.encodeFrame(frame, targetVersion: version),
+    test(
+      'PedalTrackLed.blue survives at v3 and degrades to green below v3 '
+      '(pre-v3 firmware rejects a frame carrying an unknown LED index)',
+      () {
+        final frame = PedalStateFrame.blank().copyWith(
+          trackLeds: [
+            PedalTrackLed.blue,
+            ...List.filled(PedalStateFrame.trackCount - 1, PedalTrackLed.off),
+          ],
         );
-        expect(
-          decoded!.trackLeds.first,
-          PedalTrackLed.blue,
-          reason: 'blue did not survive version $version',
+        final v3 = PedalCodec.decodeFrame(
+          PedalCodec.encodeFrame(
+            frame,
+            targetVersion: PedalCodec.protocolVersionV3,
+          ),
         );
-      }
-    });
+        expect(v3!.trackLeds.first, PedalTrackLed.blue);
+
+        for (final version in [
+          PedalCodec.protocolVersionV1,
+          PedalCodec.protocolVersionV2,
+        ]) {
+          final decoded = PedalCodec.decodeFrame(
+            PedalCodec.encodeFrame(frame, targetVersion: version),
+          );
+          expect(
+            decoded!.trackLeds.first,
+            PedalTrackLed.green,
+            reason: 'blue must degrade to green at version $version',
+          );
+        }
+      },
+    );
 
     group('B10 downgrade projection', () {
       test(
@@ -320,7 +331,7 @@ void main() {
 
       test(
         'the v2 downgrade differs from the v3 twin only in the version '
-        'byte and the mode field — trackLeds bytes are byte-identical',
+        'byte, the mode field, and the blue-to-green chain-LED degrade',
         () {
           final fx = explicitVersionGoldenFrames()['fx_mode_v3']!.frame;
           final v3 = PedalCodec.encodeFrame(
@@ -331,12 +342,15 @@ void main() {
           final v2 = PedalCodec.encodeFrame(fx);
           expect(v2.length, v3.length);
           // Reconstruct both logical payloads and compare field-by-field:
-          // everything except the mode field must be identical.
+          // everything except the mode and the degraded LEDs is identical.
           final p3 = PedalCodec.decodeFrame(v3)!;
           final p2 = PedalCodec.decodeFrame(v2)!;
-          expect(p2.copyWith(mode: p3.mode), p3);
-          expect(p2.trackLeds, p3.trackLeds);
+          expect(p2.copyWith(mode: p3.mode, trackLeds: p3.trackLeds), p3);
           expect(p2.mode, PedalMode.play);
+          expect(p2.trackLeds, [
+            for (final led in p3.trackLeds)
+              led == PedalTrackLed.blue ? PedalTrackLed.green : led,
+          ]);
         },
       );
 
@@ -442,9 +456,14 @@ void main() {
       () {
         final rich = explicitVersionGoldenFrames()['fx_mode_v3']!.frame
             .copyWith(countingIn: true);
+        final degradedLeds = [
+          for (final led in rich.trackLeds)
+            led == PedalTrackLed.blue ? PedalTrackLed.green : led,
+        ];
 
-        // v1 wire: mode degrades to play, the v2 fields fall off, the v3
-        // high mode bit does not exist. Track LEDs (incl. blue) survive.
+        // v1 wire: mode degrades to play, blue chain LEDs degrade to
+        // green, the v2 fields fall off, the v3 high mode bit does not
+        // exist.
         final v1 = PedalCodec.decodeFrame(
           PedalCodec.encodeFrame(
             rich,
@@ -455,15 +474,19 @@ void main() {
           v1,
           rich.copyWith(
             mode: PedalMode.play,
+            trackLeds: degradedLeds,
             looperMode: PedalLooperMode.multi,
             countingIn: false,
           ),
         );
 
         // v2 wire (the encode default, pinned by a sibling test): looper
-        // mode + counting-in survive; mode still degrades.
+        // mode + counting-in survive; mode and chain LEDs still degrade.
         final v2 = PedalCodec.decodeFrame(PedalCodec.encodeFrame(rich));
-        expect(v2, rich.copyWith(mode: PedalMode.play));
+        expect(
+          v2,
+          rich.copyWith(mode: PedalMode.play, trackLeds: degradedLeds),
+        );
 
         // v3 wire: full fidelity.
         final v3 = PedalCodec.decodeFrame(

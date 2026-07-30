@@ -896,7 +896,15 @@
     },
     "pedalOutputHint": "Pick the pedal's MIDI output so loopy can drive its LEDs. Its footswitches use the MIDI input above.",
     "pedalFirmwareGroup": "PEDAL FIRMWARE PROTOCOL",
-    "pedalFirmwareUnknown": "Not set — send v2 (default)",
+    "pedalFirmwareUnknown": "Not set — send v{version} (default)",
+    "@pedalFirmwareUnknown": {
+        "description": "Dropdown option for the unknown pedal firmware version; {version} is the safe-floor protocol version the app sends by default.",
+        "placeholders": {
+            "version": {
+                "type": "int"
+            }
+        }
+    },
     "pedalFirmwareVersion": "Protocol v{version}",
     "@pedalFirmwareVersion": {
         "description": "Dropdown option naming a pedal wire-protocol version, e.g. 'Protocol v3'.",

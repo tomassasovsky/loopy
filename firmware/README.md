@@ -161,7 +161,9 @@ bump only claimed previously-reserved bits:
   low bit stays flags bit 0, the high bit is bit 1 of the bank byte (payload
   byte 2) — adding FX mode (`2`); wire value `3` is reserved (rejected).
   Adds the blue chain-enabled track-LED color (index 3). The mode field is
-  the only wire difference from v2.
+  the only wire-format difference from v2; encoders targeting v1/v2 degrade
+  FX mode to play (mute) and blue LEDs to green, since pre-v3 decoders
+  reject a frame carrying any unknown enum index wholesale (B10).
 
 `PEDAL_FRAME_MAX_BYTES` is 32, against a 26-byte wire frame today — 6 bytes
 of headroom before any output buffer needs to grow.

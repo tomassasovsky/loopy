@@ -22,8 +22,11 @@ enum PedalTrackLed {
   /// same `trackLeds` bytes (a new color costs zero wire bytes — the byte is
   /// an enum index), and the firmware renders it verbatim with no mode
   /// branch. Firmware built before part 5a has no entry for this index and
-  /// rejects a frame carrying it — the "pedal firmware update available"
-  /// banner (part 5b, riding #331's OTA flow) covers that pairing.
+  /// rejects a frame carrying it wholesale, so `PedalCodec.encodeFrame`
+  /// degrades blue to [green] when targeting protocol v1/v2 (B10) — an
+  /// older pedal shows chain-enabled as a lit green LED instead of going
+  /// dark; the "pedal firmware update available" banner (part 5b, riding
+  /// #331's OTA flow) tells the user why the color is missing.
   blue,
 }
 

@@ -20,6 +20,10 @@
 /// flags byte (D11). The two enums must not be confused with each other; see
 /// `PedalLooperMode`'s doc comment (and D10, which performed the equivalent
 /// split on the app side: `InteractionMode` vs. `LooperMode`).
+///
+/// Encoded as the enum [index] in the state frame — **do not reorder**; the
+/// declaration order is the wire value and must stay in lockstep with the
+/// firmware's explicit `PEDAL_MODE_*` constants (`pedal_protocol.h`).
 enum PedalMode {
   /// Recording / transport control.
   ///

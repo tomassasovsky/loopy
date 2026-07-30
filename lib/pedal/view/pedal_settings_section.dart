@@ -121,6 +121,66 @@ class _PedalDropdown extends StatelessWidget {
     final value = present ? boundId! : _kPedalNoneValue;
     final seenIds = <String>{};
 
+    return _PedalStyledDropdown<String>(
+      pickerKey: const Key('pedalSettings_device_picker'),
+      value: value,
+      items: [
+        DropdownMenuItem(
+          value: _kPedalNoneValue,
+          child: Text(
+            l10n.pedalNone,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        for (final device in outputs)
+          if (seenIds.add(device.id))
+            DropdownMenuItem(
+              value: device.id,
+              child: Text(
+                device.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+      ],
+      onChanged: (id) {
+        if (id == null || id == _kPedalNoneValue) {
+          onSelectNone();
+          return;
+        }
+        for (final device in outputs) {
+          if (device.id == id) {
+            onSelected(device);
+            return;
+          }
+        }
+      },
+    );
+  }
+}
+
+/// The shared dark-styled dropdown shell both pedal pickers render: one
+/// definition of the bordered card + [DropdownButton] chrome, so a styling
+/// change lands in a single place. (The audio-setup pickers carry their own
+/// copies of this chrome — unifying those is outside this feature's scope.)
+class _PedalStyledDropdown<T> extends StatelessWidget {
+  const _PedalStyledDropdown({
+    required this.pickerKey,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
+
+  /// Placed on the inner [DropdownButton], which the widget tests target.
+  final Key pickerKey;
+
+  final T value;
+  final List<DropdownMenuItem<T>> items;
+  final ValueChanged<T?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
@@ -129,47 +189,17 @@ class _PedalDropdown extends StatelessWidget {
         border: Border.all(color: context.surface.line),
       ),
       child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
+        child: DropdownButton<T>(
           focusColor: Colors.transparent,
-          key: const Key('pedalSettings_device_picker'),
+          key: pickerKey,
           value: value,
           isExpanded: true,
           dropdownColor: context.surface.cardHigh,
           borderRadius: BorderRadius.circular(12),
           icon: Icon(Icons.expand_more, color: context.surface.textSecondary),
           style: TextStyle(color: context.surface.textPrimary, fontSize: 14),
-          items: [
-            DropdownMenuItem(
-              value: _kPedalNoneValue,
-              child: Text(
-                l10n.pedalNone,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            for (final device in outputs)
-              if (seenIds.add(device.id))
-                DropdownMenuItem(
-                  value: device.id,
-                  child: Text(
-                    device.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-          ],
-          onChanged: (id) {
-            if (id == null || id == _kPedalNoneValue) {
-              onSelectNone();
-              return;
-            }
-            for (final device in outputs) {
-              if (device.id == id) {
-                onSelected(device);
-                return;
-              }
-            }
-          },
+          items: items,
+          onChanged: onChanged,
         ),
       ),
     );
@@ -196,55 +226,50 @@ class _PedalFirmwareVersionDropdown extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    // Show only a version the items actually contain (mirrors
+    // _PedalDropdown's present-guard): a stored value outside the codec's
+    // range — written by a newer build with a higher protocolVersionMax, or
+    // a corrupted pref — renders as "not set" instead of tripping
+    // DropdownButton's one-matching-item assert. The repository clamps the
+    // same value independently for wire encoding.
+    final known = firmwareVersion;
+    final value =
+        (known != null &&
+            known >= PedalCodec.protocolVersionV1 &&
+            known <= PedalCodec.protocolVersionMax)
+        ? known
+        : _kPedalVersionUnknownValue;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(
-        color: context.surface.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: context.surface.line),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<int>(
-          focusColor: Colors.transparent,
-          key: const Key('pedalSettings_firmware_picker'),
-          value: firmwareVersion ?? _kPedalVersionUnknownValue,
-          isExpanded: true,
-          dropdownColor: context.surface.cardHigh,
-          borderRadius: BorderRadius.circular(12),
-          icon: Icon(Icons.expand_more, color: context.surface.textSecondary),
-          style: TextStyle(color: context.surface.textPrimary, fontSize: 14),
-          items: [
-            DropdownMenuItem(
-              value: _kPedalVersionUnknownValue,
-              child: Text(
-                l10n.pedalFirmwareUnknown,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            for (
-              var version = PedalCodec.protocolVersionV1;
-              version <= PedalCodec.protocolVersionMax;
-              version++
-            )
-              DropdownMenuItem(
-                value: version,
-                child: Text(
-                  l10n.pedalFirmwareVersion(version),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-          ],
-          onChanged: (version) {
-            if (version == null) return;
-            onSelected(
-              version == _kPedalVersionUnknownValue ? null : version,
-            );
-          },
+    return _PedalStyledDropdown<int>(
+      pickerKey: const Key('pedalSettings_firmware_picker'),
+      value: value,
+      items: [
+        DropdownMenuItem(
+          value: _kPedalVersionUnknownValue,
+          child: Text(
+            l10n.pedalFirmwareUnknown(PedalCodec.protocolVersion),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
-      ),
+        for (
+          var version = PedalCodec.protocolVersionV1;
+          version <= PedalCodec.protocolVersionMax;
+          version++
+        )
+          DropdownMenuItem(
+            value: version,
+            child: Text(
+              l10n.pedalFirmwareVersion(version),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+      ],
+      onChanged: (version) {
+        if (version == null) return;
+        onSelected(version == _kPedalVersionUnknownValue ? null : version);
+      },
     );
   }
 }

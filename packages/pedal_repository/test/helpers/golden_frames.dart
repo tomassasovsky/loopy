@@ -133,7 +133,10 @@ explicitVersionGoldenFrames() {
   // field's high bit coexists with the bank bit in payload byte 2
   // (byte 2 = 0b11), plus non-default v2 fields (looperMode band) to prove
   // v3 carries everything v2 did. The v2/v1 twins below pin the B10
-  // downgrade projection byte-for-byte: only the mode field differs.
+  // downgrade projection byte-for-byte: the mode field degrades to play and
+  // the blue chain LEDs degrade to green (pre-v3 firmware rejects a frame
+  // carrying an unknown LED index wholesale); every other byte matches the
+  // v3 encoding.
   final fxMode = PedalStateFrame(
     globalColor: GlobalColor.green,
     trackLeds: const [
@@ -155,6 +158,12 @@ explicitVersionGoldenFrames() {
     looperMode: PedalLooperMode.band,
   );
 
+  // What a downgraded wire's trackLeds decode back to: blue -> green.
+  final degradedLeds = [
+    for (final led in fxMode.trackLeds)
+      led == PedalTrackLed.blue ? PedalTrackLed.green : led,
+  ];
+
   return {
     // Same logical content as `idle_rec` above, forced onto the legacy (v1)
     // wire — the D11 "today's baseline, must stay bit-identical" pairing.
@@ -174,21 +183,23 @@ explicitVersionGoldenFrames() {
     ),
 
     // FX mode downgraded onto the v2 wire (B10): the mode field degrades to
-    // play (mute); every other byte — including the blue chain-state
-    // trackLeds — is identical to the v3 twin.
+    // play (mute) and the blue chain LEDs degrade to green; every other
+    // byte is identical to the v3 twin.
     'fx_mode_v2': (
       frame: fxMode,
       version: PedalCodec.protocolVersionV2,
-      decoded: fxMode.copyWith(mode: PedalMode.play),
+      decoded: fxMode.copyWith(mode: PedalMode.play, trackLeds: degradedLeds),
     ),
 
-    // FX mode downgraded onto the v1 wire (B10 + D11): the mode degrades to
-    // play AND the v2-only looperMode/countingIn fields fall off the wire.
+    // FX mode downgraded onto the v1 wire (B10 + D11): the mode and chain
+    // LEDs degrade as at v2, AND the v2-only looperMode/countingIn fields
+    // fall off the wire.
     'fx_mode_v1': (
       frame: fxMode,
       version: PedalCodec.protocolVersionV1,
       decoded: fxMode.copyWith(
         mode: PedalMode.play,
+        trackLeds: degradedLeds,
         looperMode: PedalLooperMode.multi,
       ),
     ),
