@@ -30,11 +30,22 @@ issue: 351
 
 ## Status
 
-**Next up:** everything through the protocol v3 wire is merged (0, 1a, 1b, 2,
-3a, 3b, 4a, 4b, 5a). **5b** (the app-side FX interaction mode) is in review;
-with it out, the critical chain continues at **6b** (deps 6a, 5b, 3a), so
-**6a** — which has no in-epic dependencies — is the one to run next, in
-parallel.
+**Next up:** everything through the app-side FX interaction mode is merged (0,
+1a, 1b, 2, 3a, 3b, 4a, 4b, 5a, 5b). The critical chain continues at **6b**
+(deps 6a, 5b, 3a), so **6a** — mechanical, `auto`, no in-epic dependencies —
+is the one to run next, and it is the only thing standing between here and
+6b.
+
+**[B10] amendment** (from #399's review, carried forward through 5b): the
+codec-level downgrade degrades **both** v3-only values below v3 — mode fx →
+play AND `PedalTrackLed.blue` → green — because pre-5a firmware rejects a
+frame carrying an unknown LED index wholesale. 5b's projection emits fx and
+blue unconditionally; the codec alone owns the per-version degrade. The part-5a
+plan's original wording ("only the mode-field downgrade differs") predates this
+amendment; `PedalCodec`'s doc comments are the authority. 5b's own faceplate
+labels had to learn the same lesson — they read the live `InteractionMode`,
+never `frame.mode`, precisely because the wire mode is degraded in lockstep
+with the LED colour.
 
 Open items carried out of merged parts, neither blocking a new part:
 - [#389](https://github.com/tomassasovsky/loopy/issues/389) (`plan-gate`, from
@@ -45,6 +56,22 @@ Open items carried out of merged parts, neither blocking a new part:
   surface is meant to show trustworthy post-restart state.
 - Part 2's [B4] A/B listen check — the human exit-bar item on the wet cache,
   which no CI job can stand in for.
+- [#405](https://github.com/tomassasovsky/loopy/issues/405) (`plan-gate`, from
+  5b) — part 5b's [A5] capture finalize was CUT from the part. Entering FX
+  cancels every pending arm (so nothing can start a take the user cannot see),
+  but a live capture survives into FX exactly as it does into Mute. Ending it
+  needs an engine primitive that ignores quantize — a record press arms a
+  loop-top finalize instead, and with the transport parked it starts a capture
+  — plus a call on whether an off-grid cut is musically right at all. Not a 6b
+  blocker.
+- [#402](https://github.com/tomassasovsky/loopy/issues/402)
+  (`blocked-verify`, from 5b) — the physical-pedal slice: mode cycle on
+  hardware, FX LEDs on a v3 pedal, and a v2 pedal showing chain LEDs with the
+  mode projected as mute. Everything in 5b is CI- and simulator-verified only.
+- [#403](https://github.com/tomassasovsky/loopy/issues/403) (`auto`, from 5b) —
+  undo, MODE and Stop each carry their own copy of the press-and-hold gesture
+  machinery. 6b ("remap bindings + momentary") needs that per button, so it is
+  worth collapsing before 6b rather than after.
 
 | Part | Scope | Model / effort | Autonomy | Depends on | Status |
 |------|-------|----------------|----------|------------|--------|
@@ -57,7 +84,7 @@ Open items carried out of merged parts, neither blocking a new part:
 | 4a | delete dead FX code | Sonnet · low | `auto` | — | merged (#392) |
 | 4b | four-stage Signal surface | Opus · medium | `merge-gate` | 3a, 4a | merged (#395) |
 | 5a | protocol v3 wire + version discovery | **Fable · high** | `merge-gate` | — (#331 prereq) | merged (#399) |
-| 5b | FX interaction mode (app) | Opus · high | `merge-gate` (physical slice `blocked-verify`) | 5a, 3a, 1a | in-review (#404; issue #401, hardware slice #402) |
+| 5b | FX interaction mode (app) | Opus · high | `merge-gate` (physical slice `blocked-verify`) | 5a, 3a, 1a | merged (#404) |
 | 6a | faceplate presentational extraction | Sonnet · medium | `auto` | — | pending |
 | 6b | remap bindings + momentary | Opus · high | `merge-gate` | 6a, 5b, 3a | pending |
 | 7 | expression + external MIDI | Opus · high | `merge-gate` | 3a, 6b | pending |
