@@ -106,6 +106,10 @@ class _InputRow extends StatelessWidget {
               summaryKey: Key('signalInFx_${row.input}'),
               effects: m.effects,
               chainEnabled: m.chainEnabled,
+              stomp: signalStompFor(
+                context,
+                FxAddress(stage: FxStage.input, index: row.input),
+              ),
               onEdit: onEditFx,
             ),
           ),
@@ -214,6 +218,14 @@ class _TakeRow extends StatelessWidget {
                     ),
                     effects: lane.effects,
                     chainEnabled: lane.chainEnabled,
+                    stomp: signalStompFor(
+                      context,
+                      FxAddress(
+                        stage: FxStage.loop,
+                        index: take.track,
+                        lane: take.laneIndex,
+                      ),
+                    ),
                     onEdit: onEditFx,
                   ),
                 ),

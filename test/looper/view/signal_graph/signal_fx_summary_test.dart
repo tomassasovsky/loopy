@@ -12,6 +12,7 @@ void main() {
     VoidCallback? onEdit,
     bool chainEnabled = true,
     String? semanticLabel,
+    ({String button, bool held})? stomp,
   }) => Scaffold(
     body: Center(
       child: SignalFxSummary(
@@ -19,6 +20,7 @@ void main() {
         effects: effects,
         chainEnabled: chainEnabled,
         semanticLabel: semanticLabel,
+        stomp: stomp,
         onEdit: onEdit ?? () {},
       ),
     ),
@@ -223,5 +225,56 @@ void main() {
       matching: find.byType(FxDisabledDim),
     );
     expect(dimmed, findsNothing);
+  });
+
+  group('stomp chip (part 6b)', () {
+    testWidgets('is absent when no footswitch reaches the chain', (
+      tester,
+    ) async {
+      await tester.pumpApp(summary(effects: const []));
+      expect(find.byKey(const Key('stomp_chip_stop')), findsNothing);
+    });
+
+    testWidgets('names the bound footswitch', (tester) async {
+      await tester.pumpApp(
+        summary(
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          stomp: (button: 'stop', held: false),
+        ),
+      );
+      expect(find.byKey(const Key('stomp_chip_stop')), findsOneWidget);
+      expect(find.text('Pedal \u00b7 STOP'), findsOneWidget);
+    });
+
+    testWidgets('marks a HELD momentary — the one FX state on this surface '
+        'the user cannot undo by clicking', (tester) async {
+      await tester.pumpApp(
+        summary(
+          effects: const [],
+          stomp: (button: 'track1', held: true),
+        ),
+      );
+      final chip = find.byKey(const Key('stomp_chip_track1'));
+      expect(chip, findsOneWidget);
+      expect(
+        tester.getSemantics(chip).label,
+        contains('held on'),
+      );
+    });
+
+    testWidgets('rides alongside the chain-off marker rather than replacing '
+        'it — bypassed AND pedal-reachable are independent facts', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        summary(
+          effects: const [],
+          chainEnabled: false,
+          stomp: (button: 'stop', held: false),
+        ),
+      );
+      expect(find.byKey(const Key('stomp_chip_stop')), findsOneWidget);
+      expect(find.text('Chain off'), findsOneWidget);
+    });
   });
 }

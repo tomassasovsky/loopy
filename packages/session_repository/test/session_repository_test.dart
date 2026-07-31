@@ -163,6 +163,44 @@ void main() {
   );
 
   test(
+    'save -> read round-trips the pedal remap blob BYTE-IDENTICALLY (schema '
+    'v6) — the control layer compares these strings for equality, so any '
+    'drift through the manifest would read as an edit the user never made',
+    () async {
+      final source = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+      final dir = '${tempDir.path}/pedal-bindings';
+      // Opaque to this package: a canonical-JSON target nested inside the
+      // binding array, quotes and all.
+      const encoded =
+          '[{"button":"track1","bank":0,'
+          r'"target":"{\"stage\":\"track\",\"index\":5}",'
+          '"behavior":"momentary"}]';
+
+      final session = await repoFor(source).save(dir, pedalBindings: encoded);
+      expect(session.pedalBindings, encoded);
+
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      expect(bundle.session.pedalBindings, encoded);
+    },
+  );
+
+  test(
+    'save without a remap writes the empty blob, so the loaded session '
+    'defers to the global set (A12)',
+    () async {
+      final source = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+      final dir = '${tempDir.path}/no-pedal-bindings';
+
+      await repoFor(source).save(dir);
+
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      expect(bundle.session.pedalBindings, '');
+    },
+  );
+
+  test(
     'save threads the engine snapshot tempo grid + click + count-in into '
     'the v4 manifest, read decodes it back',
     () async {

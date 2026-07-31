@@ -500,6 +500,12 @@ class SessionMonitor {
 /// level defaulting to enabled). Both new fields are presence-keyed: a
 /// v4-or-earlier manifest simply lacks them and loads with both bus stages
 /// EMPTY.
+///
+/// Schema v6 (FX system v3, #351 part 6b) adds [pedalBindings] — this
+/// session's pedal remap, carried as one more opaque string on the same rule
+/// as the chains: the model lives app-side, this package only stores the blob.
+/// Presence-keyed like every rung before it, so a v5 manifest loads with `''`
+/// and the global remap applies.
 @immutable
 class Session {
   /// Creates a [Session].
@@ -524,6 +530,7 @@ class Session {
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
     this.oneShotChannels = const [],
+    this.pedalBindings = '',
   });
 
   /// Projects a [Session] from a decoded JSON map.
@@ -584,21 +591,24 @@ class Session {
         for (final c in (json['oneShotChannels'] as List<dynamic>? ?? const []))
           (c as num).toInt(),
       ],
+      pedalBindings: json['pedalBindings'] as String? ?? '',
     );
   }
 
-  /// The manifest schema version this code writes and accepts. v5 adds the
-  /// Track-stage + Master FX chains and moves every chain string to the
+  /// The manifest schema version this code writes and accepts. v6 adds the
+  /// opaque [pedalBindings] blob — presence-keyed like every rung before it,
+  /// so a v5 bundle loads with `''` (no session remap, globals apply). v5 adds
+  /// the Track-stage + Master FX chains and moves every chain string to the
   /// looper domain's chain envelope (see the class doc); both fields are
   /// presence-keyed, so a v4 bundle loads with the bus stages empty and every
   /// enabled flag defaulted true. v4 added the tempo-grid + click + count-in
   /// fields; every one of those is additive and defaults to grid-off, so v3
   /// (and earlier) manifests still load losslessly. v3 replaced the per-track
   /// single `stem` with per-lane [SessionTrack.lanes] (each holding ordered
-  /// audio layers); v2 added the lane + monitor effect chains. v1 through v4
+  /// audio layers); v2 added the lane + monitor effect chains. v1 through v5
   /// bundles all still load — a legacy track migrates to one lane-0 live
   /// layer, and a v1 bundle loads with empty chains.
-  static const int formatVersion = 5;
+  static const int formatVersion = 6;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';
@@ -689,8 +699,23 @@ class Session {
   /// manifest a pre-fix build might still need to read defensively).
   final List<int> oneShotChannels;
 
+  /// This session's pedal remap as an OPAQUE encoded string (schema v6);
+  /// `''` when the session defines none — which is also what every
+  /// v5-or-earlier bundle loads with.
+  ///
+  /// Opaque exactly like the chain strings above (see [SessionLaneChain]): the
+  /// binding model lives app-side next to `ControlCubit`, so this data package
+  /// persists the blob without depending on it. It rides [Session] rather than
+  /// the looper domain's `SessionRig` because a remap is control-surface
+  /// configuration, not part of the audio rig the engine applies.
+  ///
+  /// Presence, not content, is the merge discriminator (A12): a session whose
+  /// blob decodes to ANY bindings overrides the global set wholesale, and one
+  /// with `''` defers to the globals entirely. There is no per-button merge.
+  final String pedalBindings;
+
   /// Serializes this session manifest to a JSON map. Always writes the
-  /// current [formatVersion] (v5 — this code never writes an older schema).
+  /// current [formatVersion] (v6 — this code never writes an older schema).
   Map<String, dynamic> toJson() => {
     'version': formatVersion,
     'sampleRate': sampleRate,
@@ -713,6 +738,7 @@ class Session {
     'looperMode': looperMode.name,
     'primaryTrack': primaryTrack,
     'oneShotChannels': oneShotChannels,
+    'pedalBindings': pedalBindings,
   };
 
   @override
@@ -735,14 +761,17 @@ class Session {
           looperMode == other.looperMode &&
           primaryTrack == other.primaryTrack &&
           masterChain == other.masterChain &&
+          pedalBindings == other.pedalBindings &&
           _listEquals(tracks, other.tracks) &&
           _listEquals(laneChains, other.laneChains) &&
           _listEquals(monitors, other.monitors) &&
           _listEquals(trackChains, other.trackChains) &&
           _listEquals(oneShotChannels, other.oneShotChannels);
 
+  // hashAll, not hash: the field count passed v6's addition of
+  // [pedalBindings], and `Object.hash` caps at 20 positional arguments.
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     sampleRate,
     channels,
     baseLengthFrames,
@@ -758,12 +787,13 @@ class Session {
     looperMode,
     primaryTrack,
     masterChain,
+    pedalBindings,
     Object.hashAll(tracks),
     Object.hashAll(laneChains),
     Object.hashAll(monitors),
     Object.hashAll(trackChains),
     Object.hashAll(oneShotChannels),
-  );
+  ]);
 }
 
 /// Maps a persisted [Session.tempoSource] name back to a [TempoSource].

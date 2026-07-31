@@ -156,6 +156,34 @@ void main() {
             trackChains[call.positionalArguments.first as int] ??
             const <TrackEffect>[],
       );
+      // Which channels the rig has a Track-stage chain on at all — what the
+      // binding resolver consults to tell an absent chain (a stale target)
+      // from a configured-but-empty one.
+      when(() => looper.allTrackChains()).thenAnswer(
+        (_) => {
+          for (final channel in trackChains.keys)
+            channel: const FxChainEnvelope(),
+        },
+      );
+      when(
+        () => looper.setTrackEffectEnabled(
+          channel: any(named: 'channel'),
+          index: any(named: 'index'),
+          enabled: any(named: 'enabled'),
+        ),
+      ).thenAnswer((call) {
+        final channel = call.namedArguments[#channel] as int;
+        final index = call.namedArguments[#index] as int;
+        final chain = trackChains[channel];
+        if (chain == null || index < 0 || index >= chain.length) {
+          return EngineResult.invalid;
+        }
+        trackChains[channel] = List<TrackEffect>.of(chain)
+          ..[index] = (chain[index] as BuiltInEffect).copyWith(
+            enabled: call.namedArguments[#enabled] as bool,
+          );
+        return EngineResult.ok;
+      });
 
       tempDir = Directory.systemTemp.createTempSync('loopy_control_cubit');
       clock = DateTime(2026, 7, 6, 14, 30, 15);
@@ -1472,6 +1500,532 @@ void main() {
             expect(performance.armedDirectory, isNull);
           },
         );
+      });
+    });
+
+    group('pedal remap (part 6b)', () {
+      /// The Track-stage chain on channel 3, and one slot inside it.
+      const chain3 = FxChainTarget(FxAddress(stage: FxStage.track, index: 3));
+      const slotB = FxSlotTarget(
+        address: FxAddress(stage: FxStage.track, index: 3),
+        slotId: 'b',
+      );
+
+      PedalBinding bind(
+        PedalButton button, {
+        int? bank,
+        FxBindingTarget target = chain3,
+        BindingBehavior behavior = BindingBehavior.toggle,
+        String? rawTarget,
+      }) => PedalBinding(
+        key: PedalBindingKey(button: button, bank: bank),
+        target: rawTarget ?? target.canonicalString(),
+        behavior: behavior,
+      );
+
+      Future<void> stomp(PedalButton button) async {
+        transport
+          ..emit(0x90, button.note, 127)
+          ..emit(0x80, button.note, 0);
+        await pumpEventQueue();
+      }
+
+      Future<void> press(PedalButton button) async {
+        transport.emit(0x90, button.note, 127);
+        await pumpEventQueue();
+      }
+
+      Future<void> release(PedalButton button) async {
+        transport.emit(0x80, button.note, 0);
+        await pumpEventQueue();
+      }
+
+      setUp(() {
+        // A real chain on channel 3 so its flag is stompable, with two slots
+        // so a slot binding has something to point at.
+        trackChains[3] = [
+          BuiltInEffect(type: TrackEffectType.drive, slotId: 'a'),
+          BuiltInEffect(type: TrackEffectType.reverb, slotId: 'b'),
+        ];
+        setEngine(_emptyTracks());
+        cubit.setMode(InteractionMode.fx);
+      });
+
+      group('dispatch', () {
+        test('a bound button overrides its contextual default', () async {
+          // Unbound, track1 in bank A stomps channel 0's own chain.
+          await cubit.setGlobalBindings(
+            PedalBindingSet([bind(PedalButton.track1, bank: 0)]),
+          );
+          await stomp(PedalButton.track1);
+
+          expect(chainEnabled[3], isFalse, reason: 'the BOUND chain flipped');
+          verifyNever(
+            () => looper.setTrackChainEnabled(channel: 0, enabled: false),
+          );
+        });
+
+        test(
+          'an UNBOUND button keeps its part 5b contextual behavior',
+          () async {
+            await cubit.setGlobalBindings(
+              PedalBindingSet([bind(PedalButton.track1, bank: 0)]),
+            );
+            await stomp(PedalButton.track2);
+
+            expect(chainEnabled[1], isFalse, reason: 'contextual: channel 1');
+            expect(chainEnabled.containsKey(3), isFalse);
+          },
+        );
+
+        test('bindings are INERT outside FX mode — the transport modes are '
+            'not a surface a remap may shadow', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([bind(PedalButton.stop)]),
+          );
+          cubit.setMode(InteractionMode.record);
+          await stomp(PedalButton.stop);
+
+          expect(chainEnabled.containsKey(3), isFalse);
+        });
+
+        test('a toggle binding flips the target back and forth', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([bind(PedalButton.recPlay)]),
+          );
+          await stomp(PedalButton.recPlay);
+          expect(chainEnabled[3], isFalse);
+          await stomp(PedalButton.recPlay);
+          expect(chainEnabled[3], isTrue);
+        });
+
+        test('a SLOT binding flips one effect, leaving the chain flag '
+            'alone (A9)', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([bind(PedalButton.recPlay, target: slotB)]),
+          );
+          await stomp(PedalButton.recPlay);
+
+          expect(trackChains[3]![1].enabled, isFalse);
+          expect(
+            trackChains[3]![0].enabled,
+            isTrue,
+            reason: 'slot a untouched',
+          );
+          expect(chainEnabled.containsKey(3), isFalse, reason: 'chain flag');
+        });
+
+        test('a slot binding survives an INSERT above it — positional churn '
+            'never retargets (A9)', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([bind(PedalButton.recPlay, target: slotB)]),
+          );
+          trackChains[3] = [
+            BuiltInEffect(type: TrackEffectType.delay, slotId: 'new'),
+            ...trackChains[3]!,
+          ];
+          await stomp(PedalButton.recPlay);
+
+          final byId = {
+            for (final fx in trackChains[3]!) fx.slotId: fx.enabled,
+          };
+          expect(byId['b'], isFalse, reason: 'the bound slot flipped');
+          expect(byId['new'], isTrue, reason: 'the inserted one did not');
+          expect(byId['a'], isTrue);
+        });
+
+        test('track bindings are per-bank (A3)', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([bind(PedalButton.track1, bank: 1)]),
+          );
+          // Bank A: unbound, so track1 acts contextually on channel 0.
+          await stomp(PedalButton.track1);
+          expect(chainEnabled[0], isFalse);
+          expect(chainEnabled.containsKey(3), isFalse);
+
+          cubit.browseBank(1);
+          await stomp(PedalButton.track1);
+          expect(chainEnabled[3], isFalse, reason: 'bank B is bound');
+        });
+      });
+
+      group('MODE and Bank are never remappable (B12)', () {
+        test('the model refuses to hold a binding on either', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([bind(PedalButton.mode), bind(PedalButton.bank)]),
+          );
+          expect(cubit.state.globalBindings.isEmpty, isTrue);
+        });
+
+        test(
+          'MODE still cycles the mode and Bank still switches banks',
+          () async {
+            await cubit.setGlobalBindings(
+              PedalBindingSet([bind(PedalButton.mode), bind(PedalButton.bank)]),
+            );
+
+            await stomp(PedalButton.bank);
+            expect(cubit.state.activeBank, 1);
+            expect(chainEnabled.containsKey(3), isFalse);
+
+            await stomp(PedalButton.mode);
+            expect(cubit.state.mode, InteractionMode.record);
+          },
+        );
+      });
+
+      group('long-press system gestures survive a remap (B12)', () {
+        test('a bound Stop runs its binding on the press but KEEPS the '
+            "restore-all hold — the panic's only undo must stay reachable "
+            'whatever the user mapped', () async {
+          trackChains[1] = [BuiltInEffect(type: TrackEffectType.drive)];
+          await cubit.setGlobalBindings(
+            PedalBindingSet([bind(PedalButton.stop)]),
+          );
+
+          await press(PedalButton.stop);
+          expect(chainEnabled[3], isFalse, reason: 'the binding ran');
+          expect(chainEnabled.containsKey(1), isFalse, reason: 'no panic');
+
+          await Future<void>.delayed(const Duration(milliseconds: 600));
+          await release(PedalButton.stop);
+
+          // The hold restored every Track chain, the one the binding had just
+          // bypassed included. Channel 1 was never bypassed (the binding took
+          // the press instead of the panic), so the sweep skips it as a no-op
+          // rather than writing a flag it already holds.
+          expect(chainEnabled[3], isTrue, reason: 'the hold restored it');
+          expect(chainEnabled.containsKey(1), isFalse);
+        });
+
+        test('MODE long-press still arms performance recording', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([bind(PedalButton.mode)]),
+          );
+          await press(PedalButton.mode);
+          await Future<void>.delayed(const Duration(milliseconds: 600));
+          await release(PedalButton.mode);
+
+          expect(performance.armedDirectory, isNotNull);
+        });
+      });
+
+      group('momentary (B1)', () {
+        Future<void> bindMomentary({FxBindingTarget target = chain3}) =>
+            cubit.setGlobalBindings(
+              PedalBindingSet([
+                bind(
+                  PedalButton.recPlay,
+                  target: target,
+                  behavior: BindingBehavior.momentary,
+                ),
+              ]),
+            );
+
+        test(
+          'press enables and release restores what the press captured',
+          () async {
+            chainEnabled[3] = false; // starts bypassed
+            await bindMomentary();
+
+            await press(PedalButton.recPlay);
+            expect(chainEnabled[3], isTrue, reason: 'held = enabled');
+
+            await release(PedalButton.recPlay);
+            expect(chainEnabled[3], isFalse, reason: 'restored to prior');
+          },
+        );
+
+        test('a press over an ALREADY-enabled target restores it enabled — '
+            'the release writes the captured state, not a blind off', () async {
+          await bindMomentary();
+          await press(PedalButton.recPlay);
+          await release(PedalButton.recPlay);
+          expect(cubit.state.mode, InteractionMode.fx);
+          expect(chainEnabled[3] ?? true, isTrue);
+        });
+
+        test('last-writer-wins: a UI toggle mid-hold is overwritten by the '
+            'release, which restores what THIS press saw', () async {
+          chainEnabled[3] = false;
+          await bindMomentary();
+
+          await press(PedalButton.recPlay);
+          // Another writer flips it while the foot is down.
+          cubit.toggleTrackChain(3);
+          expect(chainEnabled[3], isFalse);
+
+          await release(PedalButton.recPlay);
+          expect(chainEnabled[3], isFalse, reason: 'the capture won');
+        });
+
+        test('works on a slot target too', () async {
+          await bindMomentary(target: slotB);
+          trackChains[3] = [
+            trackChains[3]![0],
+            (trackChains[3]![1] as BuiltInEffect).copyWith(enabled: false),
+          ];
+
+          await press(PedalButton.recPlay);
+          expect(trackChains[3]![1].enabled, isTrue);
+
+          await release(PedalButton.recPlay);
+          expect(trackChains[3]![1].enabled, isFalse);
+        });
+
+        group('no stuck momentary (flow SC-2) — every path that strands a '
+            'press without its release restores at the ONE enforcement '
+            'point', () {
+          setUp(() async {
+            chainEnabled[3] = false;
+            await bindMomentary();
+            await press(PedalButton.recPlay);
+            expect(chainEnabled[3], isTrue, reason: 'held');
+          });
+
+          test('a MODE switch out of FX', () async {
+            cubit.setMode(InteractionMode.record);
+            expect(chainEnabled[3], isFalse);
+          });
+
+          test(
+            'a pedal disconnect — the release note-off never arrives',
+            () async {
+              pedal
+                ..bind('out')
+                ..unbind();
+              await pumpEventQueue();
+              expect(chainEnabled[3], isFalse);
+            },
+          );
+
+          test('a session load replacing the binding set', () async {
+            cubit.applySessionBindings(
+              PedalBindingSet([bind(PedalButton.stop)]),
+            );
+            expect(chainEnabled[3], isFalse);
+          });
+
+          test('a live edit from the assignment screen', () async {
+            await cubit.setGlobalBindings(PedalBindingSet.empty);
+            expect(chainEnabled[3], isFalse);
+          });
+
+          test('and a late release afterwards writes nothing more', () async {
+            cubit.setMode(InteractionMode.record);
+            chainEnabled.remove(3);
+            await release(PedalButton.recPlay);
+            expect(chainEnabled.containsKey(3), isFalse);
+          });
+        });
+
+        test('a REPEATED press with no release between captures only ONCE — '
+            'a dropped NoteOff must not let the release restore the state '
+            'this binding itself enabled (B1)', () async {
+          chainEnabled[3] = false;
+          await bindMomentary();
+
+          await press(PedalButton.recPlay);
+          expect(chainEnabled[3], isTrue);
+          await press(PedalButton.recPlay); // the NoteOff never arrived
+          await release(PedalButton.recPlay);
+
+          expect(
+            chainEnabled[3],
+            isFalse,
+            reason: 'restores what the FIRST press captured',
+          );
+        });
+
+        test('a bank change mid-hold still releases the pressed binding — '
+            'the release is matched by BUTTON, not the live bank', () async {
+          chainEnabled[3] = false;
+          await cubit.setGlobalBindings(
+            PedalBindingSet([
+              bind(
+                PedalButton.track1,
+                bank: 0,
+                behavior: BindingBehavior.momentary,
+              ),
+            ]),
+          );
+
+          await press(PedalButton.track1);
+          expect(chainEnabled[3], isTrue);
+
+          cubit.browseBank(1); // foot still down
+          await release(PedalButton.track1);
+          expect(chainEnabled[3], isFalse);
+        });
+      });
+
+      group('stale targets (R25)', () {
+        test('a mid-song stomp on a stale binding is a NO-OP', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([
+              bind(
+                PedalButton.recPlay,
+                target: const FxChainTarget(
+                  FxAddress(stage: FxStage.track, index: 7),
+                ),
+              ),
+            ]),
+          );
+          await stomp(PedalButton.recPlay);
+
+          expect(chainEnabled, isEmpty);
+          verifyNever(
+            () => looper.setTrackChainEnabled(
+              channel: any(named: 'channel'),
+              enabled: any(named: 'enabled'),
+            ),
+          );
+        });
+
+        test('a target string that no longer parses is a no-op, not a '
+            'crash', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([bind(PedalButton.recPlay, rawTarget: 'garbage')]),
+          );
+          await stomp(PedalButton.recPlay);
+          expect(chainEnabled, isEmpty);
+        });
+
+        test('a slot deleted out from under a binding never falls back to '
+            'the chain or to its old neighbour', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([bind(PedalButton.recPlay, target: slotB)]),
+          );
+          trackChains[3] = [trackChains[3]![0]]; // slot b deleted
+          await stomp(PedalButton.recPlay);
+
+          expect(trackChains[3]!.single.enabled, isTrue);
+          expect(chainEnabled, isEmpty);
+        });
+
+        test('a stale MOMENTARY press captures nothing, so its release has '
+            'nothing to restore', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([
+              bind(
+                PedalButton.recPlay,
+                rawTarget: 'garbage',
+                behavior: BindingBehavior.momentary,
+              ),
+            ]),
+          );
+          await press(PedalButton.recPlay);
+          await release(PedalButton.recPlay);
+          expect(chainEnabled, isEmpty);
+        });
+      });
+
+      group('stompFor (the Signal chip source)', () {
+        test('reports a HELD binding over an unheld one on the same chain — '
+            'the held marker explains an enabled state no click can undo, so '
+            'it must not be hidden by whichever binding sorts first', () async {
+          chainEnabled[3] = false;
+          await cubit.setGlobalBindings(
+            PedalBindingSet([
+              // recPlay sorts BEFORE track1, and is the unheld one.
+              bind(PedalButton.recPlay),
+              bind(
+                PedalButton.track1,
+                bank: 0,
+                behavior: BindingBehavior.momentary,
+              ),
+            ]),
+          );
+
+          await press(PedalButton.track1);
+
+          final stomp = cubit.state.stompFor(
+            const FxAddress(stage: FxStage.track, index: 3),
+          );
+          expect(stomp?.held, isTrue);
+          expect(stomp?.binding.key.button, PedalButton.track1);
+
+          await release(PedalButton.track1);
+          expect(
+            cubit.state
+                .stompFor(const FxAddress(stage: FxStage.track, index: 3))
+                ?.held,
+            isFalse,
+          );
+        });
+
+        test('an unbound chain reports nothing', () {
+          expect(
+            cubit.state.stompFor(
+              const FxAddress(stage: FxStage.track, index: 3),
+            ),
+            isNull,
+          );
+        });
+      });
+
+      group('merge rule (A12)', () {
+        test(
+          'a session with bindings overrides the globals WHOLESALE',
+          () async {
+            await cubit.setGlobalBindings(
+              PedalBindingSet([
+                bind(PedalButton.recPlay),
+                bind(PedalButton.stop),
+              ]),
+            );
+            cubit.applySessionBindings(
+              PedalBindingSet([bind(PedalButton.undo)]),
+            );
+
+            // The session's own button acts...
+            await stomp(PedalButton.undo);
+            expect(chainEnabled[3], isFalse);
+
+            // ...and a global-only button is back to its contextual default.
+            chainEnabled.clear();
+            await stomp(PedalButton.recPlay);
+            expect(
+              chainEnabled,
+              isEmpty,
+              reason: 'recPlay is inert in FX (A4)',
+            );
+          },
+        );
+
+        test('a session with NO bindings falls back to the globals', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([bind(PedalButton.recPlay)]),
+          );
+          cubit.applySessionBindings(PedalBindingSet.empty);
+
+          await stomp(PedalButton.recPlay);
+          expect(chainEnabled[3], isFalse);
+        });
+      });
+
+      test('the global set persists and reloads through settings', () async {
+        final set = PedalBindingSet([
+          bind(PedalButton.stop, behavior: BindingBehavior.momentary),
+          bind(PedalButton.track2, bank: 1, target: slotB),
+        ]);
+        await cubit.setGlobalBindings(set);
+
+        expect(
+          PedalBindingSet.decode(await settings.loadPedalBindings() ?? ''),
+          set,
+        );
+
+        final reloaded = ControlCubit(
+          looper: looper,
+          pedal: pedal,
+          settings: settings,
+          performance: performance,
+          keepAliveInterval: Duration.zero,
+        );
+        addTearDown(reloaded.close);
+        await reloaded.load();
+        expect(reloaded.state.globalBindings, set);
       });
     });
 

@@ -18,6 +18,9 @@ class ControlState extends Equatable {
     this.activeBank = 0,
     this.excluded = const <int>{},
     this.parkedResume = const <int>{},
+    this.globalBindings = PedalBindingSet.empty,
+    this.sessionBindings = PedalBindingSet.empty,
+    this.heldMomentary = const <PedalBindingKey>{},
   });
 
   /// Tracks per bank.
@@ -62,6 +65,63 @@ class ControlState extends Equatable {
   /// on clear-all, mode entry, session load, and consumed by the next resume.
   final Set<int> parkedResume;
 
+  /// The GLOBAL pedal remap (part 6b), restored from settings at boot and
+  /// edited by the assignment screen.
+  ///
+  /// Stored intent, so it lives here rather than in a cubit field: the Signal
+  /// surface's stomp chips and the assignment screen both read it through
+  /// `context.watch`, and an edit has to reach them. Invalidation rule: only
+  /// an explicit edit writes it — nothing about engine truth can invalidate a
+  /// binding, since a target that no longer exists goes INERT rather than
+  /// being dropped (R25).
+  final PedalBindingSet globalBindings;
+
+  /// The loaded session's own remap; empty when it carries none. Replaced
+  /// wholesale on session load, never merged per button (A12).
+  final PedalBindingSet sessionBindings;
+
+  /// Which controls are currently holding a MOMENTARY binding down.
+  ///
+  /// The captured restore VALUES stay in the cubit — they are a mid-gesture
+  /// implementation detail no surface renders. What is stored here is the set
+  /// a surface needs: the chips mark a chain as held-from-the-pedal, which is
+  /// the one FX state on screen the user cannot undo by clicking. Invalidation
+  /// rule: emptied at the single release-all point (B1) and on each release.
+  final Set<PedalBindingKey> heldMomentary;
+
+  /// The remap actually in force: the session's when it has ANY bindings, the
+  /// globals otherwise (A12). Derived, never stored — so the two copies can
+  /// never disagree about which one applies.
+  PedalBindingSet get bindings =>
+      globalBindings.resolveAgainst(sessionBindings);
+
+  /// The binding reaching the chain at [address], if any, and whether a
+  /// momentary is holding it right now — what the Signal surface's stomp chip
+  /// renders (R25).
+  ///
+  /// Matches on the target's CHAIN address, so a binding on one slot inside a
+  /// chain still marks that chain as pedal-reachable: the chip answers "can I
+  /// stomp this from the plate", which a per-slot binding does satisfy. A
+  /// STALE binding never matches — its target does not decode to an address at
+  /// all, so it marks nothing, which is the same silence its unlit LED gives
+  /// the performer.
+  /// When several controls reach one chain, a HELD one wins the report. The
+  /// held marker explains an enabled state the user cannot undo by clicking,
+  /// so answering with a different, unheld binding would leave exactly that
+  /// state unexplained; which control gets named matters less than whether a
+  /// foot is on one.
+  ({PedalBinding binding, bool held})? stompFor(FxAddress address) {
+    PedalBinding? first;
+    for (final binding in bindings.bindings) {
+      if (binding.decodeTarget()?.address != address) continue;
+      if (heldMomentary.contains(binding.key)) {
+        return (binding: binding, held: true);
+      }
+      first ??= binding;
+    }
+    return first == null ? null : (binding: first, held: false);
+  }
+
   /// The first channel of the visible bank (`0` for A, `4` for B).
   int get bankBaseChannel => activeBank * tracksPerBank;
 
@@ -77,6 +137,9 @@ class ControlState extends Equatable {
     int? activeBank,
     Set<int>? excluded,
     Set<int>? parkedResume,
+    PedalBindingSet? globalBindings,
+    PedalBindingSet? sessionBindings,
+    Set<PedalBindingKey>? heldMomentary,
   }) => ControlState(
     mode: mode ?? this.mode,
     defaultMode: defaultMode ?? this.defaultMode,
@@ -84,6 +147,9 @@ class ControlState extends Equatable {
     activeBank: activeBank ?? this.activeBank,
     excluded: excluded ?? this.excluded,
     parkedResume: parkedResume ?? this.parkedResume,
+    globalBindings: globalBindings ?? this.globalBindings,
+    sessionBindings: sessionBindings ?? this.sessionBindings,
+    heldMomentary: heldMomentary ?? this.heldMomentary,
   );
 
   @override
@@ -94,5 +160,8 @@ class ControlState extends Equatable {
     activeBank,
     excluded,
     parkedResume,
+    globalBindings,
+    sessionBindings,
+    heldMomentary,
   ];
 }

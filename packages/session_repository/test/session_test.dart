@@ -94,6 +94,12 @@ void main() {
     // only round-trips through this session-level set, alongside channel 0's
     // (which also has a per-track `oneShot: true` above; both should agree).
     oneShotChannels: [0, 2],
+    // The pedal remap (schema v6) — opaque here exactly like the chain
+    // strings above; a binding-set shape stands in for the real
+    // `PedalBindingSet.encode()` output the control layer produces.
+    pedalBindings:
+        r'[{"button":"stop","target":"{\"stage\":\"track\",'
+        r'\"index\":5}","behavior":"momentary"}]',
   );
 
   group('Session', () {
@@ -102,11 +108,50 @@ void main() {
       expect(Session.fromJson(json as Map<String, dynamic>), session);
     });
 
-    test('serializes the manifest version (v5)', () {
+    test('serializes the manifest version (v6)', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['version'], 5);
+      expect(json['version'], 6);
       expect(json['baseLengthFrames'], 96000);
+    });
+
+    group('pedal remap blob (schema v6)', () {
+      test('round-trips byte-intact — the control layer compares these '
+          'strings for equality, so a single character of drift would look '
+          'like an edit', () {
+        final json = jsonDecode(jsonEncode(session.toJson()));
+        final loaded = Session.fromJson(json as Map<String, dynamic>);
+        expect(loaded.pedalBindings, session.pedalBindings);
+        expect(loaded, session);
+      });
+
+      test('is opaque to this package — a payload it cannot interpret still '
+          'survives a round-trip', () {
+        const opaque = Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 0,
+          tracks: [],
+          pedalBindings: 'not-json-at-all',
+        );
+        final json = jsonDecode(jsonEncode(opaque.toJson()));
+        expect(
+          Session.fromJson(json as Map<String, dynamic>).pedalBindings,
+          'not-json-at-all',
+        );
+      });
+
+      test('a v5-or-earlier manifest loads with no session remap, so the '
+          'global set applies (A12)', () {
+        final json = session.toJson()..remove('pedalBindings');
+        expect(Session.fromJson(json).pedalBindings, isEmpty);
+      });
+
+      test('participates in equality — two sessions differing only in their '
+          'remap are not the same session', () {
+        final json = session.toJson()..['pedalBindings'] = '[]';
+        expect(Session.fromJson(json), isNot(session));
+      });
     });
 
     test('serializes the schema-v5 bus stages (Track + Master)', () {
@@ -211,11 +256,13 @@ void main() {
         expect(loaded.tempoBpm, 128.5);
         expect(loaded.looperMode, LooperMode.band);
         expect(loaded.tracks.single.lanes.single.volume, 0.8);
-        // And re-saving stamps v5 without inventing bus-stage content.
+        // And re-saving stamps the CURRENT version without inventing
+        // bus-stage content (or a remap the v4 bundle never carried).
         final resaved = loaded.toJson();
-        expect(resaved['version'], 5);
+        expect(resaved['version'], Session.formatVersion);
         expect(resaved['trackChains'], isEmpty);
         expect(resaved['masterChain'], '');
+        expect(resaved['pedalBindings'], '');
       },
     );
 
@@ -499,11 +546,11 @@ void main() {
     });
 
     test(
-      'rejects a hypothetical v6 manifest (an extra unknown field does not '
+      'rejects a hypothetical v7 manifest (an extra unknown field does not '
       'change the outcome) via the existing version-gate check',
       () {
         final json = session.toJson()
-          ..['version'] = 6
+          ..['version'] = 7
           // A field a hypothetical future schema might add — proves the
           // rejection is purely the version-number gate, not incidentally
           // triggered by an unparseable shape.
@@ -514,8 +561,8 @@ void main() {
           () => Session.fromJson(json),
           throwsA(
             isA<SessionUnsupportedVersion>()
-                .having((e) => e.version, 'version', 6)
-                .having((e) => e.supported, 'supported', 5),
+                .having((e) => e.version, 'version', 7)
+                .having((e) => e.supported, 'supported', Session.formatVersion),
           ),
         );
       },

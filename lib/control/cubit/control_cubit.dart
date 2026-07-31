@@ -5,6 +5,10 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/common/fx_chain_persistence.dart';
+import 'package:loopy/control/binding/fx_binding_resolver.dart';
+import 'package:loopy/control/binding/fx_binding_target.dart';
+import 'package:loopy/control/binding/pedal_binding.dart';
+import 'package:loopy/control/binding/pedal_binding_set.dart';
 import 'package:loopy/control/control_projection.dart';
 import 'package:loopy/logging/app_log.dart';
 import 'package:loopy/looper/model/interaction_mode.dart';
@@ -171,6 +175,19 @@ class ControlCubit extends Cubit<ControlState> {
   // fires on the press, so this one arms no tap action — only the hold.
   final _stopGesture = _HoldGesture();
 
+  // The remap (part 6b) lives in ControlState — it is stored user intent, and
+  // the surfaces that render it rebuild on emit. What stays here is only the
+  // mid-gesture restore VALUES: the enabled state each held press captured,
+  // which no surface renders and which must not survive a hot restart.
+  //
+  // Keyed by [PedalBindingKey] rather than by target, so two bindings on one
+  // target each restore what THEY captured (last writer wins, per
+  // [PedalBinding]'s doc). A button can only be held once, so the key is
+  // unique for the lifetime of a press. Kept in lockstep with
+  // `state.heldMomentary`, which is the same key set.
+  final _heldRestore =
+      <PedalBindingKey, ({FxBindingTarget target, bool prior})>{};
+
   // Whether the Clear footswitch is currently held down. Lights the Clear
   // LED (the `clearFadeActive` frame bit) for as long as it is pressed.
   bool _clearHeld = false;
@@ -223,6 +240,9 @@ class ControlCubit extends Cubit<ControlState> {
 
   Future<void> _restore() async {
     _longPress = Duration(milliseconds: await _settings.loadPedalLongPressMs());
+    final storedBindings = PedalBindingSet.decode(
+      await _settings.loadPedalBindings() ?? '',
+    );
     // bootDefaultFromToken, not fromToken: a stored `'fx'` (hand-edited or
     // corrupted — no build writes it) falls back to record rather than booting
     // the dead FX surface (R12).
@@ -230,7 +250,12 @@ class ControlCubit extends Cubit<ControlState> {
       await _settings.loadDefaultInteractionMode(),
     );
     if (isClosed) return;
-    emit(state.copyWith(defaultMode: defaultMode));
+    emit(
+      state.copyWith(
+        defaultMode: defaultMode,
+        globalBindings: storedBindings,
+      ),
+    );
     setMode(defaultMode);
   }
 
@@ -318,6 +343,10 @@ class ControlCubit extends Cubit<ControlState> {
   /// table).
   void setMode(InteractionMode next) {
     if (next == state.mode) return;
+    // Leaving the mode the bindings live in strands any held momentary — the
+    // release will arrive with the foot in a mode that no longer dispatches
+    // it, or not at all. Restore first (B1), before the emit re-projects.
+    releaseAllMomentary();
     switch (next) {
       case InteractionMode.record:
         emit(
@@ -765,6 +794,9 @@ class ControlCubit extends Cubit<ControlState> {
         if (button == PedalButton.clear) _onClearRelease();
         if (button == PedalButton.mode) _modeGesture.release();
         if (button == PedalButton.stop) _stopGesture.release();
+        // Unconditional: a momentary is keyed to the button, so this finds
+        // the held one (if any) whatever else that button's release did.
+        _releaseBinding(button);
       case EncoderDelta(:final delta):
         _log('encoder $delta');
         encoderTurned(delta);
@@ -777,6 +809,22 @@ class ControlCubit extends Cubit<ControlState> {
       'cursor=${state.cursor}]',
     );
     final fx = state.mode == InteractionMode.fx;
+    // A remap overrides its button's contextual DEFAULT, and only in FX mode —
+    // the other two modes are transport surfaces a binding must never shadow.
+    // MODE and Bank can never appear here: the binding model refuses to hold
+    // one (B12), so their handling below is unreachable from a binding.
+    if (fx) {
+      final binding = state.bindings.lookup(button, bank: state.activeBank);
+      if (binding != null) {
+        _pressBinding(binding);
+        // Stop keeps its restore-all HOLD even when bound: a remap overrides
+        // contextual defaults but never the long-press system gestures, and
+        // the panic's only undo must stay reachable from the plate whatever
+        // the user mapped onto the tap.
+        if (button == PedalButton.stop) _armStopRestore();
+        return;
+      }
+    }
     switch (button) {
       case PedalButton.undo:
         // INERT in FX mode until the #219 toggle-undo contract exists: an
@@ -856,7 +904,18 @@ class ControlCubit extends Cubit<ControlState> {
   void _armStop() {
     _log('fx panic (press)');
     panicTrackChains();
-    // No `onTap`: the panic already fired, so the release is inert.
+    _armStopRestore();
+  }
+
+  /// Arms the Stop restore-all hold on its own, without the panic.
+  ///
+  /// Split out because a BOUND Stop runs its binding on the press instead of
+  /// the panic, but still owes the performer the restore gesture (B12): the
+  /// remap overrides the contextual default, never the long-press system
+  /// gesture layered above it.
+  void _armStopRestore() {
+    // No `onTap`: whatever fired on the press already did, so the release is
+    // inert.
     _stopGesture.press(
       threshold: _longPress,
       onHold: () {
@@ -910,6 +969,113 @@ class ControlCubit extends Cubit<ControlState> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Pedal remap (part 6b): bindings, momentary hold, release-all
+  // ---------------------------------------------------------------------------
+
+  // The remap is READ off `state` (`state.bindings` / `.globalBindings` /
+  // `.sessionBindings` / `.stompFor`) — the cubit exposes only the writers
+  // below. No pass-through getters: a cubit's public surface is its commands,
+  // and the state object is already the read surface every widget watches.
+
+  /// Replaces the global remap and persists it (the assignment screen's edit
+  /// path).
+  ///
+  /// Releases every held momentary FIRST: the binding the foot is holding may
+  /// not survive the edit, and a target left enabled with no binding to
+  /// release it is exactly the wedge (B1) the release-all rule exists to
+  /// prevent.
+  Future<void> setGlobalBindings(PedalBindingSet next) async {
+    if (next == state.globalBindings) return;
+    releaseAllMomentary();
+    emit(state.copyWith(globalBindings: next));
+    await _settings.savePedalBindings(next.encode());
+  }
+
+  /// Applies the remap carried by a loaded session (or clears it when the
+  /// bundle has none). Called from the session apply seam; releases held
+  /// momentaries on the same rule as [setGlobalBindings].
+  void applySessionBindings(PedalBindingSet next) {
+    if (next == state.sessionBindings) return;
+    releaseAllMomentary();
+    emit(state.copyWith(sessionBindings: next));
+  }
+
+  /// Restores every held momentary to the state its press captured — the ONE
+  /// enforcement point (B1).
+  ///
+  /// Every path that can strand a press without its release funnels here:
+  /// mode exit ([setMode]), a binding-set change ([setGlobalBindings] /
+  /// [applySessionBindings], which covers the assignment screen's live edits
+  /// AND a session load), and pedal disconnect ([_onBindStatus]). A physical
+  /// release goes through [_releaseBinding] instead, which restores just that
+  /// one — but both write the captured state, so no target can be left
+  /// enabled by a press whose release never arrived.
+  void releaseAllMomentary() {
+    if (_heldRestore.isEmpty) return;
+    for (final held in _heldRestore.values) {
+      _looper.setBindingEnabled(held.target, enabled: held.prior);
+    }
+    _log('released ${_heldRestore.length} held momentary binding(s)');
+    _heldRestore.clear();
+    emit(state.copyWith(heldMomentary: const <PedalBindingKey>{}));
+  }
+
+  /// Runs [binding] instead of its button's contextual FX-mode default.
+  ///
+  /// A stale binding — one whose target string no longer parses, or names a
+  /// chain/slot the rig no longer has — is a NO-OP (R25). It writes nothing
+  /// and lights nothing; the assignment screen is where the user learns it is
+  /// broken, not a mid-song stomp that silently bypasses the wrong thing.
+  void _pressBinding(PedalBinding binding) {
+    final target = binding.decodeTarget();
+    final prior = target == null ? null : _looper.bindingEnabled(target);
+    if (target == null || prior == null) {
+      _log('binding on ${binding.key.button.name} is stale — no-op');
+      return;
+    }
+    switch (binding.behavior) {
+      case BindingBehavior.toggle:
+        _log('binding toggle ${binding.key.button.name} -> ${!prior}');
+        _looper.setBindingEnabled(target, enabled: !prior);
+      case BindingBehavior.momentary:
+        _log('binding momentary ${binding.key.button.name} (was $prior)');
+        // Capture on the FIRST press only. A repeated press with no release
+        // between them — a dropped NoteOff, or the on-screen plate re-emitting
+        // a down — would otherwise re-capture the state THIS binding just
+        // enabled, and the eventual release would restore `true` and strand
+        // the target on: the stuck momentary (B1) with no foot on the switch.
+        _heldRestore.putIfAbsent(
+          binding.key,
+          () => (target: target, prior: prior),
+        );
+        _looper.setBindingEnabled(target, enabled: true);
+        emit(
+          state.copyWith(heldMomentary: {...state.heldMomentary, binding.key}),
+        );
+    }
+    _pushProjected();
+  }
+
+  /// Restores the momentary [button] is holding, if any.
+  ///
+  /// Matched by BUTTON rather than by the live bank's key: the performer can
+  /// stomp Bank while a track momentary is down, and the release must still
+  /// find the binding that was actually pressed. A button holds at most one
+  /// momentary at a time, so the match is unambiguous.
+  void _releaseBinding(PedalButton button) {
+    for (final key in _heldRestore.keys) {
+      if (key.button != button) continue;
+      final held = _heldRestore.remove(key)!;
+      _log('binding momentary ${button.name} released -> ${held.prior}');
+      _looper.setBindingEnabled(held.target, enabled: held.prior);
+      emit(
+        state.copyWith(heldMomentary: {...state.heldMomentary}..remove(key)),
+      );
+      return;
+    }
+  }
+
   int _trackIndex(PedalButton button) => switch (button) {
     PedalButton.track1 => 0,
     PedalButton.track2 => 1,
@@ -936,7 +1102,11 @@ class ControlCubit extends Cubit<ControlState> {
     if (status == PedalBindStatus.bound) {
       _lastFrame = null;
       _pushProjected();
+      return;
     }
+    // Unplugged mid-hold: the release note-off is never coming, so a held
+    // momentary would leave its target enabled forever (B1). Restore now.
+    releaseAllMomentary();
   }
 
   void _detectLoopTop(LooperState s) {

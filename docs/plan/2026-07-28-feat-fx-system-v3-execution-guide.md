@@ -32,8 +32,12 @@ issue: 351
 
 **Next up:** everything through the pedal-plate presentational extraction is
 merged (0, 1a, 1b, 2, 3a, 3b, 4a, 4b, 5a, 5b, 6a). **6b** (remap bindings +
-momentary) is unblocked — its dependencies (6a, 5b, 3a) are all merged — and
-is the one to run next.
+momentary) is built and in review. **7** (expression + external MIDI) unblocks
+once 6b lands — it reuses 6b's sealed target type and release-all rule.
+
+[#410](https://github.com/tomassasovsky/loopy/pull/410) — the #403
+press/long-press gesture-helper collapse this guide called for before 6b —
+is MERGED; 6b was rebased onto it.
 
 **[B10] amendment** (from #399's review, carried forward through 5b): the
 codec-level downgrade degrades **both** v3-only values below v3 — mode fx →
@@ -68,9 +72,8 @@ Open items carried out of merged parts, neither blocking a new part:
   hardware, FX LEDs on a v3 pedal, and a v2 pedal showing chain LEDs with the
   mode projected as mute. Everything in 5b is CI- and simulator-verified only.
 - [#403](https://github.com/tomassasovsky/loopy/issues/403) (`auto`, from 5b) —
-  undo, MODE and Stop each carry their own copy of the press-and-hold gesture
-  machinery. 6b ("remap bindings + momentary") needs that per button, so it is
-  worth collapsing before 6b rather than after.
+  MERGED as [#410](https://github.com/tomassasovsky/loopy/pull/410): undo, MODE
+  and Stop now share one `_HoldGesture`.
 
 | Part | Scope | Model / effort | Autonomy | Depends on | Status |
 |------|-------|----------------|----------|------------|--------|
@@ -85,13 +88,36 @@ Open items carried out of merged parts, neither blocking a new part:
 | 5a | protocol v3 wire + version discovery | **Fable · high** | `merge-gate` | — (#331 prereq) | merged (#399) |
 | 5b | FX interaction mode (app) | Opus · high | `merge-gate` (physical slice `blocked-verify`) | 5a, 3a, 1a | merged (#404) |
 | 6a | faceplate presentational extraction | Sonnet · medium | `auto` | — | merged (#408) |
-| 6b | remap bindings + momentary | Opus · high | `merge-gate` | 6a, 5b, 3a | pending |
+| 6b | remap bindings + momentary | Opus · high | `merge-gate` | 6a, 5b, 3a | in-review (#412) |
 | 7 | expression + external MIDI | Opus · high | `merge-gate` | 3a, 6b | pending |
 | 8 | TRS jack hardware (non-gating child) | Fable · high (at bench) | `blocked-verify` | 7 | pending |
 | 9 | hardening + export + soak | Opus · medium | `blocked-verify` | all | pending |
 
 Status values: `pending` → `building (#issue)` → `in-review (#PR)` →
 `merged (#PR)`.
+
+**6b notes for part 7.** The pieces 7 inherits, and the decisions behind them:
+
+- `lib/control/binding/` holds the whole model: `FxBindingTarget` (sealed
+  chain/slot), `PedalBinding` + `PedalBindingKey`, `PedalBindingSet`, and the
+  `FxBindingResolver` extension on `LooperRepository`. Expression/CC bindings
+  reuse the sealed target and the resolver verbatim — only the KEY type is
+  new.
+- The target encoding EXTENDS `FxAddress` canonical JSON rather than
+  redeclaring it (R19): a chain target's string IS the address string; a slot
+  target appends one `slot` key. Safe because `FxAddress.fromJson` ignores
+  unknown keys.
+- Bindings live in `ControlState` (`globalBindings` / `sessionBindings` /
+  `heldMomentary`), not in cubit fields — the Signal chips and the assignment
+  screen both rebuild on `emit`. `state.bindings` derives the A12 merge, so
+  the two sets can never disagree about which applies.
+- `releaseAllMomentary()` is the ONE enforcement point (B1); the restore
+  VALUES stay in a private cubit map, only the held KEY set is in state.
+  Part 7's CC path must funnel through the same method.
+- Persistence: settings key `pedal.bindings` for globals; `Session.pedalBindings`
+  (manifest **v6**, opaque, presence-keyed) for the session set, threaded
+  through `SessionCubit`'s `currentPedalBindings` / `onPedalBindings` function
+  seams rather than a cubit-to-cubit link.
 
 ## Ordering and parallelism
 

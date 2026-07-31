@@ -1018,5 +1018,32 @@
                 "type": "String"
             }
         }
-    }
+    },
+    "pedalAssignTitle": "Asignaciones del pedal",
+    "pedalAssignIntro": "Eleg\u00ed un pedal en la placa y despu\u00e9s qu\u00e9 controla en modo FX. Los pedales sin asignar conservan su comportamiento normal.",
+    "pedalAssignSelectPrompt": "Seleccion\u00e1 un pedal para asignarlo.",
+    "pedalAssignUnbindable": "MODE y BANK no se pueden reasignar: son la \u00fanica salida del modo FX y el \u00fanico acceso al otro banco.",
+    "pedalAssignBankLabel": "Banco {bank}",
+    "pedalAssignTarget": "Controla",
+    "pedalAssignBehavior": "Comportamiento",
+    "pedalAssignToggle": "Conmutar",
+    "pedalAssignMomentary": "Moment\u00e1neo",
+    "pedalAssignToggleHint": "Al pisarlo cambia y queda as\u00ed.",
+    "pedalAssignMomentaryHint": "Activo mientras lo manten\u00e9s; al soltarlo vuelve como estaba.",
+    "pedalAssignRebind": "Reasignar",
+    "pedalAssignClear": "Quitar",
+    "pedalAssignUnassigned": "Sin asignar",
+    "pedalAssignStale": "Destino ausente",
+    "pedalAssignStaleDetail": "La cadena o el efecto al que apuntaba ya no existe. Pisarlo no hace nada hasta que lo reasignes o lo quites.",
+    "pedalAssignNoTargets": "Todav\u00eda no hay cadenas FX para asignar. Agreg\u00e1 un efecto primero.",
+    "pedalAssignChainTarget": "Cadena de {stage}",
+    "pedalAssignStageInput": "Entrada {number}",
+    "pedalAssignStageLoop": "Pista {number} l\u00ednea {lane}",
+    "pedalAssignStageTrack": "Pista {number}",
+    "pedalAssignStageMaster": "Master",
+    "a11yPedalAssignRow": "{button}: {target}",
+    "a11yPedalAssignSelected": "{button} seleccionado",
+    "fxStompBound": "Pedal",
+    "a11yFxStompBound": "Asignado al pedal {button}",
+    "a11yFxStompBoundHeld": "Asignado al pedal {button}, mantenido"
 }

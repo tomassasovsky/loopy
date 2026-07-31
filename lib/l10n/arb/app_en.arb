@@ -1283,5 +1283,74 @@
                 "type": "String"
             }
         }
+    },
+    "pedalAssignTitle": "Pedal assignments",
+    "@pedalAssignTitle": {
+        "description": "Title of the screen where footswitches are remapped to FX targets (FX v3 part 6b)."
+    },
+    "pedalAssignIntro": "Pick a footswitch on the plate, then choose what it acts on in FX mode. Unassigned switches keep their normal FX behaviour.",
+    "pedalAssignSelectPrompt": "Select a footswitch to assign it.",
+    "pedalAssignUnbindable": "MODE and BANK cannot be reassigned \u2014 they are the only way out of FX mode and to the other bank.",
+    "@pedalAssignUnbindable": {
+        "description": "Shown when the user selects the MODE or BANK footswitch, which are never remappable (B12)."
+    },
+    "pedalAssignBankLabel": "Bank {bank}",
+    "@pedalAssignBankLabel": {
+        "description": "Names which bank a track-button assignment applies to; track buttons are bound per bank (A3).",
+        "placeholders": { "bank": { "type": "String" } }
+    },
+    "pedalAssignTarget": "Acts on",
+    "pedalAssignBehavior": "Behaviour",
+    "pedalAssignToggle": "Toggle",
+    "pedalAssignMomentary": "Momentary",
+    "pedalAssignToggleHint": "Press flips it and it stays flipped.",
+    "pedalAssignMomentaryHint": "On while held, back to how it was on release.",
+    "pedalAssignRebind": "Rebind",
+    "pedalAssignClear": "Clear",
+    "pedalAssignUnassigned": "Not assigned",
+    "pedalAssignStale": "Target missing",
+    "@pedalAssignStale": {
+        "description": "Title for an assignment whose chain or effect no longer exists (R25)."
+    },
+    "pedalAssignStaleDetail": "The chain or effect this switch pointed at is gone. Stomping it does nothing until you rebind or clear it.",
+    "pedalAssignNoTargets": "No FX chains to assign yet. Add an effect first.",
+    "pedalAssignChainTarget": "{stage} chain",
+    "@pedalAssignChainTarget": {
+        "description": "Names a whole-chain target in the picker, e.g. \"Track 3 chain\".",
+        "placeholders": { "stage": { "type": "String" } }
+    },
+    "pedalAssignStageInput": "Input {number}",
+    "@pedalAssignStageInput": {
+        "placeholders": { "number": { "type": "int" } }
+    },
+    "pedalAssignStageLoop": "Track {number} lane {lane}",
+    "@pedalAssignStageLoop": {
+        "placeholders": { "number": { "type": "int" }, "lane": { "type": "int" } }
+    },
+    "pedalAssignStageTrack": "Track {number}",
+    "@pedalAssignStageTrack": {
+        "placeholders": { "number": { "type": "int" } }
+    },
+    "pedalAssignStageMaster": "Master",
+    "a11yPedalAssignRow": "{button}: {target}",
+    "@a11yPedalAssignRow": {
+        "description": "Semantics label for one assignment row.",
+        "placeholders": { "button": { "type": "String" }, "target": { "type": "String" } }
+    },
+    "a11yPedalAssignSelected": "{button} selected",
+    "@a11yPedalAssignSelected": {
+        "placeholders": { "button": { "type": "String" } }
+    },
+    "fxStompBound": "Pedal",
+    "@fxStompBound": {
+        "description": "Chip on an FX chain card marking it as reachable from a pedal footswitch (FX v3 part 6b)."
+    },
+    "a11yFxStompBound": "Assigned to the {button} footswitch",
+    "@a11yFxStompBound": {
+        "placeholders": { "button": { "type": "String" } }
+    },
+    "a11yFxStompBoundHeld": "Assigned to the {button} footswitch, held on",
+    "@a11yFxStompBoundHeld": {
+        "placeholders": { "button": { "type": "String" } }
     }
 }
