@@ -36,6 +36,17 @@ issue: 351
 is the one to run next, and it is the only thing standing between here and
 6b.
 
+**[B10] amendment** (from #399's review, carried forward through 5b): the
+codec-level downgrade degrades **both** v3-only values below v3 — mode fx →
+play AND `PedalTrackLed.blue` → green — because pre-5a firmware rejects a
+frame carrying an unknown LED index wholesale. 5b's projection emits fx and
+blue unconditionally; the codec alone owns the per-version degrade. The part-5a
+plan's original wording ("only the mode-field downgrade differs") predates this
+amendment; `PedalCodec`'s doc comments are the authority. 5b's own faceplate
+labels had to learn the same lesson — they read the live `InteractionMode`,
+never `frame.mode`, precisely because the wire mode is degraded in lockstep
+with the LED colour.
+
 Open items carried out of merged parts, neither blocking a new part:
 - [#389](https://github.com/tomassasovsky/loopy/issues/389) (`plan-gate`, from
   3b) — a session load never writes the applied chains back to settings, so a
