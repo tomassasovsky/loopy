@@ -30,14 +30,15 @@ issue: 351
 
 ## Status
 
-**Next up:** everything through the pedal-plate presentational extraction is
-merged (0, 1a, 1b, 2, 3a, 3b, 4a, 4b, 5a, 5b, 6a). **6b** (remap bindings +
-momentary) is built and in review. **7** (expression + external MIDI) unblocks
-once 6b lands — it reuses 6b's sealed target type and release-all rule.
+**Next up:** the whole pedal chain is merged (0, 1a, 1b, 2, 3a, 3b, 4a, 4b,
+5a, 5b, 6a, 6b). **7** (expression + external MIDI) is unblocked — its
+dependencies (3a, 6b) are both merged — and is the one to run next. It reuses
+6b's sealed `FxBindingTarget` and its single release-all rule; see the 6b notes
+below before starting.
 
 [#410](https://github.com/tomassasovsky/loopy/pull/410) — the #403
-press/long-press gesture-helper collapse this guide called for before 6b —
-is MERGED; 6b was rebased onto it.
+press/long-press gesture-helper collapse this guide called for before 6b — is
+MERGED; 6b was rebased onto it.
 
 **[B10] amendment** (from #399's review, carried forward through 5b): the
 codec-level downgrade degrades **both** v3-only values below v3 — mode fx →
@@ -88,7 +89,7 @@ Open items carried out of merged parts, neither blocking a new part:
 | 5a | protocol v3 wire + version discovery | **Fable · high** | `merge-gate` | — (#331 prereq) | merged (#399) |
 | 5b | FX interaction mode (app) | Opus · high | `merge-gate` (physical slice `blocked-verify`) | 5a, 3a, 1a | merged (#404) |
 | 6a | faceplate presentational extraction | Sonnet · medium | `auto` | — | merged (#408) |
-| 6b | remap bindings + momentary | Opus · high | `merge-gate` | 6a, 5b, 3a | in-review (#412) |
+| 6b | remap bindings + momentary | Opus · high | `merge-gate` | 6a, 5b, 3a | merged (#412) |
 | 7 | expression + external MIDI | Opus · high | `merge-gate` | 3a, 6b | pending |
 | 8 | TRS jack hardware (non-gating child) | Fable · high (at bench) | `blocked-verify` | 7 | pending |
 | 9 | hardening + export + soak | Opus · medium | `blocked-verify` | all | pending |
@@ -116,8 +117,21 @@ Status values: `pending` → `building (#issue)` → `in-review (#PR)` →
   Part 7's CC path must funnel through the same method.
 - Persistence: settings key `pedal.bindings` for globals; `Session.pedalBindings`
   (manifest **v6**, opaque, presence-keyed) for the session set, threaded
-  through `SessionCubit`'s `currentPedalBindings` / `onPedalBindings` function
-  seams rather than a cubit-to-cubit link.
+  through `SessionCubit`'s `currentPedalBindings` / `onPedalBindings` /
+  `releaseHeldBindings` function seams rather than a cubit-to-cubit link. A
+  save stamps the set IN FORCE (`state.bindings`), matching the repo rule that
+  the live rig — not settings — is what a save captures.
+- The load seam is SPLIT across `applySession` and part 7 must keep it that
+  way: release held momentaries BEFORE (the restore has to land on the
+  outgoing rig) and commit the new set AFTER it succeeds (a failed apply must
+  not leave the surface remapped to a session that never loaded).
+- Momentary capture is first-press-only (`putIfAbsent`). A repeated press with
+  no release between them — a dropped NoteOff — must never re-capture the
+  state the binding itself just enabled; that stranded the target on. Part 7's
+  CC path needs the same guard.
+- Every assignment edit persists to settings immediately; an edit made while a
+  session remap is in force PROMOTES that copy to global and drops the
+  override, so no edit can be silently lost on quit.
 
 ## Ordering and parallelism
 
