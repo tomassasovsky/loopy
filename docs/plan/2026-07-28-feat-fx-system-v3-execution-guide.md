@@ -46,12 +46,13 @@ Open items carried out of merged parts, neither blocking a new part:
 - Part 2's [B4] A/B listen check — the human exit-bar item on the wet cache,
   which no CI job can stand in for.
 - [#405](https://github.com/tomassasovsky/loopy/issues/405) (`plan-gate`, from
-  5b) — part 5b's [A5] capture finalize was DESCOPED. Entering FX cancels every
-  pending arm (so nothing can start a take the user cannot see), but a live
-  capture survives into FX exactly as it does into Mute. Finalising it needs an
-  engine primitive that ignores quantize — a record press arms a loop-top
-  finalize instead, and with the transport parked it starts a capture — plus a
-  call on whether an off-grid cut is musically right at all. Not a 6b blocker.
+  5b) — part 5b's [A5] capture finalize was CUT from the part. Entering FX
+  cancels every pending arm (so nothing can start a take the user cannot see),
+  but a live capture survives into FX exactly as it does into Mute. Ending it
+  needs an engine primitive that ignores quantize — a record press arms a
+  loop-top finalize instead, and with the transport parked it starts a capture
+  — plus a call on whether an off-grid cut is musically right at all. Not a 6b
+  blocker.
 - [#402](https://github.com/tomassasovsky/loopy/issues/402)
   (`blocked-verify`, from 5b) — the physical-pedal slice: mode cycle on
   hardware, FX LEDs on a v3 pedal, and a v2 pedal showing chain LEDs with the
