@@ -287,6 +287,23 @@ void main() {
         );
       });
 
+      test('a Loop address with NO lane — every lane owns a chain, so a '
+          'lane-less address names none; coercing it to lane 0 would act on '
+          'a chain the user never bound', () {
+        const laneless = FxChainTarget(
+          FxAddress(stage: FxStage.loop, index: 1),
+        );
+        expect(looper.bindingEnabled(laneless), isNull);
+        expect(looper.setBindingEnabled(laneless, enabled: false), isFalse);
+        verifyNever(
+          () => looper.setLaneChainEnabled(
+            channel: any(named: 'channel'),
+            lane: any(named: 'lane'),
+            enabled: any(named: 'enabled'),
+          ),
+        );
+      });
+
       test('a negative index, and a non-zero Master index', () {
         expect(
           looper.bindingEnabled(

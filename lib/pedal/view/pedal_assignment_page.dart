@@ -208,14 +208,26 @@ class _Editor extends StatelessWidget {
     final cubit = context.watch<ControlCubit>();
     final looper = context.read<LooperRepository>();
     final key = bindingKey!;
-    final binding = cubit.state.globalBindings.bindings
-        .where((b) => b.key == key)
-        .firstOrNull;
+    // Edit the set IN FORCE, not the globals: a loaded session's remap
+    // overrides the globals wholesale (A12), so editing globals while one is
+    // active would silently write to a set that never dispatches — the user
+    // rebinds a switch and stomping it still does the old thing.
+    final editing = cubit.state.bindings;
+    final binding = editing.bindings.where((b) => b.key == key).firstOrNull;
     final targets = looper.availableBindingTargets();
     final bound = binding?.decodeTarget();
     final resolves = bound != null && looper.bindingResolves(bound);
 
-    Future<void> write(PedalBindingSet next) => cubit.setGlobalBindings(next);
+    // ...and write it back to whichever set that was. The session copy
+    // persists with the next session save rather than to settings, which is
+    // why it does not go through `setGlobalBindings`.
+    Future<void> write(PedalBindingSet next) async {
+      if (cubit.state.sessionBindings.isNotEmpty) {
+        cubit.applySessionBindings(next);
+        return;
+      }
+      await cubit.setGlobalBindings(next);
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -253,7 +265,7 @@ class _Editor extends StatelessWidget {
           _UnassignedRow(
             targets: targets,
             onPick: (target) => write(
-              cubit.state.globalBindings.withBinding(
+              editing.withBinding(
                 PedalBinding(key: key, target: target.canonicalString()),
               ),
             ),
@@ -264,16 +276,14 @@ class _Editor extends StatelessWidget {
             targets: targets,
             resolves: resolves,
             onRebind: (target) => write(
-              cubit.state.globalBindings.withBinding(
+              editing.withBinding(
                 binding.copyWith(target: target.canonicalString()),
               ),
             ),
             onBehavior: (behavior) => write(
-              cubit.state.globalBindings.withBinding(
-                binding.copyWith(behavior: behavior),
-              ),
+              editing.withBinding(binding.copyWith(behavior: behavior)),
             ),
-            onClear: () => write(cubit.state.globalBindings.without(key)),
+            onClear: () => write(editing.without(key)),
           ),
       ],
     );

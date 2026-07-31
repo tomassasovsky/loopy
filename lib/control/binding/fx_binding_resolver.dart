@@ -106,7 +106,9 @@ extension FxBindingResolver on LooperRepository {
     if (_chainEntries(address) == null) return null;
     return switch (address.stage) {
       FxStage.input => monitorChainEnabled(address.index),
-      FxStage.loop => laneChainEnabled(address.index, address.lane ?? 0),
+      // Non-null: `_chainEntries` above already rejected a lane-less Loop
+      // address, so this branch is unreachable without one.
+      FxStage.loop => laneChainEnabled(address.index, address.lane!),
       FxStage.track => trackChainEnabled(address.index),
       FxStage.master => masterChainEnvelope().chainEnabled,
     };
@@ -119,7 +121,7 @@ extension FxBindingResolver on LooperRepository {
       case FxStage.loop:
         setLaneChainEnabled(
           channel: address.index,
-          lane: address.lane ?? 0,
+          lane: address.lane!, // resolved above; see `_chainEntries`
           enabled: enabled,
         );
       case FxStage.track:
@@ -147,7 +149,7 @@ extension FxBindingResolver on LooperRepository {
       case FxStage.loop:
         setLaneEffectEnabled(
           channel: address.index,
-          lane: address.lane ?? 0,
+          lane: address.lane!, // resolved above; see `_chainEntries`
           index: index,
           enabled: enabled,
         );
@@ -173,14 +175,19 @@ extension FxBindingResolver on LooperRepository {
   /// stage and nothing for an absent one.
   List<TrackEffect>? _chainEntries(FxAddress address) {
     if (address.index < 0) return null;
+    // A Loop address with NO lane does not name a chain — every lane owns one,
+    // so there is nothing to pick between. Coercing the null to lane 0 would
+    // silently act on a chain the user never bound, which is the retarget A9
+    // forbids; it goes inert instead.
+    final lane = address.lane;
     return switch (address.stage) {
       FxStage.input =>
         allMonitors().containsKey(address.index)
             ? monitorEffects(address.index)
             : null,
       FxStage.loop =>
-        allLaneChains().containsKey((address.index, address.lane ?? 0))
-            ? laneEffects(address.index, address.lane ?? 0)
+        lane != null && allLaneChains().containsKey((address.index, lane))
+            ? laneEffects(address.index, lane)
             : null,
       FxStage.track =>
         allTrackChains().containsKey(address.index)

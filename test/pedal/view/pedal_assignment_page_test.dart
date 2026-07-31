@@ -208,6 +208,50 @@ void main() {
       );
     });
 
+    testWidgets('edits the set IN FORCE — with a session remap loaded the '
+        'globals are overridden wholesale (A12), so editing them would write '
+        'to a set that never dispatches', (tester) async {
+      await pump(tester);
+      final chain3 = const FxChainTarget(
+        FxAddress(stage: FxStage.track, index: 3),
+      ).canonicalString();
+      // A session remap is in force; the globals are inert.
+      await control.setGlobalBindings(
+        PedalBindingSet([
+          PedalBinding(
+            key: const PedalBindingKey(button: PedalButton.undo),
+            target: chain3,
+          ),
+        ]),
+      );
+      control.applySessionBindings(
+        PedalBindingSet([
+          PedalBinding(
+            key: const PedalBindingKey(button: PedalButton.stop),
+            target: chain3,
+          ),
+        ]),
+      );
+      await tester.pump();
+
+      // The screen shows the SESSION binding, not the global one.
+      await select(tester, PedalButton.stop);
+      expect(find.byKey(const Key('assign_row')), findsOneWidget);
+      await select(tester, PedalButton.undo);
+      expect(find.byKey(const Key('assign_row')), findsNothing);
+
+      // And an edit lands on the session set, which is the one dispatching.
+      await select(tester, PedalButton.stop);
+      await tapVisible(tester, find.byKey(const Key('assign_clear')));
+
+      expect(control.state.sessionBindings.isEmpty, isTrue);
+      expect(
+        control.state.globalBindings.lookup(PedalButton.undo, bank: 0),
+        isNotNull,
+        reason: 'the globals were never touched',
+      );
+    });
+
     group('stale bindings (R25)', () {
       Future<void> bindThenBreak(WidgetTester tester) async {
         await pump(tester);

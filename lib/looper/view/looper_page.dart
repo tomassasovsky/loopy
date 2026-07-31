@@ -49,8 +49,16 @@ class LooperPage extends StatelessWidget {
             // `ControlCubit` owns the binding model, and it is an ancestor
             // provider here, so this reads and writes it without either cubit
             // knowing the other exists.
+            //
+            // Saves the remap IN FORCE (`state.bindings`), not the session
+            // copy: the live rig — not settings — is the truth a save
+            // captures, exactly as `chainsFromLooper` reads chains off the
+            // repository rather than off the stored envelope. Reading
+            // `sessionBindings` here instead made the blob write-never (no
+            // path populates it before the first load), so no session could
+            // ever acquire a remap and the A12 session branch was dead.
             currentPedalBindings: () =>
-                context.read<ControlCubit>().state.sessionBindings.encode(),
+                context.read<ControlCubit>().state.bindings.encode(),
             onPedalBindings: (encoded) => context
                 .read<ControlCubit>()
                 .applySessionBindings(PedalBindingSet.decode(encoded)),

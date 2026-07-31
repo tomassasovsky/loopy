@@ -1819,6 +1819,24 @@ void main() {
           });
         });
 
+        test('a REPEATED press with no release between captures only ONCE — '
+            'a dropped NoteOff must not let the release restore the state '
+            'this binding itself enabled (B1)', () async {
+          chainEnabled[3] = false;
+          await bindMomentary();
+
+          await press(PedalButton.recPlay);
+          expect(chainEnabled[3], isTrue);
+          await press(PedalButton.recPlay); // the NoteOff never arrived
+          await release(PedalButton.recPlay);
+
+          expect(
+            chainEnabled[3],
+            isFalse,
+            reason: 'restores what the FIRST press captured',
+          );
+        });
+
         test('a bank change mid-hold still releases the pressed binding — '
             'the release is matched by BUTTON, not the live bank', () async {
           chainEnabled[3] = false;
@@ -1899,6 +1917,50 @@ void main() {
           await press(PedalButton.recPlay);
           await release(PedalButton.recPlay);
           expect(chainEnabled, isEmpty);
+        });
+      });
+
+      group('stompFor (the Signal chip source)', () {
+        test('reports a HELD binding over an unheld one on the same chain — '
+            'the held marker explains an enabled state no click can undo, so '
+            'it must not be hidden by whichever binding sorts first', () async {
+          chainEnabled[3] = false;
+          await cubit.setGlobalBindings(
+            PedalBindingSet([
+              // recPlay sorts BEFORE track1, and is the unheld one.
+              bind(PedalButton.recPlay),
+              bind(
+                PedalButton.track1,
+                bank: 0,
+                behavior: BindingBehavior.momentary,
+              ),
+            ]),
+          );
+
+          await press(PedalButton.track1);
+
+          final stomp = cubit.state.stompFor(
+            const FxAddress(stage: FxStage.track, index: 3),
+          );
+          expect(stomp?.held, isTrue);
+          expect(stomp?.binding.key.button, PedalButton.track1);
+
+          await release(PedalButton.track1);
+          expect(
+            cubit.state
+                .stompFor(const FxAddress(stage: FxStage.track, index: 3))
+                ?.held,
+            isFalse,
+          );
+        });
+
+        test('an unbound chain reports nothing', () {
+          expect(
+            cubit.state.stompFor(
+              const FxAddress(stage: FxStage.track, index: 3),
+            ),
+            isNull,
+          );
         });
       });
 

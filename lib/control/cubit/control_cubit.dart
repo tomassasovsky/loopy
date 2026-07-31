@@ -1040,7 +1040,15 @@ class ControlCubit extends Cubit<ControlState> {
         _looper.setBindingEnabled(target, enabled: !prior);
       case BindingBehavior.momentary:
         _log('binding momentary ${binding.key.button.name} (was $prior)');
-        _heldRestore[binding.key] = (target: target, prior: prior);
+        // Capture on the FIRST press only. A repeated press with no release
+        // between them — a dropped NoteOff, or the on-screen plate re-emitting
+        // a down — would otherwise re-capture the state THIS binding just
+        // enabled, and the eventual release would restore `true` and strand
+        // the target on: the stuck momentary (B1) with no foot on the switch.
+        _heldRestore.putIfAbsent(
+          binding.key,
+          () => (target: target, prior: prior),
+        );
         _looper.setBindingEnabled(target, enabled: true);
         emit(
           state.copyWith(heldMomentary: {...state.heldMomentary, binding.key}),

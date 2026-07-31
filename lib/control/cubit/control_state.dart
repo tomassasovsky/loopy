@@ -105,12 +105,21 @@ class ControlState extends Equatable {
   /// STALE binding never matches — its target does not decode to an address at
   /// all, so it marks nothing, which is the same silence its unlit LED gives
   /// the performer.
+  /// When several controls reach one chain, a HELD one wins the report. The
+  /// held marker explains an enabled state the user cannot undo by clicking,
+  /// so answering with a different, unheld binding would leave exactly that
+  /// state unexplained; which control gets named matters less than whether a
+  /// foot is on one.
   ({PedalBinding binding, bool held})? stompFor(FxAddress address) {
+    PedalBinding? first;
     for (final binding in bindings.bindings) {
       if (binding.decodeTarget()?.address != address) continue;
-      return (binding: binding, held: heldMomentary.contains(binding.key));
+      if (heldMomentary.contains(binding.key)) {
+        return (binding: binding, held: true);
+      }
+      first ??= binding;
     }
-    return null;
+    return first == null ? null : (binding: first, held: false);
   }
 
   /// The first channel of the visible bank (`0` for A, `4` for B).

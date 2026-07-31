@@ -143,12 +143,18 @@ class SessionCubit extends Cubit<SessionState> {
   Future<void> loadNamed(String name) => _run(() async {
     await _performance.disarmAndFinalize();
     final bundle = await _repository.read(await _repository.bundlePath(name));
-    await _looper.applySession(rigFromBundle(bundle));
     // The remap is control-surface configuration, not part of the rig the
     // engine applies — so it leaves through its own seam rather than
-    // `SessionRig`. Handed over AFTER the rig lands, so the targets it names
-    // resolve against the session's own chains rather than the outgoing ones.
+    // `SessionRig`.
+    //
+    // Handed over BEFORE the rig lands. Swapping the binding set releases any
+    // held momentary, and that restore must write the captured state onto the
+    // OUTGOING rig: run after `applySession` it would instead stamp the old
+    // session's captured values onto the chains the new one just installed,
+    // silently bringing a freshly loaded session up bypassed. The new set
+    // needs no rig of its own — targets resolve lazily at press time.
     _onPedalBindings(bundle.session.pedalBindings);
+    await _looper.applySession(rigFromBundle(bundle));
     return _ActionResult(
       SessionOutcome.loaded,
       currentName: _slugOf(name),
