@@ -286,6 +286,29 @@ void main() {
       expect(find.byKey(const Key('assign_target_picker')), findsOneWidget);
     });
   });
+
+  testWidgets('showPedalAssignmentPage opens the surface and re-provides what '
+      'it drives — a pushed route does not inherit the caller providers', (
+    tester,
+  ) async {
+    await pump(tester);
+    final context = tester.element(find.byType(PedalAssignmentPage));
+
+    // NOT awaited: the push future completes only when the route is POPPED,
+    // so awaiting it here would hang until the test timed out.
+    unawaited(showPedalAssignmentPage(context));
+    await tester.pumpAndSettle();
+
+    // Two in the tree — the one pumped above (now offstage behind the opaque
+    // route) and the pushed route's own. The pushed one builds at all only
+    // because the helper re-provided the cubit and the repository; without
+    // them it would have thrown ProviderNotFound instead.
+    expect(
+      find.byType(PedalAssignmentPage, skipOffstage: false),
+      findsNWidgets(2),
+    );
+    expect(find.byKey(const Key('assign_prompt')), findsOneWidget);
+  });
 }
 
 extension on WidgetTester {

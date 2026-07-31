@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/pedal/cubit/pedal_cubit.dart';
+import 'package:loopy/pedal/view/pedal_assignment_page.dart';
 import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:pedal_repository/pedal_repository.dart'
@@ -57,6 +58,18 @@ class PedalSettingsSection extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         Text(l10n.pedalOutputHint, style: setupBody),
+        const SizedBox(height: 24),
+        // No hint line under this one: the assignment page opens with the
+        // same sentence, so repeating it here only costs height.
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            key: const Key('pedalSettings_openAssignments'),
+            onPressed: () => showPedalAssignmentPage(context),
+            icon: const Icon(Icons.piano_outlined, size: 16),
+            label: Text(l10n.pedalAssignTitle),
+          ),
+        ),
         const SizedBox(height: 24),
         SetupGroupLabel(l10n.pedalFirmwareGroup),
         const SizedBox(height: 12),

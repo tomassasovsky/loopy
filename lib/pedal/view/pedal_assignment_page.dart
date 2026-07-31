@@ -5,8 +5,31 @@ import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:loopy/pedal/view/pedal_plate.dart';
+import 'package:loopy/theme/page_transitions.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+
+/// Opens the pedal-assignment surface as a full-screen page.
+///
+/// Re-provides what the page drives into the pushed route — [ControlCubit]
+/// (the binding owner) and the [LooperRepository] the target picker enumerates
+/// from — the same way `showSignalPage` re-provides its own, since a pushed
+/// route does not inherit the caller's providers.
+Future<void> showPedalAssignmentPage(BuildContext context) {
+  final control = context.read<ControlCubit>();
+  final looper = context.read<LooperRepository>();
+  return Navigator.of(context).push(
+    desktopPageRoute<void>(
+      (_) => MultiBlocProvider(
+        providers: [BlocProvider.value(value: control)],
+        child: RepositoryProvider<LooperRepository>.value(
+          value: looper,
+          child: const PedalAssignmentPage(),
+        ),
+      ),
+    ),
+  );
+}
 
 /// Names [target] for the picker and the assignment rows.
 ///
