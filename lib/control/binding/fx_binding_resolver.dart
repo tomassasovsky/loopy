@@ -20,6 +20,49 @@ import 'package:loopy/control/binding/fx_binding_target.dart';
 /// delay that replaced it. A stale binding is a no-op with an unlit LED, and
 /// the assignment screen shows it as broken (R25).
 extension FxBindingResolver on LooperRepository {
+  /// Every target the live rig can currently offer a binding, in signal
+  /// order: each configured chain followed by its own slots.
+  ///
+  /// What the assignment screen's picker lists. Only slots carrying a stable
+  /// `slotId` are offered — an entry without one cannot be re-found after a
+  /// reorder, so binding to it would create a target that silently goes stale
+  /// on the next edit (A9).
+  List<FxBindingTarget> availableBindingTargets() {
+    final targets = <FxBindingTarget>[];
+    void add(FxAddress address, List<TrackEffect> entries) {
+      targets.add(FxChainTarget(address));
+      for (final fx in entries) {
+        final slotId = fx.slotId;
+        if (slotId != null) {
+          targets.add(FxSlotTarget(address: address, slotId: slotId));
+        }
+      }
+    }
+
+    for (final input in allMonitors().keys.toList()..sort()) {
+      add(FxAddress(stage: FxStage.input, index: input), monitorEffects(input));
+    }
+    final laneKeys = allLaneChains().keys.toList()
+      ..sort(
+        (a, b) => a.$1 == b.$1 ? a.$2.compareTo(b.$2) : a.$1.compareTo(b.$1),
+      );
+    for (final key in laneKeys) {
+      add(
+        FxAddress(stage: FxStage.loop, index: key.$1, lane: key.$2),
+        laneEffects(key.$1, key.$2),
+      );
+    }
+    for (final channel in allTrackChains().keys.toList()..sort()) {
+      add(
+        FxAddress(stage: FxStage.track, index: channel),
+        trackEffects(channel),
+      );
+    }
+    // The Master insert always exists, so it is always offerable.
+    add(const FxAddress(stage: FxStage.master), masterEffects);
+    return targets;
+  }
+
   /// The target's current `enabled` state, or `null` when it does not
   /// resolve.
   bool? bindingEnabled(FxBindingTarget target) {

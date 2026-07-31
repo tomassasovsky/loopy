@@ -174,7 +174,7 @@ void main() {
       // binding array, quotes and all.
       const encoded =
           '[{"button":"track1","bank":0,'
-          '"target":"{\\"stage\\":\\"track\\",\\"index\\":5}",'
+          r'"target":"{\"stage\":\"track\",\"index\":5}",'
           '"behavior":"momentary"}]';
 
       final session = await repoFor(source).save(dir, pedalBindings: encoded);

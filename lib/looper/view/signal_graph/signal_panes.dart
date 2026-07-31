@@ -551,6 +551,10 @@ class _TrackFxRow extends StatelessWidget {
         effects: group.effects,
         chainEnabled: group.chainEnabled,
         semanticLabel: l10n.signalEditTrackFx,
+        stomp: signalStompFor(
+          context,
+          FxAddress(stage: FxStage.track, index: group.track),
+        ),
         onEdit: onEdit,
       ),
     );
@@ -595,6 +599,10 @@ class _MasterFxRow extends StatelessWidget {
               effects: effects,
               chainEnabled: chainEnabled,
               semanticLabel: l10n.signalEditMasterFx,
+              stomp: signalStompFor(
+                context,
+                const FxAddress(stage: FxStage.master),
+              ),
               onEdit: onEdit,
             ),
           ),

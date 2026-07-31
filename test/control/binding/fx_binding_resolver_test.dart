@@ -255,7 +255,7 @@ void main() {
       test('a chain on a stage the rig has not configured', () {
         for (final address in const [
           FxAddress(stage: FxStage.track, index: 7),
-          FxAddress(stage: FxStage.input, index: 0),
+          FxAddress(stage: FxStage.input),
           FxAddress(stage: FxStage.loop, index: 3, lane: 0),
         ]) {
           expect(looper.bindingEnabled(FxChainTarget(address)), isNull);

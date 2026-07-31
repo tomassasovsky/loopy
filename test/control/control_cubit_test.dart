@@ -1676,7 +1676,7 @@ void main() {
 
       group('long-press system gestures survive a remap (B12)', () {
         test('a bound Stop runs its binding on the press but KEEPS the '
-            'restore-all hold — the panic\'s only undo must stay reachable '
+            "restore-all hold — the panic's only undo must stay reachable "
             'whatever the user mapped', () async {
           trackChains[1] = [BuiltInEffect(type: TrackEffectType.drive)];
           await cubit.setGlobalBindings(

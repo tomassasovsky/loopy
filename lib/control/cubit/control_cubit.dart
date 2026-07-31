@@ -175,21 +175,17 @@ class ControlCubit extends Cubit<ControlState> {
   // fires on the press, so this one arms no tap action — only the hold.
   final _stopGesture = _HoldGesture();
 
-  // The remap (part 6b). Two sets, never merged per button: the GLOBAL one
-  // from settings and the loaded session's own. `bindings` applies the
-  // wholesale session-over-global rule (A12) on every read, so neither copy
-  // can go stale against the other.
-  PedalBindingSet _globalBindings = PedalBindingSet.empty;
-  PedalBindingSet _sessionBindings = PedalBindingSet.empty;
-
-  /// Every momentary currently held down, keyed by the control holding it:
-  /// the target it is driving plus the enabled state to put back on release.
-  ///
-  /// Keyed by [PedalBindingKey] rather than by target, so two bindings on one
-  /// target each restore what THEY captured (last writer wins, per
-  /// [PedalBinding]'s doc). A button can only be held once, so the key is
-  /// unique for the lifetime of a press.
-  final _heldMomentary =
+  // The remap (part 6b) lives in ControlState — it is stored user intent, and
+  // the surfaces that render it rebuild on emit. What stays here is only the
+  // mid-gesture restore VALUES: the enabled state each held press captured,
+  // which no surface renders and which must not survive a hot restart.
+  //
+  // Keyed by [PedalBindingKey] rather than by target, so two bindings on one
+  // target each restore what THEY captured (last writer wins, per
+  // [PedalBinding]'s doc). A button can only be held once, so the key is
+  // unique for the lifetime of a press. Kept in lockstep with
+  // `state.heldMomentary`, which is the same key set.
+  final _heldRestore =
       <PedalBindingKey, ({FxBindingTarget target, bool prior})>{};
 
   // Whether the Clear footswitch is currently held down. Lights the Clear
@@ -244,7 +240,7 @@ class ControlCubit extends Cubit<ControlState> {
 
   Future<void> _restore() async {
     _longPress = Duration(milliseconds: await _settings.loadPedalLongPressMs());
-    _globalBindings = PedalBindingSet.decode(
+    final storedBindings = PedalBindingSet.decode(
       await _settings.loadPedalBindings() ?? '',
     );
     // bootDefaultFromToken, not fromToken: a stored `'fx'` (hand-edited or
@@ -254,7 +250,12 @@ class ControlCubit extends Cubit<ControlState> {
       await _settings.loadDefaultInteractionMode(),
     );
     if (isClosed) return;
-    emit(state.copyWith(defaultMode: defaultMode));
+    emit(
+      state.copyWith(
+        defaultMode: defaultMode,
+        globalBindings: storedBindings,
+      ),
+    );
     setMode(defaultMode);
   }
 
@@ -974,14 +975,13 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// The remap in force: the loaded session's set when it has ANY bindings,
   /// the global set otherwise (A12). Never a per-button blend of the two.
-  PedalBindingSet get bindings =>
-      _globalBindings.resolveAgainst(_sessionBindings);
+  PedalBindingSet get bindings => state.bindings;
 
   /// The GLOBAL remap, as loaded from / saved to settings.
-  PedalBindingSet get globalBindings => _globalBindings;
+  PedalBindingSet get globalBindings => state.globalBindings;
 
   /// The loaded session's own remap; empty when it carries none.
-  PedalBindingSet get sessionBindings => _sessionBindings;
+  PedalBindingSet get sessionBindings => state.sessionBindings;
 
   /// Replaces the global remap and persists it (the assignment screen's edit
   /// path).
@@ -991,10 +991,9 @@ class ControlCubit extends Cubit<ControlState> {
   /// release it is exactly the wedge (B1) the release-all rule exists to
   /// prevent.
   Future<void> setGlobalBindings(PedalBindingSet next) async {
-    if (next == _globalBindings) return;
+    if (next == state.globalBindings) return;
     releaseAllMomentary();
-    _globalBindings = next;
-    _pushProjected();
+    emit(state.copyWith(globalBindings: next));
     await _settings.savePedalBindings(next.encode());
   }
 
@@ -1002,10 +1001,30 @@ class ControlCubit extends Cubit<ControlState> {
   /// bundle has none). Called from the session apply seam; releases held
   /// momentaries on the same rule as [setGlobalBindings].
   void applySessionBindings(PedalBindingSet next) {
-    if (next == _sessionBindings) return;
+    if (next == state.sessionBindings) return;
     releaseAllMomentary();
-    _sessionBindings = next;
-    _pushProjected();
+    emit(state.copyWith(sessionBindings: next));
+  }
+
+  /// The binding reaching the chain at [address], if any, and whether a
+  /// momentary is holding it right now — what the Signal surface's stomp chip
+  /// renders (R25).
+  ///
+  /// Matches on the target's CHAIN address, so a binding on one slot inside a
+  /// chain still marks that chain as pedal-reachable: the chip answers "can I
+  /// stomp this from the plate", which a per-slot binding does satisfy. A
+  /// STALE binding never matches — its target does not decode to an address at
+  /// all, so it marks nothing, which is the same silence its unlit LED gives
+  /// the performer.
+  ({PedalBinding binding, bool held})? stompFor(FxAddress address) {
+    for (final binding in bindings.bindings) {
+      if (binding.decodeTarget()?.address != address) continue;
+      return (
+        binding: binding,
+        held: state.heldMomentary.contains(binding.key),
+      );
+    }
+    return null;
   }
 
   /// Restores every held momentary to the state its press captured — the ONE
@@ -1019,13 +1038,13 @@ class ControlCubit extends Cubit<ControlState> {
   /// one — but both write the captured state, so no target can be left
   /// enabled by a press whose release never arrived.
   void releaseAllMomentary() {
-    if (_heldMomentary.isEmpty) return;
-    for (final held in _heldMomentary.values) {
+    if (_heldRestore.isEmpty) return;
+    for (final held in _heldRestore.values) {
       _looper.setBindingEnabled(held.target, enabled: held.prior);
     }
-    _log('released ${_heldMomentary.length} held momentary binding(s)');
-    _heldMomentary.clear();
-    _pushProjected();
+    _log('released ${_heldRestore.length} held momentary binding(s)');
+    _heldRestore.clear();
+    emit(state.copyWith(heldMomentary: const <PedalBindingKey>{}));
   }
 
   /// Runs [binding] instead of its button's contextual FX-mode default.
@@ -1047,8 +1066,11 @@ class ControlCubit extends Cubit<ControlState> {
         _looper.setBindingEnabled(target, enabled: !prior);
       case BindingBehavior.momentary:
         _log('binding momentary ${binding.key.button.name} (was $prior)');
-        _heldMomentary[binding.key] = (target: target, prior: prior);
+        _heldRestore[binding.key] = (target: target, prior: prior);
         _looper.setBindingEnabled(target, enabled: true);
+        emit(
+          state.copyWith(heldMomentary: {...state.heldMomentary, binding.key}),
+        );
     }
     _pushProjected();
   }
@@ -1060,12 +1082,14 @@ class ControlCubit extends Cubit<ControlState> {
   /// find the binding that was actually pressed. A button holds at most one
   /// momentary at a time, so the match is unambiguous.
   void _releaseBinding(PedalButton button) {
-    for (final key in _heldMomentary.keys) {
+    for (final key in _heldRestore.keys) {
       if (key.button != button) continue;
-      final held = _heldMomentary.remove(key)!;
+      final held = _heldRestore.remove(key)!;
       _log('binding momentary ${button.name} released -> ${held.prior}');
       _looper.setBindingEnabled(held.target, enabled: held.prior);
-      _pushProjected();
+      emit(
+        state.copyWith(heldMomentary: {...state.heldMomentary}..remove(key)),
+      );
       return;
     }
   }

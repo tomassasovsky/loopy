@@ -1,10 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/view/fx_editor/fx_block_chip.dart';
 import 'package:loopy/looper/view/signal_graph/signal_fx_chrome.dart';
 import 'package:loopy/looper/view/signal_graph/signal_style.dart';
 import 'package:loopy/theme/surface_theme.dart';
+
+/// The stomp marker for the chain at [address], read from the live remap —
+/// what [SignalFxSummary.stomp] wants (part 6b).
+///
+/// Looked up as a NULLABLE cubit: the Signal surface renders in contexts with
+/// no control surface above it (widget tests, the standalone routing pane),
+/// and a chain with no pedal reaching it is exactly the "no chip" state. So an
+/// absent `ControlCubit` degrades to no marker rather than an exception.
+({String button, bool held})? signalStompFor(
+  BuildContext context,
+  FxAddress address,
+) {
+  final found = context.watch<ControlCubit?>()?.stompFor(address);
+  if (found == null) return null;
+  return (button: found.binding.key.button.name, held: found.held);
+}
 
 /// A compact, read-only **FX summary** on a stage row — the chain's block names
 /// as small chips (or a quiet "No FX" affordance when empty), all wrapped in a
@@ -27,6 +45,7 @@ class SignalFxSummary extends StatelessWidget {
     required this.onEdit,
     this.chainEnabled = true,
     this.semanticLabel,
+    this.stomp,
     super.key,
   });
 
@@ -45,6 +64,14 @@ class SignalFxSummary extends StatelessWidget {
 
   /// Opens the FX editor for this chain's scope.
   final VoidCallback onEdit;
+
+  /// The pedal footswitch this chain is reachable from, and whether a
+  /// momentary is holding it right now (part 6b); null when unbound.
+  ///
+  /// Lives on the summary rather than the row so all four stages get it from
+  /// one place — a chain is pedal-reachable or not regardless of which stage
+  /// it sits on.
+  final ({String button, bool held})? stomp;
 
   @override
   Widget build(BuildContext context) {
@@ -73,6 +100,11 @@ class SignalFxSummary extends StatelessWidget {
               // empty disabled chain would otherwise read exactly like a
               // never-touched one and silently swallow the next effect added.
               if (!chainEnabled) _ChainOffChip(label: l10n.signalChainOff),
+              // Leads the row, before the chain's own content: "you can stomp
+              // this" is context for everything after it, and a HELD momentary
+              // explains an enabled state the user did not click.
+              if (stomp case final stomp?)
+                _StompChip(button: stomp.button, held: stomp.held),
               if (effects.isEmpty)
                 _AddFxChip(label: l10n.signalNoFx)
               else ...[
@@ -178,6 +210,53 @@ class _ChainOffChip extends StatelessWidget {
             style: signalMono(color: surface.warning, size: 10),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The pedal-bound marker (part 6b): this chain is reachable from a footswitch,
+/// and — while a momentary is down — currently being HELD from it.
+///
+/// The held state earns its own treatment because it is the one FX state on
+/// this surface the user cannot undo by clicking: it belongs to a foot on a
+/// switch, and will revert on its own. Colour follows the theme's LED tokens
+/// rather than an ad-hoc opacity, so it reads as "the pedal owns this" in the
+/// same vocabulary the plate uses.
+class _StompChip extends StatelessWidget {
+  const _StompChip({required this.button, required this.held});
+
+  final String button;
+  final bool held;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final l10n = context.l10n;
+    final tone = held ? surface.ledAmber : surface.textTertiary;
+    return Semantics(
+      label: held
+          ? l10n.a11yFxStompBoundHeld(button)
+          : l10n.a11yFxStompBound(button),
+      child: Container(
+        key: Key('stomp_chip_$button'),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(color: tone),
+          color: held ? tone.withValues(alpha: 0.15) : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.download_rounded, size: 11, color: tone),
+            const SizedBox(width: 4),
+            Text(
+              '${l10n.fxStompBound} · ${button.toUpperCase()}',
+              style: signalMono(color: tone, size: 10),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -98,8 +98,8 @@ void main() {
     // strings above; a binding-set shape stands in for the real
     // `PedalBindingSet.encode()` output the control layer produces.
     pedalBindings:
-        '[{"button":"stop","target":"{\\"stage\\":\\"track\\",'
-        '\\"index\\":5}","behavior":"momentary"}]',
+        r'[{"button":"stop","target":"{\"stage\":\"track\",'
+        r'\"index\":5}","behavior":"momentary"}]',
   );
 
   group('Session', () {
