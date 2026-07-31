@@ -426,8 +426,10 @@ void main() {
           ..settle(fa)
           ..run(const [_Tap(PedalButton.stop)], fa) // parkAll
           ..settle(fa)
-          // Straight back to rec: the MODE switch's next stop is FX now.
-          ..run(const [_SetMode(InteractionMode.record)], fa)
+          // Two taps back to rec: the cycle's middle stop is FX, which leaves
+          // a capture alone (nothing is capturing here anyway).
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> fx
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> rec (cursor 0)
           ..settle(fa)
           ..run(const [_Tap(PedalButton.undo)], fa) // t0 -> empty, redo-able
           ..settle(fa);
@@ -459,12 +461,12 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.recording);
         expect(h.control.state.mode, InteractionMode.mute);
 
-        // It keeps ACCUMULATING through mute mode... (straight back to rec:
-        // the MODE switch's next stop is FX, whose entry finalizes a capture
-        // on purpose — A5 — which is the opposite of what this pins).
+        // It keeps ACCUMULATING through mute mode, and through FX on the way
+        // back round — every stop on the cycle leaves a live take alone.
         h
           ..run(const [_Pump(100, 0.5)], fa)
-          ..run(const [_SetMode(InteractionMode.record)], fa)
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> fx
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> rec
           ..settle(fa);
         expect(h.looper.tracks[0].state, TrackState.recording);
 
@@ -493,7 +495,8 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.overdubbing);
 
         h
-          ..run(const [_SetMode(InteractionMode.record)], fa) // back to rec
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> fx
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> rec
           ..run(const [_Tap(PedalButton.recPlay)], fa) // punch out
           ..settle(fa);
         expect(h.looper.tracks[0].state, TrackState.playing);

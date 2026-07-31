@@ -250,17 +250,22 @@ class ControlCubit extends Cubit<ControlState> {
   /// pure `sounding` could never cover. A live capture survives THIS entry:
   /// the mode toggle is a view change, not a transport action.
   ///
-  /// Entering FX is the ONE exception (A5): FX mode has no transport controls
-  /// at all — Rec/Play is inert there — so a take left running would be
-  /// unstoppable without cycling back, and the user's next stomp would be
-  /// re-shaping FX while a recording they cannot see silently grows. Every
-  /// capturing OR pending-armed track is FINALIZED on entry instead.
+  /// Entering FX cancels every PENDING record arm — quantized, sound-armed,
+  /// or a Band section toggle. An arm is the one thing that could start a take
+  /// the user never sees: it fires on its own, seconds later, in a mode whose
+  /// transport controls are all inert. The cancel is unconditional
+  /// (`LooperRepository.cancelArm`), so no engine setting can turn it into a
+  /// press with different meaning.
   ///
-  /// Note what those two rules compose into, since the MODE switch is a
-  /// one-way cycle: mute's surviving capture only survives until the NEXT
-  /// tap, because the way back to Rec runs through FX. A take the user wants
-  /// to keep growing across a mode round trip has to be ended deliberately —
-  /// there is no mute → record shortcut that preserves it.
+  /// A LIVE capture, though, survives FX exactly as it survives Mute: the mode
+  /// toggle stays a view change, not a transport action, and the take ends
+  /// when the user cycles back to Rec and hits Rec/Play (or Stop). Ending it
+  /// here was tried and withdrawn — the only tool available is a record press,
+  /// which under quantize does not finalize at all but ARMS a loop-top
+  /// finalize, so the take ran on past the mode change and FX was entered with
+  /// a fresh arm, the exact state this entry clears. A finalize that ignores
+  /// quantize needs an engine primitive that does not exist yet; until it
+  /// does, "the capture survives" is the honest contract and matches Mute.
   ///
   /// Any mode entry clears the stored mute-mode intent (the invalidation
   /// table).
@@ -287,29 +292,15 @@ class ControlCubit extends Cubit<ControlState> {
           ),
         );
       case InteractionMode.fx:
-        // Finalize BEFORE the emit so the projection that rides it already
+        // Cancel arms BEFORE the emit so the projection that rides it already
         // describes the post-entry intent (the engine's own state follows one
         // poll later, as it does for every other command).
         //
-        // Read LIVE engine truth, not the polled snapshot: a take finalized
-        // moments ago still reads `capturing` for up to one poll, and the
-        // engine's record() CYCLES — issued against a track that has already
-        // become `playing` it would punch IN a fresh overdub rather than end
-        // anything, leaving exactly the runaway take this rule prevents.
-        //
-        // A pending arm (quantized / signal-triggered / Band section) counts
-        // too: it has not started yet, so nothing is capturing, but leaving it
-        // armed means the engine starts a take seconds later with the user
-        // already in FX mode and every transport control inert.
-        //
-        // An arm is CANCELLED, never recorded: a record press is only a cancel
-        // for an arm whose trigger it owns, and only while the conditions that
-        // created the arm still hold. Park the transport first and the very
-        // same press falls through and STARTS the capture — the opposite of
-        // what entering FX must do.
+        // Read LIVE engine truth, not the polled snapshot: an arm cancelled or
+        // fired moments ago still reads `pending` for up to one poll, and the
+        // cancel is cheap enough that a stale read costs only a no-op.
         for (final track in _looper.state.tracks) {
           if (track.pending) _looper.cancelArm(channel: track.channel);
-          if (track.isCapturing) _looper.record(channel: track.channel);
         }
         emit(
           state.copyWith(

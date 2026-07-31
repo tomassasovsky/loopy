@@ -263,14 +263,19 @@ void main() {
         expect(await settings.loadDefaultInteractionMode(), isNull);
       });
 
-      test('entering FX mode finalizes a live capture (A5)', () {
+      test('entering FX mode leaves a LIVE capture running, exactly as Mute '
+          'does — the mode toggle is not a transport action', () {
         setEngine(
           _tracksWith(const [Track(state: TrackState.recording)]),
         );
         cubit.setMode(InteractionMode.fx);
-        // FX mode has no transport control, so a take left running would be
-        // unstoppable from there: the entry ends it.
-        verify(() => looper.record()).called(1);
+        // Ending it here needs a finalize that ignores quantize, and the only
+        // tool available (a record press) ARMS a loop-top finalize instead —
+        // which left the take running anyway AND re-armed the track. Until an
+        // engine primitive exists, FX matches Mute: the take ends when the
+        // user cycles back to Rec.
+        verifyNever(() => looper.record(channel: any(named: 'channel')));
+        verifyNever(() => looper.record());
         expect(cubit.state.mode, InteractionMode.fx);
       });
 
@@ -297,27 +302,29 @@ void main() {
         },
       );
 
-      test('entering FX mode cancels the arm AND finalizes a live take when '
-          'both are in flight', () {
+      test('an armed PUNCH-OUT on a capturing track has its arm cancelled and '
+          'the take left alone', () {
+        // pending AND capturing at once: a quantized punch-out waiting for the
+        // loop top. Only the arm is retired — re-pressing record here would
+        // have re-armed the very thing just cancelled.
         setEngine(
           _tracksWith(const [
-            Track(state: TrackState.recording),
-            Track(channel: 1, pending: true),
+            Track(state: TrackState.overdubbing, pending: true),
           ]),
         );
         cubit.setMode(InteractionMode.fx);
 
-        verify(() => looper.record()).called(1); // channel 0, the live take
-        verify(() => looper.cancelArm(channel: 1)).called(1);
-        verifyNever(() => looper.cancelArm(channel: 0));
+        verify(() => looper.cancelArm(channel: 0)).called(1);
+        verifyNever(() => looper.record(channel: any(named: 'channel')));
+        verifyNever(() => looper.record());
       });
 
-      test('entering FX mode reads LIVE engine truth, so a take finalized '
-          'moments ago is not punched back in', () {
-        // The polled snapshot still says recording; the engine has already
-        // moved on. Issuing record() here would start a fresh overdub.
+      test('entering FX mode reads LIVE engine truth for the arm sweep, not '
+          'the polled snapshot', () {
+        // The polled snapshot still shows an arm the engine has already
+        // retired; the live read is what the sweep must follow.
         looperStates.add(
-          _stateWith(_tracksWith(const [Track(state: TrackState.recording)])),
+          _stateWith(_tracksWith(const [Track(pending: true)])),
         );
         when(() => looper.state).thenReturn(
           _stateWith(
@@ -329,8 +336,7 @@ void main() {
 
         cubit.setMode(InteractionMode.fx);
 
-        verifyNever(() => looper.record(channel: any(named: 'channel')));
-        verifyNever(() => looper.record());
+        verifyNever(() => looper.cancelArm(channel: any(named: 'channel')));
       });
 
       test('entering FX mode with nothing capturing touches the transport '
