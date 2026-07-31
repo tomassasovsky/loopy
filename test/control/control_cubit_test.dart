@@ -1389,6 +1389,29 @@ void main() {
           verify(() => looper.redo()).called(1);
           verifyNever(() => looper.undo(channel: any(named: 'channel')));
         });
+
+        test('a release with no matching press is inert — the on-screen '
+            'plate note-offs every held switch as it leaves the tree, and an '
+            'unpaired one must not fire a tap', () async {
+          transport.emit(0x80, PedalButton.undo.note, 0); // release only
+          await pumpEventQueue();
+
+          verifyNever(() => looper.undo(channel: any(named: 'channel')));
+          verifyNever(() => looper.redo(channel: any(named: 'channel')));
+        });
+
+        test('a second release after a completed tap fires nothing', () async {
+          transport
+            ..emit(0x90, PedalButton.undo.note, 100)
+            ..emit(0x80, PedalButton.undo.note, 0);
+          await pumpEventQueue();
+          verify(() => looper.undo()).called(1);
+
+          transport.emit(0x80, PedalButton.undo.note, 0);
+          await pumpEventQueue();
+
+          verifyNever(() => looper.undo(channel: any(named: 'channel')));
+        });
       });
 
       group('mode press timing (D-PEDAL)', () {
@@ -1438,6 +1461,17 @@ void main() {
 
           expect(performance.armedDirectory, isNull);
         });
+
+        test(
+          'a release with no matching press does not cycle the mode',
+          () async {
+            transport.emit(0x80, PedalButton.mode.note, 0); // release only
+            await pumpEventQueue();
+
+            expect(cubit.state.mode, InteractionMode.record); // unchanged
+            expect(performance.armedDirectory, isNull);
+          },
+        );
       });
     });
 

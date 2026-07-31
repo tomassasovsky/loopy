@@ -14,6 +14,56 @@ import 'package:settings_repository/settings_repository.dart';
 
 part 'control_state.dart';
 
+/// The press/long-press state machine every gestural footswitch shares.
+///
+/// [press] arms a hold timer and remembers the tap action; holding past the
+/// threshold runs `onHold` and RETIRES that action, so the matching [release]
+/// stays silent. Releasing first runs it instead. Both callbacks are built at
+/// press time, so anything a gesture must latch (the undo target channel) is
+/// simply captured by the closures — a later on-screen change cannot retarget
+/// the action the foot already committed to.
+///
+/// A gesture whose action fires on the press itself (the FX Stop panic) passes
+/// no `onTap`: its release then only retires the pending hold, which is what
+/// makes a synthetic release — the on-screen plate note-off'ing a held switch
+/// as it leaves the tree — harmless.
+///
+/// The remembered tap action doubles as the armed flag: a release with nothing
+/// pending is inert, so an unmatched release can never fire a stale gesture.
+class _HoldGesture {
+  Timer? _timer;
+  void Function()? _onTap;
+
+  void press({
+    required Duration threshold,
+    required void Function() onHold,
+    void Function()? onTap,
+  }) {
+    _onTap = onTap;
+    _timer?.cancel();
+    _timer = Timer(threshold, () {
+      _timer = null;
+      _onTap = null; // handled as a hold: the release stays silent
+      onHold();
+    });
+  }
+
+  void release() {
+    _timer?.cancel();
+    _timer = null;
+    final onTap = _onTap;
+    _onTap = null;
+    onTap?.call();
+  }
+
+  /// Drops the pending hold and tap without running either — cubit teardown.
+  void cancel() {
+    _timer?.cancel();
+    _timer = null;
+    _onTap = null;
+  }
+}
+
 /// The ONE control-surface interpreter and the ONE owner of stored user
 /// intent ([ControlState]) — a single business-logic-layer unit, per the
 /// layered architecture: repositories are composed at the bloc level, so
@@ -101,28 +151,25 @@ class ControlCubit extends Cubit<ControlState> {
   static const double _encoderStep = 1 / 64;
   double _masterGain = 1;
 
-  // Undo press/release timing (tap = undo, long-press = redo). The target
-  // channel is LATCHED at press time: an on-screen click mid-hold must not
-  // retarget the action the foot already committed to.
+  // The hold threshold every gesture below arms with, read at press time so a
+  // settings change lands on the next stomp.
   Duration _longPress = const Duration(milliseconds: 500);
   Timer? _keepAliveTimer;
-  Timer? _undoTimer;
-  bool _undoArmed = false;
-  bool _undoHandled = false;
-  int _undoChannel = 0;
 
-  // MODE press/release timing (tap = toggle Rec/Mute mode, long-press =
-  // arm/disarm performance recording, D-PEDAL). No spare footswitch/pin
-  // exists on the physical pedal, so the gesture rides the existing MODE
-  // button rather than a new one — mirrors the undo/redo split above.
-  Timer? _modeTimer;
-  bool _modeArmed = false;
-  bool _modeHandled = false;
+  // Undo: tap = undo, long-press = redo. The target channel is LATCHED at
+  // press time (captured by the callbacks) — an on-screen click mid-hold must
+  // not retarget the action the foot already committed to.
+  final _undoGesture = _HoldGesture();
+
+  // MODE: tap = cycle the interaction mode, long-press = arm/disarm
+  // performance recording (D-PEDAL). No spare footswitch/pin exists on the
+  // physical pedal, so the gesture rides the existing MODE button rather than
+  // a new one — mirrors the undo/redo split above.
+  final _modeGesture = _HoldGesture();
 
   // The FX-mode Stop long-press (restore every Track chain). The panic half
-  // fires on the press, so unlike undo/mode this gesture keeps no armed or
-  // handled flag — only the pending hold. Null outside a held FX Stop.
-  Timer? _stopTimer;
+  // fires on the press, so this one arms no tap action — only the hold.
+  final _stopGesture = _HoldGesture();
 
   // Whether the Clear footswitch is currently held down. Lights the Clear
   // LED (the `clearFadeActive` frame bit) for as long as it is pressed.
@@ -714,10 +761,10 @@ class ControlCubit extends Cubit<ControlState> {
       case ButtonPressed(:final button):
         _onPress(button);
       case ButtonReleased(:final button):
-        if (button == PedalButton.undo) _onUndoRelease();
+        if (button == PedalButton.undo) _undoGesture.release();
         if (button == PedalButton.clear) _onClearRelease();
-        if (button == PedalButton.mode) _onModeRelease();
-        if (button == PedalButton.stop) _onStopRelease();
+        if (button == PedalButton.mode) _modeGesture.release();
+        if (button == PedalButton.stop) _stopGesture.release();
       case EncoderDelta(:final delta):
         _log('encoder $delta');
         encoderTurned(delta);
@@ -778,15 +825,18 @@ class ControlCubit extends Cubit<ControlState> {
   }
 
   void _armUndo() {
-    _undoArmed = true;
-    _undoHandled = false;
-    _undoChannel = state.cursor; // latch the target at press
-    _undoTimer?.cancel();
-    _undoTimer = Timer(_longPress, () {
-      _undoHandled = true; // long-press = redo
-      _log('redo ch=$_undoChannel  (long-press)');
-      redo(_undoChannel);
-    });
+    final channel = state.cursor; // latched at press by both closures
+    _undoGesture.press(
+      threshold: _longPress,
+      onHold: () {
+        _log('redo ch=$channel  (long-press)');
+        redo(channel);
+      },
+      onTap: () {
+        _log('undo ch=$channel  (tap)');
+        undo(channel);
+      },
+    );
   }
 
   /// The FX-mode Stop gesture: the PANIC fires on the press itself, and a
@@ -806,34 +856,18 @@ class ControlCubit extends Cubit<ControlState> {
   void _armStop() {
     _log('fx panic (press)');
     panicTrackChains();
-    _stopTimer?.cancel();
-    _stopTimer = Timer(_longPress, () {
-      _stopTimer = null;
-      // Only while the foot is still in the mode it committed to: cycling
-      // MODE mid-hold leaves the pedal showing cursor/armed LEDs, where a
-      // silent rewrite of every chain would be invisible.
-      if (state.mode != InteractionMode.fx) return;
-      _log('fx chains restored (long-press)');
-      restoreAllTrackChains();
-    });
-  }
-
-  /// Stop released: the FX action already fired on the press, so this only
-  /// retires the pending long-press.
-  void _onStopRelease() {
-    _stopTimer?.cancel();
-    _stopTimer = null;
-  }
-
-  void _onUndoRelease() {
-    if (!_undoArmed) return;
-    _undoArmed = false;
-    _undoTimer?.cancel();
-    _undoTimer = null;
-    if (!_undoHandled) {
-      _log('undo ch=$_undoChannel  (tap)');
-      undo(_undoChannel);
-    }
+    // No `onTap`: the panic already fired, so the release is inert.
+    _stopGesture.press(
+      threshold: _longPress,
+      onHold: () {
+        // Only while the foot is still in the mode it committed to: cycling
+        // MODE mid-hold leaves the pedal showing cursor/armed LEDs, where a
+        // silent rewrite of every chain would be invisible.
+        if (state.mode != InteractionMode.fx) return;
+        _log('fx chains restored (long-press)');
+        restoreAllTrackChains();
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -863,25 +897,17 @@ class ControlCubit extends Cubit<ControlState> {
   }
 
   void _armMode() {
-    _modeArmed = true;
-    _modeHandled = false;
-    _modeTimer?.cancel();
-    _modeTimer = Timer(_longPress, () {
-      _modeHandled = true; // long-press = arm/disarm performance recording
-      _log('performance record toggled (long-press)');
-      togglePerformanceRecord();
-    });
-  }
-
-  void _onModeRelease() {
-    if (!_modeArmed) return;
-    _modeArmed = false;
-    _modeTimer?.cancel();
-    _modeTimer = null;
-    if (!_modeHandled) {
-      _log('mode toggled (tap)');
-      toggleMode();
-    }
+    _modeGesture.press(
+      threshold: _longPress,
+      onHold: () {
+        _log('performance record toggled (long-press)');
+        togglePerformanceRecord();
+      },
+      onTap: () {
+        _log('mode toggled (tap)');
+        toggleMode();
+      },
+    );
   }
 
   int _trackIndex(PedalButton button) => switch (button) {
@@ -1001,9 +1027,9 @@ class ControlCubit extends Cubit<ControlState> {
   @override
   Future<void> close() async {
     _keepAliveTimer?.cancel();
-    _undoTimer?.cancel();
-    _modeTimer?.cancel();
-    _stopTimer?.cancel();
+    _undoGesture.cancel();
+    _modeGesture.cancel();
+    _stopGesture.cancel();
     await _looperSub.cancel();
     await _eventsSub.cancel();
     await _statusSub.cancel();
