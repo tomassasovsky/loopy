@@ -1174,7 +1174,13 @@ LE_EXPORT int32_t le_engine_set_track_quantize(le_engine* engine,
 
 /* Cancels track [channel]'s pending record arm, whatever armed it — the
  * quantized loop-top arm, the signal-triggered (auto-record) arm, or a Band
- * section toggle. No-op when the track is not armed.
+ * section toggle. No-op (LE_OK) when the track is not armed.
+ *
+ * Returns LE_OK only when the cancel actually reached the audio thread. The
+ * disarm rides the command ring, so it can be refused (a full ring behind
+ * stalled callbacks, or an engine that is not configured) — and a caller that
+ * needs "nothing fires later" must treat that as the arm still being live,
+ * not as a cancel.
  *
  * This is the UNCONDITIONAL cancel. le_engine_record also cancels an arm, but
  * only as the second half of a press: it must first match the arm's trigger

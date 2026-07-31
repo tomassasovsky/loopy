@@ -1392,6 +1392,37 @@ static void test_cancel_arm_retires_a_pending_arm(void) {
   le_engine_destroy(e);
 }
 
+/* A cancel that never reached the audio thread must not report success: the
+ * disarm rides the command ring, and a caller promised "nothing fires later"
+ * has only this return value to tell it otherwise. */
+static void test_cancel_arm_reports_a_refused_push(void) {
+  printf("test_cancel_arm_reports_a_refused_push\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  le_engine_set_quantize(e, 1);
+  process_const(e, 0.0f, 1, out);
+  CHECK(le_engine_record(e, 1) == LE_OK); /* arm a quantized take on 1 */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].pending == 1);
+
+  /* Fill the command ring without letting the audio thread drain it:
+   * set_track_volume is a bare push. LE_RING_CAPACITY is 256. */
+  int32_t rc = LE_OK;
+  for (int i = 0; i < 512 && rc == LE_OK; ++i) {
+    rc = le_engine_set_track_volume(e, 0, 0.5f);
+  }
+  CHECK(rc != LE_OK); /* the ring really is full */
+
+  /* The cancel cannot be queued, so it must say so rather than claim LE_OK. */
+  CHECK(le_engine_cancel_arm(e, 1) != LE_OK);
+
+  le_engine_destroy(e);
+}
+
 /* The contrast that motivates the primitive: with everything parked, a record
  * press on an armed track does NOT cancel it — the quantize branch needs an
  * active transport, so the press falls through and starts recording. */
@@ -19170,6 +19201,7 @@ int main(void) {
   test_redo_from_empty_unmutes();
   test_undo_to_empty_cancels_pending_arm();
   test_cancel_arm_retires_a_pending_arm();
+  test_cancel_arm_reports_a_refused_push();
   test_record_press_on_pending_arm_starts_when_parked();
   test_configure_drops_stale_commands();
   test_undo_layers_quantized_and_live_regrows();

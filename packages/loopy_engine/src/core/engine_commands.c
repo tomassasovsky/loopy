@@ -281,8 +281,10 @@ static void le_mark_state_cmd(le_track* t, int32_t target) {
 }
 
 /* Defined below with the quantize machinery; needed by the undo-to-empty
- * paths so a pending arm can't fire a surprise recording on an emptied track. */
-static void le_cancel_arm(le_engine* engine, int32_t channel);
+ * paths so a pending arm can't fire a surprise recording on an emptied track.
+ * Returns the DISARM push result (LE_OK when there was no arm to cancel) —
+ * the internal callers discard it, le_engine_cancel_arm reports it. */
+static int32_t le_cancel_arm(le_engine* engine, int32_t channel);
 
 /* Applies undo taps that were queued while a layer was in flight (control
  * thread, called from the event drain once the flight flag cleared). Each
@@ -534,10 +536,15 @@ static int le_effective_quantize(const le_engine* engine, int32_t channel) {
  * audio thread to clear the pending flag. Arming creates no undo layer (layers
  * are captured per pass once the overdub actually runs), so there is nothing
  * to reverse. No-op when the track is not armed. */
-static void le_cancel_arm(le_engine* engine, int32_t channel) {
-  if (!engine->armed[channel]) return;
+static int32_t le_cancel_arm(le_engine* engine, int32_t channel) {
+  if (!engine->armed[channel]) return LE_OK; /* nothing to cancel */
   engine->armed[channel] = 0;
-  le_push(engine, LE_CMD_DISARM, channel, 0.0f);
+  /* The push can fail — a full ring (stalled audio callbacks on a lost
+   * device) or an unconfigured engine — which leaves a_pending set on the
+   * audio thread even though control now reads unarmed. The internal callers
+   * are void and have always discarded this; returning it is what lets the
+   * public le_engine_cancel_arm tell its caller the arm may still fire. */
+  return le_push(engine, LE_CMD_DISARM, channel, 0.0f);
 }
 
 /* Whether any track is driving the loop clock (playing or capturing). A
@@ -1210,9 +1217,10 @@ int32_t le_engine_cancel_arm(le_engine* engine, int32_t channel) {
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   /* Trigger-agnostic on purpose: the caller is saying "nothing may fire on
    * this track later", not "undo my own press". le_cancel_arm is a no-op on
-   * an unarmed track. */
-  le_cancel_arm(engine, channel);
-  return LE_OK;
+   * an unarmed track (LE_OK), and otherwise reports whether the DISARM
+   * actually reached the ring — a caller promised "nothing fires later" must
+   * be able to see when it did not. */
+  return le_cancel_arm(engine, channel);
 }
 
 int32_t le_engine_set_track_quantize(le_engine* engine, int32_t channel,
