@@ -1352,5 +1352,58 @@
     "a11yFxStompBoundHeld": "Assigned to the {button} footswitch, held on",
     "@a11yFxStompBoundHeld": {
         "placeholders": { "button": { "type": "String" } }
-    }
+    },
+    "midiLearnGroup": "EXTERNAL MIDI CONTROL",
+    "@midiLearnGroup": {
+        "description": "Group label for the MIDI-learn mapping section (FX v3 part 7)."
+    },
+    "midiLearnHint": "Map an expression pedal or a MIDI switch to a parameter or an FX chain. Mappings are global — they follow this rig, not the loaded session.",
+    "midiLearnEmpty": "Nothing is mapped yet. Add a mapping, then move the control you want to use.",
+    "midiLearnAddSweep": "Add sweep",
+    "midiLearnAddSwitch": "Add switch",
+    "midiLearnLearn": "Learn",
+    "midiLearnRelearn": "Relearn",
+    "midiLearnClear": "Remove",
+    "midiLearnCancel": "Cancel",
+    "midiLearnListening": "Listening… move the control you want to use.",
+    "midiLearnReplacePrompt": "{control} already drives another mapping. Replace it?",
+    "@midiLearnReplacePrompt": {
+        "placeholders": { "control": { "type": "String" } }
+    },
+    "midiLearnReplace": "Replace",
+    "midiLearnKeep": "Keep",
+    "midiLearnLo": "LO",
+    "midiLearnHi": "HI",
+    "midiLearnThreshold": "THRESH",
+    "midiLearnBehavior": "Behavior",
+    "midiLearnStale": "Missing target",
+    "midiLearnStaleDetail": "What this mapping pointed at no longer exists. It does nothing until you point it somewhere else or remove it.",
+    "midiLearnDeviceMissing": "No MIDI input is connected, so these mappings are idle. Connect the controller, or relearn a row on the one you are using now.",
+    "midiLearnCcControl": "CC {number} · ch {channel}",
+    "@midiLearnCcControl": {
+        "description": "How a learned Control Change is named in a mapping row.",
+        "placeholders": { "number": { "type": "int" }, "channel": { "type": "int" } }
+    },
+    "midiLearnNoteControl": "Note {number} · ch {channel}",
+    "@midiLearnNoteControl": {
+        "placeholders": { "number": { "type": "int" }, "channel": { "type": "int" } }
+    },
+    "midiLearnTargetVolume": "Track {number} volume",
+    "@midiLearnTargetVolume": {
+        "placeholders": { "number": { "type": "int" } }
+    },
+    "midiLearnTargetMaster": "Master gain",
+    "midiLearnTargetParam": "{stage} · {slot} · {param}",
+    "@midiLearnTargetParam": {
+        "description": "An FX parameter target: its chain, its slot id, and the parameter name.",
+        "placeholders": { "stage": { "type": "String" }, "slot": { "type": "String" }, "param": { "type": "String" } }
+    },
+    "a11yMidiLearnRow": "{control} mapped to {target}",
+    "@a11yMidiLearnRow": {
+        "description": "Semantics label for one MIDI mapping row.",
+        "placeholders": { "control": { "type": "String" }, "target": { "type": "String" } }
+    },
+    "a11yMidiLearnLo": "Range low",
+    "a11yMidiLearnHi": "Range high",
+    "a11yMidiLearnThreshold": "On threshold"
 }

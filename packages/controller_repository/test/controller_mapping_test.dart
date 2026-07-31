@@ -207,5 +207,59 @@ void main() {
         const ControllerEvent(action: LooperAction.recordOverdub, channel: 1),
       );
     });
+
+    test('a channel-scoped entry fires only on its own MIDI channel', () {
+      // The built-in defaults are omni, but a learned binding records the
+      // channel it heard — `resolve` matches rather than compares, so a
+      // channel-scoped entry must not answer traffic from another channel.
+      final mapping = const ControllerMapping().withBinding(
+        const MappingTrigger(
+          kind: ControllerSourceKind.midiCc,
+          id: 90,
+          midiChannel: 4,
+        ),
+        LooperAction.stop,
+      );
+      const onItsChannel = RawControllerInput(
+        kind: ControllerSourceKind.midiCc,
+        id: 90,
+        value: 127,
+        midiChannel: 4,
+      );
+      const onAnother = RawControllerInput(
+        kind: ControllerSourceKind.midiCc,
+        id: 90,
+        value: 127,
+        midiChannel: 5,
+      );
+
+      expect(
+        mapping.resolve(onItsChannel),
+        const ControllerEvent(action: LooperAction.stop),
+      );
+      expect(mapping.resolve(onAnother), isNull);
+    });
+
+    test('an omni entry still fires on every channel', () {
+      final mapping = const ControllerMapping().withBinding(
+        const MappingTrigger(kind: ControllerSourceKind.midiCc, id: 91),
+        LooperAction.stop,
+      );
+
+      for (final channel in [0, 7, 15]) {
+        expect(
+          mapping.resolve(
+            RawControllerInput(
+              kind: ControllerSourceKind.midiCc,
+              id: 91,
+              value: 127,
+              midiChannel: channel,
+            ),
+          ),
+          const ControllerEvent(action: LooperAction.stop),
+          reason: 'channel $channel',
+        );
+      }
+    });
   });
 }

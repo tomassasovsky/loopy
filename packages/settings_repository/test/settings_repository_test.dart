@@ -480,6 +480,20 @@ void main() {
     });
   });
 
+  group('controller mappings', () {
+    test('returns null when nothing is stored', () async {
+      expect(await repository.loadControllerMappings(), isNull);
+    });
+
+    test('round-trips the opaque blob under the global key', () async {
+      const blob = '[{"bind":"continuous","kind":"midiCc","id":11}]';
+      await repository.saveControllerMappings(blob);
+
+      expect(await repository.loadControllerMappings(), blob);
+      expect(store.values['controller.mappings'], blob);
+    });
+  });
+
   group('pedal firmware version', () {
     test('returns null (unknown) when nothing is stored', () async {
       expect(await repository.loadPedalFirmwareVersion(), isNull);

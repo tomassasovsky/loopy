@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
+import 'package:loopy/control/control.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/pedal/pedal.dart';
 import 'package:mocktail/mocktail.dart';
@@ -21,6 +22,9 @@ class _MockPedalCubit extends MockCubit<PedalState> implements PedalCubit {}
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
+class _MockControlCubit extends MockCubit<ControlState>
+    implements ControlCubit {}
+
 void main() {
   late AudioSetupCubit cubit;
   late MidiSetupCubit midi;
@@ -28,6 +32,10 @@ void main() {
   late MonitorCubit monitor;
   late QuantizeCubit quantize;
   late RecordOptionsCubit recordOptions;
+  // The MIDI-learn section (part 7) reads the mapping set off ControlCubit and
+  // enumerates its targets from the looper repository.
+  late ControlCubit control;
+  late LooperRepository looper;
 
   setUp(() {
     cubit = _MockAudioSetupCubit();
@@ -46,6 +54,7 @@ void main() {
       initialState: const PedalState(),
     );
     final repository = _MockLooperRepository();
+    looper = repository;
     when(
       () => repository.setMonitorInputEnabled(
         input: any(named: 'input'),
@@ -64,6 +73,19 @@ void main() {
     when(
       () => repository.setDefaultMultiple(multiple: any(named: 'multiple')),
     ).thenReturn(EngineResult.ok);
+    control = _MockControlCubit();
+    when(() => control.state).thenReturn(const ControlState());
+    whenListen(
+      control,
+      const Stream<ControlState>.empty(),
+      initialState: const ControlState(),
+    );
+    when(repository.allMonitors).thenReturn(const {});
+    when(repository.allLaneChains).thenReturn(const {});
+    when(repository.allTrackChains).thenReturn(const {});
+    when(() => repository.masterEffects).thenReturn(const []);
+    when(() => repository.state).thenReturn(const LooperState());
+    when(repository.masterChainEnvelope).thenReturn(const FxChainEnvelope());
     final settings = SettingsRepository(store: FakeKeyValueStore());
     monitor = MonitorCubit(repository: repository, settings: settings);
     quantize = QuantizeCubit(repository: repository, settings: settings);
@@ -94,10 +116,14 @@ void main() {
         BlocProvider<MonitorCubit>.value(value: monitor),
         BlocProvider<QuantizeCubit>.value(value: quantize),
         BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
+        BlocProvider<ControlCubit>.value(value: control),
       ],
-      child: Material(
-        child: SingleChildScrollView(
-          child: AudioSettingsSection(consoleMode: consoleMode),
+      child: RepositoryProvider<LooperRepository>.value(
+        value: looper,
+        child: Material(
+          child: SingleChildScrollView(
+            child: AudioSettingsSection(consoleMode: consoleMode),
+          ),
         ),
       ),
     ),

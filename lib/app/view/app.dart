@@ -292,6 +292,12 @@ class App extends StatelessWidget {
                 pedal: pedalRepo,
                 settings: context.read<SettingsRepository>(),
                 performance: context.read<PerformanceRepository>(),
+                // External MIDI (part 7): the same interpreter takes the
+                // controller's resolved bindings, and watches MIDI
+                // connectivity so a held momentary releases when the device
+                // it was held from unplugs (B1).
+                controller: context.read<ControllerRepository>(),
+                midiDevices: context.read<MidiDeviceRepository>(),
                 // The live rig a pedal-triggered arm snapshots, read fresh at
                 // each arm — same source the toolbar path below is wired to,
                 // so both gestures record identical chains.

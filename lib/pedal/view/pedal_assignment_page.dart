@@ -31,28 +31,6 @@ Future<void> showPedalAssignmentPage(BuildContext context) {
   );
 }
 
-/// Names [target] for the picker and the assignment rows.
-///
-/// A pure function of the target and the localizations, so the same label
-/// reaches the row, the picker entry, and the Semantics announcement — three
-/// spellings of one target would read as three different bindings.
-String bindingTargetLabel(AppLocalizations l10n, FxBindingTarget target) {
-  final address = target.address;
-  final stage = switch (address.stage) {
-    FxStage.input => l10n.pedalAssignStageInput(address.index),
-    FxStage.loop => l10n.pedalAssignStageLoop(address.index, address.lane ?? 0),
-    FxStage.track => l10n.pedalAssignStageTrack(address.index),
-    FxStage.master => l10n.pedalAssignStageMaster,
-  };
-  return switch (target) {
-    FxChainTarget() => l10n.pedalAssignChainTarget(stage),
-    // The slot id is the only stable name an effect has here — the effect
-    // TYPE can repeat within one chain, so it could not identify which slot
-    // the binding points at.
-    FxSlotTarget(:final slotId) => '$stage · $slotId',
-  };
-}
-
 /// The screen where footswitches are remapped onto FX targets (part 6b).
 ///
 /// Composes part 6a's presentational `PedalPlate`: tapping a footswitch on the

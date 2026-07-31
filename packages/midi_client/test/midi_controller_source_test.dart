@@ -94,17 +94,35 @@ void main() {
         await sub.cancel();
       });
 
-      test('ignores channel in the status low nibble', () async {
+      test('carries the channel from the status low nibble', () async {
         build();
         final received = <RawControllerInput>[];
         final sub = source.inputs.listen(received.add);
 
-        // CC on channel 9 (0xB9) still maps to the same trigger.
+        // CC on channel 9 (0xB9). The channel rides along so a learned
+        // controller binding can scope itself to it...
         source.pushForTest(0xB9, 80, 127);
         await pumpEventQueue();
 
         expect(received.single.id, 80);
         expect(received.single.kind, ControllerSourceKind.midiCc);
+        expect(received.single.midiChannel, 9);
+        // ...while the trigger identity the built-in action mappings key on
+        // stays channel-agnostic.
+        expect(received.single.trigger.midiChannel, isNull);
+        expect(received.single.channelTrigger.midiChannel, 9);
+        await sub.cancel();
+      });
+
+      test('channel 0 is reported as 0, never as absent', () async {
+        build();
+        final received = <RawControllerInput>[];
+        final sub = source.inputs.listen(received.add);
+
+        source.pushForTest(_noteOn, 60, 100);
+        await pumpEventQueue();
+
+        expect(received.single.midiChannel, 0);
         await sub.cancel();
       });
 
