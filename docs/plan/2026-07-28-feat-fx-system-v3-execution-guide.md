@@ -30,11 +30,10 @@ issue: 351
 
 ## Status
 
-**Next up:** everything through the app-side FX interaction mode is merged (0,
-1a, 1b, 2, 3a, 3b, 4a, 4b, 5a, 5b). The critical chain continues at **6b**
-(deps 6a, 5b, 3a), so **6a** — mechanical, `auto`, no in-epic dependencies —
-is the one to run next, and it is the only thing standing between here and
-6b.
+**Next up:** everything through the pedal-plate presentational extraction is
+merged (0, 1a, 1b, 2, 3a, 3b, 4a, 4b, 5a, 5b, 6a). **6b** (remap bindings +
+momentary) is unblocked — its dependencies (6a, 5b, 3a) are all merged — and
+is the one to run next.
 
 **[B10] amendment** (from #399's review, carried forward through 5b): the
 codec-level downgrade degrades **both** v3-only values below v3 — mode fx →
@@ -85,7 +84,7 @@ Open items carried out of merged parts, neither blocking a new part:
 | 4b | four-stage Signal surface | Opus · medium | `merge-gate` | 3a, 4a | merged (#395) |
 | 5a | protocol v3 wire + version discovery | **Fable · high** | `merge-gate` | — (#331 prereq) | merged (#399) |
 | 5b | FX interaction mode (app) | Opus · high | `merge-gate` (physical slice `blocked-verify`) | 5a, 3a, 1a | merged (#404) |
-| 6a | faceplate presentational extraction | Sonnet · medium | `auto` | — | pending |
+| 6a | faceplate presentational extraction | Sonnet · medium | `auto` | — | merged (#408) |
 | 6b | remap bindings + momentary | Opus · high | `merge-gate` | 6a, 5b, 3a | pending |
 | 7 | expression + external MIDI | Opus · high | `merge-gate` | 3a, 6b | pending |
 | 8 | TRS jack hardware (non-gating child) | Fable · high (at bench) | `blocked-verify` | 7 | pending |
