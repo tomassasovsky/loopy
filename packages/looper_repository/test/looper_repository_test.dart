@@ -559,6 +559,17 @@ void main() {
       expect(engine.lastQuantize, isTrue);
     });
 
+    test('cancelArm reaches the engine while running, and is a no-op when '
+        'stopped (an arm cannot outlive the engine that held it)', () {
+      final repo = buildRepo()..cancelArm(channel: 3);
+      expect(engine.cancelledArms, isEmpty); // not running yet
+
+      repo
+        ..startEngine(const EngineConfig())
+        ..cancelArm(channel: 3);
+      expect(engine.cancelledArms, [3]);
+    });
+
     test('per-track quantize overrides are deferred then re-applied', () {
       final repo = buildRepo()
         ..setTrackQuantize(channel: 1, enabled: true)

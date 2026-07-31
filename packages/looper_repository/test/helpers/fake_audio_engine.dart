@@ -1116,5 +1116,4 @@ class FakeAudioEngine implements AudioEngine {
     cancelledArms.add(channel);
     return EngineResult.ok;
   }
-
 }

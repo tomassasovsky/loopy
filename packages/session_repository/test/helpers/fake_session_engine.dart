@@ -650,5 +650,4 @@ class FakeSessionEngine implements AudioEngine {
     cancelledArms.add(channel);
     return EngineResult.ok;
   }
-
 }
