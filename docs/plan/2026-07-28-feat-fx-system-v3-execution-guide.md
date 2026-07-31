@@ -57,7 +57,7 @@ Open items carried out of merged parts, neither blocking a new part:
 | 4a | delete dead FX code | Sonnet · low | `auto` | — | merged (#392) |
 | 4b | four-stage Signal surface | Opus · medium | `merge-gate` | 3a, 4a | merged (#395) |
 | 5a | protocol v3 wire + version discovery | **Fable · high** | `merge-gate` | — (#331 prereq) | merged (#399) |
-| 5b | FX interaction mode (app) | Opus · high | `merge-gate` (physical slice `blocked-verify`) | 5a, 3a, 1a | in-review (#401, hardware slice #402) |
+| 5b | FX interaction mode (app) | Opus · high | `merge-gate` (physical slice `blocked-verify`) | 5a, 3a, 1a | in-review (#404; issue #401, hardware slice #402) |
 | 6a | faceplate presentational extraction | Sonnet · medium | `auto` | — | pending |
 | 6b | remap bindings + momentary | Opus · high | `merge-gate` | 6a, 5b, 3a | pending |
 | 7 | expression + external MIDI | Opus · high | `merge-gate` | 3a, 6b | pending |
