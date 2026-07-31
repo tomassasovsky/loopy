@@ -871,6 +871,14 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult cancelArm({required int channel}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_cancel_arm(_engine, channel),
+    );
+  }
+
+  @override
   EngineResult setTrackMultiple({required int channel, required int multiple}) {
     _checkAlive();
     return EngineResult.fromCode(

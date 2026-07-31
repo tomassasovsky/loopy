@@ -777,6 +777,7 @@
     "pedalSimLedRecording": "grabando",
     "pedalSimLedChainEnabled": "cadena de FX activada",
     "pedalSimLedChainDisabled": "cadena de FX en bypass",
+    "pedalSimHoldHint": "mantén para su segunda acción, o pulsa Mayús+Espacio o Mayús+Intro",
     "pedalSimStopFxSemantics": "Interruptor STOP, pánico de FX: pulsa para omitir todas las cadenas de FX, mantén para restaurarlas",
     "pedalSimBankSemantics": "Banco {bank}",
     "@pedalSimBankSemantics": {

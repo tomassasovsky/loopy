@@ -49,6 +49,9 @@ void main() {
     repository = _MockLooperRepository();
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
     when(() => repository.state).thenReturn(const LooperState());
+    // The FX-chain announcement reads the repository's remembered intent —
+    // the same value the bloc's toggle handler negates.
+    when(() => repository.trackChainEnabled(any())).thenReturn(true);
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());

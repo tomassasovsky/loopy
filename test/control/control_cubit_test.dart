@@ -129,6 +129,9 @@ void main() {
         ),
       ).thenReturn(EngineResult.ok);
       when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
+      when(
+        () => looper.cancelArm(channel: any(named: 'channel')),
+      ).thenReturn(EngineResult.ok);
 
       chainEnabled = <int, bool>{};
       when(() => looper.trackChainEnabled(any())).thenAnswer(
@@ -271,14 +274,42 @@ void main() {
         expect(cubit.state.mode, InteractionMode.fx);
       });
 
-      test('entering FX mode cancels a PENDING quantized arm', () {
+      test(
+        'entering FX mode CANCELS a pending arm rather than recording it',
+        () {
+          setEngine(
+            _tracksWith(const [Track(pending: true)]),
+          );
+          // The arm has not fired, so nothing is "capturing" — but leaving it
+          // would start a take seconds later with every FX-mode control inert.
+          cubit.setMode(InteractionMode.fx);
+
+          // The distinction is the whole point: `record()` is only a cancel
+          // for an arm whose trigger it owns, and only while the conditions
+          // that created the arm still hold — with the transport parked the
+          // same call STARTS the capture (pinned natively by
+          // test_record_press_on_pending_arm_starts_when_parked). Asserting
+          // "a record command was issued" cannot tell those apart, so pin the
+          // unconditional cancel instead.
+          verify(() => looper.cancelArm(channel: 0)).called(1);
+          verifyNever(() => looper.record(channel: any(named: 'channel')));
+          verifyNever(() => looper.record());
+        },
+      );
+
+      test('entering FX mode cancels the arm AND finalizes a live take when '
+          'both are in flight', () {
         setEngine(
-          _tracksWith(const [Track(pending: true)]),
+          _tracksWith(const [
+            Track(state: TrackState.recording),
+            Track(channel: 1, pending: true),
+          ]),
         );
-        // The arm has not fired, so nothing is "capturing" — but leaving it
-        // would start a take seconds later with every FX-mode control inert.
         cubit.setMode(InteractionMode.fx);
-        verify(() => looper.record()).called(1);
+
+        verify(() => looper.record()).called(1); // channel 0, the live take
+        verify(() => looper.cancelArm(channel: 1)).called(1);
+        verifyNever(() => looper.cancelArm(channel: 0));
       });
 
       test('entering FX mode reads LIVE engine truth, so a take finalized '

@@ -297,15 +297,19 @@ class ControlCubit extends Cubit<ControlState> {
         // become `playing` it would punch IN a fresh overdub rather than end
         // anything, leaving exactly the runaway take this rule prevents.
         //
-        // A pending arm (quantized / signal-triggered) counts too: it has not
-        // started yet, so nothing is capturing, but leaving it armed means the
-        // engine starts a take seconds later with the user already in FX mode
-        // and every transport control inert. record() on a pending track
-        // cancels the arm the same way it ends a live one.
+        // A pending arm (quantized / signal-triggered / Band section) counts
+        // too: it has not started yet, so nothing is capturing, but leaving it
+        // armed means the engine starts a take seconds later with the user
+        // already in FX mode and every transport control inert.
+        //
+        // An arm is CANCELLED, never recorded: a record press is only a cancel
+        // for an arm whose trigger it owns, and only while the conditions that
+        // created the arm still hold. Park the transport first and the very
+        // same press falls through and STARTS the capture — the opposite of
+        // what entering FX must do.
         for (final track in _looper.state.tracks) {
-          if (track.isCapturing || track.pending) {
-            _looper.record(channel: track.channel);
-          }
+          if (track.pending) _looper.cancelArm(channel: track.channel);
+          if (track.isCapturing) _looper.record(channel: track.channel);
         }
         emit(
           state.copyWith(
@@ -611,18 +615,24 @@ class ControlCubit extends Cubit<ControlState> {
   /// beats one the performer has to remember.
   void restoreAllTrackChains() => _sweepTrackChains(enabled: true);
 
-  /// Flips every track that HAS a Track-stage chain, and only those.
+  /// Flips Track-stage chains across every channel, ASYMMETRICALLY on empties.
   ///
-  /// A track with an empty chain is dry either way, so its flag says nothing
-  /// audible — but writing it would persist a bypass the boot restore replays
-  /// forever, silently muting the effects the user adds to that track later.
-  /// Skipping empties also keeps one Stop stomp proportional to the rig: the
-  /// repository re-snapshots the engine and re-emits per call, so a sweep over
-  /// all eight channels cost eight engine snapshots, eight pedal frames and
-  /// eight settings writes for a rig that usually has one or two chains.
+  /// Disabling skips a track with no chain: its flag says nothing audible
+  /// either way, and writing it would persist a bypass the boot restore
+  /// replays forever, silently muting the effects the user adds to that track
+  /// later. Skipping also keeps one Stop stomp proportional to the rig — the
+  /// repository re-snapshots the engine and re-emits per call, so sweeping all
+  /// eight channels cost eight engine snapshots, pedal frames and settings
+  /// writes for a rig that usually has one or two chains.
+  ///
+  /// ENABLING sweeps everything, empties included. Clearing a bypass is always
+  /// safe, and a chain-less track can genuinely be carrying a stale one — the
+  /// FX dock can disable a chain and then empty it — which is exactly the
+  /// silent-dry state this restore exists to undo. A "restore all" that could
+  /// not reach it would leave the only pedal-side cure unreachable.
   void _sweepTrackChains({required bool enabled}) {
     for (var channel = 0; channel < _channelCount; channel++) {
-      if (_looper.trackEffects(channel).isEmpty) continue;
+      if (!enabled && _looper.trackEffects(channel).isEmpty) continue;
       _setTrackChain(channel, enabled: enabled);
     }
   }

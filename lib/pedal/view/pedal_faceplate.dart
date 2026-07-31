@@ -673,11 +673,18 @@ class _FootswitchState extends State<_Footswitch> {
   /// fused tap can never produce, and the only way several switches reach
   /// their second action at all (undo's redo, MODE's record arm, Stop's
   /// FX-chain restore). Held past the cubit's threshold, then released.
+  ///
+  /// Goes through [_press] so the switch actually LOOKS held for the duration:
+  /// on a control whose two halves differ only by how long it is down, a
+  /// pressed state is the sole feedback that the hold registered. Ignored
+  /// while already down, so overlapping activations cannot queue a second
+  /// release that retires the newer press's long-press timer.
   void _holdActivate() {
-    widget.onPress(widget.button, down: true);
+    if (_down) return;
+    _press(true);
     Future<void>.delayed(_keyboardHold, () {
       if (!mounted) return; // the plate's deactivate already released it
-      widget.onPress(widget.button, down: false);
+      _press(false);
     });
   }
 
@@ -720,6 +727,10 @@ class _FootswitchState extends State<_Footswitch> {
     return Semantics(
       button: true,
       label: label,
+      // Names the long-press chord where the user can actually meet it: the
+      // shortcuts legend lives on TracksView, which this plate replaces
+      // whenever the on-screen pedal is bound, so nothing else documents it.
+      hint: widget.l10n.pedalSimHoldHint,
       onTap: _tap,
       // Screen-reader users get the long press as its own action; without it
       // the fused tap can only ever reach a switch's short gesture (in FX

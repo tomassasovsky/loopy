@@ -1205,6 +1205,16 @@ int32_t le_engine_set_quantize(le_engine* engine, int32_t enabled) {
   return LE_OK;
 }
 
+int32_t le_engine_cancel_arm(le_engine* engine, int32_t channel) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  /* Trigger-agnostic on purpose: the caller is saying "nothing may fire on
+   * this track later", not "undo my own press". le_cancel_arm is a no-op on
+   * an unarmed track. */
+  le_cancel_arm(engine, channel);
+  return LE_OK;
+}
+
 int32_t le_engine_set_track_quantize(le_engine* engine, int32_t channel,
                                      int32_t mode) {
   if (engine == NULL) return LE_ERR_INVALID;

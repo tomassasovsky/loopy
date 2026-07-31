@@ -264,10 +264,10 @@ class TrackColumn extends StatelessWidget {
                     // polled snapshot, a poll behind any flip another surface
                     // just made. The announcement shares the keyboard path's
                     // helper so the two cannot drift.
+                    TracksCommands(context).announceFxChainToggle(
+                      track.channel,
+                    );
                     bloc.add(LooperTrackChainToggled(track.channel));
-                    TracksCommands(
-                      context,
-                    ).announceFxChainToggle(bloc.state, track.channel);
                 }
               },
               child: GestureDetector(

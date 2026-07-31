@@ -111,18 +111,22 @@ class TracksCommands {
     });
   }
 
-  /// Announces the state an FX-chain toggle on [channel] lands in, given the
-  /// [looper] snapshot taken just BEFORE the flip.
+  /// Announces the state an FX-chain toggle on [channel] lands in.
   ///
-  /// Shared by the number keys and the track tiles so the two cannot drift.
-  /// Stays silent when the snapshot does not carry the channel: the flip
-  /// itself is resolved by the bloc against the repository, but this has no
-  /// truthful "on"/"off" to name, and guessing would announce the opposite of
-  /// what happened.
-  void announceFxChainToggle(LooperState looper, int channel) {
-    if (channel < 0 || channel >= looper.tracks.length) return;
+  /// Reads the repository's remembered intent — the SAME value
+  /// `LooperTrackChainToggled`'s handler negates — rather than the polled
+  /// `LooperState` the widgets render from. Those two disagree for a poll
+  /// after any other surface flips the same chain, and naming the flip from
+  /// the stale one would announce the opposite of what the bloc then does.
+  ///
+  /// Call BEFORE dispatching: the event is queued, so this reads the
+  /// pre-flip value either way, and announcing its negation is the landing
+  /// state. Shared by the number keys and the track tiles so the two cannot
+  /// drift.
+  void announceFxChainToggle(int channel) {
+    final enabled = context.read<LooperRepository>().trackChainEnabled(channel);
     _announce(
-      looper.tracks[channel].chainEnabled
+      enabled
           ? context.l10n.a11yTrackFxChainOff
           : context.l10n.a11yTrackFxChainOn,
     );
@@ -270,8 +274,8 @@ class TracksCommands {
             // The bloc resolves the flip against the repository's remembered
             // intent — deriving it here from the polled snapshot would read a
             // missing channel as "off" and dispatch enable forever.
+            announceFxChainToggle(channel);
             bloc.add(LooperTrackChainToggled(channel));
-            announceFxChainToggle(bloc.state, channel);
         }
       }
       return KeyEventResult.handled;

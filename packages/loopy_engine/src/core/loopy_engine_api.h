@@ -1172,6 +1172,20 @@ LE_EXPORT int32_t le_engine_set_quantize(le_engine* engine, int32_t enabled);
 LE_EXPORT int32_t le_engine_set_track_quantize(le_engine* engine,
                                                int32_t channel, int32_t mode);
 
+/* Cancels track [channel]'s pending record arm, whatever armed it — the
+ * quantized loop-top arm, the signal-triggered (auto-record) arm, or a Band
+ * section toggle. No-op when the track is not armed.
+ *
+ * This is the UNCONDITIONAL cancel. le_engine_record also cancels an arm, but
+ * only as the second half of a press: it must first match the arm's trigger
+ * (a foreign trigger is rejected with LE_ERR_INVALID rather than swallowed)
+ * and its cancelling branches are gated on the conditions that created the arm
+ * still holding — with the transport parked, or quantize since turned off, the
+ * same call falls through and STARTS a capture instead. A caller that means
+ * "make sure nothing fires later" — the app's FX-mode entry, which hands the
+ * user a surface with no transport controls — needs this, not that. */
+LE_EXPORT int32_t le_engine_cancel_arm(le_engine* engine, int32_t channel);
+
 /* ---- tempo grid ----
  * Grid state + locks (A1) and the click + count-in built on them (A2); the
  * musical (subdivision) arm machinery lands in a later part. With every

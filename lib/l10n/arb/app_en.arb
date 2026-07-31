@@ -1033,6 +1033,10 @@
     "@pedalSimLedChainDisabled": {
         "description": "Accessibility reading of a dark track LED while the pedal is in FX mode: that track's FX chain is switched off."
     },
+    "pedalSimHoldHint": "hold for its second action, or press Shift+Space or Shift+Enter",
+    "@pedalSimHoldHint": {
+        "description": "Accessibility hint on every on-screen pedal footswitch, naming the keyboard chord for a long press. The shortcuts legend cannot document it: it lives on the tracks view, which the pedal faceplate replaces while the on-screen pedal is bound."
+    },
     "pedalSimStopFxSemantics": "STOP footswitch, FX panic — press to bypass every FX chain, hold to restore them",
     "@pedalSimStopFxSemantics": {
         "description": "Accessibility label for the on-screen pedal STOP footswitch while in FX mode, where it is the FX panic control."

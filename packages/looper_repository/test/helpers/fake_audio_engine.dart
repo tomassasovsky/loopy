@@ -1107,4 +1107,14 @@ class FakeAudioEngine implements AudioEngine {
     stateSets.add(state);
     return EngineResult.ok;
   }
+
+  /// Channels passed to [cancelArm], in call order.
+  final List<int> cancelledArms = [];
+
+  @override
+  EngineResult cancelArm({required int channel}) {
+    cancelledArms.add(channel);
+    return EngineResult.ok;
+  }
+
 }

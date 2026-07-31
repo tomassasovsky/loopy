@@ -210,6 +210,16 @@ abstract interface class LooperTransport {
   /// `true` forces it on.
   EngineResult setTrackQuantize({required int channel, required bool? enabled});
 
+  /// Cancels track [channel]'s pending record arm, whatever armed it (the
+  /// quantized loop-top arm, the signal-triggered one, or a Band section
+  /// toggle). A no-op when the track is not armed.
+  ///
+  /// The UNCONDITIONAL cancel, distinct from [record]: a record press only
+  /// cancels an arm whose trigger it owns, and only while the conditions that
+  /// created the arm still hold — with the transport parked it starts a
+  /// capture instead. Callers that mean "nothing may fire later" want this.
+  EngineResult cancelArm({required int channel});
+
   /// Fixes track [channel]'s loop length to [multiple] whole base loops, or `0`
   /// to inherit the global default ([setDefaultMultiple]). Applies to the next
   /// recording.

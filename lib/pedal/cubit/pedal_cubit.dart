@@ -125,9 +125,16 @@ class PedalCubit extends Cubit<PedalState> {
   }
 
   /// Unbinds the pedal output and clears the saved device.
+  ///
+  /// Drops the manual firmware version with it, for the same reason
+  /// [selectOutput] does when replacing a pedal: once no device is selected
+  /// there is nothing the version describes, and keeping it would let the
+  /// NEXT pedal bound inherit this one's protocol — `selectOutput` cannot
+  /// catch that, since by then it has no previous device to compare against.
   Future<void> selectNone() async {
     _savedOutputId = null;
     _pedal.unbind();
+    if (state.firmwareVersion != null) await selectFirmwareVersion(null);
     _syncOutputs();
     await _settings.clearPedalOutputDevice();
     if (!isClosed) emit(state.copyWith(boundOutputId: null));

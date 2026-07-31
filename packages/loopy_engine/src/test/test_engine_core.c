@@ -1353,6 +1353,78 @@ static void test_undo_to_empty_cancels_pending_arm(void) {
   le_engine_destroy(e);
 }
 
+/* le_engine_cancel_arm retires a pending arm unconditionally, where a second
+ * record press would not: with the transport parked, le_engine_record's
+ * cancelling branch is gated off (it needs an active transport) and the press
+ * falls through and STARTS the capture instead. The app's FX mode hands the
+ * user a surface with no transport controls, so it needs the cancel that
+ * cannot turn into a record. */
+static void test_cancel_arm_retires_a_pending_arm(void) {
+  printf("test_cancel_arm_retires_a_pending_arm\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f); /* track 0 defines the master and plays */
+  le_engine_set_quantize(e, 1);
+  process_const(e, 0.0f, 1, out);         /* move off the loop top */
+  CHECK(le_engine_record(e, 1) == LE_OK); /* arm a quantized take on 1 */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].pending == 1);
+
+  CHECK(le_engine_cancel_arm(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].pending == 0);
+
+  /* Cross the loop top twice: nothing may fire. */
+  process_const(e, 0.5f, 2 * LOOP_N, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[1].length_frames == 0);
+
+  /* Idempotent on an unarmed track, and range-checked. */
+  CHECK(le_engine_cancel_arm(e, 1) == LE_OK);
+  CHECK(le_engine_cancel_arm(e, -1) == LE_ERR_INVALID);
+  CHECK(le_engine_cancel_arm(NULL, 0) == LE_ERR_INVALID);
+
+  le_engine_destroy(e);
+}
+
+/* The contrast that motivates the primitive: with everything parked, a record
+ * press on an armed track does NOT cancel it — the quantize branch needs an
+ * active transport, so the press falls through and starts recording. */
+static void test_record_press_on_pending_arm_starts_when_parked(void) {
+  printf("test_record_press_on_pending_arm_starts_when_parked\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  le_engine_set_quantize(e, 1);
+  process_const(e, 0.0f, 1, out);
+  CHECK(le_engine_record(e, 1) == LE_OK); /* arm a quantized take on 1 */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].pending == 1);
+
+  /* Park everything: the transport goes inactive under the pending arm. */
+  le_engine_stop_track(e, 0);
+  drain(e);
+  process_const(e, 0.0f, 1, out);
+
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  process_const(e, 0.5f, 8, out);
+  le_engine_get_snapshot(e, &s);
+  /* Not a cancel: the track is now capturing. This is precisely why FX entry
+   * must call le_engine_cancel_arm instead. */
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  le_engine_destroy(e);
+}
+
 /* Commands pushed while the device is stopped/lost must NOT replay onto the
  * next configuration — le_engine_configure re-initialises the command ring, so
  * a reconnect can't fire a surprise recording from a stale press. */
@@ -19097,6 +19169,8 @@ int main(void) {
   test_offset_latched_across_dub();
   test_redo_from_empty_unmutes();
   test_undo_to_empty_cancels_pending_arm();
+  test_cancel_arm_retires_a_pending_arm();
+  test_record_press_on_pending_arm_starts_when_parked();
   test_configure_drops_stale_commands();
   test_undo_layers_quantized_and_live_regrows();
   test_undo_layer_slot_regrows_for_longer_loop();
