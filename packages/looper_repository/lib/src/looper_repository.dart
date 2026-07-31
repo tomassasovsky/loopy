@@ -1944,6 +1944,22 @@ class LooperRepository {
     return _engine.setTrackQuantize(channel: channel, enabled: enabled);
   }
 
+  /// Cancels track [channel]'s pending record arm, whatever armed it — the
+  /// quantized loop-top arm, the signal-triggered one, or a Band section
+  /// toggle. A no-op when the track is not armed, and nothing to remember
+  /// across a restart (an arm does not survive one).
+  ///
+  /// The unconditional cancel, NOT [record]: a record press only retires an
+  /// arm whose trigger it owns and only while the conditions that created the
+  /// arm still hold — parked transport, or quantize since switched off, and
+  /// the same press starts a capture instead. Callers that need "nothing may
+  /// fire later" (the pedal's FX mode hands over a surface with no transport
+  /// controls) must use this.
+  EngineResult cancelArm({required int channel}) {
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.cancelArm(channel: channel);
+  }
+
   /// Fixes track [channel]'s loop length to [multiple] base loops (`0` = auto).
   /// Remembered and re-applied on every (re)start.
   EngineResult setTrackMultiple({required int channel, required int multiple}) {

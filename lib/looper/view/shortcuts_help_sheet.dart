@@ -63,6 +63,8 @@ class _ShortcutsHelpDialog extends StatelessWidget {
                 _Shortcut('arm', 'A', l10n.shortcutArm),
               ]),
               _group(context, l10n.shortcutGroupTracks, [
+                // One row, all three modes: the digit keys always select, and
+                // the mode decides what else they do (mute / FX chain).
                 _Shortcut('select', '1–8', l10n.shortcutSelectTrack),
                 _Shortcut('bank', 'B', l10n.shortcutBank),
                 _Shortcut('record', 'R', l10n.shortcutRecord),

@@ -504,6 +504,9 @@ class MockAudioEngine implements AudioEngine {
   }) => _requireRunning();
 
   @override
+  EngineResult cancelArm({required int channel}) => _requireRunning();
+
+  @override
   EngineResult setTrackMultiple({
     required int channel,
     required int multiple,

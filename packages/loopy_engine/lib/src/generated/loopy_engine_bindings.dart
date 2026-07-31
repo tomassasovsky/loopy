@@ -1590,6 +1590,37 @@ class LoopyEngineBindings {
   late final _le_engine_set_track_quantize = _le_engine_set_track_quantizePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
+  /// Cancels track [channel]'s pending record arm, whatever armed it — the
+  /// quantized loop-top arm, the signal-triggered (auto-record) arm, or a Band
+  /// section toggle. No-op when the track is not armed.
+  ///
+  /// This is the UNCONDITIONAL cancel. le_engine_record also cancels an arm, but
+  /// only as the second half of a press: it must first match the arm's trigger
+  /// (a foreign trigger is rejected with LE_ERR_INVALID rather than swallowed)
+  /// and its cancelling branches are gated on the conditions that created the arm
+  /// still holding — with the transport parked, or quantize since turned off, the
+  /// same call falls through and STARTS a capture instead. A caller that means
+  /// "make sure nothing fires later" — the app's FX-mode entry, which hands the
+  /// user a surface with no transport controls — needs this, not that.
+  int le_engine_cancel_arm(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+  ) {
+    return _le_engine_cancel_arm(
+      engine,
+      channel,
+    );
+  }
+
+  late final _le_engine_cancel_armPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_cancel_arm');
+  late final _le_engine_cancel_arm = _le_engine_cancel_armPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Sets the tempo in denominator-note beats per minute, clamped to 30..300.
   /// Sets tempo_source = manual; ignored while the tempo is locked.
   int le_engine_set_tempo(

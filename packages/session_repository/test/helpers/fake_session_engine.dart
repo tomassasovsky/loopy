@@ -641,4 +641,13 @@ class FakeSessionEngine implements AudioEngine {
   Float32List readTrackVisual(int channel) => Float32List(0);
   @override
   void dispose() {}
+
+  /// Channels passed to [cancelArm], in call order.
+  final List<int> cancelledArms = [];
+
+  @override
+  EngineResult cancelArm({required int channel}) {
+    cancelledArms.add(channel);
+    return EngineResult.ok;
+  }
 }

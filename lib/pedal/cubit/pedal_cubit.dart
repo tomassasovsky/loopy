@@ -85,22 +85,56 @@ class PedalCubit extends Cubit<PedalState> {
       state.copyWith(
         availableOutputs: _pedal.availableOutputs(),
         boundOutputId: _pedal.boundOutputId,
+        firmwareUpdateAvailable: _firmwareUpdateAvailable,
       ),
     );
   }
 
+  /// Whether a REAL pedal is bound and the codec is downgrading what loopy
+  /// sends it (flow err-4). Reads the repository's own resolved wire version
+  /// rather than re-deriving the floor, so the banner follows whatever
+  /// decides the version — the manual setting today, #331's identity reply
+  /// later. The on-screen pedal is excluded: there is no firmware behind it
+  /// to flash, so "update available" would be a lie even while it rehearses
+  /// a pinned downgrade.
+  bool get _firmwareUpdateAvailable =>
+      _pedal.boundOutputId != null &&
+      _pedal.boundOutputId != kSimulatorOutputId &&
+      _pedal.targetProtocolVersion < PedalCodec.protocolVersionMax;
+
   /// Binds the pedal output to [device] and persists the choice.
+  ///
+  /// Switching to a DIFFERENT device drops the manual firmware version back
+  /// to unknown: the version is one setting, not one per device, and what one
+  /// pedal's firmware speaks says nothing about the next one's. Carrying it
+  /// over would encode at the old pedal's version — silently downgrading a
+  /// newer pedal's frames, and telling the user to flash firmware it already
+  /// runs — so the R6 v2 floor takes over until they say otherwise.
   Future<void> selectOutput(PedalOutput device) async {
+    // Only when REPLACING one pedal with another — a first bind keeps a
+    // version the user set before picking the device.
+    final replacingDevice =
+        _savedOutputId != null && _savedOutputId != device.id;
     _savedOutputId = device.id;
     _pedal.bind(device.id);
+    if (replacingDevice && state.firmwareVersion != null) {
+      await selectFirmwareVersion(null);
+    }
     _syncOutputs();
     await _settings.savePedalOutputDevice(id: device.id, name: device.name);
   }
 
   /// Unbinds the pedal output and clears the saved device.
+  ///
+  /// Drops the manual firmware version with it, for the same reason
+  /// [selectOutput] does when replacing a pedal: once no device is selected
+  /// there is nothing the version describes, and keeping it would let the
+  /// NEXT pedal bound inherit this one's protocol — `selectOutput` cannot
+  /// catch that, since by then it has no previous device to compare against.
   Future<void> selectNone() async {
     _savedOutputId = null;
     _pedal.unbind();
+    if (state.firmwareVersion != null) await selectFirmwareVersion(null);
     _syncOutputs();
     await _settings.clearPedalOutputDevice();
     if (!isClosed) emit(state.copyWith(boundOutputId: null));
@@ -129,7 +163,14 @@ class PedalCubit extends Cubit<PedalState> {
   /// reply later — must route through here so the pairing cannot diverge.
   void _applyFirmwareVersion(int? version) {
     _pedal.firmwareProtocolVersion = version;
-    if (!isClosed) emit(state.copyWith(firmwareVersion: version));
+    if (!isClosed) {
+      emit(
+        state.copyWith(
+          firmwareVersion: version,
+          firmwareUpdateAvailable: _firmwareUpdateAvailable,
+        ),
+      );
+    }
   }
 
   /// Hotplug poll: re-enumerates the host's MIDI outputs and reconciles the
@@ -157,7 +198,14 @@ class PedalCubit extends Cubit<PedalState> {
 
   void _onBindStatus(PedalBindStatus status) {
     if (isClosed) return;
-    emit(state.copyWith(bindStatus: status));
+    // A bind/unbind changes which device's wire version applies, so the
+    // update flag is re-derived with the status it rides in on.
+    emit(
+      state.copyWith(
+        bindStatus: status,
+        firmwareUpdateAvailable: _firmwareUpdateAvailable,
+      ),
+    );
   }
 
   @override

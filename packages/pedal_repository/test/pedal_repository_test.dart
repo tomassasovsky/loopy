@@ -170,6 +170,31 @@ void main() {
         expect(repo.targetProtocolVersion, PedalCodec.protocolVersionV1);
       });
 
+      test('the ON-SCREEN pedal speaks the newest protocol by default', () {
+        // It has no firmware to be out of date — the renderer ships in this
+        // build — so it must not sit behind the unknown-firmware v2 floor
+        // (which would show FX mode as mute and chain LEDs as green).
+        repo.bind(kSimulatorOutputId);
+        expect(repo.targetProtocolVersion, PedalCodec.protocolVersionMax);
+      });
+
+      test('an explicit version still wins for the on-screen pedal, so it '
+          'can rehearse the downgrade', () {
+        repo
+          ..bind(kSimulatorOutputId)
+          ..firmwareProtocolVersion = PedalCodec.protocolVersionV2;
+        // Pinning v2 makes the plate render exactly what a pre-v3 pedal
+        // renders — the only way to see the B10 downgrade without hardware.
+        expect(repo.targetProtocolVersion, PedalCodec.protocolVersionV2);
+      });
+
+      test('a real pedal keeps the floor after the simulator is unbound', () {
+        repo
+          ..bind(kSimulatorOutputId)
+          ..bind('pedal-out');
+        expect(repo.targetProtocolVersion, PedalCodec.protocolVersionV2);
+      });
+
       test('clearing the version (null) returns to the v2 floor', () {
         repo
           ..firmwareProtocolVersion = PedalCodec.protocolVersionV3

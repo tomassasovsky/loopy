@@ -426,7 +426,10 @@ void main() {
           ..settle(fa)
           ..run(const [_Tap(PedalButton.stop)], fa) // parkAll
           ..settle(fa)
-          ..run(const [_Tap(PedalButton.mode)], fa) // -> rec mode (cursor 0)
+          // Two taps back to rec: the cycle's middle stop is FX, which leaves
+          // a capture alone (nothing is capturing here anyway).
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> fx
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> rec (cursor 0)
           ..settle(fa)
           ..run(const [_Tap(PedalButton.undo)], fa) // t0 -> empty, redo-able
           ..settle(fa);
@@ -458,10 +461,12 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.recording);
         expect(h.control.state.mode, InteractionMode.mute);
 
-        // It keeps ACCUMULATING through mute mode...
+        // It keeps ACCUMULATING through mute mode, and through FX on the way
+        // back round — every stop on the cycle leaves a live take alone.
         h
           ..run(const [_Pump(100, 0.5)], fa)
-          ..run(const [_Tap(PedalButton.mode)], fa) // back to rec mode
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> fx
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> rec
           ..settle(fa);
         expect(h.looper.tracks[0].state, TrackState.recording);
 
@@ -490,7 +495,8 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.overdubbing);
 
         h
-          ..run(const [_Tap(PedalButton.mode)], fa) // back to rec mode
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> fx
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> rec
           ..run(const [_Tap(PedalButton.recPlay)], fa) // punch out
           ..settle(fa);
         expect(h.looper.tracks[0].state, TrackState.playing);
@@ -560,6 +566,112 @@ void main() {
         expect(h.looper.tracks[1].state, TrackState.playing);
         expect(h.looper.tracks[2].state, TrackState.recording);
         expect(h.looper.tracks[2].muted, isFalse);
+      });
+    }, skip: skip);
+
+    test('FX mode: track stomps carry chain state into the trackLeds, and '
+        'Stop panics every chain dark (part 5b)', () {
+      _inHarness((h, fa) {
+        h
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..pumpLoop(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa) // t0 holds a loop
+          ..settle(fa)
+          ..run(const [_SetMode(InteractionMode.fx)], fa)
+          ..settle(fa);
+        // The frame round-trips the REAL codec here, bound to the on-screen
+        // pedal — which always speaks the newest protocol, so FX arrives as
+        // FX and the chain LEDs as blue (no B10 downgrade to undo).
+        expect(h.frame.mode, PedalMode.fx);
+        expect(h.frame.trackLeds[0], PedalTrackLed.blue);
+
+        // A track stomp bypasses that track's chain: its LED goes dark.
+        h
+          ..run(const [_Tap(PedalButton.track1)], fa)
+          ..settle(fa);
+        expect(h.repo.trackChainEnabled(0), isFalse);
+        expect(h.frame.trackLeds[0], PedalTrackLed.off);
+
+        // Give tracks 1 and 2 real Track-stage chains; 3..7 stay chain-less.
+        h.repo
+          ..setTrackEffects(
+            channel: 1,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          )
+          ..setTrackEffects(
+            channel: 2,
+            effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+          );
+        // Stop is FX panic: every chain that EXISTS goes off and dark.
+        h
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.stop)], fa)
+          ..settle(fa);
+        for (final channel in [1, 2]) {
+          expect(h.repo.trackChainEnabled(channel), isFalse);
+          expect(h.frame.trackLeds[channel], PedalTrackLed.off);
+        }
+        // A chain-less track keeps its (meaningless) enabled flag rather than
+        // acquiring a persisted bypass that would mute the effects the user
+        // adds to it later.
+        for (final channel in [3, 4, 5, 6, 7]) {
+          expect(h.repo.trackChainEnabled(channel), isTrue);
+        }
+        // ...and the loop is untouched: panic bypasses FX, it never stops
+        // the transport.
+        expect(h.looper.tracks[0].state, TrackState.playing);
+      });
+    }, skip: skip);
+
+    test('FX mode on a PRE-V3 pedal: the projection is unchanged and only the '
+        'codec downgrades it (B10)', () {
+      _inHarness((h, fa) {
+        // Pin the wire at v2 — what a pedal flashed before part 5a speaks.
+        // The on-screen pedal defaults to the newest protocol, so this
+        // explicit pin is the only way to rehearse the downgrade off-hardware.
+        h.pedalRepo.firmwareProtocolVersion = PedalCodec.protocolVersionV2;
+        h
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..pumpLoop(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..settle(fa)
+          ..run(const [_SetMode(InteractionMode.fx)], fa)
+          ..settle(fa);
+
+        // The overlay is genuinely in FX mode and the stomps still work...
+        expect(h.control.state.mode, InteractionMode.fx);
+        // ...but the frame that reaches the pedal is downgraded: FX reads as
+        // mute (the v2 wire has no third mode) and the chain LEDs arrive
+        // green, because a pre-v3 firmware rejects an unknown LED index
+        // wholesale rather than ignoring it.
+        expect(h.frame.mode, PedalMode.play);
+        expect(h.frame.trackLeds[0], PedalTrackLed.green);
+
+        // A stomp still lands, and its LED still goes dark — the user keeps
+        // the feature, just not the colour.
+        h
+          ..run(const [_Tap(PedalButton.track1)], fa)
+          ..settle(fa);
+        expect(h.repo.trackChainEnabled(0), isFalse);
+        expect(h.frame.trackLeds[0], PedalTrackLed.off);
+      });
+    }, skip: skip);
+
+    test('FX mode: Clear and Rec/Play are inert — a stray stomp cannot erase '
+        'the set (part 5b)', () {
+      _inHarness((h, fa) {
+        h
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..pumpLoop(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..settle(fa)
+          ..run(const [_SetMode(InteractionMode.fx)], fa)
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.clear)], fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.playing); // still there
+        expect(h.control.state.mode, InteractionMode.fx); // no home-and-reset
       });
     }, skip: skip);
 
@@ -886,6 +998,18 @@ class _ToggleMode extends _FuzzAction {
   String describe() => '_ToggleMode()';
 }
 
+/// Jumps straight to one mode, skipping the cycle's intermediate stops — the
+/// only way to reach Rec from Mute without passing through FX (whose entry
+/// finalizes a live capture, A5).
+class _SetMode extends _FuzzAction {
+  const _SetMode(this.mode);
+  final InteractionMode mode;
+  @override
+  void apply(_Harness h, FakeAsync fa) => h.control.setMode(mode);
+  @override
+  String describe() => '_SetMode(InteractionMode.${mode.name})';
+}
+
 class _Pump extends _FuzzAction {
   const _Pump(this.frames, this.input);
   final int frames;
@@ -1066,6 +1190,12 @@ List<_FuzzAction> _generate(int seed, int steps) {
       ),
       < 65 => _Select(rng.next(8)),
       < 68 => const _ToggleMode(),
+      // NB: no `_SetMode` in the random alphabet. FX mode is already reachable
+      // here — `_Tap`/`_ToggleMode` walk the three-stop cycle — and giving it
+      // its own band would have taken draws from `_Pump` (the only action that
+      // feeds audio in, so the only way tracks gain content) and shifted every
+      // subsequent draw, replacing the sequences the fixed seeds have explored
+      // rather than adding to them. `_SetMode` stays a corpus-only action.
       < 78 => _Pump(const [0, 1, 17, 256, 300][rng.next(5)], 0.5),
       < 82 => const _Tick(),
       < 85 => _Elapse(const [5, 50, 600][rng.next(3)]),

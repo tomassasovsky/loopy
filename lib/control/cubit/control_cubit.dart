@@ -4,6 +4,7 @@ import 'dart:developer' as dev;
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/common/fx_chain_persistence.dart';
 import 'package:loopy/control/control_projection.dart';
 import 'package:loopy/logging/app_log.dart';
 import 'package:loopy/looper/model/interaction_mode.dart';
@@ -118,6 +119,11 @@ class ControlCubit extends Cubit<ControlState> {
   bool _modeArmed = false;
   bool _modeHandled = false;
 
+  // The FX-mode Stop long-press (restore every Track chain). The panic half
+  // fires on the press, so unlike undo/mode this gesture keeps no armed or
+  // handled flag — only the pending hold. Null outside a held FX Stop.
+  Timer? _stopTimer;
+
   // Whether the Clear footswitch is currently held down. Lights the Clear
   // LED (the `clearFadeActive` frame bit) for as long as it is pressed.
   bool _clearHeld = false;
@@ -170,7 +176,10 @@ class ControlCubit extends Cubit<ControlState> {
 
   Future<void> _restore() async {
     _longPress = Duration(milliseconds: await _settings.loadPedalLongPressMs());
-    final defaultMode = InteractionMode.fromToken(
+    // bootDefaultFromToken, not fromToken: a stored `'fx'` (hand-edited or
+    // corrupted — no build writes it) falls back to record rather than booting
+    // the dead FX surface (R12).
+    final defaultMode = InteractionMode.bootDefaultFromToken(
       await _settings.loadDefaultInteractionMode(),
     );
     if (isClosed) return;
@@ -221,22 +230,43 @@ class ControlCubit extends Cubit<ControlState> {
   // Mode
   // ---------------------------------------------------------------------------
 
-  /// Toggles Record / Mute mode (identical from every surface).
-  void toggleMode() => setMode(
-    state.mode == InteractionMode.record
-        ? InteractionMode.mute
-        : InteractionMode.record,
-  );
+  /// Cycles Record -> Mute -> FX -> Record (identical from every surface).
+  ///
+  /// A three-stop cycle, not a toggle: FX mode joins the same MODE footswitch
+  /// rather than claiming a switch the hardware does not have. Side effects
+  /// fire for the LANDED mode only — cycling PAST a mode never runs its entry
+  /// work (A5), which falls out of [setMode] being the single entry point.
+  void toggleMode() => setMode(switch (state.mode) {
+    InteractionMode.record => InteractionMode.mute,
+    InteractionMode.mute => InteractionMode.fx,
+    InteractionMode.fx => InteractionMode.record,
+  });
 
   /// Applies [next] with its entry side effects; a no-op when already there.
   ///
   /// Entering Mute previews the whole content set: `parkedResume` = every
   /// track holding (or capturing) a loop, so Rec/Play resumes them all and
   /// the parked LEDs show it — including stopped and muted tracks, which
-  /// pure `sounding` could never cover. A LIVE CAPTURE deliberately survives
-  /// the switch: the mode toggle is a view change, not a transport action,
-  /// so a take the user did not explicitly end keeps recording until they
-  /// return to Rec mode and hit Rec/Play (or end it with an explicit Stop).
+  /// pure `sounding` could never cover. A live capture survives THIS entry:
+  /// the mode toggle is a view change, not a transport action.
+  ///
+  /// Entering FX cancels every PENDING record arm — quantized, sound-armed,
+  /// or a Band section toggle. An arm is the one thing that could start a take
+  /// the user never sees: it fires on its own, seconds later, in a mode whose
+  /// transport controls are all inert. The cancel is unconditional
+  /// (`LooperRepository.cancelArm`), so no engine setting can turn it into a
+  /// press with different meaning.
+  ///
+  /// A LIVE capture, though, survives FX exactly as it survives Mute: the mode
+  /// toggle stays a view change, not a transport action, and the take ends
+  /// when the user cycles back to Rec and hits Rec/Play (or Stop). Ending it
+  /// here was tried and withdrawn — the only tool available is a record press,
+  /// which under quantize does not finalize at all but ARMS a loop-top
+  /// finalize, so the take ran on past the mode change and FX was entered with
+  /// a fresh arm, the exact state this entry clears. A finalize that ignores
+  /// quantize needs an engine primitive that does not exist yet; until it
+  /// does, "the capture survives" is the honest contract and matches Mute.
+  ///
   /// Any mode entry clears the stored mute-mode intent (the invalidation
   /// table).
   void setMode(InteractionMode next) {
@@ -261,12 +291,41 @@ class ControlCubit extends Cubit<ControlState> {
             },
           ),
         );
+      case InteractionMode.fx:
+        // Cancel arms BEFORE the emit so the projection that rides it already
+        // describes the post-entry intent (the engine's own state follows one
+        // poll later, as it does for every other command).
+        //
+        // Read LIVE engine truth, not the polled snapshot: an arm cancelled or
+        // fired moments ago still reads `pending` for up to one poll, and the
+        // cancel is cheap enough that a stale read costs only a no-op.
+        for (final track in _looper.state.tracks) {
+          if (track.pending) _looper.cancelArm(channel: track.channel);
+        }
+        emit(
+          state.copyWith(
+            mode: InteractionMode.fx,
+            excluded: const <int>{},
+            parkedResume: const <int>{},
+          ),
+        );
     }
   }
 
   /// Sets and persists the default [mode] the system boots into, applying it
   /// to the live mode now.
+  ///
+  /// Ignores a mode outside [InteractionMode.bootDefaults] (R12): the settings
+  /// picker never offers FX, and a boot into FX with no chains configured is a
+  /// dead surface.
   Future<void> setDefaultMode(InteractionMode mode) async {
+    // Loud in debug, defensive in release: a caller offering FX here has a
+    // bug, but shipping a dead boot surface is the worse outcome.
+    assert(
+      InteractionMode.bootDefaults.contains(mode),
+      '$mode is not a boot-eligible default mode',
+    );
+    if (!InteractionMode.bootDefaults.contains(mode)) return;
     emit(state.copyWith(defaultMode: mode));
     setMode(mode);
     await _settings.saveDefaultInteractionMode(mode.token);
@@ -305,12 +364,19 @@ class ControlCubit extends Cubit<ControlState> {
   // ---------------------------------------------------------------------------
 
   /// The Rec/Play action under the current mode.
+  ///
+  /// INERT in FX mode (A4): the "act on the focused track" reading was
+  /// rejected — focus has no on-pedal indicator, so an invisible target would
+  /// be mis-stomped. The switch is reserved for a later part rather than given
+  /// a guessable meaning.
   void recPlay() {
     switch (state.mode) {
       case InteractionMode.record:
         _recAdvance(state.cursor);
       case InteractionMode.mute:
         _muteRecPlay();
+      case InteractionMode.fx:
+        break;
     }
   }
 
@@ -393,13 +459,17 @@ class ControlCubit extends Cubit<ControlState> {
   // Stop
   // ---------------------------------------------------------------------------
 
-  /// The Stop action under the current mode.
+  /// The Stop action under the current mode (the pedal's Stop TAP; its
+  /// long-press is [restoreAllTrackChains], handled at the press/release
+  /// layer like undo/redo's).
   void stop() {
     switch (state.mode) {
       case InteractionMode.record:
         _recStop(state.cursor);
       case InteractionMode.mute:
         parkAll();
+      case InteractionMode.fx:
+        panicTrackChains();
     }
   }
 
@@ -445,6 +515,8 @@ class ControlCubit extends Cubit<ControlState> {
         _recTrackPressed(channel);
       case InteractionMode.mute:
         _muteTrackPressed(channel);
+      case InteractionMode.fx:
+        toggleTrackChain(channel);
     }
   }
 
@@ -506,6 +578,70 @@ class ControlCubit extends Cubit<ControlState> {
         ..setMute(muted: false, channel: channel)
         ..play(channel: channel);
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // FX mode (Track-stage chains)
+  // ---------------------------------------------------------------------------
+
+  /// Toggles track [channel]'s Track-stage chain (FX mode's track-button
+  /// action, shared with the keyboard's digit keys).
+  ///
+  /// Per-CHAIN, not per-effect: a stomp is a whole-chain bypass (R15,
+  /// "disabled == dry through the bus"); per-effect bits and remapped
+  /// bindings are a later part.
+  void toggleTrackChain(int channel) {
+    if (channel < 0 || channel >= _channelCount) return;
+    _setTrackChain(channel, enabled: !_looper.trackChainEnabled(channel));
+  }
+
+  /// FX panic: every Track-stage chain off in one gesture (Stop in FX mode) —
+  /// the eyes-free way out of a chain that has run away mid-song. Restored by
+  /// [restoreAllTrackChains] (Stop long-press).
+  void panicTrackChains() => _sweepTrackChains(enabled: false);
+
+  /// Puts every Track-stage chain back on (Stop LONG-PRESS in FX mode) — the
+  /// undo for [panicTrackChains]. Deliberately "all on" rather than a restore
+  /// of the pre-panic pattern: eyes-free on a dark stage, a known end state
+  /// beats one the performer has to remember.
+  void restoreAllTrackChains() => _sweepTrackChains(enabled: true);
+
+  /// Flips Track-stage chains across every channel, ASYMMETRICALLY on empties.
+  ///
+  /// Disabling skips a track with no chain: its flag says nothing audible
+  /// either way, and writing it would persist a bypass the boot restore
+  /// replays forever, silently muting the effects the user adds to that track
+  /// later. Skipping also keeps one Stop stomp proportional to the rig — the
+  /// repository re-snapshots the engine and re-emits per call, so sweeping all
+  /// eight channels cost eight engine snapshots, pedal frames and settings
+  /// writes for a rig that usually has one or two chains.
+  ///
+  /// ENABLING sweeps everything, empties included. Clearing a bypass is always
+  /// safe, and a chain-less track can genuinely be carrying a stale one — the
+  /// FX dock can disable a chain and then empty it — which is exactly the
+  /// silent-dry state this restore exists to undo. A "restore all" that could
+  /// not reach it would leave the only pedal-side cure unreachable.
+  void _sweepTrackChains({required bool enabled}) {
+    for (var channel = 0; channel < _channelCount; channel++) {
+      if (!enabled && _looper.trackEffects(channel).isEmpty) continue;
+      _setTrackChain(channel, enabled: enabled);
+    }
+  }
+
+  /// Applies one Track-chain flag and persists the envelope, skipping a no-op
+  /// so a panic over already-off chains costs no settings writes.
+  ///
+  /// Reads the repository's remembered intent rather than the polled
+  /// [LooperState]: chain-enabled is set synchronously here (no engine
+  /// round-trip), so two fast stomps must not both see the same pre-poll
+  /// value. The LEDs still follow the polled snapshot, exactly like mute.
+  void _setTrackChain(int channel, {required bool enabled}) {
+    if (_looper.trackChainEnabled(channel) == enabled) return;
+    _looper.setTrackChainEnabled(channel: channel, enabled: enabled);
+    // The same envelope `LooperBloc` writes for the on-screen path — a cubit
+    // never calls a bloc, so both call the shared helper instead of one
+    // routing through the other.
+    persistTrackFxChain(settings: _settings, looper: _looper, channel: channel);
   }
 
   // ---------------------------------------------------------------------------
@@ -581,6 +717,7 @@ class ControlCubit extends Cubit<ControlState> {
         if (button == PedalButton.undo) _onUndoRelease();
         if (button == PedalButton.clear) _onClearRelease();
         if (button == PedalButton.mode) _onModeRelease();
+        if (button == PedalButton.stop) _onStopRelease();
       case EncoderDelta(:final delta):
         _log('encoder $delta');
         encoderTurned(delta);
@@ -592,19 +729,32 @@ class ControlCubit extends Cubit<ControlState> {
       'press ${button.name}  [mode=${state.mode.name} '
       'cursor=${state.cursor}]',
     );
+    final fx = state.mode == InteractionMode.fx;
     switch (button) {
       case PedalButton.undo:
-        _armUndo();
+        // INERT in FX mode until the #219 toggle-undo contract exists: an
+        // undo that silently means "the last overdub" while the foot is in a
+        // chain-editing mode is the surprise this matrix exists to prevent.
+        if (!fx) _armUndo();
       case PedalButton.recPlay:
-        recPlay();
+        recPlay(); // inert in FX mode (A4)
       case PedalButton.stop:
-        stop();
+        // FX mode splits Stop into tap = panic / long-press = restore, so the
+        // action waits for the release; the other modes act on the press, as
+        // they always have.
+        if (fx) {
+          _armStop();
+        } else {
+          stop();
+        }
       case PedalButton.mode:
         _armMode();
       case PedalButton.bank:
         toggleBankWithCursor();
       case PedalButton.clear:
-        _onClear();
+        // INERT in FX mode, LED included (A2): clear is the one irreversible
+        // stomp on the plate, and a stray one must never erase the set.
+        if (!fx) _onClear();
       case PedalButton.track1:
       case PedalButton.track2:
       case PedalButton.track3:
@@ -637,6 +787,42 @@ class ControlCubit extends Cubit<ControlState> {
       _log('redo ch=$_undoChannel  (long-press)');
       redo(_undoChannel);
     });
+  }
+
+  /// The FX-mode Stop gesture: the PANIC fires on the press itself, and a
+  /// hold past the threshold follows it with the restore.
+  ///
+  /// Panic-on-press, not on release, for two reasons. A panic is an emergency
+  /// control — a performer stomping it wants the chains out now, not when
+  /// their foot comes up. And a release is not proof of a gesture: the
+  /// on-screen plate injects a synthetic note-off for every held switch when
+  /// it leaves the tree (so it never strands a note), which as a
+  /// release-triggered action would have bypassed and PERSISTED every chain
+  /// for a stomp the user never finished. Acting on the press makes the
+  /// release inert, so a synthetic one can do no harm.
+  ///
+  /// The hold therefore reads as panic-then-restore, which lands on the same
+  /// end state the restore promises on its own: every chain on.
+  void _armStop() {
+    _log('fx panic (press)');
+    panicTrackChains();
+    _stopTimer?.cancel();
+    _stopTimer = Timer(_longPress, () {
+      _stopTimer = null;
+      // Only while the foot is still in the mode it committed to: cycling
+      // MODE mid-hold leaves the pedal showing cursor/armed LEDs, where a
+      // silent rewrite of every chain would be invisible.
+      if (state.mode != InteractionMode.fx) return;
+      _log('fx chains restored (long-press)');
+      restoreAllTrackChains();
+    });
+  }
+
+  /// Stop released: the FX action already fired on the press, so this only
+  /// retires the pending long-press.
+  void _onStopRelease() {
+    _stopTimer?.cancel();
+    _stopTimer = null;
   }
 
   void _onUndoRelease() {
@@ -817,6 +1003,7 @@ class ControlCubit extends Cubit<ControlState> {
     _keepAliveTimer?.cancel();
     _undoTimer?.cancel();
     _modeTimer?.cancel();
+    _stopTimer?.cancel();
     await _looperSub.cancel();
     await _eventsSub.cancel();
     await _statusSub.cancel();

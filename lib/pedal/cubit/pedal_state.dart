@@ -24,6 +24,7 @@ class PedalState extends Equatable {
     this.availableOutputs = const [],
     this.boundOutputId,
     this.firmwareVersion,
+    this.firmwareUpdateAvailable = false,
   });
 
   /// The pedal output link status, mirrored for the settings UI.
@@ -41,12 +42,23 @@ class PedalState extends Equatable {
   /// Unknown keeps outbound frames at the v2 safety floor, never v3.
   final int? firmwareVersion;
 
+  /// Whether a REAL bound pedal negotiates below the newest protocol, so the
+  /// codec is downgrading what loopy sends it (flow err-4: FX mode arrives as
+  /// mute, chain LEDs as green).
+  ///
+  /// DERIVED in the cubit from `PedalRepository.targetProtocolVersion` — the
+  /// one place the unknown-to-v2 floor and the on-screen-pedal carve-out are
+  /// decided — so the banner cannot drift from what is actually on the wire
+  /// when #331's identity-reply discovery replaces the manual gate.
+  final bool firmwareUpdateAvailable;
+
   /// Returns a copy with the given fields replaced.
   PedalState copyWith({
     PedalBindStatus? bindStatus,
     List<PedalOutput>? availableOutputs,
     Object? boundOutputId = _unsetBoundOutputId,
     Object? firmwareVersion = _unsetFirmwareVersion,
+    bool? firmwareUpdateAvailable,
   }) {
     return PedalState(
       bindStatus: bindStatus ?? this.bindStatus,
@@ -57,6 +69,8 @@ class PedalState extends Equatable {
       firmwareVersion: identical(firmwareVersion, _unsetFirmwareVersion)
           ? this.firmwareVersion
           : firmwareVersion as int?,
+      firmwareUpdateAvailable:
+          firmwareUpdateAvailable ?? this.firmwareUpdateAvailable,
     );
   }
 
@@ -66,5 +80,6 @@ class PedalState extends Equatable {
     availableOutputs,
     boundOutputId,
     firmwareVersion,
+    firmwareUpdateAvailable,
   ];
 }

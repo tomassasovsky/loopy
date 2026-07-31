@@ -13,6 +13,7 @@ void main() {
       test('derives from the member name (new saves write "mute")', () {
         expect(InteractionMode.record.token, 'record');
         expect(InteractionMode.mute.token, 'mute');
+        expect(InteractionMode.fx.token, 'fx');
       });
     });
 
@@ -29,6 +30,42 @@ void main() {
       test('defaults to record for null or unknown tokens', () {
         expect(InteractionMode.fromToken(null), InteractionMode.record);
         expect(InteractionMode.fromToken('bogus'), InteractionMode.record);
+      });
+
+      test('parses "fx" — the boot-default gate lives elsewhere', () {
+        expect(InteractionMode.fromToken('fx'), InteractionMode.fx);
+      });
+    });
+
+    group('bootDefaultFromToken (R12)', () {
+      test('passes the boot-eligible modes through unchanged', () {
+        expect(
+          InteractionMode.bootDefaultFromToken('record'),
+          InteractionMode.record,
+        );
+        expect(
+          InteractionMode.bootDefaultFromToken('mute'),
+          InteractionMode.mute,
+        );
+        // The legacy shim survives on this path too.
+        expect(
+          InteractionMode.bootDefaultFromToken('play'),
+          InteractionMode.mute,
+        );
+      });
+
+      test('coerces a stored "fx" to record — FX is never a boot mode', () {
+        expect(
+          InteractionMode.bootDefaultFromToken('fx'),
+          InteractionMode.record,
+        );
+      });
+
+      test('bootDefaults excludes fx', () {
+        expect(
+          InteractionMode.bootDefaults,
+          isNot(contains(InteractionMode.fx)),
+        );
       });
     });
 

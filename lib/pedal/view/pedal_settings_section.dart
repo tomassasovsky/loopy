@@ -66,6 +66,14 @@ class PedalSettingsSection extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         Text(l10n.pedalFirmwareHint, style: setupBody),
+        // The condition itself is the cubit's (it reads the repository's
+        // resolved wire version) — this only renders the answer.
+        if (cubit.state.firmwareUpdateAvailable) ...[
+          const SizedBox(height: 12),
+          _PedalFirmwareUpdateBanner(
+            firmwareVersion: cubit.state.firmwareVersion,
+          ),
+        ],
       ],
     );
   }
@@ -95,6 +103,65 @@ class _PedalEmptyState extends StatelessWidget {
         border: Border.all(color: context.surface.line),
       ),
       child: Text(context.l10n.pedalNoOutputs, style: setupBody),
+    );
+  }
+}
+
+/// Shown while a pedal is bound but negotiates BELOW the newest protocol
+/// (flow err-4): FX mode still works — the projection never branches on the
+/// pedal version (B10) — but the codec downgrades it, so the chain LEDs come
+/// out green instead of blue and the pedal reads FX as mute. Explaining that
+/// here is the difference between "my pedal is broken" and "my pedal is old".
+///
+/// Informational for now: it names the fix (flash the newer firmware, then
+/// pick the version above). The one-tap update ride-along lands with the
+/// auto-detect/OTA flow (#331), which owns the flashing UI.
+class _PedalFirmwareUpdateBanner extends StatelessWidget {
+  const _PedalFirmwareUpdateBanner({required this.firmwareVersion});
+
+  /// The negotiated version, or `null` when not set (the v2 safety floor).
+  final int? firmwareVersion;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final theme = Theme.of(context);
+    final version = firmwareVersion;
+    final body = version == null
+        ? l10n.pedalFirmwareUpdateBodyUnknown(
+            PedalCodec.protocolVersion, // the unknown ⇒ v2 safety floor
+            PedalCodec.protocolVersionMax,
+          )
+        : l10n.pedalFirmwareUpdateBody(version, PedalCodec.protocolVersionMax);
+
+    // A live region: the banner appears and disappears as the pedal binds,
+    // unbinds, or its version is set — transitions a screen reader must hear
+    // without navigating back to this section (WCAG 4.1.3).
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        key: const Key('pedalSettings_firmwareUpdate_banner'),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: context.surface.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: theme.colorScheme.primary),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              l10n.pedalFirmwareUpdateTitle,
+              style: setupBody.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(body, style: setupBody),
+          ],
+        ),
+      ),
     );
   }
 }

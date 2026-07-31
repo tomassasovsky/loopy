@@ -99,14 +99,36 @@ class TracksCommands {
         tracks[channel].isCapturing;
   }
 
-  /// Toggles the system record/mute mode (the same [ControlCubit] method the
-  /// pedal footswitch drives) and announces the mode it landed on.
+  /// Cycles the system record → mute → FX mode (the same [ControlCubit]
+  /// method the pedal footswitch drives) and announces the mode it landed on.
   void toggleMode() {
     final overlay = context.read<ControlCubit>()..toggleMode();
+    final l10n = context.l10n;
+    _announce(switch (overlay.state.mode) {
+      InteractionMode.record => l10n.a11yModeRecord,
+      InteractionMode.mute => l10n.a11yModeMute,
+      InteractionMode.fx => l10n.a11yModeFx,
+    });
+  }
+
+  /// Announces the state an FX-chain toggle on [channel] lands in.
+  ///
+  /// Reads the repository's remembered intent — the SAME value
+  /// `LooperTrackChainToggled`'s handler negates — rather than the polled
+  /// `LooperState` the widgets render from. Those two disagree for a poll
+  /// after any other surface flips the same chain, and naming the flip from
+  /// the stale one would announce the opposite of what the bloc then does.
+  ///
+  /// Call BEFORE dispatching: the event is queued, so this reads the
+  /// pre-flip value either way, and announcing its negation is the landing
+  /// state. Shared by the number keys and the track tiles so the two cannot
+  /// drift.
+  void announceFxChainToggle(int channel) {
+    final enabled = context.read<LooperRepository>().trackChainEnabled(channel);
     _announce(
-      overlay.state.mode == InteractionMode.record
-          ? context.l10n.a11yModeRecord
-          : context.l10n.a11yModeMute,
+      enabled
+          ? context.l10n.a11yTrackFxChainOff
+          : context.l10n.a11yTrackFxChainOn,
     );
   }
 
@@ -127,11 +149,15 @@ class TracksCommands {
   /// beep) and dispatched to the looper; modifier combos other than undo/redo
   /// pass through to OS / menu shortcuts.
   ///
-  /// Both modes: `M` switch mode · `S` settings · `G` signal · `F` fullscreen ·
+  /// Every mode: `M` cycle mode · `S` settings · `G` signal · `F` fullscreen ·
   /// `Space` play/pause all · `C` clear all · `A` arm/disarm performance
   /// recording · `Cmd/Ctrl+Z` undo · `Cmd/Ctrl+Y` (or `Shift+Z`) redo.
   /// Record mode: `1`–`8` select · `R` record/overdub · `P` play/pause.
   /// Mute mode: `1`–`8` select + mute/unmute.
+  /// FX mode: `1`–`8` select + toggle that track's FX chain.
+  ///
+  /// Kept in sync with `shortcuts_help_sheet.dart` by contract: a row added
+  /// here is added there in the same change, or the legend starts lying.
   KeyEventResult handleKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
@@ -230,14 +256,26 @@ class TracksCommands {
     }
 
     // Number keys 1–8 select a track (auto-revealing its bank). In mute mode
-    // they also toggle mute on that track.
+    // they also toggle mute on that track; in FX mode they toggle its
+    // Track-stage chain — the keyboard twin of the pedal's FX-mode track
+    // stomps, dispatched through the bloc so the on-screen path persists the
+    // chain envelope exactly as the FX dock does.
     final digit = _digitOf(key);
     if (digit != null) {
       final channel = digit - 1;
       if (channel <= 7) {
         overlay.selectTrack(channel); // moves the cursor and reveals its bank
-        if (mode == InteractionMode.mute) {
-          bloc.add(LooperMuteToggled(channel));
+        switch (mode) {
+          case InteractionMode.record:
+            break;
+          case InteractionMode.mute:
+            bloc.add(LooperMuteToggled(channel));
+          case InteractionMode.fx:
+            // The bloc resolves the flip against the repository's remembered
+            // intent — deriving it here from the polled snapshot would read a
+            // missing channel as "off" and dispatch enable forever.
+            announceFxChainToggle(channel);
+            bloc.add(LooperTrackChainToggled(channel));
         }
       }
       return KeyEventResult.handled;

@@ -54,7 +54,15 @@ Set<int> armedTracks(LooperState looper, ControlState overlay) {
 ///
 /// Mute mode: green = armed AND audible (a muted or excluded track reads
 /// off; while parked, the parked-resume members show what Rec/Play brings
-/// back). Record mode: the cursor and any capturing track read red.
+/// back). Record mode: the cursor and any capturing track read red. FX mode:
+/// blue = the track's Track-stage chain is engaged.
+///
+/// The FX-mode reading costs ZERO new wire bytes (R8): the same `trackLeds`
+/// enum-index byte carries a different meaning per mode, so the firmware
+/// renders it verbatim with no mode branch. An ENGAGED-BUT-EMPTY chain still
+/// reads blue — the LED reports the flag the stomp toggles, so every stomp
+/// gives immediate, unambiguous feedback; a lit LED promises "this chain is
+/// in circuit", not "this chain has effects in it".
 PedalTrackLed projectTrackLed(
   LooperState looper,
   ControlState overlay,
@@ -73,6 +81,11 @@ PedalTrackLed projectTrackLed(
       if (channel == overlay.cursor) return PedalTrackLed.red;
       if (track?.isCapturing ?? false) return PedalTrackLed.red;
       return PedalTrackLed.off;
+    case InteractionMode.fx:
+      // A channel the engine does not expose reads dark — there is no chain
+      // behind it to stomp.
+      if (track == null) return PedalTrackLed.off;
+      return track.chainEnabled ? PedalTrackLed.blue : PedalTrackLed.off;
   }
 }
 
@@ -126,8 +139,15 @@ PedalStateFrame projectFrame(
     selectedTrack: overlay.cursor,
     // The wire frame still calls mute mode PLAY: PedalMode is the pedal
     // firmware's protocol enum (its mode LED predates the rename), so the
-    // mapping — not the wire token — carries the new name.
-    mode: overlay.mode == InteractionMode.mute ? PedalMode.play : PedalMode.rec,
+    // mapping — not the wire token — carries the new name. FX rides protocol
+    // v3's 2-bit field; this projection is version-AGNOSTIC (B10) — the codec
+    // alone downgrades fx to play for a pre-v3 pedal, so nothing here branches
+    // on the negotiated version.
+    mode: switch (overlay.mode) {
+      InteractionMode.record => PedalMode.rec,
+      InteractionMode.mute => PedalMode.play,
+      InteractionMode.fx => PedalMode.fx,
+    },
     loopLengthMicros: lengthMicros.clamp(
       0,
       PedalStateFrame.maxLoopLengthMicros,

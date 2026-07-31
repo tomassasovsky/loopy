@@ -207,5 +207,76 @@ void main() {
 
       expect(cubit.state.firmwareVersion, PedalCodec.protocolVersionV3);
     });
+
+    group('the firmware-update banner (flow err-4)', () {
+      const bannerKey = Key('pedalSettings_firmwareUpdate_banner');
+
+      /// A cubit with [device] bound, so the banner's "a pedal is actually
+      /// connected" precondition holds.
+      Future<PedalCubit> boundCubit(String device) async {
+        final cubit = cubitWith(
+          FakePedalTransport(
+            outputs: [MidiDevice(id: device, name: 'Loopy Pedal')],
+          ),
+        );
+        await cubit.selectOutput(PedalOutput(id: device, name: 'Loopy Pedal'));
+        return cubit;
+      }
+
+      testWidgets('is absent while no pedal is bound', (tester) async {
+        final cubit = cubitWith(FakePedalTransport());
+        addTearDown(cubit.close);
+
+        await pumpSection(tester, cubit);
+
+        expect(find.byKey(bannerKey), findsNothing);
+      });
+
+      testWidgets('appears for a bound pedal with no version set', (
+        tester,
+      ) async {
+        final cubit = await boundCubit('out');
+        addTearDown(cubit.close);
+
+        await pumpSection(tester, cubit);
+
+        // Unknown keeps the v2 floor, so FX mode is degraded on the wire —
+        // the banner explains why rather than leaving it looking broken.
+        expect(find.byKey(bannerKey), findsOneWidget);
+        expect(find.text('Pedal firmware update available'), findsOneWidget);
+      });
+
+      testWidgets('appears for a bound pedal pinned below v3', (tester) async {
+        final cubit = await boundCubit('out');
+        addTearDown(cubit.close);
+        await cubit.selectFirmwareVersion(PedalCodec.protocolVersionV1);
+
+        await pumpSection(tester, cubit);
+
+        expect(find.byKey(bannerKey), findsOneWidget);
+      });
+
+      testWidgets('never appears for the on-screen pedal', (tester) async {
+        // It renders in this build — there is no firmware behind it to be
+        // out of date, and it already encodes at the codec max.
+        final cubit = await boundCubit(kSimulatorOutputId);
+        addTearDown(cubit.close);
+
+        await pumpSection(tester, cubit);
+
+        expect(find.byKey(bannerKey), findsNothing);
+      });
+
+      testWidgets('disappears once the pedal is known to speak the newest '
+          'protocol', (tester) async {
+        final cubit = await boundCubit('out');
+        addTearDown(cubit.close);
+        await cubit.selectFirmwareVersion(PedalCodec.protocolVersionMax);
+
+        await pumpSection(tester, cubit);
+
+        expect(find.byKey(bannerKey), findsNothing);
+      });
+    });
   });
 }
