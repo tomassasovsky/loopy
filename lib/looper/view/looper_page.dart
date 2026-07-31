@@ -2,6 +2,7 @@ import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/control/control.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/session/session.dart';
@@ -43,6 +44,16 @@ class LooperPage extends StatelessWidget {
             looper: context.read<LooperRepository>(),
             performance: context.read<PerformanceRepository>(),
             exportDirectory: exportDirectory,
+            // The session's pedal remap (part 6b) crossing as an opaque
+            // string. Narrow functions rather than a cubit-to-cubit link:
+            // `ControlCubit` owns the binding model, and it is an ancestor
+            // provider here, so this reads and writes it without either cubit
+            // knowing the other exists.
+            currentPedalBindings: () =>
+                context.read<ControlCubit>().sessionBindings.encode(),
+            onPedalBindings: (encoded) => context
+                .read<ControlCubit>()
+                .applySessionBindings(PedalBindingSet.decode(encoded)),
           ),
         ),
       ],

@@ -25,21 +25,42 @@ class SessionCubit extends Cubit<SessionState> {
   /// [exportDirectory] resolves the directory a mixdown / stems are written to;
   /// the named-session methods go through [repository]'s catalog instead.
   /// Injecting it keeps the cubit testable.
+  ///
+  /// [currentPedalBindings] / [onPedalBindings] are the session's pedal remap
+  /// (part 6b) crossing this cubit as an opaque string — read fresh at each
+  /// save, handed back on each load. They are narrow injected functions rather
+  /// than a `ControlCubit` dependency for the usual reason: a cubit never calls
+  /// a cubit, and the binding model belongs to the control layer. Both default
+  /// to no-ops, which is exactly the pre-6b behavior.
   SessionCubit({
     required SessionRepository repository,
     required LooperRepository looper,
     required PerformanceRepository performance,
     required Future<String> Function() exportDirectory,
+    String Function() currentPedalBindings = _noBindings,
+    void Function(String encoded) onPedalBindings = _ignoreBindings,
   }) : _repository = repository,
        _looper = looper,
        _performance = performance,
        _exportDirectory = exportDirectory,
+       _currentPedalBindings = currentPedalBindings,
+       _onPedalBindings = onPedalBindings,
        super(const SessionState());
+
+  /// The default `currentPedalBindings`: no session remap, so the global set
+  /// applies (A12).
+  static String _noBindings() => '';
+
+  /// The default `onPedalBindings`: a call site that does not own a control
+  /// surface simply drops the loaded blob.
+  static void _ignoreBindings(String _) {}
 
   final SessionRepository _repository;
   final LooperRepository _looper;
   final PerformanceRepository _performance;
   final Future<String> Function() _exportDirectory;
+  final String Function() _currentPedalBindings;
+  final void Function(String encoded) _onPedalBindings;
 
   // ---- exports (a separate action from the session catalog) ----
 
@@ -77,6 +98,7 @@ class SessionCubit extends Cubit<SessionState> {
     await _repository.save(
       await _repository.bundlePath(name),
       chains: chainsFromLooper(_looper),
+      pedalBindings: _currentPedalBindings(),
     );
     return _ActionResult(
       SessionOutcome.saved,
@@ -103,6 +125,7 @@ class SessionCubit extends Cubit<SessionState> {
       await _repository.save(
         await _repository.bundlePath(name),
         chains: chainsFromLooper(_looper),
+        pedalBindings: _currentPedalBindings(),
       );
       return const _ActionResult(SessionOutcome.saved);
     });
@@ -121,6 +144,11 @@ class SessionCubit extends Cubit<SessionState> {
     await _performance.disarmAndFinalize();
     final bundle = await _repository.read(await _repository.bundlePath(name));
     await _looper.applySession(rigFromBundle(bundle));
+    // The remap is control-surface configuration, not part of the rig the
+    // engine applies — so it leaves through its own seam rather than
+    // `SessionRig`. Handed over AFTER the rig lands, so the targets it names
+    // resolve against the session's own chains rather than the outgoing ones.
+    _onPedalBindings(bundle.session.pedalBindings);
     return _ActionResult(
       SessionOutcome.loaded,
       currentName: _slugOf(name),
