@@ -26,6 +26,7 @@ void main() {
   late StreamController<LooperState> looperStates;
   late Map<int, List<TrackEffect>> trackChains;
   late ControlCubit control;
+  late SettingsRepository settings;
 
   setUp(() {
     looper = _MockLooperRepository();
@@ -61,7 +62,7 @@ void main() {
   tearDown(() => looperStates.close());
 
   Future<void> pump(WidgetTester tester) async {
-    final settings = SettingsRepository(store: FakeKeyValueStore());
+    settings = SettingsRepository(store: FakeKeyValueStore());
     final performance = PerformanceRepository(
       engine: FakeAudioEngine(),
       exportsRoot: () async => '.',
@@ -240,15 +241,52 @@ void main() {
       await select(tester, PedalButton.undo);
       expect(find.byKey(const Key('assign_row')), findsNothing);
 
-      // And an edit lands on the session set, which is the one dispatching.
+      // And an edit PROMOTES the session copy to the persistent global set,
+      // dropping the override — so what is on screen stays in force and now
+      // survives a restart, instead of vanishing on quit.
       await select(tester, PedalButton.stop);
       await tapVisible(tester, find.byKey(const Key('assign_clear')));
 
       expect(control.state.sessionBindings.isEmpty, isTrue);
       expect(
+        control.state.globalBindings.lookup(PedalButton.stop, bank: 0),
+        isNull,
+        reason: 'the clear landed on the promoted set',
+      );
+      expect(
         control.state.globalBindings.lookup(PedalButton.undo, bank: 0),
-        isNotNull,
-        reason: 'the globals were never touched',
+        isNull,
+        reason: 'the promoted session copy replaced the old globals wholesale',
+      );
+    });
+
+    testWidgets('every edit persists to settings immediately, including one '
+        'made while a session remap was in force', (tester) async {
+      await pump(tester);
+      final chain3 = const FxChainTarget(
+        FxAddress(stage: FxStage.track, index: 3),
+      ).canonicalString();
+      control.applySessionBindings(
+        PedalBindingSet([
+          PedalBinding(
+            key: const PedalBindingKey(button: PedalButton.stop),
+            target: chain3,
+          ),
+        ]),
+      );
+      await tester.pump();
+
+      await select(tester, PedalButton.stop);
+      await tapVisible(tester, find.text(tester.l10n.pedalAssignMomentary));
+
+      // The settings key — not just the in-memory set — carries the edit, so
+      // quitting without saving the session cannot lose it.
+      final persisted = PedalBindingSet.decode(
+        await settings.loadPedalBindings() ?? '',
+      );
+      expect(
+        persisted.lookup(PedalButton.stop, bank: 0)?.behavior,
+        BindingBehavior.momentary,
       );
     });
 

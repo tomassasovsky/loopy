@@ -218,13 +218,20 @@ class _Editor extends StatelessWidget {
     final bound = binding?.decodeTarget();
     final resolves = bound != null && looper.bindingResolves(bound);
 
-    // ...and write it back to whichever set that was. The session copy
-    // persists with the next session save rather than to settings, which is
-    // why it does not go through `setGlobalBindings`.
+    // ...and write it back through the GLOBAL set, always — every edit on this
+    // screen persists to settings the moment it is made.
+    //
+    // When a session remap was in force, the edit therefore PROMOTES it: the
+    // session copy (with this change applied) becomes the global set and the
+    // session override is dropped, so what is on screen stays in force and now
+    // survives a restart. Writing to the session set instead would have taken
+    // effect identically but persisted nowhere until the user happened to save
+    // the session — two visually identical edits with different durability,
+    // and silent loss on quit. Editing the remap is a global act; the next
+    // session save stamps the result back into the session anyway.
     Future<void> write(PedalBindingSet next) async {
       if (cubit.state.sessionBindings.isNotEmpty) {
-        cubit.applySessionBindings(next);
-        return;
+        cubit.applySessionBindings(PedalBindingSet.empty);
       }
       await cubit.setGlobalBindings(next);
     }

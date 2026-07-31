@@ -62,6 +62,8 @@ class LooperPage extends StatelessWidget {
             onPedalBindings: (encoded) => context
                 .read<ControlCubit>()
                 .applySessionBindings(PedalBindingSet.decode(encoded)),
+            releaseHeldBindings: () =>
+                context.read<ControlCubit>().releaseAllMomentary(),
           ),
         ),
       ],

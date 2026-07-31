@@ -28,10 +28,13 @@ class SessionCubit extends Cubit<SessionState> {
   ///
   /// [currentPedalBindings] / [onPedalBindings] are the session's pedal remap
   /// (part 6b) crossing this cubit as an opaque string — read fresh at each
-  /// save, handed back on each load. They are narrow injected functions rather
-  /// than a `ControlCubit` dependency for the usual reason: a cubit never calls
-  /// a cubit, and the binding model belongs to the control layer. Both default
-  /// to no-ops, which is exactly the pre-6b behavior.
+  /// save, handed back on each load. [releaseHeldBindings] restores any held
+  /// momentary and runs BEFORE a load applies its rig (see [loadNamed] for why
+  /// the two halves sit on opposite sides of the apply). All three are narrow
+  /// injected functions rather than a `ControlCubit` dependency for the usual
+  /// reason: a cubit never calls a cubit, and the binding model belongs to the
+  /// control layer. Each defaults to a no-op, which is exactly the pre-6b
+  /// behavior.
   SessionCubit({
     required SessionRepository repository,
     required LooperRepository looper,
@@ -39,12 +42,14 @@ class SessionCubit extends Cubit<SessionState> {
     required Future<String> Function() exportDirectory,
     String Function() currentPedalBindings = _noBindings,
     void Function(String encoded) onPedalBindings = _ignoreBindings,
+    void Function() releaseHeldBindings = _noRelease,
   }) : _repository = repository,
        _looper = looper,
        _performance = performance,
        _exportDirectory = exportDirectory,
        _currentPedalBindings = currentPedalBindings,
        _onPedalBindings = onPedalBindings,
+       _releaseHeldBindings = releaseHeldBindings,
        super(const SessionState());
 
   /// The default `currentPedalBindings`: no session remap, so the global set
@@ -55,12 +60,17 @@ class SessionCubit extends Cubit<SessionState> {
   /// surface simply drops the loaded blob.
   static void _ignoreBindings(String _) {}
 
+  /// The default `releaseHeldBindings`: nothing to release without a control
+  /// surface.
+  static void _noRelease() {}
+
   final SessionRepository _repository;
   final LooperRepository _looper;
   final PerformanceRepository _performance;
   final Future<String> Function() _exportDirectory;
   final String Function() _currentPedalBindings;
   final void Function(String encoded) _onPedalBindings;
+  final void Function() _releaseHeldBindings;
 
   // ---- exports (a separate action from the session catalog) ----
 
@@ -145,16 +155,20 @@ class SessionCubit extends Cubit<SessionState> {
     final bundle = await _repository.read(await _repository.bundlePath(name));
     // The remap is control-surface configuration, not part of the rig the
     // engine applies — so it leaves through its own seam rather than
-    // `SessionRig`.
+    // `SessionRig`. The seam is SPLIT across the apply, because its two halves
+    // want opposite sides of it.
     //
-    // Handed over BEFORE the rig lands. Swapping the binding set releases any
-    // held momentary, and that restore must write the captured state onto the
-    // OUTGOING rig: run after `applySession` it would instead stamp the old
-    // session's captured values onto the chains the new one just installed,
-    // silently bringing a freshly loaded session up bypassed. The new set
-    // needs no rig of its own — targets resolve lazily at press time.
-    _onPedalBindings(bundle.session.pedalBindings);
+    // Release first: a held momentary's captured state has to be written back
+    // onto the OUTGOING rig. Run after the apply it would instead stamp the
+    // old session's values onto the chains the new one just installed,
+    // bringing a freshly loaded session up bypassed.
+    _releaseHeldBindings();
     await _looper.applySession(rigFromBundle(bundle));
+    // Commit last: only once the rig actually landed. `applySession` can
+    // throw, and `_run` catches everything — committing before it would leave
+    // the pedal dispatching a failed session's bindings against the rig that
+    // is still loaded, a mapping the user never activated.
+    _onPedalBindings(bundle.session.pedalBindings);
     return _ActionResult(
       SessionOutcome.loaded,
       currentName: _slugOf(name),

@@ -570,9 +570,9 @@ void main() {
 
   group('SessionCubit pedal remap (part 6b)', () {
     test(
-      'hands the loaded remap over BEFORE the rig lands — swapping the set '
-      'releases any held momentary, and that restore must write onto the '
-      'OUTGOING rig, not the chains the new session just installed',
+      'splits the seam across the apply: releases held momentaries BEFORE it '
+      '(so the restore lands on the outgoing rig) and commits the new set '
+      'only AFTER it',
       () async {
         final order = <String>[];
         when(
@@ -601,12 +601,58 @@ void main() {
           performance: performance,
           exportDirectory: () async => '/tmp/x',
           onPedalBindings: (_) => order.add('onPedalBindings'),
+          releaseHeldBindings: () => order.add('releaseHeldBindings'),
         );
         addTearDown(cubit.close);
 
         await cubit.loadNamed('X');
 
-        expect(order, ['onPedalBindings', 'applySession']);
+        expect(order, [
+          'releaseHeldBindings',
+          'applySession',
+          'onPedalBindings',
+        ]);
+      },
+    );
+
+    test(
+      'a FAILED apply never commits the remap — the pedal must not end up '
+      'dispatching a session that never loaded against the rig still live',
+      () async {
+        var committed = false;
+        when(
+          () => repository.bundlePath(any()),
+        ).thenAnswer((_) async => '/b/X');
+        when(() => repository.read(any())).thenAnswer(
+          (_) async => (
+            session: const Session(
+              sampleRate: 48000,
+              channels: 1,
+              baseLengthFrames: 0,
+              tracks: [],
+              pedalBindings: '[{"button":"stop","target":"t"}]',
+            ),
+            laneStems: <(int, int), List<Float32List>>{},
+          ),
+        );
+        when(
+          () => looper.applySession(any()),
+        ).thenThrow(StateError('engine refused the rig'));
+        when(repository.listSessions).thenAnswer((_) async => const []);
+
+        final cubit = SessionCubit(
+          repository: repository,
+          looper: looper,
+          performance: performance,
+          exportDirectory: () async => '/tmp/x',
+          onPedalBindings: (_) => committed = true,
+        );
+        addTearDown(cubit.close);
+
+        await cubit.loadNamed('X');
+
+        expect(cubit.state.status, SessionStatus.failure);
+        expect(committed, isFalse);
       },
     );
 
