@@ -50,7 +50,7 @@ class LooperPage extends StatelessWidget {
             // provider here, so this reads and writes it without either cubit
             // knowing the other exists.
             currentPedalBindings: () =>
-                context.read<ControlCubit>().sessionBindings.encode(),
+                context.read<ControlCubit>().state.sessionBindings.encode(),
             onPedalBindings: (encoded) => context
                 .read<ControlCubit>()
                 .applySessionBindings(PedalBindingSet.decode(encoded)),

@@ -814,7 +814,7 @@ class ControlCubit extends Cubit<ControlState> {
     // MODE and Bank can never appear here: the binding model refuses to hold
     // one (B12), so their handling below is unreachable from a binding.
     if (fx) {
-      final binding = bindings.lookup(button, bank: state.activeBank);
+      final binding = state.bindings.lookup(button, bank: state.activeBank);
       if (binding != null) {
         _pressBinding(binding);
         // Stop keeps its restore-all HOLD even when bound: a remap overrides
@@ -973,15 +973,10 @@ class ControlCubit extends Cubit<ControlState> {
   // Pedal remap (part 6b): bindings, momentary hold, release-all
   // ---------------------------------------------------------------------------
 
-  /// The remap in force: the loaded session's set when it has ANY bindings,
-  /// the global set otherwise (A12). Never a per-button blend of the two.
-  PedalBindingSet get bindings => state.bindings;
-
-  /// The GLOBAL remap, as loaded from / saved to settings.
-  PedalBindingSet get globalBindings => state.globalBindings;
-
-  /// The loaded session's own remap; empty when it carries none.
-  PedalBindingSet get sessionBindings => state.sessionBindings;
+  // The remap is READ off `state` (`state.bindings` / `.globalBindings` /
+  // `.sessionBindings` / `.stompFor`) — the cubit exposes only the writers
+  // below. No pass-through getters: a cubit's public surface is its commands,
+  // and the state object is already the read surface every widget watches.
 
   /// Replaces the global remap and persists it (the assignment screen's edit
   /// path).
@@ -1004,27 +999,6 @@ class ControlCubit extends Cubit<ControlState> {
     if (next == state.sessionBindings) return;
     releaseAllMomentary();
     emit(state.copyWith(sessionBindings: next));
-  }
-
-  /// The binding reaching the chain at [address], if any, and whether a
-  /// momentary is holding it right now — what the Signal surface's stomp chip
-  /// renders (R25).
-  ///
-  /// Matches on the target's CHAIN address, so a binding on one slot inside a
-  /// chain still marks that chain as pedal-reachable: the chip answers "can I
-  /// stomp this from the plate", which a per-slot binding does satisfy. A
-  /// STALE binding never matches — its target does not decode to an address at
-  /// all, so it marks nothing, which is the same silence its unlit LED gives
-  /// the performer.
-  ({PedalBinding binding, bool held})? stompFor(FxAddress address) {
-    for (final binding in bindings.bindings) {
-      if (binding.decodeTarget()?.address != address) continue;
-      return (
-        binding: binding,
-        held: state.heldMomentary.contains(binding.key),
-      );
-    }
-    return null;
   }
 
   /// Restores every held momentary to the state its press captured — the ONE

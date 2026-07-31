@@ -161,7 +161,7 @@ void main() {
       await tester.tap(find.text('Track 3 chain').last);
       await tester.pumpAndSettle();
 
-      final binding = control.globalBindings.lookup(
+      final binding = control.state.globalBindings.lookup(
         PedalButton.recPlay,
         bank: 0,
       );
@@ -201,7 +201,9 @@ void main() {
       await tapVisible(tester, find.text(tester.l10n.pedalAssignMomentary));
 
       expect(
-        control.globalBindings.lookup(PedalButton.recPlay, bank: 0)?.behavior,
+        control.state.globalBindings
+            .lookup(PedalButton.recPlay, bank: 0)
+            ?.behavior,
         BindingBehavior.momentary,
       );
     });
@@ -235,7 +237,7 @@ void main() {
         expect(find.text(tester.l10n.pedalAssignStale), findsOneWidget);
         // The binding itself is untouched — nothing was silently dropped.
         expect(
-          control.globalBindings.lookup(PedalButton.recPlay, bank: 0),
+          control.state.globalBindings.lookup(PedalButton.recPlay, bank: 0),
           isNotNull,
         );
       });
@@ -250,7 +252,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(
-          control.globalBindings
+          control.state.globalBindings
               .lookup(PedalButton.recPlay, bank: 0)
               ?.decodeTarget(),
           const FxChainTarget(FxAddress(stage: FxStage.track, index: 5)),
@@ -265,7 +267,7 @@ void main() {
         await tapVisible(tester, find.byKey(const Key('assign_clear')));
 
         expect(
-          control.globalBindings.lookup(PedalButton.recPlay, bank: 0),
+          control.state.globalBindings.lookup(PedalButton.recPlay, bank: 0),
           isNull,
         );
         expect(find.byKey(const Key('assign_row')), findsNothing);

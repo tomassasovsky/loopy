@@ -95,6 +95,24 @@ class ControlState extends Equatable {
   PedalBindingSet get bindings =>
       globalBindings.resolveAgainst(sessionBindings);
 
+  /// The binding reaching the chain at [address], if any, and whether a
+  /// momentary is holding it right now — what the Signal surface's stomp chip
+  /// renders (R25).
+  ///
+  /// Matches on the target's CHAIN address, so a binding on one slot inside a
+  /// chain still marks that chain as pedal-reachable: the chip answers "can I
+  /// stomp this from the plate", which a per-slot binding does satisfy. A
+  /// STALE binding never matches — its target does not decode to an address at
+  /// all, so it marks nothing, which is the same silence its unlit LED gives
+  /// the performer.
+  ({PedalBinding binding, bool held})? stompFor(FxAddress address) {
+    for (final binding in bindings.bindings) {
+      if (binding.decodeTarget()?.address != address) continue;
+      return (binding: binding, held: heldMomentary.contains(binding.key));
+    }
+    return null;
+  }
+
   /// The first channel of the visible bank (`0` for A, `4` for B).
   int get bankBaseChannel => activeBank * tracksPerBank;
 

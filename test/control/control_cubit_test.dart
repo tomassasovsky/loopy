@@ -1654,7 +1654,7 @@ void main() {
           await cubit.setGlobalBindings(
             PedalBindingSet([bind(PedalButton.mode), bind(PedalButton.bank)]),
           );
-          expect(cubit.globalBindings.isEmpty, isTrue);
+          expect(cubit.state.globalBindings.isEmpty, isTrue);
         });
 
         test(
@@ -1963,7 +1963,7 @@ void main() {
         );
         addTearDown(reloaded.close);
         await reloaded.load();
-        expect(reloaded.globalBindings, set);
+        expect(reloaded.state.globalBindings, set);
       });
     });
 

@@ -19,7 +19,7 @@ import 'package:loopy/theme/surface_theme.dart';
   BuildContext context,
   FxAddress address,
 ) {
-  final found = context.watch<ControlCubit?>()?.stompFor(address);
+  final found = context.watch<ControlCubit?>()?.state.stompFor(address);
   if (found == null) return null;
   return (button: found.binding.key.button.name, held: found.held);
 }

@@ -208,7 +208,7 @@ class _Editor extends StatelessWidget {
     final cubit = context.watch<ControlCubit>();
     final looper = context.read<LooperRepository>();
     final key = bindingKey!;
-    final binding = cubit.globalBindings.bindings
+    final binding = cubit.state.globalBindings.bindings
         .where((b) => b.key == key)
         .firstOrNull;
     final targets = looper.availableBindingTargets();
@@ -253,7 +253,7 @@ class _Editor extends StatelessWidget {
           _UnassignedRow(
             targets: targets,
             onPick: (target) => write(
-              cubit.globalBindings.withBinding(
+              cubit.state.globalBindings.withBinding(
                 PedalBinding(key: key, target: target.canonicalString()),
               ),
             ),
@@ -264,16 +264,16 @@ class _Editor extends StatelessWidget {
             targets: targets,
             resolves: resolves,
             onRebind: (target) => write(
-              cubit.globalBindings.withBinding(
+              cubit.state.globalBindings.withBinding(
                 binding.copyWith(target: target.canonicalString()),
               ),
             ),
             onBehavior: (behavior) => write(
-              cubit.globalBindings.withBinding(
+              cubit.state.globalBindings.withBinding(
                 binding.copyWith(behavior: behavior),
               ),
             ),
-            onClear: () => write(cubit.globalBindings.without(key)),
+            onClear: () => write(cubit.state.globalBindings.without(key)),
           ),
       ],
     );
