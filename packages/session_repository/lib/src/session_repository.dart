@@ -209,9 +209,17 @@ class SessionRepository {
   /// (the live rig — not settings — is the truth being saved). Chains exist
   /// independently of audio, so they are written for every lane / monitor that
   /// has one, regardless of which tracks hold audio.
+  ///
+  /// [pedalBindings] is this session's pedal remap as its opaque encoded
+  /// string, handed in by the bloc layer the same way [chains] are (`''` for
+  /// no session remap). It is a separate parameter rather than a
+  /// [SessionChains] field because a remap is control-surface configuration,
+  /// not an effect chain — the two travel together only by coincidence of
+  /// both being opaque strings.
   Future<Session> save(
     String directory, {
     SessionChains chains = const SessionChains(),
+    String pedalBindings = '',
   }) async {
     await _awaitLayersSettled();
     final captured = _capture();
@@ -235,7 +243,7 @@ class SessionRepository {
       }
     }
 
-    final session = _sessionFrom(captured, chains);
+    final session = _sessionFrom(captured, chains, pedalBindings);
     await File('$directory/${Session.manifestName}').writeAsString(
       const JsonEncoder.withIndent('  ').convert(session.toJson()),
     );
@@ -431,7 +439,11 @@ class SessionRepository {
     return _Capture(snapshot: snapshot, laneStems: laneStems, tracks: tracks);
   }
 
-  Session _sessionFrom(_Capture captured, SessionChains chains) {
+  Session _sessionFrom(
+    _Capture captured,
+    SessionChains chains,
+    String pedalBindings,
+  ) {
     final snapshot = captured.snapshot;
     return Session(
       sampleRate: snapshot.sampleRate,
@@ -488,6 +500,9 @@ class SessionRepository {
         for (var i = 0; i < snapshot.tracks.length; i++)
           if (snapshot.tracks[i].oneShot) i,
       ],
+      // Control-surface configuration (schema v6), opaque here like the
+      // chains — handed straight through from the bloc layer.
+      pedalBindings: pedalBindings,
     );
   }
 

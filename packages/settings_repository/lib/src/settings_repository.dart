@@ -370,6 +370,22 @@ class SettingsRepository {
   Future<void> saveDefaultInteractionMode(String mode) =>
       _store.setString(_defaultInteractionModeKey, mode);
 
+  static const String _pedalBindingsKey = 'pedal.bindings';
+
+  /// Loads the GLOBAL pedal remap as its opaque encoded string, or `null` when
+  /// none was ever saved (every footswitch keeps its contextual default).
+  ///
+  /// Opaque here on purpose: the binding model lives app-side next to
+  /// `ControlCubit`, so this package persists the string without knowing its
+  /// shape — the same treatment the FX chain envelopes get. A session may
+  /// carry its own set, which overrides this one wholesale (A12); that copy
+  /// rides the session bundle, not this key.
+  Future<String?> loadPedalBindings() => _store.getString(_pedalBindingsKey);
+
+  /// Saves the global pedal remap as its [encoded] string.
+  Future<void> savePedalBindings(String encoded) =>
+      _store.setString(_pedalBindingsKey, encoded);
+
   static const String _refreshHzKey = 'ui.refresh_hz';
 
   /// Loads the UI snapshot-poll rate in Hz. Defaults to `60` when unset.
