@@ -69,6 +69,7 @@ void main() {
     late Map<int, bool> chainEnabled;
     late Map<int, List<TrackEffect>> trackChains;
     late List<double> volumeWrites;
+
     /// The write debounce the cubit under test is built with. Zero (immediate)
     /// unless a test overrides it before the cubit is built.
     var mappingsWriteDebounce = Duration.zero;
@@ -653,19 +654,21 @@ void main() {
         expect(chainEnabled[0], isFalse);
       });
 
-      test('close() ends a capture instead of leaving the stream swallowed',
-          () async {
-        cubit.learnControllerBinding(target: volumeTarget.canonicalString());
-        expect(controller.isLearning, isTrue);
+      test(
+        'close() ends a capture instead of leaving the stream swallowed',
+        () async {
+          cubit.learnControllerBinding(target: volumeTarget.canonicalString());
+          expect(controller.isLearning, isTrue);
 
-        await cubit.close();
+          await cubit.close();
 
-        expect(
-          controller.isLearning,
-          isFalse,
-          reason: 'a learning repository swallows every controller event',
-        );
-      });
+          expect(
+            controller.isLearning,
+            isFalse,
+            reason: 'a learning repository swallows every controller event',
+          );
+        },
+      );
 
       test('cancelling a capture leaves the mappings untouched', () async {
         cubit
