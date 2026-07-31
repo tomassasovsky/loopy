@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -430,6 +431,22 @@ void main() {
         expect(modeLedColor(tester), SurfaceTheme.dark.ledRed);
       });
 
+      testWidgets('darkens on the goodbye frame, like both firmware sketches', (
+        tester,
+      ) async {
+        final (_, sim) = await pumpFaceplate(tester);
+
+        sim.send(PedalCodec.encodeFrame(_frame()));
+        await tester.pump();
+        expect(modeLedColor(tester), SurfaceTheme.dark.ledGreen);
+
+        // The shutdown frame's whole contract is that the pedal goes dark; a
+        // lit mode dot would imply a live link to an app that has quit.
+        sim.send(PedalCodec.encodeFrame(PedalStateFrame.blank(goodbye: true)));
+        await tester.pump();
+        expect(modeLedColor(tester), SurfaceTheme.dark.ledOff);
+      });
+
       testWidgets('falls back to the mode color once disarmed', (tester) async {
         final (_, sim) = await pumpFaceplate(tester);
 
@@ -537,6 +554,85 @@ void main() {
       } finally {
         handle.dispose();
       }
+    });
+
+    testWidgets('FX semantics stay truthful on a PRE-V3 wire, where the codec '
+        'downgrades the frame mode to mute', (tester) async {
+      final handle = tester.ensureSemantics();
+      try {
+        final (cubit, _) = await pumpFaceplate(tester);
+        // What a pedal flashed before part 5a speaks — the frame the plate
+        // renders comes back with mode `play` and green (not blue) LEDs.
+        await cubit.selectFirmwareVersion(PedalCodec.protocolVersionV2);
+        for (var i = 0; i < 2; i++) {
+          await tester.tap(
+            find.byKey(const Key('pedalFaceplate_footswitch_mode')),
+          );
+          await settle(tester);
+        }
+
+        // The labels follow the LIVE mode, not the downgraded wire: the
+        // switches really are driving FX here, so saying "armed"/"STOP
+        // footswitch" would describe a mode the foot is not in.
+        expect(find.bySemanticsLabel(RegExp('FX chain')), findsWidgets);
+        expect(find.bySemanticsLabel(RegExp('armed')), findsNothing);
+        expect(find.bySemanticsLabel(RegExp('FX panic')), findsOneWidget);
+      } finally {
+        handle.dispose();
+      }
+    });
+
+    testWidgets('a keyboard long-press reaches the FX chain restore, which a '
+        'fused tap can never produce', (tester) async {
+      await pumpFaceplate(tester);
+      for (var i = 0; i < 2; i++) {
+        await tester.tap(
+          find.byKey(const Key('pedalFaceplate_footswitch_mode')),
+        );
+        await settle(tester);
+      }
+
+      // Give track 0 a chain so the sweep has something to flip, and let the
+      // flag behave like real remembered intent — a frozen `true` would make
+      // the restore look like a no-op and hide the very call under test.
+      when(() => looper.trackEffects(0)).thenReturn([
+        BuiltInEffect(type: TrackEffectType.drive),
+      ]);
+      final enabled = <int, bool>{};
+      when(
+        () => looper.trackChainEnabled(any()),
+      ).thenAnswer((c) => enabled[c.positionalArguments.first as int] ?? true);
+      when(
+        () => looper.setTrackChainEnabled(
+          channel: any(named: 'channel'),
+          enabled: any(named: 'enabled'),
+        ),
+      ).thenAnswer((c) {
+        enabled[c.namedArguments[#channel] as int] =
+            c.namedArguments[#enabled] as bool;
+        return EngineResult.ok;
+      });
+
+      final stop = find.byKey(const Key('pedalFaceplate_footswitch_stop'));
+      await tester.tap(stop); // plain activation = panic only
+      await settle(tester);
+      verify(
+        () => looper.setTrackChainEnabled(channel: 0, enabled: false),
+      ).called(1);
+
+      // Shift+Enter holds the switch past the threshold, so the restore the
+      // long-press owns actually fires.
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      Focus.of(tester.element(stop)).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump(const Duration(milliseconds: 800));
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await settle(tester);
+
+      verify(
+        () => looper.setTrackChainEnabled(channel: 0, enabled: true),
+      ).called(1);
     });
 
     testWidgets('leaving the tree releases a held switch', (tester) async {

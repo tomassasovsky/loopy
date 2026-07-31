@@ -86,6 +86,9 @@ void main() {
     /// live repository rather than a frozen `true`.
     late Map<int, bool> chainEnabled;
 
+    /// The Track-stage chains the repository reports per channel.
+    late Map<int, List<TrackEffect>> trackChains;
+
     /// Publishes [tracks] as engine truth: both the pull (`looper.state`) and
     /// the push (the cubit's reducer subscription) see the same snapshot.
     void setEngine(
@@ -141,7 +144,15 @@ void main() {
             call.namedArguments[#enabled] as bool;
         return EngineResult.ok;
       });
-      when(() => looper.trackEffects(any())).thenReturn(const <TrackEffect>[]);
+      // Which channels actually HAVE a Track-stage chain. Empty by default —
+      // a sweep must leave a chain-less track alone, so tests that want one
+      // flipped have to give it a chain first.
+      trackChains = <int, List<TrackEffect>>{};
+      when(() => looper.trackEffects(any())).thenAnswer(
+        (call) =>
+            trackChains[call.positionalArguments.first as int] ??
+            const <TrackEffect>[],
+      );
 
       tempDir = Directory.systemTemp.createTempSync('loopy_control_cubit');
       clock = DateTime(2026, 7, 6, 14, 30, 15);
@@ -260,6 +271,37 @@ void main() {
         expect(cubit.state.mode, InteractionMode.fx);
       });
 
+      test('entering FX mode cancels a PENDING quantized arm', () {
+        setEngine(
+          _tracksWith(const [Track(pending: true)]),
+        );
+        // The arm has not fired, so nothing is "capturing" — but leaving it
+        // would start a take seconds later with every FX-mode control inert.
+        cubit.setMode(InteractionMode.fx);
+        verify(() => looper.record()).called(1);
+      });
+
+      test('entering FX mode reads LIVE engine truth, so a take finalized '
+          'moments ago is not punched back in', () {
+        // The polled snapshot still says recording; the engine has already
+        // moved on. Issuing record() here would start a fresh overdub.
+        looperStates.add(
+          _stateWith(_tracksWith(const [Track(state: TrackState.recording)])),
+        );
+        when(() => looper.state).thenReturn(
+          _stateWith(
+            _tracksWith(const [
+              Track(state: TrackState.playing, lengthFrames: 48000),
+            ]),
+          ),
+        );
+
+        cubit.setMode(InteractionMode.fx);
+
+        verifyNever(() => looper.record(channel: any(named: 'channel')));
+        verifyNever(() => looper.record());
+      });
+
       test('entering FX mode with nothing capturing touches the transport '
           'not at all', () {
         setEngine(
@@ -273,16 +315,48 @@ void main() {
         verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
       });
 
-      test('side effects fire for the LANDED mode only — a jump straight to '
-          'FX never runs Mute entry (A5)', () {
+      test('side effects fire for the LANDED mode only — the cycle never '
+          'runs an intermediate mode entry (A5)', () async {
         setEngine(
           _tracksWith(const [
             Track(state: TrackState.playing, lengthFrames: 48000),
           ]),
         );
-        cubit.setMode(InteractionMode.fx);
-        // Mute's entry would have latched the whole content set here.
-        expect(cubit.state.parkedResume, isEmpty);
+        // Watch the EMITTED states, not just the final one: an implementation
+        // that walked the cycle (setMode(mute) then setMode(fx)) would land
+        // the same way while firing mute's entry on the way through, and a
+        // final-state assertion could never see it — fx's own entry clears
+        // exactly what mute's would have latched.
+        final seen = <(InteractionMode, Set<int>)>[];
+        final sub = cubit.stream.listen(
+          (s) => seen.add((s.mode, s.parkedResume)),
+        );
+        addTearDown(() => unawaited(sub.cancel()));
+
+        cubit
+          ..toggleMode() // -> mute, which DOES latch (it is the landed mode)
+          ..toggleMode(); // -> fx
+        await pumpEventQueue();
+
+        expect(
+          seen.map((e) => e.$1),
+          [InteractionMode.mute, InteractionMode.fx],
+          reason: 'each tap lands exactly one mode',
+        );
+        expect(seen.first.$2, {0}, reason: 'mute landed, so mute latched');
+        expect(seen.last.$2, isEmpty, reason: 'fx landed, so fx cleared');
+
+        // ...and jumping straight to FX skips mute's entry entirely: no
+        // intermediate state is emitted at all.
+        seen.clear();
+        cubit
+          ..setMode(InteractionMode.record)
+          ..setMode(InteractionMode.fx);
+        await pumpEventQueue();
+        expect(seen.map((e) => e.$1), [
+          InteractionMode.record,
+          InteractionMode.fx,
+        ]);
       });
 
       test('FX entry clears the stored mute-mode intent', () {
@@ -383,30 +457,84 @@ void main() {
       );
 
       test('Stop is FX panic: every Track chain off', () async {
+        trackChains[1] = [BuiltInEffect(type: TrackEffectType.drive)];
+        trackChains[5] = [BuiltInEffect(type: TrackEffectType.reverb)];
+
         await stomp(PedalButton.stop);
-        for (var channel = 0; channel < 8; channel++) {
+
+        for (final channel in [1, 5]) {
           verify(
-            () => looper.setTrackChainEnabled(
-              channel: channel,
-              enabled: false,
-            ),
+            () => looper.setTrackChainEnabled(channel: channel, enabled: false),
           ).called(1);
         }
       });
 
-      test('a Stop LONG-PRESS restores every Track chain instead of '
-          'panicking', () async {
-        await stomp(PedalButton.stop); // panic first, so restore has work
-        expect(chainEnabled.values, everyElement(isFalse));
+      test('FX panic leaves a track with NO chain alone — a bypass persisted '
+          'for an empty chain would silently mute the effects added to that '
+          'track later, and the boot restore replays it forever', () async {
+        trackChains[1] = [BuiltInEffect(type: TrackEffectType.drive)];
+
+        await stomp(PedalButton.stop);
+
+        expect(chainEnabled, {1: false}, reason: 'only the real chain flips');
+        for (final channel in [0, 2, 3, 4, 5, 6, 7]) {
+          verifyNever(
+            () => looper.setTrackChainEnabled(channel: channel, enabled: false),
+          );
+          expect(await settings.loadTrackFxChain(channel), isNull);
+        }
+      });
+
+      test('the FX panic fires on the PRESS, so a synthetic release (the '
+          'plate releasing a held switch as it leaves the tree) cannot '
+          'bypass anything on its own', () async {
+        trackChains[1] = [BuiltInEffect(type: TrackEffectType.drive)];
+
+        // Press only — no release yet.
+        transport.emit(0x90, PedalButton.stop.note, 127);
+        await pumpEventQueue();
+        expect(chainEnabled[1], isFalse, reason: 'panic landed on the press');
+
+        // A release on its own is inert: it only retires the pending hold.
+        chainEnabled.clear();
+        transport.emit(0x80, PedalButton.stop.note, 0);
+        await pumpEventQueue();
+        expect(chainEnabled, isEmpty);
+      });
+
+      test('a Stop LONG-PRESS follows the panic with a restore', () async {
+        trackChains[1] = [BuiltInEffect(type: TrackEffectType.drive)];
 
         await hold(PedalButton.stop);
-        for (var channel = 0; channel < 8; channel++) {
-          verify(
-            () => looper.setTrackChainEnabled(channel: channel, enabled: true),
-          ).called(1);
-        }
-        // The hold consumed the gesture: the release must NOT also panic.
-        expect(chainEnabled.values, everyElement(isTrue));
+
+        // The press panicked, the hold restored — landing on the state the
+        // restore promises regardless of what the pattern was before.
+        verify(
+          () => looper.setTrackChainEnabled(channel: 1, enabled: false),
+        ).called(1);
+        verify(
+          () => looper.setTrackChainEnabled(channel: 1, enabled: true),
+        ).called(1);
+        expect(chainEnabled[1], isTrue);
+      });
+
+      test('a Stop hold that leaves FX mode before the threshold does not '
+          'restore from a mode with no chain LEDs', () async {
+        trackChains[1] = [BuiltInEffect(type: TrackEffectType.drive)];
+
+        transport.emit(0x90, PedalButton.stop.note, 127);
+        await pumpEventQueue();
+        expect(chainEnabled[1], isFalse); // the press panicked
+
+        cubit.setMode(InteractionMode.record); // foot leaves FX mid-hold
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        transport.emit(0x80, PedalButton.stop.note, 0);
+        await pumpEventQueue();
+
+        verifyNever(
+          () => looper.setTrackChainEnabled(channel: 1, enabled: true),
+        );
+        expect(chainEnabled[1], isFalse);
       });
 
       test(
@@ -499,17 +627,13 @@ void main() {
       });
 
       test('a panic over already-disabled chains writes nothing twice', () {
+        trackChains[1] = [BuiltInEffect(type: TrackEffectType.drive)];
         cubit
           ..panicTrackChains()
           ..panicTrackChains();
-        for (var channel = 0; channel < 8; channel++) {
-          verify(
-            () => looper.setTrackChainEnabled(
-              channel: channel,
-              enabled: false,
-            ),
-          ).called(1);
-        }
+        verify(
+          () => looper.setTrackChainEnabled(channel: 1, enabled: false),
+        ).called(1);
       });
     });
 

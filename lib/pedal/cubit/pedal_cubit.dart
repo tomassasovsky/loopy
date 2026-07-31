@@ -103,9 +103,23 @@ class PedalCubit extends Cubit<PedalState> {
       _pedal.targetProtocolVersion < PedalCodec.protocolVersionMax;
 
   /// Binds the pedal output to [device] and persists the choice.
+  ///
+  /// Switching to a DIFFERENT device drops the manual firmware version back
+  /// to unknown: the version is one setting, not one per device, and what one
+  /// pedal's firmware speaks says nothing about the next one's. Carrying it
+  /// over would encode at the old pedal's version — silently downgrading a
+  /// newer pedal's frames, and telling the user to flash firmware it already
+  /// runs — so the R6 v2 floor takes over until they say otherwise.
   Future<void> selectOutput(PedalOutput device) async {
+    // Only when REPLACING one pedal with another — a first bind keeps a
+    // version the user set before picking the device.
+    final replacingDevice =
+        _savedOutputId != null && _savedOutputId != device.id;
     _savedOutputId = device.id;
     _pedal.bind(device.id);
+    if (replacingDevice && state.firmwareVersion != null) {
+      await selectFirmwareVersion(null);
+    }
     _syncOutputs();
     await _settings.savePedalOutputDevice(id: device.id, name: device.name);
   }

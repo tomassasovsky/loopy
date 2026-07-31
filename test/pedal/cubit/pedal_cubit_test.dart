@@ -166,6 +166,39 @@ void main() {
       );
 
       test(
+        'swapping in a DIFFERENT pedal drops the version back to unknown',
+        () async {
+          final cubit = buildCubit();
+          await cubit.selectOutput(const PedalOutput(id: 'out', name: 'P'));
+          await cubit.selectFirmwareVersion(PedalCodec.protocolVersionV2);
+
+          // A version learned for one pedal says nothing about the next one:
+          // carried over it would encode a v3 pedal's frames at v2 and tell
+          // the user to flash firmware it already runs.
+          await cubit.selectOutput(const PedalOutput(id: 'out2', name: 'P2'));
+
+          expect(cubit.state.firmwareVersion, isNull);
+          expect(await settings.loadPedalFirmwareVersion(), isNull);
+          expect(pedal.targetProtocolVersion, PedalCodec.protocolVersionV2);
+          await cubit.close();
+        },
+      );
+
+      test(
+        're-selecting the SAME pedal keeps the version the user set',
+        () async {
+          final cubit = buildCubit();
+          await cubit.selectOutput(const PedalOutput(id: 'out', name: 'P'));
+          await cubit.selectFirmwareVersion(PedalCodec.protocolVersionV3);
+
+          await cubit.selectOutput(const PedalOutput(id: 'out', name: 'P'));
+
+          expect(cubit.state.firmwareVersion, PedalCodec.protocolVersionV3);
+          await cubit.close();
+        },
+      );
+
+      test(
         'selectFirmwareVersion(null) clears back to unknown => v2',
         () async {
           final cubit = buildCubit();

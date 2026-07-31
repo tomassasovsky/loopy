@@ -589,13 +589,31 @@ void main() {
         expect(h.repo.trackChainEnabled(0), isFalse);
         expect(h.frame.trackLeds[0], PedalTrackLed.off);
 
-        // Stop is FX panic: every chain off, every LED dark.
+        // Give tracks 1 and 2 real Track-stage chains; 3..7 stay chain-less.
+        h.repo
+          ..setTrackEffects(
+            channel: 1,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          )
+          ..setTrackEffects(
+            channel: 2,
+            effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+          );
+        h.settle(fa);
+
+        // Stop is FX panic: every chain that EXISTS goes off and dark.
         h
           ..run(const [_Tap(PedalButton.stop)], fa)
           ..settle(fa);
-        for (var channel = 0; channel < 8; channel++) {
+        for (final channel in [1, 2]) {
           expect(h.repo.trackChainEnabled(channel), isFalse);
           expect(h.frame.trackLeds[channel], PedalTrackLed.off);
+        }
+        // A chain-less track keeps its (meaningless) enabled flag rather than
+        // acquiring a persisted bypass that would mute the effects the user
+        // adds to it later.
+        for (final channel in [3, 4, 5, 6, 7]) {
+          expect(h.repo.trackChainEnabled(channel), isTrue);
         }
         // ...and the loop is untouched: panic bypasses FX, it never stops
         // the transport.
@@ -1170,12 +1188,12 @@ List<_FuzzAction> _generate(int seed, int steps) {
       ),
       < 65 => _Select(rng.next(8)),
       < 68 => const _ToggleMode(),
-      // Jump straight into a mode — reaches FX (and leaves it for Rec without
-      // passing back through it) far more often than the 3-stop cycle would,
-      // so the FX-mode LED rule is exercised in every seed.
-      < 70 => _SetMode(
-        InteractionMode.values[rng.next(InteractionMode.values.length)],
-      ),
+      // NB: no `_SetMode` in the random alphabet. FX mode is already reachable
+      // here — `_Tap`/`_ToggleMode` walk the three-stop cycle — and giving it
+      // its own band would have taken draws from `_Pump` (the only action that
+      // feeds audio in, so the only way tracks gain content) and shifted every
+      // subsequent draw, replacing the sequences the fixed seeds have explored
+      // rather than adding to them. `_SetMode` stays a corpus-only action.
       < 78 => _Pump(const [0, 1, 17, 256, 300][rng.next(5)], 0.5),
       < 82 => const _Tick(),
       < 85 => _Elapse(const [5, 50, 600][rng.next(3)]),

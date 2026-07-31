@@ -111,6 +111,23 @@ class TracksCommands {
     });
   }
 
+  /// Announces the state an FX-chain toggle on [channel] lands in, given the
+  /// [looper] snapshot taken just BEFORE the flip.
+  ///
+  /// Shared by the number keys and the track tiles so the two cannot drift.
+  /// Stays silent when the snapshot does not carry the channel: the flip
+  /// itself is resolved by the bloc against the repository, but this has no
+  /// truthful "on"/"off" to name, and guessing would announce the opposite of
+  /// what happened.
+  void announceFxChainToggle(LooperState looper, int channel) {
+    if (channel < 0 || channel >= looper.tracks.length) return;
+    _announce(
+      looper.tracks[channel].chainEnabled
+          ? context.l10n.a11yTrackFxChainOff
+          : context.l10n.a11yTrackFxChainOn,
+    );
+  }
+
   /// Announces a transient state change to assistive tech (WCAG 4.1.3). The
   /// tracks surface is otherwise silent — state lives in colour and meter
   /// fills a screen-reader cannot perceive.
@@ -250,15 +267,11 @@ class TracksCommands {
           case InteractionMode.mute:
             bloc.add(LooperMuteToggled(channel));
           case InteractionMode.fx:
-            final tracks = bloc.state.tracks;
-            final enabled =
-                channel < tracks.length && tracks[channel].chainEnabled;
-            bloc.add(
-              LooperTrackChainEnabledToggled(channel, enabled: !enabled),
-            );
-            _announce(
-              enabled ? l10n.a11yTrackFxChainOff : l10n.a11yTrackFxChainOn,
-            );
+            // The bloc resolves the flip against the repository's remembered
+            // intent — deriving it here from the polled snapshot would read a
+            // missing channel as "off" and dispatch enable forever.
+            bloc.add(LooperTrackChainToggled(channel));
+            announceFxChainToggle(bloc.state, channel);
         }
       }
       return KeyEventResult.handled;

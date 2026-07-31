@@ -225,7 +225,7 @@ void main() {
     // One interaction mode for every surface: touch does what the pedal's
     // track stomp and the number keys do.
     verify(
-      () => bloc.add(const LooperTrackChainEnabledToggled(1, enabled: false)),
+      () => bloc.add(const LooperTrackChainToggled(1)),
     ).called(1);
     verifyNever(() => bloc.add(const LooperRecordPressed(1)));
     verifyNever(() => bloc.add(const LooperMuteToggled(1)));
@@ -240,7 +240,7 @@ void main() {
     await tester.pump();
 
     verify(
-      () => bloc.add(const LooperTrackChainEnabledToggled(1, enabled: false)),
+      () => bloc.add(const LooperTrackChainToggled(1)),
     ).called(1);
     verifyNever(() => bloc.add(const LooperMuteToggled(1)));
     expect(control.state.cursor, 1); // the digit still selects

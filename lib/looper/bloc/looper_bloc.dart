@@ -346,6 +346,16 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       );
       _persistTrackChain(event.channel);
     });
+    on<LooperTrackChainToggled>((event, _) {
+      // Resolved here, against the repository's remembered intent — the same
+      // truth `ControlCubit` toggles from, and the same shape as the mute
+      // toggle above.
+      _repository.setTrackChainEnabled(
+        channel: event.channel,
+        enabled: !_repository.trackChainEnabled(event.channel),
+      );
+      _persistTrackChain(event.channel);
+    });
     on<LooperMasterEffectsChanged>((event, _) {
       _repository.setMasterEffects(effects: event.effects);
       _persistMasterChain();

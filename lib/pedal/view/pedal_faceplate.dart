@@ -10,6 +10,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/cubit/tracks_cubit.dart';
+import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:loopy/looper/view/track_meters.dart';
 import 'package:loopy/looper/view/tracks_view.dart';
 import 'package:loopy/pedal/cubit/pedal_cubit.dart';
@@ -116,6 +117,13 @@ class _PedalFaceplateState extends State<PedalFaceplate> {
             builder: (context, frame, _) => _TopPlate(
               sim: _sim,
               frame: frame,
+              // What the switches DO comes from the live interaction mode, not
+              // from the frame: the wire mode is downgraded for a pre-v3 pedal
+              // (fx encodes as play), so labelling from it would describe
+              // mute-mode meanings while the foot is driving FX actions.
+              mode: context.select<ControlCubit, InteractionMode>(
+                (cubit) => cubit.state.mode,
+              ),
               l10n: context.l10n,
               mainScreen: mainScreen,
               waveformScreen: widget.waveformScreen ?? const _ScreenWaveform(),
@@ -133,6 +141,7 @@ class _TopPlate extends StatelessWidget {
   const _TopPlate({
     required this.sim,
     required this.frame,
+    required this.mode,
     required this.l10n,
     required this.mainScreen,
     required this.waveformScreen,
@@ -140,6 +149,11 @@ class _TopPlate extends StatelessWidget {
 
   final SimulatorPedalTransport sim;
   final PedalStateFrame frame;
+
+  /// The live interaction mode — what the switches actually do. Distinct from
+  /// `frame.mode`, which is what survived the wire's version downgrade.
+  final InteractionMode mode;
+
   final AppLocalizations l10n;
   final Widget mainScreen;
   final Widget waveformScreen;
@@ -188,7 +202,7 @@ class _TopPlate extends StatelessWidget {
             label: label,
             onPress: sim.press,
             l10n: l10n,
-            mode: frame.mode,
+            mode: mode,
             led: channel == null ? null : frame.trackLeds[channel],
             channel: channel,
           );
@@ -318,8 +332,9 @@ class _TopPlate extends StatelessWidget {
                   _row1V,
                   // The tri-state mode indicator (A1), mirroring the firmware
                   // verbatim: rec green, mute amber, FX blue — with the
-                  // performance-armed blink keeping precedence, exactly as
-                  // both sketches render it.
+                  // performance-armed blink keeping precedence, and the
+                  // goodbye frame darkening it, exactly as both sketches
+                  // render it (`goodbye ? Black : modeColor(...)`).
                   statusLed: frame.performanceArmed
                       ? _BlinkingLed(
                           ledKey: const Key('pedalFaceplate_led_mode'),
@@ -327,8 +342,10 @@ class _TopPlate extends StatelessWidget {
                         )
                       : _Led(
                           ledKey: const Key('pedalFaceplate_led_mode'),
-                          color: _modeColor(surface, frame.mode),
-                          glow: true,
+                          color: frame.isGoodbye
+                              ? surface.ledOff
+                              : _modeColor(surface, frame.mode),
+                          glow: !frame.isGoodbye,
                         ),
                 ),
                 ...silkLabels('REC/PLAY', _pedalU(0), _row1V),
@@ -625,9 +642,10 @@ class _Footswitch extends StatefulWidget {
   final void Function(PedalButton button, {required bool down}) onPress;
   final AppLocalizations l10n;
 
-  /// The frame's active interaction mode — what this switch DOES, and how its
-  /// LED reads, both depend on it.
-  final PedalMode mode;
+  /// The LIVE interaction mode — what this switch does, and how its LED
+  /// reads, both depend on it. Deliberately not the frame's wire mode: below
+  /// protocol v3 that decodes as mute even while FX mode is driving.
+  final InteractionMode mode;
 
   final PedalTrackLed? led;
   final int? channel;
@@ -651,11 +669,29 @@ class _FootswitchState extends State<_Footswitch> {
     widget.onPress(widget.button, down: false);
   }
 
+  /// Keyboard / screen-reader activation of the LONG press — the gesture a
+  /// fused tap can never produce, and the only way several switches reach
+  /// their second action at all (undo's redo, MODE's record arm, Stop's
+  /// FX-chain restore). Held past the cubit's threshold, then released.
+  void _holdActivate() {
+    widget.onPress(widget.button, down: true);
+    Future<void>.delayed(_keyboardHold, () {
+      if (!mounted) return; // the plate's deactivate already released it
+      widget.onPress(widget.button, down: false);
+    });
+  }
+
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is KeyDownEvent &&
         (event.logicalKey == LogicalKeyboardKey.space ||
             event.logicalKey == LogicalKeyboardKey.enter)) {
-      _tap();
+      // Shift is the long-press modifier: a keyboard has no "hold" that
+      // survives key repeat, so the gesture needs its own chord.
+      if (HardwareKeyboard.instance.isShiftPressed) {
+        _holdActivate();
+      } else {
+        _tap();
+      }
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -673,11 +709,11 @@ class _FootswitchState extends State<_Footswitch> {
           widget.mode,
         ),
       ),
-      // Stop is the FX panic control in FX mode (tap bypasses every chain,
-      // hold restores them) — a plain "STOP footswitch" would hide that.
+      // Stop is the FX panic control in FX mode (a press bypasses every
+      // chain, a hold restores them) — a plain "STOP footswitch" hides that.
       null
           when widget.button == PedalButton.stop &&
-              widget.mode == PedalMode.fx =>
+              widget.mode == InteractionMode.fx =>
         widget.l10n.pedalSimStopFxSemantics,
       null => widget.l10n.pedalSimFootswitchSemantics(widget.label),
     };
@@ -685,6 +721,10 @@ class _FootswitchState extends State<_Footswitch> {
       button: true,
       label: label,
       onTap: _tap,
+      // Screen-reader users get the long press as its own action; without it
+      // the fused tap can only ever reach a switch's short gesture (in FX
+      // mode: panic, with no way back to restore).
+      onLongPress: _holdActivate,
       child: Focus(
         onKeyEvent: _onKey,
         child: Listener(
@@ -1004,6 +1044,13 @@ class _LedRingPainter extends CustomPainter {
       old.progress != progress || old.color != color;
 }
 
+/// How long a keyboard / screen-reader long-press holds a switch down.
+///
+/// Comfortably past `ControlCubit`'s 500 ms default threshold (and past a
+/// user-raised one within reason) — the cubit owns the real timing, this only
+/// has to outlast it.
+const _keyboardHold = Duration(milliseconds: 700);
+
 const _trackButtons = <PedalButton>[
   PedalButton.track1,
   PedalButton.track2,
@@ -1040,19 +1087,21 @@ Color _ringColor(SurfaceTheme surface, GlobalColor color) => switch (color) {
 /// The screen-reader reading of a track LED, PER ACTIVE MODE — the same byte
 /// means different things in each, so a mode-blind label would lie.
 ///
-/// FX mode reads any lit LED as chain-enabled: a pedal below protocol v3 gets
-/// the codec's B10 downgrade (blue rendered as green), and the reading must
-/// stay truthful there too.
+/// Keyed on the LIVE [InteractionMode], never on the frame's wire mode: below
+/// protocol v3 the codec degrades fx to play AND blue to green in lockstep,
+/// so a wire-keyed label would read an engaged chain as "armed" on exactly
+/// the pedals that need the reading most. FX mode therefore treats ANY lit
+/// LED as chain-enabled, which covers the downgraded green too.
 String _ledStateLabel(
   AppLocalizations l10n,
   PedalTrackLed led,
-  PedalMode mode,
+  InteractionMode mode,
 ) => switch (mode) {
-  PedalMode.fx =>
+  InteractionMode.fx =>
     led == PedalTrackLed.off
         ? l10n.pedalSimLedChainDisabled
         : l10n.pedalSimLedChainEnabled,
-  PedalMode.rec || PedalMode.play => switch (led) {
+  InteractionMode.record || InteractionMode.mute => switch (led) {
     PedalTrackLed.off => l10n.pedalSimLedOff,
     PedalTrackLed.green => l10n.pedalSimLedArmed,
     PedalTrackLed.red => l10n.pedalSimLedRecording,

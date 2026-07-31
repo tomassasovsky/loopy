@@ -10,6 +10,7 @@ import 'package:loopy/looper/cubit/tracks_cubit.dart';
 import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
 import 'package:loopy/looper/view/track_meters.dart';
+import 'package:loopy/looper/view/tracks_commands.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 
@@ -236,42 +237,68 @@ class TrackColumn extends StatelessWidget {
               // keys): record/overdub in record mode, mute/unmute in mute
               // mode, FX-chain on/off in FX mode — one interaction mode for
               // every surface, touch included.
-              // FX mode puts the CHAIN state in the label: the tile shows
-              // transport state (meter, indicator) but nothing about the
-              // chain, so a screen-reader user would otherwise be toggling a
-              // switch whose position they cannot read.
+              // FX mode adds the CHAIN state to the label — the meter and the
+              // indicator report transport state and say nothing about the
+              // chain — while KEEPING the transport word the other modes
+              // carry, which the meter otherwise conveys by colour alone
+              // (WCAG 1.4.1).
               semanticLabel: switch (mode) {
                 InteractionMode.record => l10n.a11yTrackTile(name, stateWord),
                 InteractionMode.mute => l10n.a11yTrackTileMute(name, stateWord),
                 InteractionMode.fx =>
                   track.chainEnabled
-                      ? l10n.a11yTrackTileFxOn(name)
-                      : l10n.a11yTrackTileFxOff(name),
+                      ? l10n.a11yTrackTileFxOn(name, stateWord)
+                      : l10n.a11yTrackTileFxOff(name, stateWord),
               },
               selected: selected,
               borderRadius: 8,
               onTap: () {
                 context.read<ControlCubit>().selectTrack(track.channel);
-                bloc.add(switch (mode) {
-                  InteractionMode.record => LooperRecordPressed(track.channel),
-                  InteractionMode.mute => LooperMuteToggled(track.channel),
-                  InteractionMode.fx => LooperTrackChainEnabledToggled(
-                    track.channel,
-                    enabled: !track.chainEnabled,
-                  ),
-                });
+                switch (mode) {
+                  case InteractionMode.record:
+                    bloc.add(LooperRecordPressed(track.channel));
+                  case InteractionMode.mute:
+                    bloc.add(LooperMuteToggled(track.channel));
+                  case InteractionMode.fx:
+                    // Toggle event, not a computed set: `track` here is the
+                    // polled snapshot, a poll behind any flip another surface
+                    // just made. The announcement shares the keyboard path's
+                    // helper so the two cannot drift.
+                    bloc.add(LooperTrackChainToggled(track.channel));
+                    TracksCommands(
+                      context,
+                    ).announceFxChainToggle(bloc.state, track.channel);
+                }
               },
               child: GestureDetector(
                 key: Key('tracks_tileStop_${track.channel}'),
                 behavior: HitTestBehavior.opaque,
                 onLongPress: () => bloc.add(LooperStopPressed(track.channel)),
-                child: PeakMeterBar(
-                  peak: track.peak,
-                  color: barColor,
-                  hasContent: track.hasContent,
-                  // A stopped track reports no live peak; hold the last fill so
-                  // a loaded-but-paused loop keeps a visible bar after a stop.
-                  frozen: track.state == TrackState.stopped,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: PeakMeterBar(
+                        peak: track.peak,
+                        color: barColor,
+                        hasContent: track.hasContent,
+                        // A stopped track reports no live peak; hold the last
+                        // fill so a loaded-but-paused loop keeps a visible bar
+                        // after a stop.
+                        frozen: track.state == TrackState.stopped,
+                      ),
+                    ),
+                    // The ONLY on-screen cue that an FX-mode tap landed: the
+                    // meter is taken pre-chain by the engine, so bypassing a
+                    // chain changes neither the fill nor its colour, and
+                    // without this the tap is invisible and gets repeated.
+                    if (mode == InteractionMode.fx && !track.chainEnabled)
+                      Positioned(
+                        top: 4,
+                        left: 4,
+                        right: 4,
+                        child: _ChainOffPill(label: l10n.signalChainOff),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -491,6 +518,48 @@ class _PendingArmBadge extends StatelessWidget {
     return Semantics(
       label: context.l10n.a11yTrackArmed,
       child: Icon(Icons.schedule_outlined, size: 14, color: color),
+    );
+  }
+}
+
+/// The FX-mode "chain bypassed" pill drawn over a track's meter.
+///
+/// The tracks surface has no other channel for chain state — the meter is
+/// taken pre-chain by the engine, so a bypass changes nothing visible — and
+/// this is the tile's twin of the pedal's dark chain LED and the Signal
+/// page's own chain-off chip (whose wording it reuses).
+class _ChainOffPill extends StatelessWidget {
+  const _ChainOffPill({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Container(
+      key: const Key('tracks_tileChainOff'),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      decoration: BoxDecoration(
+        color: surface.background.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: surface.warning),
+      ),
+      // The tile's own semantic label already reads the chain state, so this
+      // stays out of the tree a screen reader walks.
+      child: ExcludeSemantics(
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: surface.warning,
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ),
     );
   }
 }

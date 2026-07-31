@@ -119,12 +119,10 @@ class ControlCubit extends Cubit<ControlState> {
   bool _modeArmed = false;
   bool _modeHandled = false;
 
-  // Stop press/release timing, armed ONLY in FX mode (tap = FX panic, all
-  // Track chains off; long-press = restore them all). Rec and Mute keep
-  // acting on the press itself — no gesture split, no added latency there.
+  // The FX-mode Stop long-press (restore every Track chain). The panic half
+  // fires on the press, so unlike undo/mode this gesture keeps no armed or
+  // handled flag — only the pending hold. Null outside a held FX Stop.
   Timer? _stopTimer;
-  bool _stopArmed = false;
-  bool _stopHandled = false;
 
   // Whether the Clear footswitch is currently held down. Lights the Clear
   // LED (the `clearFadeActive` frame bit) for as long as it is pressed.
@@ -249,16 +247,20 @@ class ControlCubit extends Cubit<ControlState> {
   /// Entering Mute previews the whole content set: `parkedResume` = every
   /// track holding (or capturing) a loop, so Rec/Play resumes them all and
   /// the parked LEDs show it — including stopped and muted tracks, which
-  /// pure `sounding` could never cover. A LIVE CAPTURE deliberately survives
-  /// the switch: the mode toggle is a view change, not a transport action,
-  /// so a take the user did not explicitly end keeps recording until they
-  /// return to Rec mode and hit Rec/Play (or end it with an explicit Stop).
+  /// pure `sounding` could never cover. A live capture survives THIS entry:
+  /// the mode toggle is a view change, not a transport action.
   ///
-  /// Entering FX is the ONE exception to that rule (A5): FX mode has no
-  /// transport controls at all — Rec/Play is inert there — so a take left
-  /// running would be unstoppable without cycling back, and the user's next
-  /// stomp would be re-shaping FX while a recording they cannot see silently
-  /// grows. The capture is FINALIZED on entry instead.
+  /// Entering FX is the ONE exception (A5): FX mode has no transport controls
+  /// at all — Rec/Play is inert there — so a take left running would be
+  /// unstoppable without cycling back, and the user's next stomp would be
+  /// re-shaping FX while a recording they cannot see silently grows. Every
+  /// capturing OR pending-armed track is FINALIZED on entry instead.
+  ///
+  /// Note what those two rules compose into, since the MODE switch is a
+  /// one-way cycle: mute's surviving capture only survives until the NEXT
+  /// tap, because the way back to Rec runs through FX. A take the user wants
+  /// to keep growing across a mode round trip has to be ended deliberately —
+  /// there is no mute → record shortcut that preserves it.
   ///
   /// Any mode entry clears the stored mute-mode intent (the invalidation
   /// table).
@@ -288,8 +290,23 @@ class ControlCubit extends Cubit<ControlState> {
         // Finalize BEFORE the emit so the projection that rides it already
         // describes the post-entry intent (the engine's own state follows one
         // poll later, as it does for every other command).
-        final capturing = _capturingChannel();
-        if (capturing != null) _looper.record(channel: capturing);
+        //
+        // Read LIVE engine truth, not the polled snapshot: a take finalized
+        // moments ago still reads `capturing` for up to one poll, and the
+        // engine's record() CYCLES — issued against a track that has already
+        // become `playing` it would punch IN a fresh overdub rather than end
+        // anything, leaving exactly the runaway take this rule prevents.
+        //
+        // A pending arm (quantized / signal-triggered) counts too: it has not
+        // started yet, so nothing is capturing, but leaving it armed means the
+        // engine starts a take seconds later with the user already in FX mode
+        // and every transport control inert. record() on a pending track
+        // cancels the arm the same way it ends a live one.
+        for (final track in _looper.state.tracks) {
+          if (track.isCapturing || track.pending) {
+            _looper.record(channel: track.channel);
+          }
+        }
         emit(
           state.copyWith(
             mode: InteractionMode.fx,
@@ -586,19 +603,27 @@ class ControlCubit extends Cubit<ControlState> {
   /// FX panic: every Track-stage chain off in one gesture (Stop in FX mode) —
   /// the eyes-free way out of a chain that has run away mid-song. Restored by
   /// [restoreAllTrackChains] (Stop long-press).
-  void panicTrackChains() {
-    for (var channel = 0; channel < _channelCount; channel++) {
-      _setTrackChain(channel, enabled: false);
-    }
-  }
+  void panicTrackChains() => _sweepTrackChains(enabled: false);
 
   /// Puts every Track-stage chain back on (Stop LONG-PRESS in FX mode) — the
   /// undo for [panicTrackChains]. Deliberately "all on" rather than a restore
   /// of the pre-panic pattern: eyes-free on a dark stage, a known end state
   /// beats one the performer has to remember.
-  void restoreAllTrackChains() {
+  void restoreAllTrackChains() => _sweepTrackChains(enabled: true);
+
+  /// Flips every track that HAS a Track-stage chain, and only those.
+  ///
+  /// A track with an empty chain is dry either way, so its flag says nothing
+  /// audible — but writing it would persist a bypass the boot restore replays
+  /// forever, silently muting the effects the user adds to that track later.
+  /// Skipping empties also keeps one Stop stomp proportional to the rig: the
+  /// repository re-snapshots the engine and re-emits per call, so a sweep over
+  /// all eight channels cost eight engine snapshots, eight pedal frames and
+  /// eight settings writes for a rig that usually has one or two chains.
+  void _sweepTrackChains({required bool enabled}) {
     for (var channel = 0; channel < _channelCount; channel++) {
-      _setTrackChain(channel, enabled: true);
+      if (_looper.trackEffects(channel).isEmpty) continue;
+      _setTrackChain(channel, enabled: enabled);
     }
   }
 
@@ -763,29 +788,40 @@ class ControlCubit extends Cubit<ControlState> {
     });
   }
 
-  /// Arms the FX-mode Stop gesture: tap = FX panic, long-press = restore all.
-  /// The GESTURE is latched at press time (like undo's target channel), so a
-  /// mode change mid-hold cannot retarget what the foot already committed to.
+  /// The FX-mode Stop gesture: the PANIC fires on the press itself, and a
+  /// hold past the threshold follows it with the restore.
+  ///
+  /// Panic-on-press, not on release, for two reasons. A panic is an emergency
+  /// control — a performer stomping it wants the chains out now, not when
+  /// their foot comes up. And a release is not proof of a gesture: the
+  /// on-screen plate injects a synthetic note-off for every held switch when
+  /// it leaves the tree (so it never strands a note), which as a
+  /// release-triggered action would have bypassed and PERSISTED every chain
+  /// for a stomp the user never finished. Acting on the press makes the
+  /// release inert, so a synthetic one can do no harm.
+  ///
+  /// The hold therefore reads as panic-then-restore, which lands on the same
+  /// end state the restore promises on its own: every chain on.
   void _armStop() {
-    _stopArmed = true;
-    _stopHandled = false;
+    _log('fx panic (press)');
+    panicTrackChains();
     _stopTimer?.cancel();
     _stopTimer = Timer(_longPress, () {
-      _stopHandled = true; // long-press = restore every Track chain
+      _stopTimer = null;
+      // Only while the foot is still in the mode it committed to: cycling
+      // MODE mid-hold leaves the pedal showing cursor/armed LEDs, where a
+      // silent rewrite of every chain would be invisible.
+      if (state.mode != InteractionMode.fx) return;
       _log('fx chains restored (long-press)');
       restoreAllTrackChains();
     });
   }
 
+  /// Stop released: the FX action already fired on the press, so this only
+  /// retires the pending long-press.
   void _onStopRelease() {
-    if (!_stopArmed) return;
-    _stopArmed = false;
     _stopTimer?.cancel();
     _stopTimer = null;
-    if (!_stopHandled) {
-      _log('fx panic (tap)');
-      panicTrackChains();
-    }
   }
 
   void _onUndoRelease() {

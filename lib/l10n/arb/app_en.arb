@@ -335,20 +335,26 @@
             }
         }
     },
-    "a11yTrackTileFxOn": "{name}, FX chain on, activate to switch it off",
+    "a11yTrackTileFxOn": "{name}, {state}, FX chain on, activate to switch it off",
     "@a11yTrackTileFxOn": {
-        "description": "Accessibility label for a track tile in FX mode while that track's FX chain is engaged. The state is in the label because FX mode gives the tile no other visual cue for it.",
+        "description": "Accessibility label for a track tile in FX mode while that track's FX chain is engaged. Carries the transport state word like the record and mute labels (the meter shows it in colour only, WCAG 1.4.1) plus the chain state, which nothing else on the tile reports.",
         "placeholders": {
             "name": {
+                "type": "String"
+            },
+            "state": {
                 "type": "String"
             }
         }
     },
-    "a11yTrackTileFxOff": "{name}, FX chain off, activate to switch it on",
+    "a11yTrackTileFxOff": "{name}, {state}, FX chain off, activate to switch it on",
     "@a11yTrackTileFxOff": {
         "description": "Accessibility label for a track tile in FX mode while that track's FX chain is bypassed.",
         "placeholders": {
             "name": {
+                "type": "String"
+            },
+            "state": {
                 "type": "String"
             }
         }

@@ -662,6 +662,21 @@ final class LooperTrackChainEnabledToggled extends LooperChannelEvent {
   List<Object?> get props => [channel, enabled];
 }
 
+/// Track [channel]'s Track-stage chain was FLIPPED — the relative twin of
+/// [LooperTrackChainEnabledToggled], mirroring [LooperMuteToggled].
+///
+/// The surfaces that toggle rather than set (the tracks tiles, the number
+/// keys) must not compute the new value themselves: their only reading of the
+/// flag is the ~16 ms-polled `LooperState`, which is missing entirely before
+/// the engine publishes tracks and stale for a poll after any other surface
+/// flips the same chain. The handler resolves it against the repository's
+/// remembered intent instead, so every surface agrees on what "the other way"
+/// means.
+final class LooperTrackChainToggled extends LooperChannelEvent {
+  /// Creates a [LooperTrackChainToggled].
+  const LooperTrackChainToggled(super.channel);
+}
+
 /// The Master insert chain was replaced with [effects].
 final class LooperMasterEffectsChanged extends LooperEvent {
   /// Creates a [LooperMasterEffectsChanged].
