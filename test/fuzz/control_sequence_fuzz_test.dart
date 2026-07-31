@@ -599,10 +599,9 @@ void main() {
             channel: 2,
             effects: [BuiltInEffect(type: TrackEffectType.reverb)],
           );
-        h.settle(fa);
-
         // Stop is FX panic: every chain that EXISTS goes off and dark.
         h
+          ..settle(fa)
           ..run(const [_Tap(PedalButton.stop)], fa)
           ..settle(fa);
         for (final channel in [1, 2]) {
