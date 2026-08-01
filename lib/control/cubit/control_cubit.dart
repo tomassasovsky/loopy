@@ -1174,11 +1174,55 @@ class ControlCubit extends Cubit<ControlState> {
   /// (B1) the release-all rule exists to prevent.
   Future<void> setControllerBindings(ControllerBindingSet next) async {
     if (next == state.controllerBindings) return;
-    releaseAllControllerMomentary();
+    // A capture relearning a row this edit removes has nothing left to render
+    // it: its row is gone, and the add-row only shows a capture that is not
+    // relearning anything. Ending it here is what keeps the repository from
+    // swallowing every controller event behind a UI that shows nothing.
+    // Before the emit below, since cancelling emits on its own.
+    final learn = state.controllerLearn;
+    final relearning = learn?.replacingKey;
+    if (relearning != null &&
+        !next.bindings.any((binding) => binding.key == relearning)) {
+      _log('midi learn cancelled: the row it was relearning was removed');
+      cancelControllerLearn();
+    }
+    _releaseControllerMomentariesMissingFrom(next);
     _controller?.setBindings(next);
     _cacheControllerTargets(next);
     emit(state.copyWith(controllerBindings: next));
     _scheduleMappingsWrite(next.encode());
+  }
+
+  /// Releases the held momentaries [next] no longer carries — the edit half of
+  /// the release-all rule (B1).
+  ///
+  /// Scoped to the holds the edit actually strands: a control whose mapping is
+  /// gone, whose target moved, or which is no longer momentary at all. A
+  /// mapping that survived the edit keeps its hold, because an unrelated row's
+  /// range says nothing about the switch under someone's foot — and a LO/HI
+  /// drag runs this once per pointer frame, so releasing everything here would
+  /// drop a held chain mid-song the moment any knob moved.
+  void _releaseControllerMomentariesMissingFrom(ControllerBindingSet next) {
+    if (_heldControllerRestore.isEmpty) return;
+    final live = <(MappingTrigger, String)>{
+      for (final binding in next.bindings)
+        if (binding is DiscreteBinding &&
+            binding.behavior == BindingBehavior.momentary)
+          binding.key,
+    };
+    var released = 0;
+    for (final entry in _heldControllerRestore.entries.toList()) {
+      entry.value.holders.removeWhere(
+        (trigger) => !live.contains((trigger, entry.key)),
+      );
+      if (entry.value.holders.isNotEmpty) continue;
+      _heldControllerRestore.remove(entry.key);
+      _looper.setBindingEnabled(entry.value.target, enabled: entry.value.prior);
+      released++;
+    }
+    if (released == 0) return;
+    _log('released $released held MIDI momentary(s) the edit stranded');
+    _pushProjected();
   }
 
   /// Decodes every binding's target once, for the dispatch path to look up.
@@ -1487,10 +1531,14 @@ class ControlCubit extends Cubit<ControlState> {
   /// Restores every MIDI-held momentary to the state its press captured — the
   /// external-control half of the ONE release-all rule (B1).
   ///
-  /// Reached from a mapping edit ([setControllerBindings]) and from MIDI-source
-  /// disconnect ([_onMidiConnection]). A held momentary whose device unplugs
-  /// will never see its OFF edge, so without this the target would stay enabled
-  /// with no control able to release it. CONTINUOUS bindings are deliberately
+  /// Reached from MIDI-source disconnect ([_onMidiConnection]) and from the
+  /// start of a learn capture, which swallows the release edge. A mapping EDIT
+  /// releases only what it strands — see
+  /// [_releaseControllerMomentariesMissingFrom].
+  ///
+  /// A held momentary whose device unplugs will never see its OFF edge, so
+  /// without this the target would stay enabled with no control able to
+  /// release it. CONTINUOUS bindings are deliberately
   /// the opposite: an unplug mid-song leaves the value exactly where the last
   /// sweep put it, because snapping a filter back to a stored value the moment
   /// a cable wobbles is the louder failure.

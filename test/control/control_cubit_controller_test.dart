@@ -349,6 +349,63 @@ void main() {
         expect(chainEnabled[0], isTrue);
       });
 
+      test('an unrelated edit leaves a held momentary alone', () async {
+        final held = DiscreteBinding(
+          trigger: stomp,
+          target: chainTarget.canonicalString(),
+          behavior: BindingBehavior.momentary,
+        );
+        final unrelated = ContinuousBinding(
+          trigger: expression,
+          target: volumeTarget.canonicalString(),
+        );
+        await use([held, unrelated]);
+        chainEnabled[0] = false;
+
+        source.cc(21, 127); // foot down
+        await settle();
+        expect(chainEnabled[0], isTrue);
+
+        // One frame of a LO-knob drag on the OTHER row.
+        await cubit.updateControllerBinding(
+          unrelated,
+          unrelated.copyWith(lo: 0.1),
+        );
+        await settle();
+
+        expect(
+          chainEnabled[0],
+          isTrue,
+          reason: "another row's range says nothing about this foot",
+        );
+
+        source.cc(21, 0); // and the real release still restores
+        await settle();
+        expect(chainEnabled[0], isFalse);
+      });
+
+      test('turning a held momentary into a toggle releases it', () async {
+        final held = DiscreteBinding(
+          trigger: stomp,
+          target: chainTarget.canonicalString(),
+          behavior: BindingBehavior.momentary,
+        );
+        await use([held]);
+        chainEnabled[0] = false;
+
+        source.cc(21, 127);
+        await settle();
+        expect(chainEnabled[0], isTrue);
+
+        await cubit.updateControllerBinding(
+          held,
+          held.copyWith(behavior: BindingBehavior.toggle),
+        );
+        await settle();
+
+        expect(chainEnabled[0], isFalse, reason: 'the hold no longer exists');
+      });
+
       test('editing the mappings releases a held momentary (B1)', () async {
         await use([
           DiscreteBinding(
@@ -736,6 +793,33 @@ void main() {
                   as ContinuousBinding;
           expect(bound.trigger, expression);
           expect(bound.lo, 0.4);
+        },
+      );
+
+      test(
+        'removing the row a capture is relearning ends the capture',
+        () async {
+          final binding = ContinuousBinding(
+            trigger: expression,
+            target: volumeTarget.canonicalString(),
+          );
+          await use([binding]);
+
+          cubit.learnControllerBinding(
+            target: binding.target,
+            replacing: binding,
+          );
+          await cubit.removeControllerBinding(binding);
+          await settle();
+
+          expect(cubit.state.controllerLearn, isNull);
+          expect(
+            controller.isLearning,
+            isFalse,
+            reason:
+                'a capture with no row left to show it must not go on '
+                'swallowing every controller event',
+          );
         },
       );
 
