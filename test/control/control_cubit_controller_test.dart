@@ -366,6 +366,40 @@ void main() {
         expect(chainEnabled[0], isFalse);
       });
 
+      test('two momentary controls on one target hold independently', () async {
+        await use([
+          DiscreteBinding(
+            trigger: stomp,
+            target: chainTarget.canonicalString(),
+            behavior: BindingBehavior.momentary,
+          ),
+          DiscreteBinding(
+            trigger: expression,
+            target: chainTarget.canonicalString(),
+            behavior: BindingBehavior.momentary,
+          ),
+        ]);
+        chainEnabled[0] = false;
+
+        source.cc(21, 127); // switch A down
+        await settle();
+        source.cc(11, 127); // switch B down while A is still held
+        await settle();
+        source.cc(21, 0); // A up — B's foot is still on its switch
+        await settle();
+
+        expect(
+          chainEnabled[0],
+          isTrue,
+          reason: 'the other control is still holding it',
+        );
+
+        source.cc(11, 0);
+        await settle();
+
+        expect(chainEnabled[0], isFalse);
+      });
+
       test(
         'a repeated press does not re-capture the state it enabled',
         () async {

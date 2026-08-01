@@ -190,6 +190,7 @@ class ControllerRepository {
     _bindingEvents.add(
       ControllerSwitchEvent(
         target: binding.target,
+        trigger: binding.trigger,
         behavior: binding.behavior,
         pressed: next,
       ),

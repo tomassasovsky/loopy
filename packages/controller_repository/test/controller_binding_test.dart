@@ -134,6 +134,33 @@ void main() {
       );
     });
 
+    test('every allowed threshold can still reach its off edge', () {
+      // Taken literally, `value >= 0` reads every CC as on and the off edge
+      // needs a negative value, so a momentary bound to it could never release
+      // (B1's stuck momentary). A LOW threshold has the same hole from the
+      // other side: `threshold - hysteresis` lands below zero. Both are
+      // reachable — the threshold knob writes 0 at full counter-clockwise, and
+      // a hand-edited blob can carry anything.
+      for (final threshold in [0, 1, 4, 8, 9]) {
+        final binding = DiscreteBinding(
+          trigger: cc,
+          target: 't',
+          threshold: threshold,
+        );
+
+        expect(
+          binding.isOn(0, previous: true),
+          isFalse,
+          reason: 'threshold $threshold must release at CC 0',
+        );
+        expect(
+          binding.isOn(127, previous: false),
+          isTrue,
+          reason: 'threshold $threshold must still engage',
+        );
+      }
+    });
+
     test('round-trips through JSON', () {
       const momentary = DiscreteBinding(
         trigger: cc,

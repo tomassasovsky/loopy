@@ -157,6 +157,14 @@ final class DiscreteBinding extends ControllerBinding {
   /// sending 0/127 and one sending 0/64 both read the same way.
   static const int defaultThreshold = 64;
 
+  /// The lowest threshold that still describes a switch. A threshold of 0
+  /// would read EVERY value as on — CC 0 included — so its off edge could
+  /// never fire and a momentary bound to it would latch on with no foot on
+  /// the switch, the stuck-momentary state the release-all rule (B1) exists
+  /// to prevent. Enforced in [isOn] rather than the constructor so a persisted
+  /// or hand-edited 0 is corrected on read too.
+  static const int minThreshold = 1;
+
   /// How far BELOW [threshold] the value must fall to read as off.
   static const int hysteresis = 8;
 
@@ -168,9 +176,18 @@ final class DiscreteBinding extends ControllerBinding {
 
   /// This binding's on/off reading of [value], given the [previous] state —
   /// unchanged inside the hysteresis band.
+  ///
+  /// Both edges are floored at [minThreshold]. The ON floor keeps a threshold
+  /// of 0 from reading every value (CC 0 included) as on; the OFF floor keeps
+  /// the release reachable for a LOW threshold, where `threshold - hysteresis`
+  /// would otherwise land below 0 and no value could ever produce the off
+  /// edge. Either hole leaves a momentary latched on with no foot on the
+  /// switch — the stuck momentary the release-all rule (B1) exists to prevent.
   bool isOn(int value, {required bool previous}) {
-    if (value >= threshold) return true;
-    if (value < threshold - hysteresis) return false;
+    final on = threshold < minThreshold ? minThreshold : threshold;
+    final off = on - hysteresis < minThreshold ? minThreshold : on - hysteresis;
+    if (value >= on) return true;
+    if (value < off) return false;
     return previous;
   }
 

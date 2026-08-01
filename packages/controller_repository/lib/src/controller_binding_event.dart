@@ -1,5 +1,6 @@
 import 'package:controller_repository/src/binding_behavior.dart';
 import 'package:controller_repository/src/controller_binding.dart';
+import 'package:controller_repository/src/controller_input.dart';
 import 'package:equatable/equatable.dart';
 
 /// What a resolved [ControllerBinding] asks the app to do, with the target
@@ -45,9 +46,16 @@ final class ControllerSwitchEvent extends ControllerBindingEvent {
   /// Creates a [ControllerSwitchEvent].
   const ControllerSwitchEvent({
     required super.target,
+    required this.trigger,
     required this.behavior,
     required this.pressed,
   });
+
+  /// The control this edge came from. Carried so the app can key a held
+  /// momentary on the CONTROL rather than on the target: two switches mapped
+  /// to one target each hold their own capture, and releasing one cannot end
+  /// the other's hold.
+  final MappingTrigger trigger;
 
   /// Whether the press latches ([BindingBehavior.toggle]) or is held
   /// ([BindingBehavior.momentary]).
@@ -57,10 +65,10 @@ final class ControllerSwitchEvent extends ControllerBindingEvent {
   final bool pressed;
 
   @override
-  List<Object?> get props => [target, behavior, pressed];
+  List<Object?> get props => [target, trigger, behavior, pressed];
 
   @override
   String toString() =>
-      'ControllerSwitchEvent($target, ${behavior.name}, '
+      'ControllerSwitchEvent($target, $trigger, ${behavior.name}, '
       '${pressed ? 'press' : 'release'})';
 }

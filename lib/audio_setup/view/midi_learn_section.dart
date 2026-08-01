@@ -347,7 +347,12 @@ class _SwitchControls extends StatelessWidget {
           onChanged: (value) => unawaited(
             cubit.updateControllerBinding(
               binding,
-              binding.copyWith(threshold: (value * 127).round()),
+              binding.copyWith(
+                threshold: (value * 127).round().clamp(
+                  DiscreteBinding.minThreshold,
+                  127,
+                ),
+              ),
             ),
           ),
           label: l10n.midiLearnThreshold,

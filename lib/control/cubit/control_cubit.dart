@@ -213,19 +213,39 @@ class ControlCubit extends Cubit<ControlState> {
   final _heldRestore =
       <PedalBindingKey, ({FxBindingTarget target, bool prior})>{};
 
-  // The same mid-gesture restore values for MOMENTARY bindings held from an
-  // external MIDI control, keyed by the target string a discrete binding
-  // carries. Kept apart from `_heldRestore` because their release-all triggers
-  // differ: a MIDI momentary survives a mode change (external control is not
-  // mode-gated) but must release when its device unplugs, which the pedal's
-  // own held presses have no reason to care about.
+  // The mid-gesture restore values for MOMENTARY bindings held from an
+  // external MIDI control: one entry per TARGET, carrying the state the first
+  // press found and the set of controls currently holding it.
+  //
+  // Reference-counted rather than one slot per control, because two switches
+  // can be mapped to one chain. A per-control capture would have the second
+  // press record the state the FIRST press just enabled, and its release would
+  // then write `true` back with no foot on either switch — a stuck momentary.
+  // A per-target slot alone would let the first release end the second's hold.
+  // Holding the first press's capture until the LAST control lets go is the
+  // only reading with no stranded state and no early release.
+  //
+  // Kept apart from `_heldRestore` because their release-all triggers differ: a
+  // MIDI momentary survives a mode change (external control is not mode-gated)
+  // but must release when its device unplugs, which the pedal's own held
+  // presses have no reason to care about.
   final _heldControllerRestore =
-      <String, ({FxBindingTarget target, bool prior})>{};
+      <
+        String,
+        ({FxBindingTarget target, bool prior, Set<MappingTrigger> holders})
+      >{};
 
   // The learn capture's timeout. A capture that nobody ever feeds must not
   // leave the MIDI stream swallowed forever — the repository suppresses ALL
   // events while learning.
   Timer? _learnTimer;
+
+  // Which capture is current. Every `learnNext` future resolves — including
+  // the null a SUPERSEDED one gets when the next capture replaces it — so a
+  // callback has to prove it still speaks for the capture in flight. Without
+  // that proof a stale null tore down the live capture's state and timeout
+  // while the repository went on swallowing every controller event.
+  int _learnGeneration = 0;
 
   // The mapping blob's pending write. A LO/HI knob reports continuously while
   // it is dragged, so the STATE and the repository follow every frame (the
@@ -1254,7 +1274,12 @@ class ControlCubit extends Cubit<ControlState> {
         ),
       ),
     );
-    unawaited(controller.learnNext().then(_onLearnCaptured));
+    final generation = ++_learnGeneration;
+    unawaited(
+      controller.learnNext().then(
+        (input) => _onLearnCaptured(generation, input),
+      ),
+    );
   }
 
   /// Confirms replacing the existing mapping(s) on the captured control (R28).
@@ -1271,23 +1296,25 @@ class ControlCubit extends Cubit<ControlState> {
   void cancelControllerLearn() {
     _learnTimer?.cancel();
     _learnTimer = null;
+    // Retire the capture BEFORE cancelling it, so the null completion this
+    // triggers cannot act on whatever comes next.
+    _learnGeneration++;
     _controller?.cancelLearn();
     if (isClosed || state.controllerLearn == null) return;
     emit(state.copyWith(clearControllerLearn: true));
   }
 
-  void _onLearnCaptured(RawControllerInput? input) {
+  void _onLearnCaptured(int generation, RawControllerInput? input) {
+    // A superseded or cancelled capture completes with null too, and its
+    // callback must not touch the capture that replaced it — nor cancel the
+    // timeout that is the only thing rescuing a capture nobody feeds.
+    if (isClosed || generation != _learnGeneration) return;
     final learn = state.controllerLearn;
-    if (isClosed || learn == null) return;
+    if (learn == null) return;
     _learnTimer?.cancel();
     _learnTimer = null;
-    // Null means the capture was superseded or cancelled — `cancelLearn` (or
-    // the next `learnNext`) already owns the state, so this must not clear a
-    // capture that has since been restarted.
     if (input == null) {
-      if (state.controllerLearn == learn) {
-        emit(state.copyWith(clearControllerLearn: true));
-      }
+      emit(state.copyWith(clearControllerLearn: true));
       return;
     }
     // The CHANNEL-scoped identity: the same CC number on two channels is two
@@ -1309,7 +1336,24 @@ class ControlCubit extends Cubit<ControlState> {
     MappingTrigger trigger, {
     required bool replaceExisting,
   }) async {
-    final replacing = learn.replacing;
+    // Re-resolve the row being relearned from the LIVE set: its knobs and its
+    // Remove button stay usable while a capture listens, so the binding the
+    // capture remembers may have been edited (a different value under the same
+    // key) or deleted outright. Matching on the key and rebuilding from what is
+    // there now is what keeps a relearn from resurrecting a removed mapping —
+    // `replace` would silently fall back to adding one — or from writing back
+    // the ranges the user just dialed away.
+    final remembered = learn.replacing;
+    final replacing = remembered == null
+        ? null
+        : state.controllerBindings.bindings
+              .where((b) => b.key == remembered.key)
+              .firstOrNull;
+    if (remembered != null && replacing == null) {
+      _log('midi learn dropped: the row it was relearning is gone');
+      emit(state.copyWith(clearControllerLearn: true));
+      return;
+    }
     final next = switch (replacing) {
       ContinuousBinding(:final lo, :final hi) => ContinuousBinding(
         trigger: trigger,
@@ -1355,10 +1399,11 @@ class ControlCubit extends Cubit<ControlState> {
         _applyControllerValue(target, value);
       case ControllerSwitchEvent(
         :final target,
+        :final trigger,
         :final behavior,
         :final pressed,
       ):
-        _applyControllerSwitch(target, behavior, pressed: pressed);
+        _applyControllerSwitch(target, trigger, behavior, pressed: pressed);
     }
   }
 
@@ -1380,6 +1425,7 @@ class ControlCubit extends Cubit<ControlState> {
 
   void _applyControllerSwitch(
     String target,
+    MappingTrigger trigger,
     BindingBehavior behavior, {
     required bool pressed,
   }) {
@@ -1390,9 +1436,9 @@ class ControlCubit extends Cubit<ControlState> {
       // where the user learns it is broken, not a mid-song stomp.
       // A target that went stale WHILE held still has to be put back: the
       // capture is the only record of what it was before the press.
-      final held = _heldControllerRestore.remove(target);
-      if (held == null) return;
-      _looper.setBindingEnabled(held.target, enabled: held.prior);
+      final captured = _heldControllerRestore.remove(target);
+      if (captured == null) return;
+      _looper.setBindingEnabled(captured.target, enabled: captured.prior);
       _pushProjected();
       return;
     }
@@ -1404,20 +1450,29 @@ class ControlCubit extends Cubit<ControlState> {
         _log('midi toggle -> ${!prior}');
         _looper.setBindingEnabled(decoded, enabled: !prior);
       case BindingBehavior.momentary:
+        final entry = _heldControllerRestore[target];
         if (pressed) {
-          // Capture on the FIRST press only — a repeated ON edge with no
-          // release between them would otherwise re-capture the state THIS
-          // press enabled, and the eventual release would strand the target on.
-          _heldControllerRestore.putIfAbsent(
-            target,
-            () => (target: decoded, prior: prior),
-          );
+          // Capture on the FIRST hold only — a repeated ON edge with no release
+          // between them, or a second control joining the hold, must not
+          // re-capture the state the hold itself enabled.
+          if (entry == null) {
+            _heldControllerRestore[target] = (
+              target: decoded,
+              prior: prior,
+              holders: {trigger},
+            );
+          } else {
+            entry.holders.add(trigger);
+          }
           _looper.setBindingEnabled(decoded, enabled: true);
         } else {
-          final held = _heldControllerRestore.remove(target);
-          if (held == null) return;
-          _log('midi momentary released -> ${held.prior}');
-          _looper.setBindingEnabled(held.target, enabled: held.prior);
+          if (entry == null) return;
+          entry.holders.remove(trigger);
+          // Another control is still holding this target down.
+          if (entry.holders.isNotEmpty) return;
+          _heldControllerRestore.remove(target);
+          _log('midi momentary released -> ${entry.prior}');
+          _looper.setBindingEnabled(entry.target, enabled: entry.prior);
         }
     }
     _pushProjected();
