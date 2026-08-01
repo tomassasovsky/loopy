@@ -30,11 +30,14 @@ issue: 351
 
 ## Status
 
-**Next up:** everything through the pedal remap is merged (0, 1a, 1b, 2, 3a,
-3b, 4a, 4b, 5a, 5b, 6a, 6b — 6b landed as #412). **7** (expression + external
-MIDI) is built and in review (#414). **8** (TRS jack hardware) unblocks once 7
-lands — it consumes part 7's trigger shapes over the existing cable, at the
-bench.
+**Next up:** every app-side part is merged (0, 1a, 1b, 2, 3a, 3b, 4a, 4b, 5a,
+5b, 6a, 6b, 7 — 7 landed as #415). What remains is the two bench/soak parts.
+
+**9** (hardening + export + soak) is the one to run next: **8** is marked
+non-gating precisely so 9 need not wait for hardware. 8 (TRS jack) is
+unblocked too, but it is `blocked-verify` "at bench" — it needs the jack and
+an FS-6 in hand, and it consumes part 7's trigger shapes over the existing
+cable rather than adding a new control path.
 
 [#410](https://github.com/tomassasovsky/loopy/pull/410) — the #403
 press/long-press gesture-helper collapse this guide called for before 6b —
@@ -90,7 +93,7 @@ Open items carried out of merged parts, neither blocking a new part:
 | 5b | FX interaction mode (app) | Opus · high | `merge-gate` (physical slice `blocked-verify`) | 5a, 3a, 1a | merged (#404) |
 | 6a | faceplate presentational extraction | Sonnet · medium | `auto` | — | merged (#408) |
 | 6b | remap bindings + momentary | Opus · high | `merge-gate` | 6a, 5b, 3a | merged (#412) |
-| 7 | expression + external MIDI | Opus · high | `merge-gate` | 3a, 6b | in-review (#414) |
+| 7 | expression + external MIDI | Opus · high | `merge-gate` | 3a, 6b | merged (#415) |
 | 8 | TRS jack hardware (non-gating child) | Fable · high (at bench) | `blocked-verify` | 7 | pending |
 | 9 | hardening + export + soak | Opus · medium | `blocked-verify` | all | pending |
 
@@ -117,8 +120,46 @@ Status values: `pending` → `building (#issue)` → `in-review (#PR)` →
   Part 7's CC path must funnel through the same method.
 - Persistence: settings key `pedal.bindings` for globals; `Session.pedalBindings`
   (manifest **v6**, opaque, presence-keyed) for the session set, threaded
-  through `SessionCubit`'s `currentPedalBindings` / `onPedalBindings` function
-  seams rather than a cubit-to-cubit link.
+  through `SessionCubit`'s `currentPedalBindings` / `onPedalBindings` /
+  `releaseHeldBindings` function seams rather than a cubit-to-cubit link. A
+  save stamps the set IN FORCE (`state.bindings`), matching the repo rule that
+  the live rig — not settings — is what a save captures.
+- The load seam is SPLIT across `applySession` and stays that way: release
+  held momentaries BEFORE (the restore has to land on the outgoing rig) and
+  commit the new set AFTER the apply succeeds (a failed apply must not leave
+  the surface remapped to a session that never loaded).
+- Momentary capture is first-press-only (`putIfAbsent`). A repeated press with
+  no release between them — a dropped NoteOff — must never re-capture the
+  state the binding itself just enabled; that stranded the target on. Part 7's
+  CC path carries the same guard.
+- Every assignment edit persists to settings immediately; an edit made while a
+  session remap is in force PROMOTES that copy to global and drops the
+  override, so no edit can be silently lost on quit.
+
+**7 notes for 8 and 9.** External MIDI shipped in #415; what the remaining
+parts inherit:
+
+- `controller_repository` owns both trigger shapes: `ContinuousBinding`
+  (0..127 onto a LO/HI range, inverted ranges allowed) and `DiscreteBinding`
+  (threshold with hysteresis, floored at both edges so every threshold can
+  still release). Part 8's TRS jack decodes to these same bindings — it adds
+  no control path of its own.
+- Targets cross that package as canonical-JSON strings; the typed sealed
+  targets (`FxBindingTarget` for `enabled` flips, `ControlValueTarget` for
+  value writes) and their resolvers live app-side in `lib/control/binding/`,
+  sharing one `chainEntriesAt` stage lookup.
+- `ControlCubit` stays the single dispatch point. A learn capture is
+  generation-stamped (a superseded capture's callback must not touch its
+  successor), and a mapping edit releases only the held momentaries it
+  strands — `releaseAllControllerMomentary` is for disconnect and capture
+  start, where everything really is stranded.
+- Mappings are GLOBAL (`controller.mappings`, R19), written behind a debounce
+  that `close()` flushes.
+- Known gaps, with no issue filed yet: track PAN is not a target (no pan exists in the engine
+  at all), hosted plugin parameters are not offered (id-addressed, no setter
+  at every stage), and fan-out is supported by the model but has no UI
+  affordance under R28's replace-after-confirm flow. Part 9 is the natural
+  home for whichever of these is worth closing.
 
 ## Ordering and parallelism
 
