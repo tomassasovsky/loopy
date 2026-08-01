@@ -21,6 +21,8 @@ class ControlState extends Equatable {
     this.globalBindings = PedalBindingSet.empty,
     this.sessionBindings = PedalBindingSet.empty,
     this.heldMomentary = const <PedalBindingKey>{},
+    this.controllerBindings = ControllerBindingSet.empty,
+    this.controllerLearn,
   });
 
   /// Tracks per bank.
@@ -89,6 +91,21 @@ class ControlState extends Equatable {
   /// rule: emptied at the single release-all point (B1) and on each release.
   final Set<PedalBindingKey> heldMomentary;
 
+  /// The external-MIDI mapping set (part 7), restored from the global
+  /// `controller.mappings` settings blob at boot and edited by the MIDI-learn
+  /// settings section.
+  ///
+  /// GLOBAL-ONLY (R19): no session carries a copy, because expression hardware
+  /// belongs to the rig rather than the song. Invalidation rule: same as the
+  /// pedal remap — only an explicit edit writes it, and a target that no
+  /// longer exists goes INERT rather than being dropped.
+  final ControllerBindingSet controllerBindings;
+
+  /// The MIDI-learn capture in progress, or `null` when nothing is listening.
+  /// Invalidation rule: cleared when the capture applies, is cancelled, or
+  /// times out — never by engine truth.
+  final ControllerLearn? controllerLearn;
+
   /// The remap actually in force: the session's when it has ANY bindings, the
   /// globals otherwise (A12). Derived, never stored — so the two copies can
   /// never disagree about which one applies.
@@ -140,6 +157,9 @@ class ControlState extends Equatable {
     PedalBindingSet? globalBindings,
     PedalBindingSet? sessionBindings,
     Set<PedalBindingKey>? heldMomentary,
+    ControllerBindingSet? controllerBindings,
+    ControllerLearn? controllerLearn,
+    bool clearControllerLearn = false,
   }) => ControlState(
     mode: mode ?? this.mode,
     defaultMode: defaultMode ?? this.defaultMode,
@@ -150,6 +170,12 @@ class ControlState extends Equatable {
     globalBindings: globalBindings ?? this.globalBindings,
     sessionBindings: sessionBindings ?? this.sessionBindings,
     heldMomentary: heldMomentary ?? this.heldMomentary,
+    controllerBindings: controllerBindings ?? this.controllerBindings,
+    // `clearControllerLearn` exists because a capture ENDING is a real edit:
+    // `??` alone could never write the null that "nothing is listening" is.
+    controllerLearn: clearControllerLearn
+        ? null
+        : controllerLearn ?? this.controllerLearn,
   );
 
   @override
@@ -163,5 +189,7 @@ class ControlState extends Equatable {
     globalBindings,
     sessionBindings,
     heldMomentary,
+    controllerBindings,
+    controllerLearn,
   ];
 }

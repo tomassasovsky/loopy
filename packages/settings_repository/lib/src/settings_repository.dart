@@ -386,6 +386,26 @@ class SettingsRepository {
   Future<void> savePedalBindings(String encoded) =>
       _store.setString(_pedalBindingsKey, encoded);
 
+  static const String _controllerMappingsKey = 'controller.mappings';
+
+  /// Loads the external-MIDI mapping set as its opaque encoded string, or
+  /// `null` when none was ever saved (external control drives nothing).
+  ///
+  /// Opaque here for the same reason the pedal remap is: the binding model
+  /// lives in `controller_repository` and its TARGETS are canonical-JSON
+  /// strings only the app can decode, so this package persists the blob
+  /// without knowing its shape.
+  ///
+  /// GLOBAL-ONLY in v1 (R19), unlike the pedal remap: expression hardware is
+  /// per-rig, not per-song, so no session carries a copy of this key and a
+  /// session stays portable across machines with different controllers.
+  Future<String?> loadControllerMappings() =>
+      _store.getString(_controllerMappingsKey);
+
+  /// Saves the external-MIDI mapping set as its [encoded] string.
+  Future<void> saveControllerMappings(String encoded) =>
+      _store.setString(_controllerMappingsKey, encoded);
+
   static const String _refreshHzKey = 'ui.refresh_hz';
 
   /// Loads the UI snapshot-poll rate in Hz. Defaults to `60` when unset.

@@ -108,6 +108,15 @@ void main() {
       pollInterval: Duration.zero,
     );
     addTearDown(pedal.close); // disposes pedalRepo (the lifecycle owner)
+    // The MIDI-learn section enumerates its targets from the live rig; an
+    // un-stubbed enumeration would fail the Audio tab's build.
+    when(() => repository.allMonitors()).thenAnswer((_) => const {});
+    when(() => repository.allLaneChains()).thenAnswer((_) => const {});
+    when(() => repository.allTrackChains()).thenAnswer((_) => const {});
+    when(() => repository.masterEffects).thenAnswer((_) => const []);
+    when(
+      () => repository.masterChainEnvelope(),
+    ).thenReturn(const FxChainEnvelope());
     refreshRate = RefreshRateCubit(repository: repository, settings: settings);
     quantize = QuantizeCubit(repository: repository, settings: settings);
     monitor = MonitorCubit(repository: repository, settings: settings);

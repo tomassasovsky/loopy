@@ -15,19 +15,25 @@
 ///   derived state cannot go stale.
 /// - `invariants.dart` is the executable spec, enforced by the sequence
 ///   fuzzer (test/fuzz/) and by debug asserts on every projection.
-/// - `binding/` is the optional pedal remap (part 6b): a pure-data binding
-///   set, the sealed FX target it points at, and the resolution against the
-///   live rig. It lives here — app-side, next to the one interpreter — so the
-///   pedal/controller repository packages carry bindings as opaque strings
-///   and gain no looper dependency, and no second control-surface interpreter
-///   can grow inside a repository.
+/// - `binding/` is the optional pedal remap (part 6b) and the external-MIDI
+///   mappings (part 7): pure-data binding sets, the sealed targets they point
+///   at — an `enabled` flag for a stomp, a normalized value for a sweep — and
+///   the resolution against the live rig. It lives here — app-side, next to
+///   the one interpreter — so the pedal/controller repository packages carry
+///   bindings as opaque strings and gain no looper dependency, and no second
+///   control-surface interpreter can grow inside a repository.
 ///
 /// Design rationale:
 /// docs/brainstorm/2026-07-04-control-state-robustness-brainstorm-doc.md.
 library;
 
+export 'binding/binding_labels.dart';
+export 'binding/control_value_resolver.dart';
+export 'binding/control_value_target.dart';
+export 'binding/controller_learn.dart';
 export 'binding/fx_binding_resolver.dart';
 export 'binding/fx_binding_target.dart';
+export 'binding/fx_chain_lookup.dart';
 export 'binding/pedal_binding.dart';
 export 'binding/pedal_binding_set.dart';
 export 'control_projection.dart';

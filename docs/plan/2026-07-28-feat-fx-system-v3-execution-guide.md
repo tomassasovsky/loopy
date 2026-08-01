@@ -30,10 +30,11 @@ issue: 351
 
 ## Status
 
-**Next up:** everything through the pedal-plate presentational extraction is
-merged (0, 1a, 1b, 2, 3a, 3b, 4a, 4b, 5a, 5b, 6a). **6b** (remap bindings +
-momentary) is built and in review. **7** (expression + external MIDI) unblocks
-once 6b lands — it reuses 6b's sealed target type and release-all rule.
+**Next up:** everything through the pedal remap is merged (0, 1a, 1b, 2, 3a,
+3b, 4a, 4b, 5a, 5b, 6a, 6b — 6b landed as #412). **7** (expression + external
+MIDI) is built and in review (#414). **8** (TRS jack hardware) unblocks once 7
+lands — it consumes part 7's trigger shapes over the existing cable, at the
+bench.
 
 [#410](https://github.com/tomassasovsky/loopy/pull/410) — the #403
 press/long-press gesture-helper collapse this guide called for before 6b —
@@ -88,8 +89,8 @@ Open items carried out of merged parts, neither blocking a new part:
 | 5a | protocol v3 wire + version discovery | **Fable · high** | `merge-gate` | — (#331 prereq) | merged (#399) |
 | 5b | FX interaction mode (app) | Opus · high | `merge-gate` (physical slice `blocked-verify`) | 5a, 3a, 1a | merged (#404) |
 | 6a | faceplate presentational extraction | Sonnet · medium | `auto` | — | merged (#408) |
-| 6b | remap bindings + momentary | Opus · high | `merge-gate` | 6a, 5b, 3a | in-review (#412) |
-| 7 | expression + external MIDI | Opus · high | `merge-gate` | 3a, 6b | pending |
+| 6b | remap bindings + momentary | Opus · high | `merge-gate` | 6a, 5b, 3a | merged (#412) |
+| 7 | expression + external MIDI | Opus · high | `merge-gate` | 3a, 6b | in-review (#414) |
 | 8 | TRS jack hardware (non-gating child) | Fable · high (at bench) | `blocked-verify` | 7 | pending |
 | 9 | hardening + export + soak | Opus · medium | `blocked-verify` | all | pending |
 

@@ -92,7 +92,15 @@ Future<void> runLoopy(
   // runs with no controller source. The waveform sub-window already returned
   // above, so it never opens MIDI.
   final midiSource = createNativeMidiSource();
-  final controllerRepository = ControllerRepository(sources: [?midiSource]);
+  final controllerRepository = ControllerRepository(
+    sources: [?midiSource],
+    // MIDI-learn never captures the Loopy pedal's own protocol traffic (B8):
+    // the pedal shares this input stream, so a stomp mid-capture would
+    // otherwise bind a footswitch the app already drives end to end. The
+    // predicate is stated against the real note/CC tables in the package that
+    // owns them.
+    learnIgnore: isPedalProtocolInput,
+  );
   // The bidirectional pedal reuses the MIDI source's single input capture and
   // opens its own MIDI output for LED feedback. The repository is wrapped in a
   // SimulatorPedalTransport so the on-screen faceplate is always available (it

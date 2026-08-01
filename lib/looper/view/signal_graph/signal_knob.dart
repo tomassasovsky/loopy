@@ -19,6 +19,7 @@ class SignalKnob extends StatelessWidget {
     required this.onChanged,
     required this.label,
     required this.color,
+    this.semanticLabel,
     this.max = 1,
     this.readoutBuilder,
     this.resetValue,
@@ -39,6 +40,11 @@ class SignalKnob extends StatelessWidget {
 
   /// The mono caption under the knob (e.g. `VOL`).
   final String label;
+
+  /// Overrides the accessible NAME, when the visible caption is too terse to
+  /// stand on its own out of context (e.g. a `LO` knob whose row a screen
+  /// reader reaches without the surrounding layout). Defaults to [label].
+  final String? semanticLabel;
 
   /// The lit accent colour of the indicator + glow.
   final Color color;

@@ -6,6 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:loopy/audio_setup/view/audio_device_picker.dart';
 import 'package:loopy/audio_setup/view/midi_device_picker.dart';
+import 'package:loopy/audio_setup/view/midi_learn_section.dart';
 import 'package:loopy/common/console_mode.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/cubit/quantize_cubit.dart';
@@ -102,6 +103,11 @@ class AudioSettingsSection extends StatelessWidget {
           const MidiDevicePicker(),
           const SizedBox(height: 28),
           const PedalSettingsSection(),
+          const SizedBox(height: 28),
+          // External MIDI mappings (part 7) sit under the MIDI input picker
+          // they listen through: the device chosen above is the one a learn
+          // captures from, and a row goes inert when it disconnects.
+          const MidiLearnSection(),
         ],
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.sampleRateGroup),

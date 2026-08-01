@@ -79,10 +79,16 @@ class ControllerMapping extends Equatable {
 
   /// Resolves [input] into a [ControllerEvent], or `null` when the input is not
   /// a press or has no mapping entry.
+  ///
+  /// Press-only by design: these are transport ACTIONS, which fire on an edge.
+  /// Continuous CC values reach the rig through the part 7 binding set
+  /// (`ControllerRepository.bindingEvents`), not through this mapping.
   ControllerEvent? resolve(RawControllerInput input) {
     if (!input.isPress) return null;
     for (final entry in entries) {
-      if (entry.trigger == input.trigger) {
+      // `matches`, not `==`: an omni entry (every built-in default) fires on
+      // any MIDI channel, while a channel-scoped one fires only on its own.
+      if (entry.trigger.matches(input)) {
         return ControllerEvent(action: entry.action, channel: entry.channel);
       }
     }

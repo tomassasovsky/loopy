@@ -96,28 +96,34 @@ class MidiControllerSource implements ControllerSource {
   /// Maps a MIDI status/data triple to a [RawControllerInput], or `null` when
   /// the message is not a Note On/Off or Control Change.
   ///
-  /// Channel (the status low nibble) is ignored — triggers are
-  /// channel-agnostic. A Note On with velocity 0 is the conventional Note Off,
-  /// so it maps to value 0 (a release, which the mapping treats as non-press).
+  /// Channel (the status low nibble) is CARRIED, not dropped: the action
+  /// mappings still key on the channel-agnostic `trigger`, while a learned
+  /// controller binding can scope itself to the channel it was captured on.
+  /// A Note On with velocity 0 is the conventional Note Off, so it maps to
+  /// value 0 (a release, which the mapping treats as non-press).
   static RawControllerInput? _parse(int status, int data1, int data2) {
+    final channel = status & 0x0F;
     switch (status & 0xF0) {
       case 0x90: // Note On (velocity 0 == Note Off)
         return RawControllerInput(
           kind: ControllerSourceKind.midiNote,
           id: data1,
           value: data2,
+          midiChannel: channel,
         );
       case 0x80: // Note Off
         return RawControllerInput(
           kind: ControllerSourceKind.midiNote,
           id: data1,
           value: 0,
+          midiChannel: channel,
         );
       case 0xB0: // Control Change
         return RawControllerInput(
           kind: ControllerSourceKind.midiCc,
           id: data1,
           value: data2,
+          midiChannel: channel,
         );
       default: // SysEx / real-time / aftertouch / pitch bend / program change
         return null;

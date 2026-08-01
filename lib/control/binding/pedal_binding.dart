@@ -1,28 +1,14 @@
+import 'package:controller_repository/controller_repository.dart';
 import 'package:equatable/equatable.dart';
 import 'package:loopy/control/binding/fx_binding_target.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 
-/// How a bound footswitch behaves while it is pressed.
-enum BindingBehavior {
-  /// Press flips the target's `enabled` flag and it STAYS flipped — the
-  /// stompbox reading, and what an unbound FX-mode track button already does.
-  toggle,
-
-  /// Press enables the target, release puts it back the way it was — the
-  /// "hold for the solo boost" reading. See [PedalBinding] for the
-  /// capture/restore contract.
-  momentary;
-
-  /// Maps a persisted [name] back to a behavior, defaulting to [toggle] —
-  /// the safe reading for an unknown value, since a momentary that never
-  /// releases is the failure mode worth avoiding.
-  static BindingBehavior fromName(String? name) {
-    for (final behavior in values) {
-      if (behavior.name == name) return behavior;
-    }
-    return toggle;
-  }
-}
+/// [BindingBehavior] — toggle vs momentary — is re-exported from
+/// `controller_repository`, where part 7 moved it so a discrete MIDI CC and a
+/// footswitch mean the SAME two things by the same names. Callers that import
+/// this library for `PedalBinding` keep getting it from here.
+export 'package:controller_repository/controller_repository.dart'
+    show BindingBehavior;
 
 /// Which control a binding is keyed to.
 ///

@@ -13,6 +13,7 @@ export 'src/pedal_button.dart';
 export 'src/pedal_codec.dart';
 export 'src/pedal_event.dart';
 export 'src/pedal_mode.dart';
+export 'src/pedal_protocol_traffic.dart';
 export 'src/pedal_repository.dart';
 export 'src/pedal_state_frame.dart';
 export 'src/pedal_transport.dart';
