@@ -166,6 +166,52 @@ void main() {
       expect(engine.laneCacheReads, isEmpty);
     });
 
+    test(
+      'a local edit reuses the last refresh instead of re-reading the engine',
+      () {
+        // _reproject() runs on every local edit — including each frame of a
+        // dragged FX knob. Reading telemetry there would put a drain plus a
+        // scheduler sweep PER LANE inside the gesture _reproject exists to
+        // keep responsive, so the projection must reuse the polled states.
+        final repo = buildRepo()..setCacheTelemetryEnabled(enabled: true);
+        addTearDown(repo.dispose);
+        repo.setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        );
+        engine.laneCacheReads.clear();
+
+        for (var i = 0; i < 10; i++) {
+          repo.setLaneEffectParam(
+            channel: 0,
+            lane: 0,
+            index: 0,
+            param: 0,
+            value: i / 10,
+          );
+        }
+
+        expect(engine.laneCacheReads, isEmpty);
+      },
+    );
+
+    test('a poll refreshes every lane exactly once', () {
+      final repo = buildRepo()..setCacheTelemetryEnabled(enabled: true);
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      engine.laneCacheReads.clear();
+
+      ticker.add(null);
+
+      // One tick, one read per lane — no duplicates from a projection that
+      // also polls.
+      return Future<void>.delayed(Duration.zero, () {
+        expect(engine.laneCacheReads, [(0, 0)]);
+      });
+    });
+
     test('setting the same value is a no-op', () {
       final repo = buildRepo();
       addTearDown(repo.dispose);

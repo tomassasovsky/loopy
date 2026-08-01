@@ -159,6 +159,30 @@ void main() {
     }
 
     testWidgets(
+      'the telemetry gate follows a restored preference that equals the '
+      'compile-time default',
+      (tester) async {
+        // The gate is seeded OFF and driven only by TracksCubit emissions, so
+        // the case where load() restores a value IDENTICAL to the initial
+        // state is the one that could silently never arrive — a fresh desktop
+        // install, i.e. the default. It works because bloc always delivers the
+        // first emit even when the state compares equal; this pins that,
+        // rather than leaving the default path resting on it untested.
+        await settings.saveShowTrackIndicators(value: true);
+        await pumpApp(tester, NoopWaveformWindowService());
+        expect(
+          tester
+              .element(find.byType(LooperPage))
+              .read<TracksCubit>()
+              .state
+              .showIndicators,
+          isTrue,
+        );
+        expect(repository.cacheTelemetryEnabled, isTrue);
+      },
+    );
+
+    testWidgets(
       'the indicator preference is what gates wet-cache telemetry polling',
       (tester) async {
         // The whole visibility story for the cache debug glyph (R27) lives
