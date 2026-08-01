@@ -65,12 +65,15 @@ class MidiLearnSection extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 10),
               child: _MappingRow(
                 binding: binding,
-                learn: learn?.replacing == binding ? learn : null,
+                // Matched by the mapping's KEY, not its value: the row stays
+                // editable while it listens, and a nudged knob must not make
+                // the listening state (and its Cancel) disappear.
+                learn: learn?.replacingKey == binding.key ? learn : null,
                 connected: connected,
               ),
             ),
         const SizedBox(height: 8),
-        _AddRow(learn: learn?.replacing == null ? learn : null),
+        _AddRow(learn: learn?.replacingKey == null ? learn : null),
       ],
     );
   }

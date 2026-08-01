@@ -12,7 +12,7 @@ class ControllerLearn extends Equatable {
   const ControllerLearn({
     required this.target,
     required this.continuous,
-    this.replacing,
+    this.replacingKey,
     this.captured,
   });
 
@@ -23,10 +23,15 @@ class ControllerLearn extends Equatable {
   /// discrete (threshold stomp).
   final bool continuous;
 
-  /// The existing binding being RE-learned, or `null` for a new mapping. Its
-  /// ranges are carried over so relearning a control does not silently reset
-  /// the travel the user dialed in.
-  final ControllerBinding? replacing;
+  /// The IDENTITY of the mapping being re-learned — its `(control, target)`
+  /// key — or `null` for a new mapping.
+  ///
+  /// A key, never the binding itself: the row stays editable while its capture
+  /// listens, so a value snapshot would stop matching the moment a knob moved.
+  /// Everything that has to find that row again — the listening indicator, the
+  /// already-mapped check, and the apply — resolves this key against the LIVE
+  /// set, which is also what carries the row's current ranges into the rebind.
+  final (MappingTrigger, String)? replacingKey;
 
   /// The control that was caught, once one has been — non-null only while the
   /// capture is waiting for the user to confirm replacing an existing mapping
@@ -41,10 +46,10 @@ class ControllerLearn extends Equatable {
   ControllerLearn withCaptured(MappingTrigger trigger) => ControllerLearn(
     target: target,
     continuous: continuous,
-    replacing: replacing,
+    replacingKey: replacingKey,
     captured: trigger,
   );
 
   @override
-  List<Object?> get props => [target, continuous, replacing, captured];
+  List<Object?> get props => [target, continuous, replacingKey, captured];
 }

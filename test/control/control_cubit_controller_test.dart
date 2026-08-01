@@ -704,6 +704,41 @@ void main() {
         },
       );
 
+      test(
+        'relearning a row its OWN control asks nothing, even after an edit',
+        () async {
+          final binding = ContinuousBinding(
+            trigger: expression,
+            target: volumeTarget.canonicalString(),
+          );
+          await use([binding]);
+
+          cubit.learnControllerBinding(
+            target: binding.target,
+            replacing: binding,
+          );
+          // The row's knobs stay live while it listens.
+          await cubit.updateControllerBinding(
+            binding,
+            binding.copyWith(lo: 0.4),
+          );
+          // Move the control this very row is already bound to.
+          source.cc(11, 90);
+          await settle();
+
+          expect(
+            cubit.state.controllerLearn,
+            isNull,
+            reason: 'a row cannot conflict with itself',
+          );
+          final bound =
+              cubit.state.controllerBindings.bindings.single
+                  as ContinuousBinding;
+          expect(bound.trigger, expression);
+          expect(bound.lo, 0.4);
+        },
+      );
+
       test('cancelling a capture leaves the mappings untouched', () async {
         cubit
           ..learnControllerBinding(target: volumeTarget.canonicalString())

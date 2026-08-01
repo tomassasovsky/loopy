@@ -335,6 +335,32 @@ void main() {
       expect(control.state.controllerLearn, isNull);
     });
 
+    testWidgets('editing a row while it listens keeps the listening state', (
+      tester,
+    ) async {
+      final binding = ContinuousBinding(
+        trigger: cc,
+        target: volume.canonicalString(),
+      );
+      await pump(tester, bindings: [binding]);
+
+      await tapVisible(tester, find.byKey(const Key('midiLearn_learn')));
+      expect(find.byKey(const Key('midiLearn_status')), findsOneWidget);
+
+      // A knob nudge mid-capture must not take the "listening…" row — and its
+      // only Cancel button — away while the repository is still swallowing
+      // every controller event.
+      await control.updateControllerBinding(binding, binding.copyWith(lo: 0.4));
+      await tester.pumpAndSettle();
+
+      expect(control.state.controllerLearn, isNotNull);
+      expect(find.byKey(const Key('midiLearn_status')), findsOneWidget);
+      expect(find.byKey(const Key('midiLearn_cancel')), findsOneWidget);
+
+      await tapVisible(tester, find.byKey(const Key('midiLearn_cancel')));
+      expect(control.state.controllerLearn, isNull);
+    });
+
     testWidgets('a capture on a mapped control asks before replacing', (
       tester,
     ) async {

@@ -1270,7 +1270,7 @@ class ControlCubit extends Cubit<ControlState> {
             DiscreteBinding() => false,
             null => continuous,
           },
-          replacing: replacing,
+          replacingKey: replacing?.key,
         ),
       ),
     );
@@ -1304,6 +1304,15 @@ class ControlCubit extends Cubit<ControlState> {
     emit(state.copyWith(clearControllerLearn: true));
   }
 
+  /// The mapping [key] names in the LIVE set, or `null` when the row it
+  /// pointed at has since been removed.
+  ControllerBinding? _liveBinding((MappingTrigger, String)? key) {
+    if (key == null) return null;
+    return state.controllerBindings.bindings
+        .where((binding) => binding.key == key)
+        .firstOrNull;
+  }
+
   void _onLearnCaptured(int generation, RawControllerInput? input) {
     // A superseded or cancelled capture completes with null too, and its
     // callback must not touch the capture that replaced it — nor cancel the
@@ -1320,9 +1329,12 @@ class ControlCubit extends Cubit<ControlState> {
     // The CHANNEL-scoped identity: the same CC number on two channels is two
     // controls, so the capture records which one it heard (B8).
     final trigger = input.channelTrigger;
+    // Exempt the row being relearned as it stands NOW: against a stale value,
+    // re-teaching a row the control it already has would read as a conflict
+    // with itself.
     if (state.controllerBindings.isTriggerBound(
       trigger,
-      except: learn.replacing,
+      except: _liveBinding(learn.replacingKey),
     )) {
       _log('midi learn caught an already-mapped control: $trigger');
       emit(state.copyWith(controllerLearn: learn.withCaptured(trigger)));
@@ -1336,20 +1348,14 @@ class ControlCubit extends Cubit<ControlState> {
     MappingTrigger trigger, {
     required bool replaceExisting,
   }) async {
-    // Re-resolve the row being relearned from the LIVE set: its knobs and its
-    // Remove button stay usable while a capture listens, so the binding the
-    // capture remembers may have been edited (a different value under the same
-    // key) or deleted outright. Matching on the key and rebuilding from what is
-    // there now is what keeps a relearn from resurrecting a removed mapping —
-    // `replace` would silently fall back to adding one — or from writing back
-    // the ranges the user just dialed away.
-    final remembered = learn.replacing;
-    final replacing = remembered == null
-        ? null
-        : state.controllerBindings.bindings
-              .where((b) => b.key == remembered.key)
-              .firstOrNull;
-    if (remembered != null && replacing == null) {
+    // Resolve the row being relearned from the LIVE set: its knobs and its
+    // Remove button stay usable while a capture listens, so it may have been
+    // edited or deleted outright since the capture started. Rebuilding from
+    // what is there now is what keeps a relearn from resurrecting a removed
+    // mapping — `replace` would silently fall back to adding one — or from
+    // writing back the ranges the user just dialed away.
+    final replacing = _liveBinding(learn.replacingKey);
+    if (learn.replacingKey != null && replacing == null) {
       _log('midi learn dropped: the row it was relearning is gone');
       emit(state.copyWith(clearControllerLearn: true));
       return;
