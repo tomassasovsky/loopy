@@ -240,6 +240,183 @@ void main() {
     });
   });
 
+  group('console auto-detect', () {
+    const pedal = MidiDevice(id: 'id-p', name: 'VAMP Loopstation MIDI 1');
+    const otherPedal = MidiDevice(id: 'id-p2', name: 'VAMP Loopstation MIDI 2');
+    const productName = 'VAMP Loopstation';
+
+    // A repository with auto-detect on and the hotplug timer disabled.
+    MidiDeviceRepository buildAuto() => MidiDeviceRepository(
+      source: source,
+      settings: settings,
+      pollInterval: Duration.zero,
+      autoBindProductName: productName,
+    );
+
+    Future<MidiDeviceRepository> hydratedAuto() async {
+      final repository = buildAuto();
+      await pumpEventQueue();
+      return repository;
+    }
+
+    test('adopts and opens the matching device with nothing saved', () async {
+      enumerated = const [dev1, pedal];
+
+      final repository = await hydratedAuto();
+      addTearDown(repository.dispose);
+
+      expect(repository.connection.selectedId, 'id-p');
+      expect(repository.connection.selectedName, 'VAMP Loopstation MIDI 1');
+      expect(repository.connection.status, MidiConnectionStatus.connected);
+      verify(() => source.open('id-p')).called(1);
+    });
+
+    test('binds nothing when no device matches', () async {
+      enumerated = const [dev1, dev2];
+
+      final repository = await hydratedAuto();
+      addTearDown(repository.dispose);
+
+      expect(repository.connection.hasSelection, isFalse);
+      expect(repository.connection.status, MidiConnectionStatus.none);
+      verifyNever(() => source.open(any()));
+    });
+
+    test('never adopts a device when auto-detect is off (desktop)', () async {
+      enumerated = const [pedal];
+
+      final repository = await hydrated();
+      addTearDown(repository.dispose);
+
+      expect(repository.connection.hasSelection, isFalse);
+      verifyNever(() => source.open(any()));
+    });
+
+    test('adopts the first match when several devices match', () async {
+      enumerated = const [pedal, otherPedal];
+
+      final repository = await hydratedAuto();
+      addTearDown(repository.dispose);
+
+      expect(repository.connection.selectedId, 'id-p');
+    });
+
+    test('adopts the pedal when it appears after launch', () async {
+      enumerated = const [dev1];
+      final repository = await hydratedAuto();
+      addTearDown(repository.dispose);
+      expect(repository.connection.hasSelection, isFalse);
+
+      enumerated = const [dev1, pedal]; // plugged in
+      repository.refresh();
+
+      expect(repository.connection.selectedId, 'id-p');
+      expect(repository.connection.status, MidiConnectionStatus.connected);
+    });
+
+    test('a saved selection outranks auto-detect, even when absent', () async {
+      await settings.saveMidiDevice(id: 'id-9', name: 'Ghost');
+      enumerated = const [pedal]; // the pedal is right there
+
+      final repository = await hydratedAuto();
+      addTearDown(repository.dispose);
+
+      expect(repository.connection.selectedId, 'id-9');
+      expect(repository.connection.status, MidiConnectionStatus.deviceGone);
+      verifyNever(() => source.open(any()));
+    });
+
+    test('a user pick outranks auto-detect and survives a vanish', () async {
+      enumerated = const [dev1, pedal];
+      final repository = await hydratedAuto();
+      addTearDown(repository.dispose);
+
+      await repository.select('id-1');
+      enumerated = const [pedal]; // the picked device unplugs
+      repository.refresh();
+
+      // The pin stays on the user's device rather than jumping to the pedal.
+      expect(repository.connection.selectedId, 'id-1');
+      expect(repository.connection.status, MidiConnectionStatus.deviceGone);
+    });
+
+    test('re-resolves an auto-bound pin whose id changed on replug', () async {
+      // ALSA renumbers clients across a replug, so waiting for the old id
+      // would leave a console with no picker stuck on deviceGone forever.
+      enumerated = const [pedal];
+      final repository = await hydratedAuto();
+      addTearDown(repository.dispose);
+      expect(repository.connection.selectedId, 'id-p');
+
+      const renumbered = MidiDevice(
+        id: 'id-p-renumbered',
+        name: 'VAMP Loopstation MIDI 1',
+      );
+      enumerated = const [renumbered];
+      repository.refresh();
+
+      expect(repository.connection.selectedId, 'id-p-renumbered');
+      expect(repository.connection.status, MidiConnectionStatus.connected);
+      verify(() => source.open('id-p-renumbered')).called(1);
+    });
+
+    test(
+      're-pinning across an id change raises no hotplug transition',
+      () async {
+        enumerated = const [pedal];
+        final repository = await hydratedAuto();
+        addTearDown(repository.dispose);
+
+        const renumbered = MidiDevice(
+          id: 'id-p-renumbered',
+          name: 'VAMP Loopstation MIDI 1',
+        );
+        enumerated = const [renumbered];
+        repository.refresh();
+
+        // The device was never actually lost, so announcing "restored" (or
+        // "lost") would be a lie to the UI.
+        expect(repository.connection.connectivity, MidiConnectivity.none);
+      },
+    );
+
+    test('keeps an auto-bound pin that is still present', () async {
+      enumerated = const [pedal, otherPedal];
+      final repository = await hydratedAuto();
+      addTearDown(repository.dispose);
+      expect(repository.connection.selectedId, 'id-p');
+
+      repository.refresh();
+
+      expect(repository.connection.selectedId, 'id-p');
+      // One open at adopt time; the reconcile must not re-open every tick.
+      verify(() => source.open('id-p')).called(1);
+    });
+
+    test('selecting None is not undone by the next poll', () async {
+      enumerated = const [pedal];
+      final repository = await hydratedAuto();
+      addTearDown(repository.dispose);
+      expect(repository.connection.selectedId, 'id-p');
+
+      await repository.selectNone();
+      repository.refresh();
+
+      expect(repository.connection.hasSelection, isFalse);
+      expect(repository.connection.status, MidiConnectionStatus.none);
+    });
+
+    test('an auto-bound pin is not persisted', () async {
+      enumerated = const [pedal];
+      final repository = await hydratedAuto();
+      addTearDown(repository.dispose);
+      expect(repository.connection.selectedId, 'id-p');
+
+      // Re-deriving every launch is what keeps a renumbered id from sticking.
+      expect(await settings.loadMidiDevice(), isNull);
+    });
+  });
+
   group('hotplug', () {
     test('losing the connected device marks it gone and raises lost', () async {
       enumerated = const [dev1];

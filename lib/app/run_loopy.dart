@@ -6,6 +6,7 @@ import 'package:loopy/app/audio_bootstrap.dart';
 import 'package:loopy/app/monitor_migration.dart';
 import 'package:loopy/app/view/app.dart';
 import 'package:loopy/bootstrap.dart';
+import 'package:loopy/common/pedal_device.dart';
 import 'package:loopy/session_directory.dart';
 import 'package:loopy/update/update_backend.dart';
 import 'package:loopy/visualizer/visualizer.dart';
@@ -119,6 +120,11 @@ Future<void> runLoopy(
   final midiDeviceRepository = MidiDeviceRepository(
     source: midiSource,
     settings: settings,
+    // Redundant only on a desktop analysis run: the constant is null unless
+    // LOOPY_CONSOLE is defined, and dropping it would disable console
+    // auto-detect entirely.
+    // ignore: avoid_redundant_argument_values
+    autoBindProductName: kPedalAutoBindProductName,
   );
 
   // One-time courtesy migration from the removed global passthrough monitor to
