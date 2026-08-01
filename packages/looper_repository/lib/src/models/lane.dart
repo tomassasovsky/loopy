@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
+import 'package:loopy_engine/loopy_engine.dart' show LaneCacheState;
 
 /// A single recordable lane within a `Track`.
 ///
@@ -22,6 +23,7 @@ class Lane extends Equatable {
     this.chainEnabled = true,
     this.inheritedFrom = const [],
     this.inputChainDiverges = false,
+    this.cacheState,
   });
 
   /// Hardware input channel this lane records (`-1` = none).
@@ -61,6 +63,16 @@ class Lane extends Equatable {
   /// "input chain no longer matches this take" overdub hint.
   final bool inputChainDiverges;
 
+  /// The lane's Loop-stage wet-cache state, or `null` when nobody is looking.
+  ///
+  /// Debug telemetry only (R27) — it says what the background renderer is
+  /// doing, never anything about how the lane sounds ("when in doubt, play
+  /// live"). Reading it from the engine costs a drain + scheduler pass per
+  /// lane, so `LooperRepository.cacheTelemetryEnabled` gates it: `null` means
+  /// telemetry is off and this lane was never polled, which is deliberately
+  /// distinct from [LaneCacheState.live].
+  final LaneCacheState? cacheState;
+
   /// Whether the lane holds recorded audio.
   bool get hasContent => lengthFrames > 0;
 
@@ -81,6 +93,7 @@ class Lane extends Equatable {
     chainEnabled,
     inheritedFrom,
     inputChainDiverges,
+    cacheState,
   ];
 }
 

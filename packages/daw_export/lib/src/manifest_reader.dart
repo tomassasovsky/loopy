@@ -25,6 +25,34 @@ import 'package:daw_export/src/manifest_json.dart';
 /// today's wet-preferred, no-device-chain behavior if the dry stem is
 /// unexpectedly missing, never risking a silent double-application of
 /// effects.
+///
+/// ## The four FX stages, and which one a `.als` can carry (FX v3, R20)
+///
+/// A capture records all four v3 stages — Input (`monitors[]`), Loop
+/// (`tracks[].lanes[].effects`), Track (`trackChains[]`) and Master
+/// (`masterEffects`) — but only the **Loop** stage is ever rendered into
+/// audio: `perf_render`'s wet pass applies the lane chain and nothing else,
+/// so `stems/dry/` is dry of every stage and `stems/wet/` carries the Loop
+/// chain alone. The bus stages live in the manifest and are **never baked
+/// into a stem** — that is the pinned decision, not an omission, and it is
+/// what keeps a stem honest as a per-stage, dry-of-downstream source.
+///
+/// This reader therefore keeps resolving exactly one device chain per
+/// channel, from the Loop stage, because that is the stage whose sound the
+/// arrangement clip is missing. The Track and Master stages are reported
+/// verbatim by `fx_chains.dart` in `fx-chains.txt` instead; a `.als` has no
+/// place to put them today (`als_builder.dart` emits no main-track device
+/// chain at all), so folding them into a track's device chain here would
+/// misattribute a bus effect to one track. That gap is deliberate and
+/// documented, not silently papered over.
+///
+/// Per-chain and per-slot bypass are honored throughout: a lane whose
+/// `chainEnabled` is `false` contributes **no** audible effects to
+/// resolution, exactly as a lane with no chain at all does, and
+/// [resolveDeviceChain] drops individual entries whose `enabled` bit is
+/// `false`. Both flags are written only when disabled, so a legacy
+/// (pre-FX-v3) manifest — which had no way to bypass anything — reads as
+/// fully engaged with no version `switch` needed.
 abstract final class DawManifestReader {
   /// Reads `<captureDir>/performance.json` and returns the [DawProject] it
   /// describes, or `null` if the manifest is missing/unreadable/corrupt (a
@@ -93,6 +121,20 @@ abstract final class DawManifestReader {
     // it defaults to an empty chain below — the same honest "nothing to
     // report" default `resolveDeviceChain` already uses for a lane with an
     // arm-time entry but no `effects` key.
+    //
+    // A lane whose whole chain was bypassed at arm (`chainEnabled: false`,
+    // R15) collapses to that same empty chain: the wet stem it was rendered
+    // into is bit-exact passthrough, so emitting its entries as live Ableton
+    // devices would add effects the performance never had. Dropping them
+    // here rather than inside resolveDeviceChain keeps that function about
+    // one lane's ENTRIES, and puts a bypassed lane on exactly the same
+    // footing as a lane that never had a chain — they agree, as they should,
+    // since neither contributes anything audible.
+    //
+    // A lane whose chain is ENGAGED still disagrees with one carrying the
+    // same entries bypassed, and that mixedLaneChains fallback is correct:
+    // those two lanes genuinely sound different, and an Ableton track has
+    // only one device chain with which to represent both.
     final effectsByChannel = <int, Map<int, List<Map<String, dynamic>>>>{};
     for (final t in armTracks) {
       final channel = (t['channel'] as num?)?.toInt();
@@ -102,10 +144,9 @@ abstract final class DawManifestReader {
         final laneJson = lane as Map<String, dynamic>;
         final laneIndex = (laneJson['lane'] as num?)?.toInt();
         if (laneIndex == null) continue;
-        final effects = laneJson['effects'] as List<dynamic>?;
-        laneMap[laneIndex] = effects == null
-            ? const []
-            : [for (final e in effects) e as Map<String, dynamic>];
+        laneMap[laneIndex] = chainEnabledOf(laneJson)
+            ? effectsOf(laneJson)
+            : const [];
       }
     }
 

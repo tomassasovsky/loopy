@@ -10,6 +10,7 @@ import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/tracks_cubit.dart';
 import 'package:loopy/looper/view/fx_editor/fx_dock.dart';
 import 'package:loopy/looper/view/fx_editor/fx_scope.dart';
+import 'package:loopy/looper/view/signal_graph/lane_cache_glyph.dart';
 import 'package:loopy/looper/view/signal_graph/signal_fx_chrome.dart';
 import 'package:loopy/looper/view/signal_graph/signal_fx_summary.dart';
 import 'package:loopy/looper/view/signal_graph/signal_knob.dart';

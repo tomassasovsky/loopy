@@ -44,6 +44,19 @@ Repo: https://github.com/tomassasovsky/loopy · branch `master`.
   but the committed bindings are canonical `dart format` (tall) style. Without
   it, every regen rewrites the whole file and buries the real diff. With it,
   regens are field-scoped regardless of your local SDK's formatter version.
+- **Pedal firmware contract + protocol-copy drift gate** — required whenever
+  anything under `firmware/`, `hardware/firmware/`, or the pedal codec changes:
+  ```sh
+  bash firmware/test/run_tests.sh
+  ```
+- **`dart analyze` must come back clean**, and formatting is automatic: a
+  PostToolUse hook runs `dart format` on every edited `.dart` file, so never
+  hand-format or commit format-only churn.
+- **Lint gaps inside a worktree:** under `.claude/worktrees/*`, cspell and the
+  bloc lint check ZERO files and still exit 0 (the path is gitignored), and
+  `dart analyze` does not cover bloc_lint rules at all. A bloc-rule violation
+  there passes locally and fails in CI — check the CI job, not just the local
+  run.
 - **macOS app run/build:** flavor schemes required.
   `flutter build macos --debug --flavor development -t lib/main_development.dart`
   Run: `flutter run -d macos --flavor development -t lib/main_development.dart`
@@ -96,10 +109,49 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
 - Lane buffer pools + undo/redo stacks are owned by the **control thread** (sole
   writer of each lane's atomic `a_live`). The **audio thread only reads
   `lane.pool[a_live]`** — no allocation/locks/stack-access on the callback.
-- **Effects are per-lane** (one **stageless**, non-destructive chain on each
-  lane's own `fx` state — the pre/post `stage` and the per-lane `mon_fx` are
-  gone): `le_engine_set_lane_fx(channel,lane,index,type)` / `…_fx_count` /
-  `…_fx_param`. Track-addressed FX setters map to **lane 0** for back-compat.
+- **FX are FOUR STAGES, in signal order** (FX v3 — supersedes the earlier
+  "effects are per-lane, stageless" model, which knew only two of them):
+
+  | Stage | Where it sits | Setter family |
+  |---|---|---|
+  | **Input** | one chain per hardware input, heard live, never recorded | `le_engine_set_monitor_input_fx*` |
+  | **Loop** | one chain per lane, on that lane's playback | `le_engine_set_lane_fx*` |
+  | **Track** | one chain per track's stereo bus, downstream of its lanes | `le_engine_set_track_fx*` |
+  | **Master** | one insert on the master bus, last thing before output | `le_engine_set_master_fx*` |
+
+  Track-addressed *lane* setters still map to **lane 0** for back-compat; the
+  Track-stage setters above are a different family and address the bus, not
+  lane 0. Every stage is non-destructive.
+- **Capture is always DRY.** A recording never bakes in any stage — not even
+  the Input chain it was being monitored through. What a lane keeps instead is
+  a **by-value copy** of that input's chain, taken at record time, with
+  provenance recorded (`Lane.inheritedFrom`): it sounds the same the moment it
+  lands, but it is a copy, not a live link, so editing the input afterwards
+  never rewrites the take. An overdub onto an existing lane **never
+  re-inherits** — the take's chain is already the take's own.
+- **Bypass is universal, at two levels, everywhere.** Every stage has a
+  per-chain flag and every slot its own bit; the effective bit is
+  `chain && slot`. A bypassed slot is **bit-exact passthrough**, not a
+  zero-mix, and a flip crossfades over ~5 ms (`LE_FX_ENABLE_RAMP_MS`) so
+  stomping mid-performance never clicks. Bypass drops no tail on the way out.
+- **The Loop stage auto-caches, and the cache is invisible.** A background
+  worker renders a lane's whole loop offline once its chain has been stable
+  for `LE_CACHE_SETTLE_MS`; the audio thread then plays that at zero FX CPU.
+  ANY change to the lane's cache key — a param edit, an enable flip, a volume
+  move, a content revision bump — drops straight back to live processing.
+  **"When in doubt, play live"**: nothing about how a lane sounds can be
+  inferred from whether it is cached, and the only UI surface the cache has is
+  a per-lane debug glyph behind the track-indicator preference. Only the Loop
+  stage caches — plugin-bearing chains never do (an offline render would pass
+  a hosted plugin dry).
+- **The pedal has an FX mode.** Alongside record and mute, the footswitch
+  mode cycle reaches FX, where each switch toggles a bound chain or slot
+  (`lib/control/binding/`). Bindings can be momentary (held = engaged,
+  released = restored) and can be overridden per session. Undo stays
+  deliberately inert in FX mode until #219 defines what a stomp undo means.
+- **Any of it can be driven by external MIDI.** Continuous CCs map onto a
+  parameter range (inverted ranges allowed) and discrete CCs onto a threshold
+  with hysteresis; both resolve to the same typed targets the pedal uses.
 - **Live monitoring is per hardware input** (`le_monitor_input monitors[LE_MAX_INPUTS]`,
   one slot per input, ≤ `LE_MAX_INPUTS`=8): each enabled input is summed live
   through **its own** stageless chain into its output mask, **never recorded**,
@@ -559,6 +611,26 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
 - **Keyboard map lives in the Big Picture `Focus`** — plain keys are consumed
   (no macOS beep); number keys map to the visible bank, auto-switching banks when
   a digit targets the other four.
+- **FX v3: four stages, dry capture, universal bypass, invisible cache** — see
+  the engine-model section above for the shape. The parts that are decisions,
+  not implementation details:
+  - **Capture is dry and inheritance is by value.** A take owns a *copy* of the
+    input chain it was recorded through, never a reference; an overdub never
+    re-inherits. Provenance is a marker, not a link.
+  - **The wet cache never changes what you hear.** It is a CPU optimization
+    with a "when in doubt, play live" fallback on any key change, and it caches
+    the Loop stage only. A bypass toggle does not bump a track's audio
+    revision, so stomping off and back on stays cache-hot.
+  - **Track and Master chains live in the export MANIFEST, never in a stem.**
+    `perf_render`'s wet pass applies the Loop chain and nothing else, so every
+    stem stays per-stage dry-of-downstream. `fx-chains.txt` is where a human
+    reads the bus stages back.
+  - **Track/Master FX setters have no event-log replay.** They are
+    manifest-only by the same decision; only the Loop-stage enable events
+    replay offline. See the verdict table in
+    `docs/design/performance-event-log-format.md`.
+  - **Undo is inert in FX mode** until #219 defines a stomp's undo
+    granularity. That is a deliberate hold, not an oversight.
 
 ---
 

@@ -38,6 +38,7 @@ export 'src/engine_snapshot.dart'
         kMaxInputs,
         kMaxLanes;
 export 'src/fx_fingerprint.dart' show FxFingerprint;
+export 'src/lane_cache.dart' show LaneCacheState;
 export 'src/loopback_info.dart' show LoopbackInfo, LoopbackKind;
 export 'src/mock_audio_engine.dart' show MockAudioEngine, MockPluginSlotHandle;
 export 'src/native_audio_engine.dart'

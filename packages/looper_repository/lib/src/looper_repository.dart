@@ -389,6 +389,41 @@ class LooperRepository {
     }
   }
 
+  /// Whether each poll also reads every lane's wet-cache state into
+  /// [Lane.cacheState] (R27 debug telemetry).
+  ///
+  /// Starts off, and stays off until a caller turns it on. While off, every
+  /// lane reports a `null` cache state — honestly "not observed" rather than
+  /// "live".
+  ///
+  /// **This is not free.** Reading one lane's cache state drains the engine's
+  /// event rings and runs a full scheduler pass, so an 8-track rig adds
+  /// 16-32 extra control-thread sweeps per poll on top of the one
+  /// `snapshot()` already does. The app ties it to the track-indicator
+  /// preference, which **defaults on for desktop builds** and off for
+  /// console/kiosk ones — so a desktop session pays this by default, and the
+  /// appliance (where the xrun budget is tight) does not. Scoping it further,
+  /// to whether the Signal surface is actually mounted, is issue #418.
+  bool get cacheTelemetryEnabled => _cacheTelemetryEnabled;
+  bool _cacheTelemetryEnabled = false;
+
+  /// Turns per-lane wet-cache telemetry on or off (see [cacheTelemetryEnabled])
+  /// and republishes immediately, so the glyph appears or clears on the toggle
+  /// rather than at the next tick.
+  ///
+  /// **Single-owner:** this is a plain last-writer-wins switch, not a
+  /// refcounted resource. Exactly one surface is expected to drive it (today
+  /// the app's track-indicator preference, wired in `app.dart`); a second
+  /// independent caller would fight the first. Give it an ownership model
+  /// before adding one.
+  void setCacheTelemetryEnabled({required bool enabled}) {
+    if (enabled == _cacheTelemetryEnabled) return;
+    _cacheTelemetryEnabled = enabled;
+    // _reproject, not _poll: this is an out-of-band republish like every other
+    // local edit, and it must not run the periodic poll's device supervision.
+    _reproject();
+  }
+
   void _poll() {
     final snapshot = _engine.snapshot();
     _superviseDevice(devicePresent: snapshot.devicePresent);
@@ -572,6 +607,9 @@ class LooperRepository {
                 chainEnabled: laneChainEnabled(i, l),
                 inheritedFrom: _laneChainMeta[(i, l)] ?? const [],
                 inputChainDiverges: laneChainDivergesFromInput(i, l),
+                cacheState: _cacheTelemetryEnabled
+                    ? _engine.laneCacheState(channel: i, lane: l)
+                    : null,
               ),
           ],
           effects: _trackEffects[i] ?? const [],

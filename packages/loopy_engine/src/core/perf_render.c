@@ -907,10 +907,12 @@ static float le_pr_bits_to_f32(uint32_t bits) {
 /* One channel's lane-0 effects chain, mirroring `le_lane`'s
  * a_fx_count/a_fx_type/a_fx_param fields — plus the two enable-flag levels
  * (a_fx_enabled / a_fx_chain_enabled) — closely enough to drive
- * fx_apply_chain directly. The enable bits seed all-1 at arm: the manifest
- * carries no arm-time enabled state until part 3, so a pre-arm disable is
- * invisible to this render (matching the fixed golden-parity protocol, which
- * arms from a default-enabled engine). */
+ * fx_apply_chain directly. Both levels are SEEDED FROM THE ARM SNAPSHOT
+ * (R3): the manifest carries each entry's `enabled` bit and each lane's
+ * `chainEnabled` flag, so a slot bypassed before arm renders bypassed from
+ * frame 0 rather than being assumed audible. Absent means enabled — the
+ * writer omits both flags at their default, and a legacy (pre-FX-v3)
+ * manifest had no way to bypass anything at all. */
 typedef struct le_pr_fx_chain {
   int32_t count;
   int32_t type[LE_FX_MAX];
@@ -933,11 +935,19 @@ static void le_pr_fx_chain_init_empty(le_pr_fx_chain* c) {
  * entry, or NULL for a channel with no arm-time presence — starts empty,
  * exactly like a freshly recorded track's live chain before any FX command
  * has ever touched it). A malformed manifest entry with more than LE_FX_MAX
- * effects is truncated rather than overrunning the fixed arrays. */
+ * effects is truncated rather than overrunning the fixed arrays.
+ *
+ * Both enable levels come from the snapshot too (R3): the lane's
+ * `chainEnabled` flag and each entry's own `enabled` bit, each defaulting to
+ * enabled when absent — which is both the writer's omit-at-default rule and
+ * the only sane reading of a legacy manifest, where nothing could be
+ * bypassed. Without this the render would assume every arm-time chain was
+ * audible and silently add effects the performance never had. */
 static void le_pr_fx_chain_init_from_lane(le_pr_fx_chain* c,
                                           const le_json_value* lane) {
   le_pr_fx_chain_init_empty(c);
   if (lane == NULL) return;
+  c->chain_enabled = le_json_bool(le_json_get(lane, "chainEnabled"), 1);
   const le_json_value* effects = le_json_get(lane, "effects");
   const int n = le_json_length(effects);
   c->count = n > LE_FX_MAX ? LE_FX_MAX : n;
@@ -945,6 +955,7 @@ static void le_pr_fx_chain_init_from_lane(le_pr_fx_chain* c,
     const le_json_value* entry = le_json_at(effects, i);
     c->type[i] =
         (int32_t)le_json_number(le_json_get(entry, "type"), LE_FX_NONE);
+    c->enabled[i] = le_json_bool(le_json_get(entry, "enabled"), 1);
     const le_json_value* params = le_json_get(entry, "params");
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       c->params[i][p] = (float)le_json_number(le_json_at(params, p), 0.0);
@@ -996,15 +1007,32 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
   int muted = le_json_bool(
       arm_track != NULL ? le_json_get(arm_track, "muted") : NULL, 0);
 
+  /* Per-slot EFFECTIVE enable bits (D-EFFBITS), exactly as snapshot_lane_fx
+   * computes them live. Seeded from the arm snapshot here, then recomputed
+   * only when a replayed log entry lands — the bits cannot change between
+   * log entries. */
+  int32_t effective[LE_FX_MAX];
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    effective[s] = chain.chain_enabled && chain.enabled[s];
+  }
+
   le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
   if (fx == NULL) {
     *out_failed = 1;
     return NULL;
   }
-  /* Seed the enable-crossfade runtime SETTLED at enabled, mirroring
-   * le_lane_reset — a calloc'd zero state would fade the whole chain in over
-   * the ramp window at frame 0 and break golden parity. */
-  for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
+  /* Seed the enable-crossfade runtime SETTLED at its arm-time position,
+   * mirroring le_lane_reset — a calloc'd zero state would fade the whole
+   * chain in over the ramp window at frame 0 and break golden parity. A slot
+   * bypassed at arm settles at BYPASS for the same reason in reverse: it
+   * must render dry from frame 0, not fade out of a wet it never had. */
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    if (effective[s]) {
+      le_fx_enable_seed_settled(fx, s);
+    } else {
+      le_fx_enable_force_bypass(fx, s);
+    }
+  }
   /* A prepare failure (OOM on a delay ring / octaver's phase-vocoder heap)
    * is NOT let through as a silent dry-passthrough degradation: fx_delay/
    * fx_octaver already handle a NULL buffer gracefully at the DSP level
@@ -1027,14 +1055,6 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
     free(fx);
     *out_failed = 1;
     return NULL;
-  }
-
-  /* Per-slot EFFECTIVE enable bits (D-EFFBITS), exactly as snapshot_lane_fx
-   * computes them live. Recomputed only when a replayed log entry lands —
-   * the bits cannot change between log entries. */
-  int32_t effective[LE_FX_MAX];
-  for (int s = 0; s < LE_FX_MAX; ++s) {
-    effective[s] = chain.chain_enabled && chain.enabled[s];
   }
 
   int log_index = 0;

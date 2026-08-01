@@ -1,0 +1,114 @@
+{
+  "slug": "perf-20260728-120000",
+  "sample_rate": 48000,
+  "channel_layout": { "master_channels": 2, "captured_inputs": [0] },
+  "capture_frames": 48000,
+  "overrun_count": 0,
+  "overrun_gaps": [],
+  "layers": [],
+  "armSnapshot": {
+    "clockFrame": 0,
+    "masterLenFrames": 48000,
+    "masterGain": 1.0,
+    "limiterOn": true,
+    "limiterCeiling": 0.99,
+    "latencyOffsetFrames": 0,
+    "fxStagesVersion": 1,
+    "tracks": [
+      {
+        "channel": 0,
+        "state": "playing",
+        "volume": 1.0,
+        "muted": false,
+        "multiple": 1,
+        "lanes": [
+          {
+            "lane": 0,
+            "lenFrames": 48000,
+            "deferred": false,
+            "pcmRef": "loops/track0-lane0.wav",
+            "effects": [
+              { "type": 1, "params": [0.5, 0.8, 0.0, 0.0], "slotId": "a-1" },
+              {
+                "type": 7,
+                "params": [0.5, 0.5, 0.35, 0.0],
+                "slotId": "a-2",
+                "enabled": false
+              }
+            ]
+          },
+          {
+            "lane": 1,
+            "lenFrames": 48000,
+            "deferred": false,
+            "pcmRef": "loops/track0-lane1.wav",
+            "effects": [
+              { "type": 1, "params": [0.5, 0.8, 0.0, 0.0], "slotId": "b-1" },
+              {
+                "type": 7,
+                "params": [0.5, 0.5, 0.35, 0.0],
+                "slotId": "b-2",
+                "enabled": false
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "channel": 1,
+        "state": "playing",
+        "volume": 1.0,
+        "muted": false,
+        "multiple": 1,
+        "lanes": [
+          {
+            "lane": 0,
+            "lenFrames": 48000,
+            "deferred": false,
+            "pcmRef": "loops/track1-lane0.wav",
+            "chainEnabled": false,
+            "effects": [
+              { "type": 3, "params": [0.35, 0.35, 0.35, 0.0], "slotId": "c-1" }
+            ]
+          }
+        ]
+      }
+    ],
+    "monitors": [
+      {
+        "input": 0,
+        "enabled": true,
+        "outputMask": 3,
+        "volume": 1.0,
+        "muted": false,
+        "effects": []
+      }
+    ],
+    "trackChains": [
+      {
+        "channel": 0,
+        "effects": [
+          { "type": 3, "params": [0.4, 0.4, 0.4, 0.0], "slotId": "bus-0-1" }
+        ]
+      },
+      {
+        "channel": 1,
+        "chainEnabled": false,
+        "effects": [
+          { "type": 1, "params": [0.9, 0.1, 0.0, 0.0], "slotId": "bus-1-1" }
+        ]
+      }
+    ],
+    "masterEffects": [
+      { "type": 2, "params": [0.6, 0.2, 0.0, 0.0], "slotId": "m-1" },
+      {
+        "type": 6,
+        "params": [0.25, 0.5, 0.5, 0.0],
+        "slotId": "m-2",
+        "enabled": false
+      }
+    ]
+  },
+  "disarmSnapshot": { "tracks": [] },
+  "finalized": true
+}

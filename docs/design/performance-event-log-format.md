@@ -158,9 +158,13 @@ control-side-only concepts:
 | `LE_PLOG_SET_MONITOR_FX_ENABLED`  | 312   | fx      | `channel` = input index, `lane` = -1, `index` = fx slot, `type` = enabled (0/1) — 307's addressing convention. Logged for the manifest/reader, **not replayed in the lane pass** (mirrors `LE_PLOG_SET_MONITOR_FX_PARAM`'s treatment). |
 | `LE_PLOG_SET_MONITOR_FX_CHAIN_ENABLED` | 313 | generic | `arg_i` = input index, `arg_f` = enabled (0.0/1.0) — the monitor volume/mute shape. Logged for the manifest/reader, **not replayed in the lane pass**. |
 
-The replayed lane chain seeds all enable bits to 1 at arm: the arm manifest
-carries no arm-time enabled state until part 3 of the FX-v3 epic adds it (a
-pre-arm disable is invisible to the offline render until then).
+The replayed lane chain seeds **both** enable levels from the arm manifest —
+each `effects[]` entry's `enabled` bit and the lane's own `chainEnabled` flag
+(`le_pr_fx_chain_init_from_lane`, `perf_render.c`). Absent means enabled, so a
+legacy capture (and any rig with nothing bypassed) renders fully wet exactly as
+before. A slot bypassed before arm therefore renders bypassed from frame 0,
+rather than fading out of a wet the listener never heard — its crossfade state
+is force-settled at bypass, not at enabled.
 
 Ordering caveat (same accepted tolerance class as the control-side param
 events): enable flips are stamped with the control thread's buffer-base

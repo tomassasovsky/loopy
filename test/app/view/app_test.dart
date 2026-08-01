@@ -5,6 +5,7 @@ import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/app.dart';
@@ -156,6 +157,27 @@ void main() {
       );
       await tester.pumpAndSettle();
     }
+
+    testWidgets(
+      'the indicator preference is what gates wet-cache telemetry polling',
+      (tester) async {
+        // The whole visibility story for the cache debug glyph (R27) lives
+        // here: the glyph shows a lane's state only when the repository is
+        // observing it, and this is the one wire that decides that. Seed the
+        // preference OFF so the boot value and a later flip are both covered.
+        await settings.saveShowTrackIndicators(value: false);
+        await pumpApp(tester, NoopWaveformWindowService());
+        expect(repository.cacheTelemetryEnabled, isFalse);
+
+        await tester
+            .element(find.byType(LooperPage))
+            .read<TracksCubit>()
+            .setShowIndicators(value: true);
+        await tester.pumpAndSettle();
+
+        expect(repository.cacheTelemetryEnabled, isTrue);
+      },
+    );
 
     testWidgets('shows the startup update banner when a build is available', (
       tester,

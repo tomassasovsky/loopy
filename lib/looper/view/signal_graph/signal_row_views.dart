@@ -195,6 +195,16 @@ class _TakeRow extends StatelessWidget {
                 inputCount: inputCount,
                 onReassign: onReassignInput,
               ),
+              // Wet-cache debug glyph (R27). There is no second gate here on
+              // purpose: `cacheState` is null unless the repository is polling
+              // telemetry, and that polling is what the indicator preference
+              // turns on and off. One gate means the glyph can never linger
+              // showing a state it stopped receiving updates for.
+              const SizedBox(width: 6),
+              LaneCacheGlyph(
+                key: Key('signalCache_${take.track}_${take.laneIndex}'),
+                state: lane.cacheState,
+              ),
               const Spacer(),
               _MixControl(
                 keyPrefix: 'signalTake_${take.track}_${take.laneIndex}',

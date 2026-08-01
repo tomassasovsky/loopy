@@ -1,0 +1,54 @@
+{
+  "slug": "perf-20260601-090000",
+  "sample_rate": 48000,
+  "channel_layout": { "master_channels": 2, "captured_inputs": [0] },
+  "capture_frames": 48000,
+  "overrun_count": 0,
+  "overrun_gaps": [],
+  "layers": [],
+  "armSnapshot": {
+    "clockFrame": 0,
+    "masterLenFrames": 48000,
+    "masterGain": 1.0,
+    "limiterOn": true,
+    "limiterCeiling": 0.99,
+    "latencyOffsetFrames": 0,
+    "tracks": [
+      {
+        "channel": 0,
+        "state": "playing",
+        "volume": 1.0,
+        "muted": false,
+        "multiple": 1,
+        "lanes": [
+          {
+            "lane": 0,
+            "lenFrames": 48000,
+            "deferred": false,
+            "pcmRef": "loops/track0-lane0.wav",
+            "effects": [{ "type": 1, "params": [0.5, 0.8, 0.0, 0.0] }]
+          },
+          {
+            "lane": 1,
+            "lenFrames": 48000,
+            "deferred": false,
+            "pcmRef": "loops/track0-lane1.wav",
+            "effects": [{ "type": 1, "params": [0.5, 0.8, 0.0, 0.0] }]
+          }
+        ]
+      }
+    ],
+    "monitors": [
+      {
+        "input": 0,
+        "enabled": true,
+        "outputMask": 3,
+        "volume": 1.0,
+        "muted": false,
+        "effects": []
+      }
+    ]
+  },
+  "disarmSnapshot": { "tracks": [] },
+  "finalized": true
+}

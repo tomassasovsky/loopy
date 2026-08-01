@@ -6,6 +6,7 @@ import 'package:loopy_engine/src/engine_config.dart';
 import 'package:loopy_engine/src/engine_snapshot.dart';
 import 'package:loopy_engine/src/fx_fingerprint.dart';
 import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart';
+import 'package:loopy_engine/src/lane_cache.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
 import 'package:loopy_engine/src/performance_render_progress.dart';
 import 'package:loopy_engine/src/plugin_descriptor.dart';
@@ -918,6 +919,17 @@ class MockAudioEngine implements AudioEngine {
   @override
   int laneFxFingerprint({required int channel, required int lane}) =>
       FxFingerprint.offset;
+
+  /// Per-lane cache states this mock reports, keyed by `(channel, lane)`.
+  /// There is no cache in the mock engine, so a test that cares about the
+  /// debug glyph seeds this directly; anything unseeded reads as
+  /// [LaneCacheState.live], which is also what a real engine with caching
+  /// disabled reports.
+  final Map<(int, int), LaneCacheState> laneCacheStates = {};
+
+  @override
+  LaneCacheState laneCacheState({required int channel, required int lane}) =>
+      laneCacheStates[(channel, lane)] ?? LaneCacheState.live;
 
   @override
   int monitorFxFingerprint({required int input}) => FxFingerprint.offset;

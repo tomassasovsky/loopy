@@ -370,3 +370,86 @@ A small `aarch64` plugin spike (find/compile one plugin, host it headless) is a
 | Goal 2 — USB-MIDI pedal (in + LED out) | ☐ pass ☐ fail | |
 | Goal 3 — Focusrite audio (in + out @ 512) | ☐ pass ☐ fail | |
 | `aarch64` bundle builds from the Mac | ☐ pass ☐ fail | `deploy/rpi/build/build-arm64-bundle.sh` |
+
+---
+
+## FX wet-cache soak (FX system v3, #351 part 9) — NOT YET RUN
+
+> **Status: pending on-device.** Nothing below has been measured. The code it
+> exercises merged on CI + review; this soak is the separate, device-gated
+> deliverable, because "green in CI" is not "holds up on the Pi". Do not treat
+> the epic's cache claims as validated until the results table is filled in and
+> the cap decision recorded.
+
+### What is being soaked
+
+The Loop-stage wet cache (part 2): a background worker renders a lane's whole
+loop once its chain has been stable for `LE_CACHE_SETTLE_MS` (250 ms), and the
+audio thread plays that render at zero FX CPU until anything invalidates the
+lane's key. The questions CI cannot answer are all about a real device under
+real load — does it actually hit, does it stay inside the xrun budget, and does
+the memory cap default suit this hardware.
+
+Build and deploy an `arm64` bundle first (see "Building an `arm64` bundle"
+above). Cache hit-rate and memory come from the part-2 telemetry logs; xruns
+from the engine status the app already reports.
+
+> **Measure with the per-track indicator preference OFF — the console default.**
+> That preference is what enables per-lane cache-telemetry polling, and each
+> polled lane costs an engine drain plus a full scheduler sweep. Turning it on
+> to watch the glyphs adds control-thread load the shipped appliance
+> configuration never pays, which would inflate exactly the two numbers this
+> soak exists to establish: **steady-state CPU** and the **memory cap**. Take
+> those readings with it off.
+>
+> The glyph is still the right tool for the *ordering* and *cache-hot*
+> questions below — "did playing lanes render first", "did the toggled pair
+> stay hot" — which are about sequence, not cost. Turn it on for those runs,
+> note that you did, and don't carry a CPU figure out of them.
+
+### Runs
+
+- [ ] **Steady state** (indicators OFF). Load a full 8-track set with
+      Loop-stage chains on every track and let it play for a timed session
+      (≥10 min). Record the cache hit-rate, steady-state CPU, and the xrun
+      count over that window — then state the budget those numbers meet, rather
+      than only reporting them.
+- [ ] **Session-load render storm.** Load the same 8-track set **cold**, so
+      every lane needs a render at once. Confirm two things: playback stays
+      xrun-free throughout the storm, and the lanes that are actually
+      **playing** render first (the scheduler is single-worker and
+      playing-lanes-first by design — watch the glyphs go `rendering` →
+      `cached` in playback order, not track order).
+- [ ] **Stomp churn.** Toggle bound chains and slots repeatedly from the pedal
+      in FX mode. Both entries of a toggled pair are meant to be retained, so
+      going off and back on should be cache-**hot** — the glyph should return
+      to `cached` immediately, not sit at `rendering` again.
+- [ ] **Expression sweeps.** Sweep a bound parameter continuously from an
+      expression pedal or a CC. The render debounce should hold: a moving
+      parameter must suppress scheduling entirely rather than queue and discard
+      a render per settle window. Note whether you see schedule thrash.
+- [ ] **Cap tuning** (indicators OFF). Decide the appliance default for the
+      cache memory cap
+      (`LE_CACHE_DEFAULT_CAP_BYTES`, currently 64 MiB ≈ 5 stereo 30 s entries
+      at 48 kHz). Record the value **and the reasoning** — how many lanes the
+      rig actually needs hot, against what the Pi can spare.
+
+### Results (fill in on hardware)
+
+| Check | Result | Notes (hit-rate, xruns, CPU, buffer, cap) |
+|---|---|---|
+| Steady state — 8 tracks with Loop chains (indicators off) | ☐ pass ☐ fail | |
+| Session-load render storm — xrun-free | ☐ pass ☐ fail | |
+| Session-load render storm — playing lanes first | ☐ pass ☐ fail | |
+| Stomp churn stays cache-hot | ☐ pass ☐ fail | |
+| Expression sweeps hold the debounce | ☐ pass ☐ fail | |
+| Cache memory cap default chosen | ☐ decided | value + rationale: |
+
+### Documented limits (fill in from the results)
+
+State these as numbers once measured, so a future session can size a rig
+against them rather than re-deriving:
+
+- Cached-lane count this hardware sustains: …
+- Memory actually used at that count: …
+- Typical render latency for a 30 s loop: …
