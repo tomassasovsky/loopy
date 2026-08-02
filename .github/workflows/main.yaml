@@ -363,6 +363,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq
       - name: Run flash-pedal safety tests
         run: bash deploy/yocto/meta-loopy/recipes-loopy/loopy-bundle/test/run_flash_pedal_tests.sh
+      - name: Run net-persist tests
+        run: bash deploy/yocto/meta-loopy/recipes-loopy/loopy-bundle/test/run_net_persist_tests.sh
 
   spell-check:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1
