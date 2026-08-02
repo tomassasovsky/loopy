@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer';
 
 import 'package:loopy/update/appliance/appliance_env.dart';
 import 'package:loopy/update/appliance/system_appliance_env.dart';
@@ -103,9 +104,40 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
     }
   }
 
+  /// Stages the OS bundle and, when the release publishes pedal firmware,
+  /// flashes it in the same action — so "update available" and "restart to
+  /// apply" cover both artifacts as one user gesture rather than two.
+  ///
+  /// The OS bundle takes the first 90% of the progress band and the firmware
+  /// the last 10%, which is roughly their relative cost (a ~100 MB signed
+  /// bundle against a 32 KB `.hex`).
+  ///
+  /// **A firmware failure does not fail the update.** By the time it runs, the
+  /// bundle is staged and the helper has written the staged marker, so the
+  /// pedal is the non-essential half: throwing here would report the whole
+  /// update as failed and push the user to re-run a ~100 MB download for a
+  /// pedal that can be reflashed on its own. The helper leaves its failure
+  /// marker behind either way.
   @override
-  Stream<double> downloadAndStage(UpdateManifest manifest) =>
-      _env.stage(manifest.version.toString());
+  Stream<double> downloadAndStage(UpdateManifest manifest) async* {
+    final firmware = manifest.pedalFirmware;
+    if (firmware == null) {
+      yield* _env.stage(manifest.version.toString());
+      return;
+    }
+
+    await for (final progress in _env.stage(manifest.version.toString())) {
+      yield (progress * 0.9).clamp(0.0, 0.9);
+    }
+    try {
+      await for (final progress in _env.flashPedal()) {
+        yield (0.9 + progress * 0.1).clamp(0.9, 1.0);
+      }
+    } on Exception catch (error) {
+      log('pedal firmware flash failed (OS update stays staged): $error');
+    }
+    yield 1;
+  }
 
   @override
   Future<void> applyAndRestart() => _env.reboot();
