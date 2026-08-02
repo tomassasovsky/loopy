@@ -158,10 +158,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  group('Bluetooth/Tuner stub buttons', () {
-    // WiFi is no longer here: it opens a real picker (#446). Bluetooth and
-    // Tuner remain stubs.
+  group('WiFi/Bluetooth/Tuner stub buttons', () {
     for (final (key, labelOf) in [
+      ('settingsTray_wifi', (AppLocalizations l10n) => l10n.trayWifiLabel),
       (
         'settingsTray_bluetooth',
         (AppLocalizations l10n) => l10n.trayBluetoothLabel,
@@ -206,7 +205,7 @@ void main() {
       await pump(tester);
       await tester.pump();
 
-      await tester.tap(find.byKey(const Key('settingsTray_bluetooth')));
+      await tester.tap(find.byKey(const Key('settingsTray_wifi')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('comingSoonStub_dialog')), findsOneWidget);
 
