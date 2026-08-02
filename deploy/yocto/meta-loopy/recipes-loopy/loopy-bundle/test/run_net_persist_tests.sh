@@ -62,6 +62,11 @@ run_persist() {
 
 bound() { [ -s "$work/mount-calls" ] && echo yes || echo no; }
 
+# GNU form first: on Linux `stat -f` reports FILESYSTEM status and succeeds, so
+# probing BSD-style first silently returns the wrong thing instead of falling
+# through. BSD `stat -c` is simply invalid, so it fails cleanly.
+mode_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
+
 echo "/data mounted, nothing pre-existing"
 setup
 run_persist; rc=$?
@@ -69,7 +74,7 @@ check "exits 0" 0 "$rc"
 check "creates the durable store" yes \
     "$([ -d "$work/data/loopy/NetworkManager/system-connections" ] && echo yes || echo no)"
 check "locks the store to 0700 (these are credentials)" 700 \
-    "$(stat -f '%Lp' "$work/data/loopy/NetworkManager/system-connections" 2>/dev/null || stat -c '%a' "$work/data/loopy/NetworkManager/system-connections")"
+    "$(mode_of "$work/data/loopy/NetworkManager/system-connections")"
 check "performs the bind" yes "$(bound)"
 teardown
 
