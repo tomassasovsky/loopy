@@ -13,7 +13,8 @@
 #   <out-dir>/loopy-pedal-<version>.hex   the firmware image
 #   <out-dir>/protocol-version            the wire protocol it speaks ("3")
 #
-# Requires arduino-cli on PATH with the arduino:avr core installed.
+# Requires arduino-cli on PATH with the arduino:avr core installed; the sketch's
+# own libraries are installed here (see below).
 set -euo pipefail
 
 out_dir=${1:?usage: build.sh <out-dir> [version]}
@@ -24,6 +25,12 @@ repo_root=$(CDPATH= cd -- "$here/../../.." && pwd)
 header="$repo_root/firmware/loopy_pedal/pedal_protocol.h"
 
 mkdir -p "$out_dir"
+
+# Pinned, not floating. This firmware is published and flashed onto hardware
+# that is awkward to recover, and FastLED in particular owns the WS2812 bit
+# timing — an unpinned bump could change what the LEDs do between two releases
+# with no diff in this repo to explain it. Bump these deliberately.
+arduino-cli lib install 'MIDIUSB@1.0.5' 'FastLED@3.10.5'
 
 # The build properties are the firmware's identity, not decoration: the custom
 # PID keeps CoreMIDI's name cache stable across reflashes, and the product

@@ -41,8 +41,9 @@ class UpdateManifest {
       size: _asInt(json['size']) ?? 0,
       notes: json['notes'] is String ? json['notes'] as String : '',
       pedalFirmware: switch (json['pedalFirmware']) {
-        final Map<String, dynamic> block =>
-          PedalFirmwareManifest.fromJson(block),
+        final Map<String, dynamic> block => PedalFirmwareManifest.fromJson(
+          block,
+        ),
         _ => null,
       },
     );
