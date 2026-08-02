@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:pub_semver/pub_semver.dart';
+import 'package:update_repository/src/pedal_firmware_manifest.dart';
 
 /// A published update descriptor, as served per channel at
 /// `…/updates/appliance/<channel>/manifest.json` (and the desktop appcasts map
@@ -15,6 +16,7 @@ class UpdateManifest {
     this.channel = '',
     this.size = 0,
     this.notes = '',
+    this.pedalFirmware,
   });
 
   /// Parses a manifest from its JSON form, tolerant of size-field string/number
@@ -38,6 +40,12 @@ class UpdateManifest {
       channel: json['channel'] is String ? json['channel'] as String : '',
       size: _asInt(json['size']) ?? 0,
       notes: json['notes'] is String ? json['notes'] as String : '',
+      pedalFirmware: switch (json['pedalFirmware']) {
+        final Map<String, dynamic> block => PedalFirmwareManifest.fromJson(
+          block,
+        ),
+        _ => null,
+      },
     );
   }
 
@@ -61,6 +69,14 @@ class UpdateManifest {
   /// Human-readable release notes shown in the update UI (may be empty).
   final String notes;
 
+  /// The pedal firmware published with this release, or `null` when this
+  /// release ships none (every manifest before the firmware artifact existed,
+  /// and any release whose firmware block failed to parse).
+  ///
+  /// Optional by construction: the OS update must stay installable on a
+  /// manifest with no firmware block, so nothing here may become required.
+  final PedalFirmwareManifest? pedalFirmware;
+
   /// Accepts an [int], or a [String]/[num] that cleanly reads as one.
   static int? _asInt(Object? value) {
     if (value is int) return value;
@@ -79,11 +95,12 @@ class UpdateManifest {
           sha256 == other.sha256 &&
           channel == other.channel &&
           size == other.size &&
-          notes == other.notes;
+          notes == other.notes &&
+          pedalFirmware == other.pedalFirmware;
 
   @override
   int get hashCode =>
-      Object.hash(version, bundle, sha256, channel, size, notes);
+      Object.hash(version, bundle, sha256, channel, size, notes, pedalFirmware);
 
   @override
   String toString() =>

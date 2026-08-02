@@ -108,8 +108,40 @@ jobs:
           path: build/linux/arm64/release/bundle
           retention-days: 1
 
+  # The paired Pro Micro firmware, published as a sibling of the .raucb so the
+  # appliance can flash it with the same update action (#331 part C). Plain
+  # ubuntu-latest: arduino-cli cross-compiles for AVR in well under a minute, so
+  # this never needs the arm64 or Yocto runners and never gates them.
+  build-pedal-firmware:
+    needs: determine-meta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install arduino-cli + the AVR core
+        run: |
+          set -eu
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh -s 0.35.3
+          echo "$PWD/bin" >> "$GITHUB_PATH"
+
+      - name: Compile loopy_pedal_32u4
+        env:
+          VERSION: ${{ needs.determine-meta.outputs.version }}
+        run: |
+          set -eu
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
+          # One shared recipe with the PR gate in main.yaml — see build.sh.
+          hardware/firmware/loopy_pedal_32u4/build.sh pedal-firmware "$VERSION"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: loopy-pedal-firmware
+          path: pedal-firmware
+          retention-days: 1
+
   build-image:
-    needs: [determine-meta, build-app]
+    needs: [determine-meta, build-app, build-pedal-firmware]
     # Opt-in self-hosted (#323): a workflow_dispatch explicitly asking for it.
     # Push-triggered runs have no `inputs` context, so this always resolves to
     # the free GitHub-hosted runner for them.
@@ -121,6 +153,11 @@ jobs:
         with:
           name: loopy-app-bundle
           path: deploy/yocto/prebuilt/bundle
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: loopy-pedal-firmware
+          path: pedal-firmware
 
       - name: Restore the app binary's executable bit
         # loopy-bundle.bb's do_install checks `[ -x "${bundle}/loopy" ]`; the
@@ -189,10 +226,27 @@ jobs:
           # — must be JSON-quoted. The int-era unquoted form is no longer valid.
           version='${{ needs.determine-meta.outputs.version }}'
           channel='${{ needs.determine-meta.outputs.channel }}'
+
+          # The pedal firmware rides along as a sibling of the bundle, not
+          # inside it: RAUC bundles are OS A/B slot images, and the pedal is a
+          # USB-attached MCU flashed with avrdude. A missing .hex degrades to a
+          # manifest with no pedalFirmware block — an OS-only update — rather
+          # than failing the release.
+          hex="loopy-pedal-${version}.hex"
+          pedal_block=""
+          if [ -f "pedal-firmware/$hex" ]; then
+            cp "pedal-firmware/$hex" "$out/$hex"
+            hex_sha=$(sha256sum "$out/$hex" | cut -d' ' -f1)
+            proto=$(tr -d '[:space:]' < pedal-firmware/protocol-version)
+            pedal_block=", \"pedalFirmware\": { \"version\": \"$version\", \"hex\": \"$hex\", \"protocolVersion\": $proto, \"sha256\": \"$hex_sha\" }"
+          else
+            echo "::warning::no pedal firmware .hex found; publishing an OS-only manifest"
+          fi
+
           cat > "$out/manifest.json" <<EOF
-          { "version": "$version", "bundle": "$bundle", "sha256": "$sha", "channel": "$channel" }
+          { "version": "$version", "bundle": "$bundle", "sha256": "$sha", "channel": "$channel"$pedal_block }
           EOF
-          cat "$out/manifest.json"
+          jq . "$out/manifest.json"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
@@ -202,6 +256,7 @@ jobs:
           prerelease: ${{ needs.determine-meta.outputs.channel == 'experimental' }}
           files: |
             release-artifacts/*.raucb
+            release-artifacts/*.hex
             release-artifacts/manifest.json
 
       # Devices read from segno.aquiles.dev, not GitHub. Nudge the mirror now so
