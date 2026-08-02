@@ -56,13 +56,21 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # they're guaranteed in the image (hard `=`, so keep everything ON this line).
 # curl/jq/ca-certificates: the OTA client (loopy-ota-check). rauc: the installer.
 # parted + e2fsprogs-resize2fs: loopy-data-grow (expand /data to fill the SD card).
-# avrdude + coreutils-stty: loopy-update-ctl flash-pedal (write the published
-# .hex to the Pro Micro; stty does the Caterina 1200bps touch reset).
+# coreutils: loopy-update-ctl flash-pedal needs stty for the Caterina 1200bps
+# touch reset.
+#
+# avrdude is NOT here yet (#430): no layer in this image provides it —
+# meta-openembedded/meta-oe has no such recipe on any branch, and the layer that
+# does (meta-microcontroller) is stuck on hardknott, four series behind
+# walnascar. Adding it to RDEPENDS fails the whole image at parse time, which
+# takes releases down with it. flash-pedal already refuses cleanly when avrdude
+# is absent, and a firmware failure does not fail the OS update, so the
+# appliance degrades to OS-only updates until #430 lands a recipe.
 RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
                   fontconfig freetype glib-2.0 mesa alsa-lib libstdc++ \
                   curl jq ca-certificates rauc \
                   parted e2fsprogs-resize2fs \
-                  avrdude coreutils"
+                  coreutils"
 
 inherit systemd
 # App + rtirq oneshot + data-grow oneshot + the /boot(tryboot selector) and
