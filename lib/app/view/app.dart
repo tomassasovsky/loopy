@@ -13,6 +13,7 @@ import 'package:loopy/common/pedal_device.dart';
 import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
+import 'package:loopy/pedal/flashed_firmware.dart';
 import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/performance/performance.dart';
 import 'package:loopy/session/session_mapping.dart';
@@ -323,6 +324,11 @@ class App extends StatelessWidget {
                 // Redundant only on a desktop analysis run — see run_loopy.
                 // ignore: avoid_redundant_argument_values
                 autoBindProductNames: kPedalAutoBindProductNames,
+                // Console only; null on desktop, where the manual setting
+                // stays in charge — so this reads as redundant on a desktop
+                // analysis run, and dropping it would disable the feature.
+                // ignore: avoid_redundant_argument_values
+                flashedProtocolVersion: kFlashedPedalProtocolVersionReader,
               );
               unawaited(cubit.load());
               return cubit;

@@ -24,6 +24,15 @@ abstract interface class ApplianceEnv {
   /// emitting progress in `[0, 1]`. Throws if the helper fails.
   Stream<double> stage(String version);
 
+  /// Runs the privileged helper to flash the published pedal firmware onto the
+  /// attached Pro Micro, emitting progress in `[0, 1]`. Throws if the helper
+  /// fails.
+  ///
+  /// The helper decides whether there is anything to do — it exits successfully
+  /// with no work when the channel publishes no firmware or the pedal already
+  /// runs it — so this is safe to call whenever a release advertises firmware.
+  Stream<double> flashPedal();
+
   /// Runs the privileged helper to reboot into the staged slot. Throws on
   /// failure.
   Future<void> reboot();

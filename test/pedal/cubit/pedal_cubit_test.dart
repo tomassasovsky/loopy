@@ -240,6 +240,60 @@ void main() {
       });
     });
 
+    group('flashed firmware version (part B)', () {
+      PedalCubit buildWithFlashed(Future<int?> Function() reader) => PedalCubit(
+        pedal: pedal,
+        settings: settings,
+        pollInterval: Duration.zero,
+        flashedProtocolVersion: reader,
+      );
+
+      test('a flashed record outranks the manual setting', () async {
+        // The flasher wrote that pedal, so it knows what runs on it; the
+        // manual setting is a guess a firmware update silently invalidates.
+        await settings.savePedalFirmwareVersion(PedalCodec.protocolVersionV2);
+        final cubit = buildWithFlashed(
+          () async => PedalCodec.protocolVersionV3,
+        );
+
+        await cubit.load();
+
+        expect(cubit.state.firmwareVersion, PedalCodec.protocolVersionV3);
+        expect(pedal.firmwareProtocolVersion, PedalCodec.protocolVersionV3);
+        await cubit.close();
+      });
+
+      test('falls back to the manual setting with no record', () async {
+        await settings.savePedalFirmwareVersion(PedalCodec.protocolVersionV3);
+        final cubit = buildWithFlashed(() async => null);
+
+        await cubit.load();
+
+        expect(cubit.state.firmwareVersion, PedalCodec.protocolVersionV3);
+        await cubit.close();
+      });
+
+      test('no record and no setting keeps the unknown => v2 floor', () async {
+        final cubit = buildWithFlashed(() async => null);
+
+        await cubit.load();
+
+        expect(cubit.state.firmwareVersion, isNull);
+        expect(pedal.targetProtocolVersion, PedalCodec.protocolVersionV2);
+        await cubit.close();
+      });
+
+      test('desktop (no reader) is unaffected', () async {
+        await settings.savePedalFirmwareVersion(PedalCodec.protocolVersionV3);
+        final cubit = buildCubit();
+
+        await cubit.load();
+
+        expect(cubit.state.firmwareVersion, PedalCodec.protocolVersionV3);
+        await cubit.close();
+      });
+    });
+
     group('firmware version (R6 pre-#331 gate)', () {
       test(
         'load applies the persisted version to the repository before frames '

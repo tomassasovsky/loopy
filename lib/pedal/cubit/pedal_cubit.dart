@@ -24,14 +24,21 @@ class PedalCubit extends Cubit<PedalState> {
   /// build) leaves binding entirely manual. Mirrors `MidiDeviceRepository`'s
   /// input-side flag — the pedal is one device on two links, so both have to
   /// resolve.
+  ///
+  /// [flashedProtocolVersion] reads what wire version the firmware currently on
+  /// the pedal speaks, when something on this platform knows (the console
+  /// records it when it flashes). It outranks the manual setting, and `null`
+  /// (every desktop build) leaves the manual setting in charge.
   PedalCubit({
     required PedalRepository pedal,
     required SettingsRepository settings,
     Duration pollInterval = const Duration(seconds: 2),
     List<String>? autoBindProductNames,
+    Future<int?> Function()? flashedProtocolVersion,
   }) : _pedal = pedal,
        _settings = settings,
        _autoBindProductNames = autoBindProductNames,
+       _flashedProtocolVersion = flashedProtocolVersion,
        super(const PedalState()) {
     _statusSub = _pedal.statusChanges.listen(_onBindStatus);
     // Seed the output set so the settings picker has it before the first
@@ -47,6 +54,7 @@ class PedalCubit extends Cubit<PedalState> {
   final PedalRepository _pedal;
   final SettingsRepository _settings;
   final List<String>? _autoBindProductNames;
+  final Future<int?> Function()? _flashedProtocolVersion;
 
   late final StreamSubscription<PedalBindStatus> _statusSub;
 
@@ -81,7 +89,14 @@ class PedalCubit extends Cubit<PedalState> {
     // The firmware version gates what pushState encodes, so apply it before
     // any bind can start streaming frames. Unset (null) keeps the
     // repository's unknown ⇒ v2 floor.
-    _applyFirmwareVersion(await firmwareVersionFuture);
+    //
+    // What the console actually FLASHED outranks the manual setting: the
+    // flasher wrote that pedal, so it knows what runs on it, while the manual
+    // setting is a human's guess that a firmware update silently invalidates.
+    // Falling back the other way would leave a freshly-flashed console pinned
+    // to whatever someone once picked.
+    final flashed = await _flashedProtocolVersion?.call();
+    _applyFirmwareVersion(flashed ?? await firmwareVersionFuture);
 
     final saved = await savedFuture;
     if (saved == null) {
