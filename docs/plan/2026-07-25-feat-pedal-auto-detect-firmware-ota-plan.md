@@ -6,6 +6,12 @@ date: 2026-07-25
 
 ## feat: console pedal auto-detect + firmware updates shipped with the app
 
+> **SUPERSEDED (2026-08-01)** by
+> [docs/plan/2026-08-01-feat-pedal-auto-detect-firmware-ota-plan.md](2026-08-01-feat-pedal-auto-detect-firmware-ota-plan.md).
+> The prerequisite (protocol drift + CI gate) shipped independently, and this plan's
+> auto-detect and firmware-version mechanisms both assume a SysEx identity *reply* that
+> loopy's 3-byte native capture cannot deliver. Kept for history; do not build from it.
+
 > Source brainstorm: [docs/brainstorm/2026-07-25-pedal-auto-detect-firmware-ota-brainstorm-doc.md](../brainstorm/2026-07-25-pedal-auto-detect-firmware-ota-brainstorm-doc.md).
 > Builds on the appliance A/B update system (#304/#306, merged) and the pedal
 > identity-handshake protocol (#149, merged). Tracking issue: #331.

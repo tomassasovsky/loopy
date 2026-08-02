@@ -113,6 +113,133 @@ void main() {
       expect(frame?.isGoodbye, isTrue);
     });
 
+    group('console auto-detect', () {
+      const pedalOut = MidiDevice(id: 'out-p', name: 'VAMP Loopstation MIDI 1');
+      const otherOut = MidiDevice(id: 'out-x', name: 'Launchpad Mini');
+      const productNames = ['VAMP Loopstation'];
+
+      PedalCubit buildAuto() => PedalCubit(
+        pedal: pedal,
+        settings: settings,
+        pollInterval: Duration.zero,
+        autoBindProductNames: productNames,
+      );
+
+      test('binds the matching output with nothing persisted', () async {
+        transport.outputs = const [otherOut, pedalOut];
+        final cubit = buildAuto();
+        await cubit.load();
+
+        expect(cubit.state.boundOutputId, 'out-p');
+        await cubit.close();
+      });
+
+      test('binds nothing when no output matches', () async {
+        transport.outputs = const [otherOut];
+        final cubit = buildAuto();
+        await cubit.load();
+
+        expect(cubit.state.boundOutputId, isNull);
+        await cubit.close();
+      });
+
+      test('never binds when auto-detect is off (desktop)', () async {
+        transport.outputs = const [pedalOut];
+        final cubit = buildCubit();
+        await cubit.load();
+
+        expect(cubit.state.boundOutputId, isNull);
+        await cubit.close();
+      });
+
+      test('binds the pedal when it appears after launch', () async {
+        transport.outputs = const [otherOut];
+        final cubit = buildAuto();
+        await cubit.load();
+        expect(cubit.state.boundOutputId, isNull);
+
+        transport.outputs = const [otherOut, pedalOut];
+        cubit.reconnect();
+
+        expect(cubit.state.boundOutputId, 'out-p');
+        await cubit.close();
+      });
+
+      test(
+        'a persisted device outranks auto-detect, even when absent',
+        () async {
+          await settings.savePedalOutputDevice(id: 'ghost', name: 'Ghost');
+          transport.outputs = const [pedalOut];
+          final cubit = buildAuto();
+          await cubit.load();
+
+          expect(cubit.state.boundOutputId, isNull);
+          await cubit.close();
+        },
+      );
+
+      test('a user pick outranks auto-detect and survives a vanish', () async {
+        transport.outputs = const [otherOut, pedalOut];
+        final cubit = buildAuto();
+        await cubit.load();
+
+        await cubit.selectOutput(
+          const PedalOutput(id: 'out-x', name: 'Launchpad Mini'),
+        );
+        transport.outputs = const [pedalOut]; // the picked device unplugs
+        cubit.reconnect();
+
+        // The pin stays on the user's device rather than jumping to the pedal.
+        expect(cubit.state.boundOutputId, isNull);
+        expect((await settings.loadPedalOutputDevice())?.id, 'out-x');
+        await cubit.close();
+      });
+
+      test(
+        're-resolves an auto-bound pin whose id changed on replug',
+        () async {
+          transport.outputs = const [pedalOut];
+          final cubit = buildAuto();
+          await cubit.load();
+          expect(cubit.state.boundOutputId, 'out-p');
+
+          // ALSA renumbers clients across a replug; a console has no picker to
+          // recover with, so the pin has to follow the name, not the id.
+          transport.outputs = const [
+            MidiDevice(id: 'out-p-renumbered', name: 'VAMP Loopstation MIDI 1'),
+          ];
+          cubit.reconnect();
+
+          expect(cubit.state.boundOutputId, 'out-p-renumbered');
+          await cubit.close();
+        },
+      );
+
+      test('selecting None is not undone by the next poll', () async {
+        transport.outputs = const [pedalOut];
+        final cubit = buildAuto();
+        await cubit.load();
+        expect(cubit.state.boundOutputId, 'out-p');
+
+        await cubit.selectNone();
+        cubit.reconnect();
+
+        expect(cubit.state.boundOutputId, isNull);
+        await cubit.close();
+      });
+
+      test('an auto-bound pin is not persisted', () async {
+        transport.outputs = const [pedalOut];
+        final cubit = buildAuto();
+        await cubit.load();
+        expect(cubit.state.boundOutputId, 'out-p');
+
+        // Re-deriving every launch is what keeps a renumbered id from sticking.
+        expect(await settings.loadPedalOutputDevice(), isNull);
+        await cubit.close();
+      });
+    });
+
     group('firmware version (R6 pre-#331 gate)', () {
       test(
         'load applies the persisted version to the repository before frames '

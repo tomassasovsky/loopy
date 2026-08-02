@@ -9,6 +9,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/audio_bootstrap.dart';
 import 'package:loopy/app/loopy_navigator.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
+import 'package:loopy/common/pedal_device.dart';
 import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
@@ -319,6 +320,9 @@ class App extends StatelessWidget {
               final cubit = PedalCubit(
                 pedal: pedalRepo,
                 settings: context.read<SettingsRepository>(),
+                // Redundant only on a desktop analysis run — see run_loopy.
+                // ignore: avoid_redundant_argument_values
+                autoBindProductNames: kPedalAutoBindProductNames,
               );
               unawaited(cubit.load());
               return cubit;

@@ -5,6 +5,11 @@
 /// source into the pedal's transport.
 library;
 
+// Re-exported so the pedal feature can name the pedal by product string
+// (console auto-detect) without taking a direct `midi_client` dependency —
+// the app depends on this package, not on the MIDI client.
+export 'package:midi_client/midi_client.dart' show midiDeviceNameMatches;
+
 export 'src/models/pedal_output.dart';
 export 'src/native_pedal_repository.dart';
 export 'src/native_pedal_transport.dart';
