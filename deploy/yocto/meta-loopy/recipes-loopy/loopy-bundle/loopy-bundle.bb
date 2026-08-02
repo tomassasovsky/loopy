@@ -56,10 +56,13 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # they're guaranteed in the image (hard `=`, so keep everything ON this line).
 # curl/jq/ca-certificates: the OTA client (loopy-ota-check). rauc: the installer.
 # parted + e2fsprogs-resize2fs: loopy-data-grow (expand /data to fill the SD card).
+# avrdude + coreutils-stty: loopy-update-ctl flash-pedal (write the published
+# .hex to the Pro Micro; stty does the Caterina 1200bps touch reset).
 RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
                   fontconfig freetype glib-2.0 mesa alsa-lib libstdc++ \
                   curl jq ca-certificates rauc \
-                  parted e2fsprogs-resize2fs"
+                  parted e2fsprogs-resize2fs \
+                  avrdude coreutils"
 
 inherit systemd
 # App + rtirq oneshot + data-grow oneshot + the /boot(tryboot selector) and
