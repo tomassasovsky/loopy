@@ -9,6 +9,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/audio_bootstrap.dart';
 import 'package:loopy/app/loopy_navigator.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
+import 'package:loopy/common/on_screen_keyboard/on_screen_keyboard_host.dart';
 import 'package:loopy/common/pedal_device.dart';
 import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
@@ -759,7 +760,11 @@ class _AppViewState extends State<_AppView> {
           if (defaultTargetPlatform == TargetPlatform.macOS) {
             app = PlatformMenuBar(menus: _menus(context), child: app);
           }
-          return app;
+          // Console only: weston's kiosk-shell spawns no input panel and the
+          // image ships no IME, so without this every TextField on the
+          // appliance is dead. Wraps the whole app so focus anywhere is
+          // covered, including future fields.
+          return OnScreenKeyboardHost(child: app);
         },
       ),
     );
