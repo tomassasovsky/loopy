@@ -45,6 +45,11 @@ AVRDUDE="${LOOPY_AVRDUDE:-avrdude}"
 # Seconds to wait for the Caterina bootloader port to appear after the touch
 # reset, and for the sketch to re-enumerate afterwards.
 PEDAL_PORT_TIMEOUT="${LOOPY_PEDAL_PORT_TIMEOUT:-10}"
+# Caterina holds the bootloader open only ~8s before jumping back to the sketch,
+# so this budget must stay inside that window.
+PEDAL_BOOTLOADER_TRIES="${LOOPY_PEDAL_BOOTLOADER_TRIES:-6}"
+# Upper bound on the avrdude write itself.
+AVRDUDE_TIMEOUT="${LOOPY_AVRDUDE_TIMEOUT:-120}"
 
 log() { echo "loopy-update-ctl: $*" >&2; }
 progress() { echo "PROGRESS $1"; }
@@ -175,12 +180,50 @@ pedal_port() {
     return 1
 }
 
-# Waits up to PEDAL_PORT_TIMEOUT for a pedal port to appear (bootloader or
-# sketch — both enumerate under the same product string).
+# Waits up to PEDAL_PORT_TIMEOUT for the pedal's own (sketch) port to appear.
+# Only correct AFTER a flash: what we write advertises the product string, so
+# seeing it again is the proof the sketch is running. Never use this to find the
+# bootloader — see wait_for_bootloader.
 wait_for_pedal_port() {
     i=0
     while [ "$i" -lt "$PEDAL_PORT_TIMEOUT" ]; do
         if port=$(pedal_port); then printf '%s\n' "$port"; return 0; fi
+        i=$((i + 1))
+        sleep 1
+    done
+    return 1
+}
+
+# The by-id port names present right now, one per line.
+pedal_ports() { ls "$PEDAL_SERIAL_DIR" 2>/dev/null; }
+
+# Waits for the Caterina bootloader to enumerate after the touch reset and
+# prints its device path.
+#
+# Identified by DIFFERENCE against the pre-reset snapshot, never by name.
+# Caterina advertises its OWN descriptors — observed on this hardware as
+# "usb-Arduino_LLC_Arduino_Leonardo-if00" — not the sketch's build.usb_product,
+# so no product-name match can ever find it. Matching the pedal's name here is
+# what broke the first on-device attempt: the glob could only ever match the
+# SKETCH, so it sat out the bootloader window (~8s before Caterina gives up and
+# jumps back), matched the sketch when it returned, and handed avrdude a port
+# that speaks MIDI and will never answer avr109 — which hung the update at 95%.
+#
+# Polls faster than one second because that window is the whole budget.
+wait_for_bootloader() {
+    before=$1
+    i=0
+    while [ "$i" -lt "$PEDAL_BOOTLOADER_TRIES" ]; do
+        found=$(pedal_ports | while IFS= read -r p; do
+            [ -n "$p" ] || continue
+            printf '%s\n' "$before" | grep -qxF "$p" && continue
+            printf '%s/%s\n' "$PEDAL_SERIAL_DIR" "$p"
+            break
+        done)
+        if [ -n "$found" ]; then
+            printf '%s\n' "$found"
+            return 0
+        fi
         i=$((i + 1))
         sleep 1
     done
@@ -222,7 +265,11 @@ do_flash_pedal() {
         return 0
     fi
 
-    current=$(cut -d' ' -f1 < "$PEDAL_STATE_FILE" 2>/dev/null || echo "0.0.0")
+    current=0.0.0
+    if [ -f "$PEDAL_STATE_FILE" ]; then
+        current=$(cut -d' ' -f1 "$PEDAL_STATE_FILE" 2>/dev/null || echo "0.0.0")
+        [ -n "$current" ] || current=0.0.0
+    fi
     if [ "$current" = "$fw_version" ]; then
         log "pedal already runs $fw_version; nothing to do"
         progress 100
@@ -265,20 +312,33 @@ do_flash_pedal() {
         return 1
     fi
 
+    # Snapshot BEFORE the touch so the bootloader can be spotted as the port
+    # that was not there a moment ago.
+    ports_before=$(pedal_ports)
     log "resetting $port into the bootloader"
     pedal_touch_reset "$port"
-    if ! boot_port=$(wait_for_pedal_port); then
-        log "bootloader port never appeared; pedal left untouched"
+    if ! boot_port=$(wait_for_bootloader "$ports_before"); then
+        log "bootloader never appeared after the touch reset; pedal left untouched"
         return 1
     fi
+    log "bootloader at $boot_port"
     progress 50
 
     # No -V: avrdude verifies the readback against the image by default, and
     # that verification is the difference between "wrote something" and "wrote
     # this". Losing it to save a few seconds would defeat the point.
+    # Hard timeout: avrdude blocks on a port that never answers, and without a
+    # bound it takes the whole update UI down with it (observed: the progress
+    # bar frozen at 95% with no way back). A flash of a 32 KB image over CDC is
+    # seconds; anything near the bound is already a failure.
     log "flashing $hex via $boot_port"
-    if ! "$AVRDUDE" -p atmega32u4 -c avr109 -P "$boot_port" -b 57600 \
-         -U "flash:w:$work/$hex:i" >&2; then
+    # `rc=$?` inside `if ! cmd` would read the status of the NEGATION, not of
+    # avrdude, so capture it on the failure path instead.
+    rc=0
+    timeout "$AVRDUDE_TIMEOUT" "$AVRDUDE" -p atmega32u4 -c avr109 \
+        -P "$boot_port" -b 57600 -U "flash:w:$work/$hex:i" >&2 || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        [ "$rc" = 124 ] && log "avrdude timed out after ${AVRDUDE_TIMEOUT}s"
         log "avrdude failed; pedal may be sitting in its bootloader"
         mkdir -p "$(dirname "$PEDAL_FAIL_FILE")" 2>/dev/null || true
         echo "$fw_version" > "$PEDAL_FAIL_FILE" 2>/dev/null || true
