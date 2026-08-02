@@ -41,6 +41,14 @@ EXTRA_OECMAKE = " \
     -DCMAKE_DISABLE_FIND_PACKAGE_Python3=TRUE \
 "
 
+# The flex/bison-generated parser (config_gram.c, lexer.c) carries absolute
+# build paths in its #line directives, which trips the `buildpaths` QA check
+# when they are copied into the debug-source package. Scoped to `-src` on
+# purpose: that package is never installed on the appliance (only ${PN} is), so
+# the embedded paths reach nothing shippable — and keeping the check active on
+# every other package means a real buildpath leak still fails the build.
+INSANE_SKIP:${PN}-src = "buildpaths"
+
 do_install:append() {
     # elf2tag is a bash script for AVR ELF workflows we do not use. Shipping it
     # would make the image RDEPEND on bash purely for a helper nothing calls.
