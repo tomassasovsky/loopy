@@ -13,13 +13,14 @@ header:
 distro: poky
 machine: raspberrypi4-64
 
-# Pass the build number through to the loopy-bundle recipe. Without declaring it
-# here, a shell `LOOPY_BUILD_VERSION=N` never reaches bitbake (it is not in
-# BB_ENV_PASSTHROUGH_ADDITIONS), so /etc/loopy/build-version always stamps the
-# recipe default ("0") regardless of the release number — which breaks the OTA
-# version comparison (#308). CI / the build scripts export LOOPY_BUILD_VERSION.
+# Pass release metadata through to the loopy-bundle recipe. Without declaring
+# these here, a shell `LOOPY_BUILD_VERSION=N` / `LOOPY_UPDATE_CHANNEL=C` never
+# reaches bitbake (not in BB_ENV_PASSTHROUGH_ADDITIONS), so the image stamps
+# the recipe defaults ("0" / "production") and experimental builds silently
+# poll the production channel (#308). CI exports both.
 env:
   LOOPY_BUILD_VERSION: "0"
+  LOOPY_UPDATE_CHANNEL: "production"
 
 target:
   - loopy-kiosk-image
@@ -44,6 +45,8 @@ repos:
       meta-oe:
       meta-python:
       meta-multimedia:
+      # NetworkManager (Control Center WiFi — join/retry + clear auth errors).
+      meta-networking:
 
   meta-raspberrypi:
     url: https://git.yoctoproject.org/meta-raspberrypi

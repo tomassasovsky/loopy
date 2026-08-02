@@ -1,122 +1,176 @@
 import 'package:bloc_test/bloc_test.dart';
+import 'package:brightness_client/brightness_client.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:loopy/appliance/display_brightness_cubit.dart';
 import 'package:loopy/looper/cubit/settings_tray_cubit.dart';
+import 'package:settings_repository/settings_repository.dart';
+
+import '../../helpers/helpers.dart';
+
+class _FakeBrightnessClient implements BrightnessClient {
+  bool supported = true;
+  double current = 0.8;
+  final sets = <double>[];
+
+  @override
+  Future<bool> isSupported() async => supported;
+
+  @override
+  Future<double> get() async => current;
+
+  @override
+  Future<void> set(double value) async {
+    sets.add(value);
+    current = value;
+  }
+}
 
 void main() {
+  late SettingsRepository settings;
+  late _FakeBrightnessClient brightness;
+
+  setUp(() {
+    settings = SettingsRepository(store: FakeKeyValueStore());
+    brightness = _FakeBrightnessClient();
+  });
+
+  SettingsTrayCubit buildCubit() => SettingsTrayCubit(
+    settings: settings,
+    brightnessClient: brightness,
+  );
+
   group('SettingsTrayCubit', () {
-    test('defaults to closed with the default brightness', () {
-      final cubit = SettingsTrayCubit();
-      expect(cubit.state.dragProgress, 0);
-      expect(cubit.state.isNavigating, isFalse);
-      expect(cubit.state.brightness, 0.8);
-    });
-
     blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'dragTo emits the clamped progress',
-      build: SettingsTrayCubit.new,
-      act: (cubit) => cubit.dragTo(0.4),
-      expect: () => [const SettingsTrayState(dragProgress: 0.4)],
-    );
-
-    blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'dragTo clamps below 0',
-      build: SettingsTrayCubit.new,
-      act: (cubit) => cubit.dragTo(-0.5),
-      expect: () => [const SettingsTrayState()],
-    );
-
-    blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'dragTo clamps above 1',
-      build: SettingsTrayCubit.new,
-      act: (cubit) => cubit.dragTo(1.5),
-      expect: () => [const SettingsTrayState(dragProgress: 1)],
-    );
-
-    blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'dragTo tracks a drag closed from an open tray',
-      build: SettingsTrayCubit.new,
-      seed: () => const SettingsTrayState(dragProgress: 1),
-      act: (cubit) => cubit.dragTo(0.9),
-      expect: () => [const SettingsTrayState(dragProgress: 0.9)],
-    );
-
-    blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'settleFromDrag snaps open past the 50% threshold',
-      build: SettingsTrayCubit.new,
-      seed: () => const SettingsTrayState(dragProgress: 0.51),
-      act: (cubit) => cubit.settleFromDrag(),
-      expect: () => [const SettingsTrayState(dragProgress: 1)],
-    );
-
-    blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'settleFromDrag at exactly 50% snaps closed (distance-only, not >=)',
-      build: SettingsTrayCubit.new,
-      seed: () => const SettingsTrayState(dragProgress: 0.5),
-      act: (cubit) => cubit.settleFromDrag(),
-      expect: () => [const SettingsTrayState()],
-    );
-
-    blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'settleFromDrag snaps closed under the 50% threshold',
-      build: SettingsTrayCubit.new,
-      seed: () => const SettingsTrayState(dragProgress: 0.2),
-      act: (cubit) => cubit.settleFromDrag(),
-      expect: () => [const SettingsTrayState()],
-    );
-
-    blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'open sets dragProgress to 1',
-      build: SettingsTrayCubit.new,
-      act: (cubit) => cubit.open(),
-      expect: () => [const SettingsTrayState(dragProgress: 1)],
-    );
-
-    blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'closeTray sets dragProgress to 0',
-      build: SettingsTrayCubit.new,
-      seed: () => const SettingsTrayState(dragProgress: 1),
-      act: (cubit) => cubit.closeTray(),
-      expect: () => [const SettingsTrayState()],
-    );
-
-    blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'toggle opens a closed tray',
-      build: SettingsTrayCubit.new,
-      act: (cubit) => cubit.toggle(),
-      expect: () => [const SettingsTrayState(dragProgress: 1)],
-    );
-
-    blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'toggle closes an open tray',
-      build: SettingsTrayCubit.new,
-      seed: () => const SettingsTrayState(dragProgress: 1),
-      act: (cubit) => cubit.toggle(),
-      expect: () => [const SettingsTrayState()],
-    );
-
-    blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'beginNavigating / endNavigating toggle isNavigating',
-      build: SettingsTrayCubit.new,
+      'open / closeTray / toggle',
+      build: buildCubit,
       act: (cubit) => cubit
-        ..beginNavigating()
-        ..endNavigating(),
+        ..open()
+        ..closeTray()
+        ..toggle()
+        ..toggle(),
       expect: () => [
-        const SettingsTrayState(isNavigating: true),
+        const SettingsTrayState(dragProgress: 1),
+        const SettingsTrayState(),
+        const SettingsTrayState(dragProgress: 1),
         const SettingsTrayState(),
       ],
     );
 
     blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'setBrightness clamps to 0..1 and emits',
-      build: SettingsTrayCubit.new,
+      'dragTo clamps and settleFromDrag snaps',
+      build: buildCubit,
       act: (cubit) => cubit
-        ..setBrightness(0.3)
-        ..setBrightness(-1)
-        ..setBrightness(2),
+        ..dragTo(0.6)
+        ..settleFromDrag()
+        ..dragTo(0.4)
+        ..settleFromDrag(),
       expect: () => [
+        const SettingsTrayState(dragProgress: 0.6),
+        const SettingsTrayState(dragProgress: 1),
+        const SettingsTrayState(dragProgress: 0.4),
+        const SettingsTrayState(),
+      ],
+    );
+
+    blocTest<SettingsTrayCubit, SettingsTrayState>(
+      'load restores brightness and applies when supported',
+      build: buildCubit,
+      setUp: () async {
+        await settings.saveBrightness(0.55);
+      },
+      act: (cubit) => cubit.load(),
+      expect: () => [const SettingsTrayState(brightness: 0.55)],
+      verify: (_) {
+        expect(brightness.sets, [0.55]);
+      },
+    );
+
+    blocTest<SettingsTrayCubit, SettingsTrayState>(
+      'setBrightness persists and applies when supported',
+      build: buildCubit,
+      act: (cubit) async {
+        await cubit.load();
+        await cubit.setBrightness(0.3);
+      },
+      expect: () => [
+        const SettingsTrayState(),
         const SettingsTrayState(brightness: 0.3),
-        const SettingsTrayState(brightness: 0),
-        const SettingsTrayState(brightness: 1),
+      ],
+      verify: (_) async {
+        expect(await settings.loadBrightness(), 0.3);
+        expect(brightness.sets.last, 0.3);
+      },
+    );
+
+    blocTest<SettingsTrayCubit, SettingsTrayState>(
+      'setBrightness skips apply when unsupported',
+      build: buildCubit,
+      setUp: () {
+        brightness.supported = false;
+      },
+      act: (cubit) async {
+        await cubit.load();
+        await cubit.setBrightness(0.4);
+      },
+      expect: () => [
+        const SettingsTrayState(),
+        const SettingsTrayState(brightness: 0.4),
+      ],
+      verify: (_) {
+        expect(brightness.sets, isEmpty);
+      },
+    );
+
+    blocTest<SettingsTrayCubit, SettingsTrayState>(
+      'delegates brightness to DisplayBrightnessCubit when provided',
+      build: () => SettingsTrayCubit(
+        settings: settings,
+        brightnessClient: brightness,
+        displayBrightness: DisplayBrightnessCubit(
+          settings: settings,
+          client: brightness,
+        ),
+      ),
+      setUp: () {
+        brightness.supported = false;
+      },
+      act: (cubit) async {
+        await cubit.load();
+        await cubit.setBrightness(0.35);
+      },
+      expect: () => [
+        const SettingsTrayState(),
+        const SettingsTrayState(brightness: 0.35),
+      ],
+      verify: (_) async {
+        expect(await settings.loadBrightness(), 0.35);
+        // DDC unsupported — DisplayBrightnessCubit still owns persistence;
+        // software dim is applied by App via the cubit state.
+        expect(brightness.sets, isEmpty);
+      },
+    );
+
+    blocTest<SettingsTrayCubit, SettingsTrayState>(
+      'openWifi expands in-tray and closeTray resets to home',
+      build: buildCubit,
+      act: (cubit) => cubit
+        ..openWifi()
+        ..showHome()
+        ..openBluetooth()
+        ..closeTray(),
+      expect: () => [
+        const SettingsTrayState(
+          dragProgress: 1,
+          destination: SettingsTrayDestination.wifi,
+        ),
+        const SettingsTrayState(
+          dragProgress: 1,
+        ),
+        const SettingsTrayState(
+          dragProgress: 1,
+          destination: SettingsTrayDestination.bluetooth,
+        ),
+        const SettingsTrayState(),
       ],
     );
   });

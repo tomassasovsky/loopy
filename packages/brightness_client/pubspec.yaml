@@ -1,0 +1,16 @@
+name: brightness_client
+description: >-
+  Data client for Loopy appliance display brightness (`loopy-brightness-ctl`).
+  Pure Dart — Process.run + JSON parse only; no Flutter dependency.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  meta: ^1.16.0
+
+dev_dependencies:
+  test: ^1.25.0
+  very_good_analysis: ^10.2.0

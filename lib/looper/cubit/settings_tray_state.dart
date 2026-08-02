@@ -1,13 +1,27 @@
 part of 'settings_tray_cubit.dart';
 
-/// State for [SettingsTrayCubit]: pure ephemeral UI state for the console's
-/// slide-down quick-access tray. Nothing here persists across a restart.
+/// Which face the open tray is showing — home tiles, or an in-tray WiFi /
+/// Bluetooth panel (Control-Center expand, not a full-screen route).
+enum SettingsTrayDestination {
+  /// Tile grid + brightness.
+  home,
+
+  /// In-tray WiFi panel.
+  wifi,
+
+  /// In-tray Bluetooth panel.
+  bluetooth,
+}
+
+/// State for [SettingsTrayCubit]: tray open/drag is ephemeral; brightness is
+/// persisted and applied to the display when the appliance helper supports it.
 class SettingsTrayState extends Equatable {
   /// Creates a [SettingsTrayState].
   const SettingsTrayState({
     this.dragProgress = 0,
     this.isNavigating = false,
     this.brightness = 0.8,
+    this.destination = SettingsTrayDestination.home,
   });
 
   /// Live drag/settle progress in `0..1` — `0` fully closed, `1` fully open.
@@ -24,21 +38,31 @@ class SettingsTrayState extends Equatable {
   /// guard of its own).
   final bool isNavigating;
 
-  /// UI-only brightness slider value. Not persisted; not wired to any real
-  /// display dimming yet.
+  /// Brightness slider value (`0..1`). Persisted via SettingsRepository;
+  /// applied through BrightnessClient when DDC/CI is available.
   final double brightness;
+
+  /// In-tray face: home tiles or a WiFi/Bluetooth expand panel.
+  final SettingsTrayDestination destination;
 
   /// Returns a copy with the given fields replaced.
   SettingsTrayState copyWith({
     double? dragProgress,
     bool? isNavigating,
     double? brightness,
+    SettingsTrayDestination? destination,
   }) => SettingsTrayState(
     dragProgress: dragProgress ?? this.dragProgress,
     isNavigating: isNavigating ?? this.isNavigating,
     brightness: brightness ?? this.brightness,
+    destination: destination ?? this.destination,
   );
 
   @override
-  List<Object?> get props => [dragProgress, isNavigating, brightness];
+  List<Object?> get props => [
+    dragProgress,
+    isNavigating,
+    brightness,
+    destination,
+  ];
 }

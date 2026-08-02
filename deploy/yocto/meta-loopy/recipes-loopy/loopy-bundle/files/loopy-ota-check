@@ -71,6 +71,11 @@ semver_newer() {
 
 command -v rauc >/dev/null 2>&1 || { log "rauc not installed, skipping"; exit 0; }
 
+# Drop a staged marker left by a failed tryboot so we can re-offer the build.
+if command -v loopy-update-ctl >/dev/null 2>&1; then
+    loopy-update-ctl reconcile-staged >/dev/null 2>&1 || true
+fi
+
 channel=$(resolve_channel)
 current=$(cat "$CUR_FILE" 2>/dev/null || echo "0.0.0")
 staged=$(cat "$STAGED_FILE" 2>/dev/null || echo "0.0.0")

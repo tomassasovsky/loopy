@@ -268,26 +268,38 @@ jobs:
       # Devices read from segno.aquiles.dev, not GitHub. Nudge the mirror now so
       # Check Now does not wait for the poll interval (default 300s). Soft-fail:
       # a missed trigger still gets picked up by the next poll.
+      #
+      # Important: a 200 from /hooks/sync is not enough — GitHub's Releases API
+      # can lag a few seconds after publish, so the mirror may honestly report
+      # the previous tag as "up to date". Retry until the channel manifest
+      # actually carries EXPECTED_VERSION.
       - name: Trigger segno mirror sync
         env:
           SEGNO_SYNC_TOKEN: ${{ secrets.SEGNO_SYNC_TOKEN }}
           SEGNO_SYNC_URL: https://segno.aquiles.dev/hooks/sync
+          EXPECTED_VERSION: ${{ needs.determine-meta.outputs.version }}
+          CHANNEL: ${{ needs.determine-meta.outputs.channel }}
         run: |
           set -eu
           if [ -z "${SEGNO_SYNC_TOKEN:-}" ]; then
             echo "::warning::SEGNO_SYNC_TOKEN unset; segno will catch up on next poll"
             exit 0
           fi
-          # Brief retries: GitHub's Releases API can lag a few seconds after publish.
-          for i in 1 2 3 4 5 6; do
+          for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
             echo "segno sync attempt $i…"
-            if out=$(curl -fsS -X POST \
+            out=$(curl -fsS -X POST \
                 -H "Authorization: Bearer ${SEGNO_SYNC_TOKEN}" \
                 --max-time 300 \
-                "$SEGNO_SYNC_URL"); then
-              printf '%s\n' "$out"
+                "$SEGNO_SYNC_URL" || true)
+            printf '%s\n' "$out"
+            mirrored=$(curl -fsS --max-time 30 \
+                "https://segno.aquiles.dev/updates/appliance/${CHANNEL}/manifest.json" \
+                | jq -r '.version // empty' || true)
+            if [ "$mirrored" = "$EXPECTED_VERSION" ]; then
+              echo "segno manifest matches $EXPECTED_VERSION"
               exit 0
             fi
+            echo "segno still at '${mirrored:-unknown}', want $EXPECTED_VERSION"
             sleep 10
           done
-          echo "::warning::segno sync trigger failed after retries; poll will catch up"
+          echo "::warning::segno did not reach $EXPECTED_VERSION after retries; poll will catch up"

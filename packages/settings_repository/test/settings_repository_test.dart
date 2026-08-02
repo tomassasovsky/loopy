@@ -551,6 +551,19 @@ void main() {
     });
   });
 
+  group('brightness', () {
+    test('defaults to 0.8 when unset', () async {
+      expect(await repository.loadBrightness(), 0.8);
+    });
+
+    test('round-trips a saved preference and clamps', () async {
+      await repository.saveBrightness(0.42);
+      expect(await repository.loadBrightness(), 0.42);
+      await repository.saveBrightness(2);
+      expect(await repository.loadBrightness(), 1);
+    });
+  });
+
   group('track indicators', () {
     test('defaults to enabled when unset', () async {
       expect(await repository.loadShowTrackIndicators(), isTrue);

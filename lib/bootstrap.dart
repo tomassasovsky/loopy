@@ -62,12 +62,13 @@ Future<void> bootstrap(FutureOr<Widget> Function() builder) async {
 
   Bloc.observer = const AppBlocObserver();
 
-  await runZonedGuarded(
-    () async {
-      runApp(await builder());
-    },
-    (error, stack) {
-      AppLog.error('zone', error: error, stack: stack);
-    },
-  );
+  // runApp must stay in the same zone as ensureInitialized (runLoopy).
+  // A nested runZonedGuarded triggers Flutter's zone-mismatch check and
+  // can remount PlatformMenuBar.
+  try {
+    runApp(await builder());
+  } on Object catch (error, stack) {
+    AppLog.error('runApp', error: error, stack: stack);
+    rethrow;
+  }
 }

@@ -35,8 +35,16 @@ SRC_URI = "file://loopy.service \
            file://loopy-ota-check.service \
            file://loopy-ota-check.timer \
            file://loopy-update-ctl \
-           file://loopy-net-persist \
-           file://loopy-net-persist.service \
+           file://loopy-wifi-ctl \
+           file://loopy-nm-persist \
+           file://loopy-nm-persist.service \
+           file://loopy-ssh-persist \
+           file://loopy-ssh-persist.service \
+           file://dropbear-loopy.conf \
+           file://loopy-bt-ctl \
+           file://loopy-brightness-ctl \
+           file://99-loopy-wifi.conf \
+           file://brcmfmac.conf \
            file://update-channel"
 
 # No source tree (prebuilt install). walnascar bans S=${WORKDIR}; SRC_URI local
@@ -62,10 +70,14 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # the Pro Micro (avrdude -c avr109) after stty does the Caterina 1200bps touch
 # reset. avrdude comes from meta-loopy's own recipe (#430) — no layer we use
 # ships one.
+# networkmanager-nmcli: loopy-wifi-ctl (NM owns wpa_supplicant via -wifi plugin).
+# bluez5: loopy-bt-ctl. ddcutil: loopy-brightness-ctl.
 RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
                   fontconfig freetype glib-2.0 mesa alsa-lib libstdc++ \
                   curl jq ca-certificates rauc \
                   parted e2fsprogs-resize2fs \
+                  networkmanager-nmcli networkmanager-wifi \
+                  bluez5 ddcutil \
                   avrdude coreutils"
 
 inherit systemd
@@ -75,18 +87,27 @@ inherit systemd
 # launch and the user triggers install/reboot from Settings (via loopy-update-ctl).
 # So loopy-ota-check.timer is installed but NOT auto-enabled — no background
 # auto-staging. (Re-enable the timer manually for a headless auto-update device.)
-SYSTEMD_SERVICE:${PN} = "loopy.service loopy-rtirq.service loopy-data-grow.service \
-                         loopy-net-persist.service boot.mount data.mount"
+SYSTEMD_SERVICE:${PN} = "loopy.service loopy-rtirq.service loopy-data-grow.service loopy-nm-persist.service loopy-ssh-persist.service boot.mount data.mount"
 
 FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch ${bindir}/loopy-rtirq \
-                ${bindir}/loopy-data-grow ${bindir}/loopy-net-persist \
+                ${bindir}/loopy-data-grow \
                 ${bindir}/loopy-ota-check \
                 ${bindir}/loopy-update-ctl \
+                ${bindir}/loopy-wifi-ctl \
+                ${bindir}/loopy-nm-persist \
+                ${bindir}/loopy-ssh-persist \
+                ${bindir}/loopy-bt-ctl \
+                ${bindir}/loopy-brightness-ctl \
+                ${sysconfdir}/NetworkManager/conf.d/99-loopy-wifi.conf \
+                ${sysconfdir}/systemd/system/dropbear@.service.d/loopy.conf \
+                ${sysconfdir}/systemd/system/dropbearkey.service.d/loopy.conf \
+                ${sysconfdir}/modprobe.d/brcmfmac.conf \
                 ${sysconfdir}/loopy/update-channel ${sysconfdir}/loopy/build-version \
                 ${systemd_system_unitdir}/loopy.service \
                 ${systemd_system_unitdir}/loopy-rtirq.service \
                 ${systemd_system_unitdir}/loopy-data-grow.service \
-                ${systemd_system_unitdir}/loopy-net-persist.service \
+                ${systemd_system_unitdir}/loopy-nm-persist.service \
+                ${systemd_system_unitdir}/loopy-ssh-persist.service \
                 ${systemd_system_unitdir}/boot.mount \
                 ${systemd_system_unitdir}/data.mount \
                 ${systemd_system_unitdir}/loopy-ota-check.service \
@@ -131,11 +152,6 @@ do_install() {
     install -m 0755 ${UNPACKDIR}/loopy-data-grow ${D}${bindir}/loopy-data-grow
     install -m 0644 ${UNPACKDIR}/loopy-data-grow.service ${D}${systemd_system_unitdir}/loopy-data-grow.service
 
-    # net-persist: bind the durable Wi-Fi credential store on /data over
-    # /etc/NetworkManager/system-connections, which otherwise lives inside the
-    # A/B slot image and is wiped by every OS update.
-    install -m 0755 ${UNPACKDIR}/loopy-net-persist ${D}${bindir}/loopy-net-persist
-    install -m 0644 ${UNPACKDIR}/loopy-net-persist.service ${D}${systemd_system_unitdir}/loopy-net-persist.service
 
     # Mount units: /boot = tryboot selector (autoboot.txt, for the RAUC backend),
     # /data = persistent app data (survives updates).
@@ -149,8 +165,42 @@ do_install() {
     install -m 0644 ${UNPACKDIR}/loopy-ota-check.service ${D}${systemd_system_unitdir}/loopy-ota-check.service
     install -m 0644 ${UNPACKDIR}/loopy-ota-check.timer ${D}${systemd_system_unitdir}/loopy-ota-check.timer
 
+    # Control Center host helpers (WiFi / Bluetooth / brightness) — Flutter
+    # shells out to these the same way it drives loopy-update-ctl.
+    install -m 0755 ${UNPACKDIR}/loopy-wifi-ctl ${D}${bindir}/loopy-wifi-ctl
+    install -m 0755 ${UNPACKDIR}/loopy-bt-ctl ${D}${bindir}/loopy-bt-ctl
+    install -m 0755 ${UNPACKDIR}/loopy-brightness-ctl ${D}${bindir}/loopy-brightness-ctl
+
+    # NetworkManager appliance tweaks (WiFi join reliability on brcmfmac).
+    # loopy-nm-persist: mkdir /data/NetworkManager/system-connections before NM
+    # so keyfile.path (in 99-loopy-wifi.conf) survives A/B OTA.
+    install -d ${D}${sysconfdir}/NetworkManager/conf.d
+    install -m 0644 ${UNPACKDIR}/99-loopy-wifi.conf \
+        ${D}${sysconfdir}/NetworkManager/conf.d/99-loopy-wifi.conf
+    install -m 0755 ${UNPACKDIR}/loopy-nm-persist ${D}${bindir}/loopy-nm-persist
+    install -m 0644 ${UNPACKDIR}/loopy-nm-persist.service \
+        ${D}${systemd_system_unitdir}/loopy-nm-persist.service
+
+    # Dropbear host keys on /data so A/B OTA does not rotate SSH identity (#309).
+    install -m 0755 ${UNPACKDIR}/loopy-ssh-persist ${D}${bindir}/loopy-ssh-persist
+    install -m 0644 ${UNPACKDIR}/loopy-ssh-persist.service \
+        ${D}${systemd_system_unitdir}/loopy-ssh-persist.service
+    install -d ${D}${sysconfdir}/systemd/system/dropbear@.service.d
+    install -d ${D}${sysconfdir}/systemd/system/dropbearkey.service.d
+    install -m 0644 ${UNPACKDIR}/dropbear-loopy.conf \
+        ${D}${sysconfdir}/systemd/system/dropbear@.service.d/loopy.conf
+    install -m 0644 ${UNPACKDIR}/dropbear-loopy.conf \
+        ${D}${sysconfdir}/systemd/system/dropbearkey.service.d/loopy.conf
+
+    # brcmfmac: roamoff=1 — without this, WPA2 associates then never completes
+    # the 4-way handshake on many APs (no EAPOL M1).
+    install -d ${D}${sysconfdir}/modprobe.d
+    install -m 0644 ${UNPACKDIR}/brcmfmac.conf \
+        ${D}${sysconfdir}/modprobe.d/brcmfmac.conf
+
     # /etc/loopy: update channel + this build's version number.
     # Prefer LOOPY_UPDATE_CHANNEL (set by CI) over the static file default.
+    # vardeps below force a rebuild when CI changes either stamp.
     install -d ${D}${sysconfdir}/loopy
     printf '%s\n' "${LOOPY_UPDATE_CHANNEL}" > ${D}${sysconfdir}/loopy/update-channel
     echo "${LOOPY_BUILD_VERSION}" > ${D}${sysconfdir}/loopy/build-version
@@ -160,3 +210,7 @@ do_install() {
     install -d ${D}${sysconfdir}/tmpfiles.d
     install -m 0644 ${UNPACKDIR}/loopy-runtime.conf ${D}${sysconfdir}/tmpfiles.d/loopy-runtime.conf
 }
+
+# Rebuild when CI stamps a new version/channel (otherwise sstate can leave a
+# stale /etc/loopy/* from a prior package).
+do_install[vardeps] += "LOOPY_BUILD_VERSION LOOPY_UPDATE_CHANNEL"

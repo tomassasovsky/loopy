@@ -96,5 +96,25 @@ void main() {
       );
       expect(detector.enabled, isFalse);
     });
+
+    testWidgets('stays interactive when only onLongPress is set', (
+      tester,
+    ) async {
+      var presses = 0;
+      await tester.pumpApp(
+        FocusableTapTarget(
+          onTap: null,
+          onLongPress: () => presses++,
+          semanticLabel: 'WiFi',
+          child: const SizedBox(width: 40, height: 24),
+        ),
+      );
+      final detector = tester.widget<FocusableActionDetector>(
+        find.byType(FocusableActionDetector),
+      );
+      expect(detector.enabled, isTrue);
+      await tester.longPress(find.byType(FocusableTapTarget));
+      expect(presses, 1);
+    });
   });
 }
