@@ -186,6 +186,37 @@ jobs:
       - name: Build + run firmware/Dart protocol contract tests (both trees)
         run: bash firmware/test/run_tests.sh
 
+  # Proves the pedal firmware still compiles to a flashable .hex, using the very
+  # script appliance-release.yml publishes with (#331 part C). Without this the
+  # firmware build would only ever run at release time, on the `experimental`
+  # branch or a tag — so a sketch that no longer compiles would land on master
+  # green and only surface when a release was already in flight.
+  pedal-firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install arduino-cli + the AVR core
+        run: |
+          set -eu
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh -s 0.35.3
+          echo "$PWD/bin" >> "$GITHUB_PATH"
+      - name: Compile the pedal firmware
+        run: |
+          set -eu
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
+          hardware/firmware/loopy_pedal_32u4/build.sh fw-out ci
+      - name: Check the artifacts the release manifest reads
+        run: |
+          set -eu
+          test -s fw-out/loopy-pedal-ci.hex
+          # The manifest interpolates this straight into JSON as a number, so a
+          # non-numeric or empty read would publish a manifest that no client
+          # can parse.
+          proto=$(cat fw-out/protocol-version)
+          case "$proto" in ''|*[!0-9]*) echo "::error::bad protocol version '$proto'"; exit 1 ;; esac
+          echo "pedal firmware builds; protocol v$proto"
+
   # The same engine/MIDI suites under AddressSanitizer (#227): the strongest
   # net for buffer-sizing bugs — the class that stays green through every
   # assertion until adversarial review finds it (#218's shadow-slot overflow).

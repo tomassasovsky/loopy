@@ -107,4 +107,104 @@ void main() {
       expect(make(), isNot(other));
     });
   });
+
+  _pedalFirmwareTests();
+}
+
+void _pedalFirmwareTests() {
+  group('pedalFirmware block', () {
+    Map<String, dynamic> base() => <String, dynamic>{
+      'version': '0.2.0',
+      'bundle': 'b.raucb',
+    };
+
+    test('parses a well-formed block', () {
+      final manifest = UpdateManifest.fromJson({
+        ...base(),
+        'pedalFirmware': <String, dynamic>{
+          'version': '0.2.0',
+          'hex': 'loopy-pedal-0.2.0.hex',
+          'protocolVersion': 3,
+          'sha256': 'abc',
+        },
+      });
+
+      final firmware = manifest?.pedalFirmware;
+      expect(firmware?.version, Version.parse('0.2.0'));
+      expect(firmware?.hex, 'loopy-pedal-0.2.0.hex');
+      expect(firmware?.protocolVersion, 3);
+      expect(firmware?.sha256, 'abc');
+    });
+
+    test('a manifest with no block parses with a null firmware', () {
+      // Every manifest published before the firmware artifact existed.
+      expect(UpdateManifest.fromJson(base())?.pedalFirmware, isNull);
+    });
+
+    test('tolerates a quoted protocolVersion', () {
+      final manifest = UpdateManifest.fromJson({
+        ...base(),
+        'pedalFirmware': <String, dynamic>{
+          'version': '0.2.0',
+          'hex': 'f.hex',
+          'protocolVersion': '3',
+        },
+      });
+
+      expect(manifest?.pedalFirmware?.protocolVersion, 3);
+    });
+
+    test('defaults protocolVersion to 0 (unknown) when absent', () {
+      final manifest = UpdateManifest.fromJson({
+        ...base(),
+        'pedalFirmware': <String, dynamic>{'version': '0.2.0', 'hex': 'f.hex'},
+      });
+
+      expect(manifest?.pedalFirmware?.protocolVersion, 0);
+    });
+
+    // The OS update is the thing that must not break. A firmware block that is
+    // malformed, half-written, or shaped for a future schema drops to null and
+    // the bundle still installs.
+    for (final (label, block) in <(String, Object)>[
+      ('a non-map block', 'not-a-map'),
+      ('a missing hex', <String, dynamic>{'version': '0.2.0'}),
+      ('an empty hex', <String, dynamic>{'version': '0.2.0', 'hex': ''}),
+      ('a missing version', <String, dynamic>{'hex': 'f.hex'}),
+      (
+        'an unparseable version',
+        <String, dynamic>{'version': 'latest', 'hex': 'f.hex'},
+      ),
+      (
+        'a non-string version',
+        <String, dynamic>{'version': 2, 'hex': 'f.hex'},
+      ),
+    ]) {
+      test('$label drops the firmware but keeps the bundle installable', () {
+        final manifest = UpdateManifest.fromJson({
+          ...base(),
+          'pedalFirmware': block,
+        });
+
+        expect(manifest, isNotNull);
+        expect(manifest?.bundle, 'b.raucb');
+        expect(manifest?.pedalFirmware, isNull);
+      });
+    }
+
+    test('differing firmware breaks manifest equality', () {
+      UpdateManifest make(String hex) => UpdateManifest(
+        version: Version.parse('0.2.0'),
+        bundle: 'b.raucb',
+        pedalFirmware: PedalFirmwareManifest(
+          version: Version.parse('0.2.0'),
+          hex: hex,
+        ),
+      );
+
+      expect(make('a.hex'), make('a.hex'));
+      expect(make('a.hex').hashCode, make('a.hex').hashCode);
+      expect(make('a.hex'), isNot(make('b.hex')));
+    });
+  });
 }
