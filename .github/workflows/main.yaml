@@ -350,12 +350,15 @@ jobs:
           cmake --build build/vst3
           ctest --test-dir build/vst3 --output-on-failure
 
-  # The refusal paths of `loopy-update-ctl flash-pedal` (#331 part D). The flash
-  # itself needs a real Pro Micro, but the decisions AROUND it are the dangerous
-  # part: the pedal has no A/B rollback, so a write that should not have started
-  # means a workbench trip with a sealed enclosure. The harness injects a
-  # file:// manifest, a fixture serial dir, and a stub avrdude — no hardware.
-  flash-pedal-tests:
+  # The appliance's privileged shell helpers, which no other job covers: the
+  # refusal paths of `loopy-update-ctl flash-pedal` (#331 part D) and the Wi-Fi
+  # credential persistence unit (#432). Both do things that are dangerous to get
+  # wrong and awkward to verify by hand — a flash that should not have started
+  # means a workbench trip with a sealed enclosure, and a bad bind mount loses
+  # someone's network credentials silently. The harnesses stub the hardware
+  # (file:// manifests, fixture serial dirs, fake avrdude/stty/mount), so these
+  # need no device and no network.
+  appliance-shell-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -363,6 +366,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq
       - name: Run flash-pedal safety tests
         run: bash deploy/yocto/meta-loopy/recipes-loopy/loopy-bundle/test/run_flash_pedal_tests.sh
+      - name: Run net-persist tests
+        run: bash deploy/yocto/meta-loopy/recipes-loopy/loopy-bundle/test/run_net_persist_tests.sh
 
   spell-check:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1
