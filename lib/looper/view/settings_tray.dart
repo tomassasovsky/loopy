@@ -9,6 +9,7 @@ import 'package:loopy/looper/cubit/settings_tray_cubit.dart';
 import 'package:loopy/looper/view/coming_soon_stub.dart';
 import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
 import 'package:loopy/theme/theme.dart';
+import 'package:loopy/wifi/view/wifi_page.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 
 /// The console's slide-down quick-access tray (Control-Center style): a small
@@ -352,12 +353,8 @@ class _TrayPanel extends StatelessWidget {
                                       icon: Icons.wifi,
                                       label: l10n.trayWifiLabel,
                                       accent: surface.laneColor(7),
-                                      onTap: () => unawaited(
-                                        showComingSoonStub(
-                                          context,
-                                          feature: l10n.trayWifiLabel,
-                                        ),
-                                      ),
+                                      onTap: () =>
+                                          unawaited(showWifiPage(context)),
                                     ),
                                   ),
                                 ],
