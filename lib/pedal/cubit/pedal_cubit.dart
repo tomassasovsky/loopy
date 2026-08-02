@@ -18,19 +18,20 @@ part 'pedal_state.dart';
 class PedalCubit extends Cubit<PedalState> {
   /// Creates a [PedalCubit].
   ///
-  /// [autoBindProductName] enables console auto-detect for the LED output: with
-  /// no persisted device the cubit adopts the output whose name matches that
-  /// USB product string. `null` (the default, and every desktop build) leaves
-  /// binding entirely manual. Mirrors `MidiDeviceRepository`'s input-side
-  /// flag — the pedal is one device on two links, so both have to resolve.
+  /// [autoBindProductNames] enables console auto-detect for the LED output:
+  /// with no persisted device the cubit adopts the output whose name matches
+  /// any of those USB product strings. `null` (the default, and every desktop
+  /// build) leaves binding entirely manual. Mirrors `MidiDeviceRepository`'s
+  /// input-side flag — the pedal is one device on two links, so both have to
+  /// resolve.
   PedalCubit({
     required PedalRepository pedal,
     required SettingsRepository settings,
     Duration pollInterval = const Duration(seconds: 2),
-    String? autoBindProductName,
+    List<String>? autoBindProductNames,
   }) : _pedal = pedal,
        _settings = settings,
-       _autoBindProductName = autoBindProductName,
+       _autoBindProductNames = autoBindProductNames,
        super(const PedalState()) {
     _statusSub = _pedal.statusChanges.listen(_onBindStatus);
     // Seed the output set so the settings picker has it before the first
@@ -45,7 +46,7 @@ class PedalCubit extends Cubit<PedalState> {
 
   final PedalRepository _pedal;
   final SettingsRepository _settings;
-  final String? _autoBindProductName;
+  final List<String>? _autoBindProductNames;
 
   late final StreamSubscription<PedalBindStatus> _statusSub;
 
@@ -86,7 +87,7 @@ class PedalCubit extends Cubit<PedalState> {
     if (saved == null) {
       // Nothing persisted: let auto-detect adopt the pedal and bind it, reusing
       // [reconnect]'s reconcile rather than repeating the bind here.
-      if (_autoBindProductName != null) reconnect();
+      if (_autoBindProductNames != null) reconnect();
       return;
     }
     // Pin the saved output so the poll can reconnect it; bind now if present,
@@ -238,8 +239,8 @@ class PedalCubit extends Cubit<PedalState> {
   ///
   /// A persisted or user-picked device always wins.
   void _maybeAutoPin(List<PedalOutput> outputs) {
-    final productName = _autoBindProductName;
-    if (productName == null || _autoBindSuppressed) return;
+    final productNames = _autoBindProductNames;
+    if (productNames == null || _autoBindSuppressed) return;
     final pinned = _savedOutputId;
     if (pinned != null) {
       if (!_autoBound) return;
@@ -248,7 +249,7 @@ class PedalCubit extends Cubit<PedalState> {
 
     PedalOutput? match;
     for (final output in outputs) {
-      if (midiDeviceNameMatches(output.name, productName)) {
+      if (midiDeviceNameMatches(output.name, productNames)) {
         match = output;
         break;
       }

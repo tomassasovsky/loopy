@@ -116,13 +116,13 @@ void main() {
     group('console auto-detect', () {
       const pedalOut = MidiDevice(id: 'out-p', name: 'VAMP Loopstation MIDI 1');
       const otherOut = MidiDevice(id: 'out-x', name: 'Launchpad Mini');
-      const productName = 'VAMP Loopstation';
+      const productNames = ['VAMP Loopstation'];
 
       PedalCubit buildAuto() => PedalCubit(
         pedal: pedal,
         settings: settings,
         pollInterval: Duration.zero,
-        autoBindProductName: productName,
+        autoBindProductNames: productNames,
       );
 
       test('binds the matching output with nothing persisted', () async {

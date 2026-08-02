@@ -31,18 +31,19 @@ class MidiDeviceRepository {
   /// [pollInterval] is the hotplug re-enumeration cadence; pass [Duration.zero]
   /// to disable the timer (tests drive [refresh] directly).
   ///
-  /// [autoBindProductName] enables console auto-detect: with no saved selection
-  /// the repository adopts the input whose name matches that USB product string
-  /// (see [midiDeviceNameMatches]) instead of waiting for a pick. `null` (the
-  /// default, and every desktop build) leaves selection entirely manual.
+  /// [autoBindProductNames] enables console auto-detect: with no saved
+  /// selection the repository adopts the input whose name matches any of those
+  /// USB product strings (see [midiDeviceNameMatches]) instead of waiting for a
+  /// pick. `null` (the default, and every desktop build) leaves selection
+  /// entirely manual.
   MidiDeviceRepository({
     required MidiControllerSource? source,
     required SettingsRepository settings,
     Duration pollInterval = const Duration(seconds: 2),
-    String? autoBindProductName,
+    List<String>? autoBindProductNames,
   }) : _source = source,
        _settings = settings,
-       _autoBindProductName = autoBindProductName {
+       _autoBindProductNames = autoBindProductNames {
     // Populate the picker immediately so it never flashes empty while the saved
     // selection loads (enumerate is a cheap synchronous native call).
     _emit(MidiConnection(devices: source?.enumerate() ?? const []));
@@ -57,7 +58,7 @@ class MidiDeviceRepository {
 
   final MidiControllerSource? _source;
   final SettingsRepository _settings;
-  final String? _autoBindProductName;
+  final List<String>? _autoBindProductNames;
   final StreamController<MidiConnection> _controller =
       StreamController<MidiConnection>.broadcast();
   Timer? _pollTimer;
@@ -111,7 +112,7 @@ class MidiDeviceRepository {
       _lastSelectedPresent = null;
       // Nothing pinned: let auto-detect adopt the pedal and open it, reusing
       // [refresh]'s reconcile rather than repeating the open/emit dance here.
-      if (source != null && _autoBindProductName != null) refresh();
+      if (source != null && _autoBindProductNames != null) refresh();
       return;
     }
 
@@ -276,8 +277,8 @@ class MidiDeviceRepository {
   /// A saved or user-made selection always wins: only an absent auto-bound pin
   /// (or no pin at all) is resolved here.
   void _maybeAutoPin(List<MidiDevice> devices) {
-    final productName = _autoBindProductName;
-    if (productName == null || _autoBindSuppressed) return;
+    final productNames = _autoBindProductNames;
+    if (productNames == null || _autoBindSuppressed) return;
     if (_connection.hasSelection) {
       if (!_autoBound) return;
       if (devices.any((d) => d.id == _connection.selectedId)) return;
@@ -285,7 +286,7 @@ class MidiDeviceRepository {
 
     MidiDevice? match;
     for (final device in devices) {
-      if (midiDeviceNameMatches(device.name, productName)) {
+      if (midiDeviceNameMatches(device.name, productNames)) {
         match = device;
         break;
       }

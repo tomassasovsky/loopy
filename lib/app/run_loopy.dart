@@ -124,7 +124,7 @@ Future<void> runLoopy(
     // LOOPY_CONSOLE is defined, and dropping it would disable console
     // auto-detect entirely.
     // ignore: avoid_redundant_argument_values
-    autoBindProductName: kPedalAutoBindProductName,
+    autoBindProductNames: kPedalAutoBindProductNames,
   );
 
   // One-time courtesy migration from the removed global passthrough monitor to

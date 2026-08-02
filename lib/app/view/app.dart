@@ -322,7 +322,7 @@ class App extends StatelessWidget {
                 settings: context.read<SettingsRepository>(),
                 // Redundant only on a desktop analysis run — see run_loopy.
                 // ignore: avoid_redundant_argument_values
-                autoBindProductName: kPedalAutoBindProductName,
+                autoBindProductNames: kPedalAutoBindProductNames,
               );
               unawaited(cubit.load());
               return cubit;

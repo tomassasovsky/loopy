@@ -243,14 +243,14 @@ void main() {
   group('console auto-detect', () {
     const pedal = MidiDevice(id: 'id-p', name: 'VAMP Loopstation MIDI 1');
     const otherPedal = MidiDevice(id: 'id-p2', name: 'VAMP Loopstation MIDI 2');
-    const productName = 'VAMP Loopstation';
+    const productNames = ['VAMP Loopstation'];
 
     // A repository with auto-detect on and the hotplug timer disabled.
     MidiDeviceRepository buildAuto() => MidiDeviceRepository(
       source: source,
       settings: settings,
       pollInterval: Duration.zero,
-      autoBindProductName: productName,
+      autoBindProductNames: productNames,
     );
 
     Future<MidiDeviceRepository> hydratedAuto() async {
