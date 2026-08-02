@@ -237,7 +237,11 @@ jobs:
           if [ -f "pedal-firmware/$hex" ]; then
             cp "pedal-firmware/$hex" "$out/$hex"
             hex_sha=$(sha256sum "$out/$hex" | cut -d' ' -f1)
-            proto=$(tr -d '[:space:]' < pedal-firmware/protocol-version)
+            proto=$(tr -d '[:space:]' < pedal-firmware/protocol-version || echo "")
+            # Interpolated as a bare JSON number, so an empty or non-numeric
+            # read would publish a manifest no client can parse. 0 is the
+            # schema's own "unknown" and degrades safely.
+            case "$proto" in ''|*[!0-9]*) proto=0 ;; esac
             pedal_block=", \"pedalFirmware\": { \"version\": \"$version\", \"hex\": \"$hex\", \"protocolVersion\": $proto, \"sha256\": \"$hex_sha\" }"
           else
             echo "::warning::no pedal firmware .hex found; publishing an OS-only manifest"
@@ -246,7 +250,9 @@ jobs:
           cat > "$out/manifest.json" <<EOF
           { "version": "$version", "bundle": "$bundle", "sha256": "$sha", "channel": "$channel"$pedal_block }
           EOF
-          jq . "$out/manifest.json"
+          # Pretty-print if jq is on the runner; never fail the release over a
+          # log nicety, two hours into the build.
+          jq . "$out/manifest.json" || cat "$out/manifest.json"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
