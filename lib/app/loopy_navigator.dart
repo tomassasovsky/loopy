@@ -11,6 +11,18 @@ final GlobalKey<NavigatorState> loopyNavigatorKey = GlobalKey<NavigatorState>();
 const String loopySettingsRouteName = 'loopy/settings';
 
 bool _settingsOpen = false;
+
+/// Clears the "settings already open" guard.
+///
+/// The guard is module-level and only released when the route pops, so a
+/// widget test that leaves settings open wedges it for every later test in the
+/// file — `openLoopySettings` then returns early and the page never appears.
+@visibleForTesting
+void resetLoopyNavigatorForTest() {
+  _settingsOpen = false;
+  _openSettingsSection = null;
+}
+
 SettingsSection? _openSettingsSection;
 
 /// Whether Settings is open on the Updates tab (skip the update toast).

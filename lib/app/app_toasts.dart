@@ -18,6 +18,14 @@ abstract final class AppToastId {
 final Map<String, ToastificationItem> _active = {};
 
 /// Dismisses a previously shown app toast, if any.
+/// Forgets every live toast without animating them out.
+///
+/// The registry below is module-level, so it survives between widget tests:
+/// one test showing a toast makes the next test's identical toast a duplicate
+/// and silently a no-op. Reset it in `setUp`.
+@visibleForTesting
+void resetAppToastsForTest() => _active.clear();
+
 void dismissAppToast(String id) {
   final item = _active.remove(id);
   if (item != null) {
