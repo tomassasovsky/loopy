@@ -140,36 +140,20 @@
     "sessionNameInvalid": "Enter a valid session name.",
     "sessionNameDuplicate": "A session named “{name}” already exists.",
     "@sessionNameDuplicate": {
-        "placeholders": {
-            "name": {
-                "type": "String"
-            }
-        }
+        "placeholders": { "name": { "type": "String" } }
     },
     "sessionDeleteConfirmTitle": "Delete “{name}”?",
     "@sessionDeleteConfirmTitle": {
-        "placeholders": {
-            "name": {
-                "type": "String"
-            }
-        }
+        "placeholders": { "name": { "type": "String" } }
     },
     "sessionDeleteConfirmBody": "This permanently deletes the saved session. The current rig keeps playing.",
     "a11ySessionRename": "Rename session {name}",
     "@a11ySessionRename": {
-        "placeholders": {
-            "name": {
-                "type": "String"
-            }
-        }
+        "placeholders": { "name": { "type": "String" } }
     },
     "a11ySessionDelete": "Delete session {name}",
     "@a11ySessionDelete": {
-        "placeholders": {
-            "name": {
-                "type": "String"
-            }
-        }
+        "placeholders": { "name": { "type": "String" } }
     },
     "sessionErrorSampleRate": "Couldn't load the session — it was recorded at a different sample rate than the current device. Reopen the device at the session's sample rate, then try again.",
     "sessionErrorUnsupportedVersion": "Couldn't load the session — it was saved by a newer version of Loopy. Update the app, then try again.",
@@ -522,12 +506,8 @@
     "signalFieldTracks": "TRK",
     "signalTakesCount": "{count} takes",
     "@signalTakesCount": {
-        "description": "Badge on a multi-lane track header counting its takes.",
-        "placeholders": {
-            "count": {
-                "type": "int"
-            }
-        }
+      "description": "Badge on a multi-lane track header counting its takes.",
+      "placeholders": { "count": { "type": "int" } }
     },
     "signalLegendLive": "LIVE input is monitored",
     "signalLegendSnapshot": "FX snapshot taken at record",
@@ -535,37 +515,25 @@
     "signalCleanTake": "clean take",
     "signalRecInput": "rec In {inputNumber}",
     "@signalRecInput": {
-        "description": "Badge on a take naming the hardware input it recorded.",
-        "placeholders": {
-            "inputNumber": {
-                "type": "int"
-            }
-        }
+      "description": "Badge on a take naming the hardware input it recorded.",
+      "placeholders": { "inputNumber": { "type": "int" } }
     },
     "signalRouteTooltip": "Route to an output",
     "signalRouteToOutput": "Send to Out {outputNumber}",
     "@signalRouteToOutput": {
-        "description": "Menu item / a11y label to add a route to an output.",
-        "placeholders": {
-            "outputNumber": {
-                "type": "int"
-            }
-        }
+      "description": "Menu item / a11y label to add a route to an output.",
+      "placeholders": { "outputNumber": { "type": "int" } }
     },
     "signalUnrouteOutput": "Stop sending to Out {outputNumber}",
     "@signalUnrouteOutput": {
-        "description": "a11y label on a lit routing chip (tap removes the route).",
-        "placeholders": {
-            "outputNumber": {
-                "type": "int"
-            }
-        }
+      "description": "a11y label on a lit routing chip (tap removes the route).",
+      "placeholders": { "outputNumber": { "type": "int" } }
     },
     "signalInputNone": "None (clean)",
     "signalReassignInput": "Change recorded input",
     "signalTooltip": "Signal flow (G)",
     "@signalTooltip": {
-        "description": "Tooltip for the tracks-view button that opens the full-screen Signal surface."
+      "description": "Tooltip for the tracks-view button that opens the full-screen Signal surface."
     },
     "settingsTooltip": "Settings (S)",
     "@settingsTooltip": {
@@ -638,12 +606,8 @@
     "signalPluginScanProgress": "Scanning… {scanned}/{total}",
     "@signalPluginScanProgress": {
         "placeholders": {
-            "scanned": {
-                "type": "int"
-            },
-            "total": {
-                "type": "int"
-            }
+            "scanned": { "type": "int" },
+            "total": { "type": "int" }
         }
     },
     "signalPluginCancelScan": "Cancel",
@@ -662,9 +626,7 @@
     "signalInheritedFrom": "Copied from {inputs} when this take was recorded",
     "@signalInheritedFrom": {
         "placeholders": {
-            "inputs": {
-                "type": "String"
-            }
+            "inputs": { "type": "String" }
         }
     },
     "fxEffectPowerOnTooltip": "Turn this effect on",
@@ -678,9 +640,7 @@
     "fxEditorInputTitle": "Input {number}",
     "@fxEditorInputTitle": {
         "placeholders": {
-            "number": {
-                "type": "int"
-            }
+            "number": { "type": "int" }
         }
     },
     "fxEditorInputConsequence": "prints into new takes",
@@ -688,28 +648,24 @@
     "fxEditorTrackTitle": "Track {number} bus",
     "@fxEditorTrackTitle": {
         "placeholders": {
-            "number": {
-                "type": "int"
-            }
+            "number": { "type": "int" }
         }
     },
     "fxEditorMasterTitle": "Master",
     "fxEditorTrackConsequence": "shapes the whole track, after its lanes",
     "fxEditorMasterConsequence": "shapes the whole mix, before the limiter",
-    "fxChainOffInputConsequence": "chain off — this input monitors dry, and new takes print dry",
-    "fxChainOffLoopConsequence": "chain off — this take plays dry",
-    "fxChainOffTrackConsequence": "chain off — this track passes through its bus dry",
-    "fxChainOffMasterConsequence": "chain off — the whole mix passes through dry",
+    "fxChainOffInputConsequence": "chain off \u2014 this input monitors dry, and new takes print dry",
+    "fxChainOffLoopConsequence": "chain off \u2014 this take plays dry",
+    "fxChainOffTrackConsequence": "chain off \u2014 this track passes through its bus dry",
+    "fxChainOffMasterConsequence": "chain off \u2014 the whole mix passes through dry",
     "fxResyncFromInput": "Re-sync from input",
-    "fxResyncFromInputTooltip": "Copy the routed input’s chain onto this take again. Other takes are untouched.",
-    "fxOverdubMismatchHint": "The input chain no longer matches this take — this overdub is captured dry and does not re-inherit.",
+    "fxResyncFromInputTooltip": "Copy the routed input\u2019s chain onto this take again. Other takes are untouched.",
+    "fxOverdubMismatchHint": "The input chain no longer matches this take \u2014 this overdub is captured dry and does not re-inherit.",
     "fxEditorScopeGone": "This chain no longer exists.",
     "fxEditorEditBlock": "Edit {name}",
     "@fxEditorEditBlock": {
         "placeholders": {
-            "name": {
-                "type": "String"
-            }
+            "name": { "type": "String" }
         }
     },
     "startEngine": "Start engine",
@@ -1334,18 +1290,14 @@
     },
     "pedalAssignIntro": "Pick a footswitch on the plate, then choose what it acts on in FX mode. Unassigned switches keep their normal FX behaviour.",
     "pedalAssignSelectPrompt": "Select a footswitch to assign it.",
-    "pedalAssignUnbindable": "MODE and BANK cannot be reassigned — they are the only way out of FX mode and to the other bank.",
+    "pedalAssignUnbindable": "MODE and BANK cannot be reassigned \u2014 they are the only way out of FX mode and to the other bank.",
     "@pedalAssignUnbindable": {
         "description": "Shown when the user selects the MODE or BANK footswitch, which are never remappable (B12)."
     },
     "pedalAssignBankLabel": "Bank {bank}",
     "@pedalAssignBankLabel": {
         "description": "Names which bank a track-button assignment applies to; track buttons are bound per bank (A3).",
-        "placeholders": {
-            "bank": {
-                "type": "String"
-            }
-        }
+        "placeholders": { "bank": { "type": "String" } }
     },
     "pedalAssignTarget": "Acts on",
     "pedalAssignBehavior": "Behaviour",
@@ -1365,59 +1317,29 @@
     "pedalAssignChainTarget": "{stage} chain",
     "@pedalAssignChainTarget": {
         "description": "Names a whole-chain target in the picker, e.g. \"Track 3 chain\".",
-        "placeholders": {
-            "stage": {
-                "type": "String"
-            }
-        }
+        "placeholders": { "stage": { "type": "String" } }
     },
     "pedalAssignStageInput": "Input {number}",
     "@pedalAssignStageInput": {
-        "placeholders": {
-            "number": {
-                "type": "int"
-            }
-        }
+        "placeholders": { "number": { "type": "int" } }
     },
     "pedalAssignStageLoop": "Track {number} lane {lane}",
     "@pedalAssignStageLoop": {
-        "placeholders": {
-            "number": {
-                "type": "int"
-            },
-            "lane": {
-                "type": "int"
-            }
-        }
+        "placeholders": { "number": { "type": "int" }, "lane": { "type": "int" } }
     },
     "pedalAssignStageTrack": "Track {number}",
     "@pedalAssignStageTrack": {
-        "placeholders": {
-            "number": {
-                "type": "int"
-            }
-        }
+        "placeholders": { "number": { "type": "int" } }
     },
     "pedalAssignStageMaster": "Master",
     "a11yPedalAssignRow": "{button}: {target}",
     "@a11yPedalAssignRow": {
         "description": "Semantics label for one assignment row.",
-        "placeholders": {
-            "button": {
-                "type": "String"
-            },
-            "target": {
-                "type": "String"
-            }
-        }
+        "placeholders": { "button": { "type": "String" }, "target": { "type": "String" } }
     },
     "a11yPedalAssignSelected": "{button} selected",
     "@a11yPedalAssignSelected": {
-        "placeholders": {
-            "button": {
-                "type": "String"
-            }
-        }
+        "placeholders": { "button": { "type": "String" } }
     },
     "fxStompBound": "Pedal",
     "@fxStompBound": {
@@ -1425,19 +1347,11 @@
     },
     "a11yFxStompBound": "Assigned to the {button} footswitch",
     "@a11yFxStompBound": {
-        "placeholders": {
-            "button": {
-                "type": "String"
-            }
-        }
+        "placeholders": { "button": { "type": "String" } }
     },
     "a11yFxStompBoundHeld": "Assigned to the {button} footswitch, held on",
     "@a11yFxStompBoundHeld": {
-        "placeholders": {
-            "button": {
-                "type": "String"
-            }
-        }
+        "placeholders": { "button": { "type": "String" } }
     },
     "midiLearnGroup": "EXTERNAL MIDI CONTROL",
     "@midiLearnGroup": {
@@ -1454,11 +1368,7 @@
     "midiLearnListening": "Listening… move the control you want to use.",
     "midiLearnReplacePrompt": "{control} already drives another mapping. Replace it?",
     "@midiLearnReplacePrompt": {
-        "placeholders": {
-            "control": {
-                "type": "String"
-            }
-        }
+        "placeholders": { "control": { "type": "String" } }
     },
     "midiLearnReplace": "Replace",
     "midiLearnKeep": "Keep",
@@ -1472,99 +1382,28 @@
     "midiLearnCcControl": "CC {number} · ch {channel}",
     "@midiLearnCcControl": {
         "description": "How a learned Control Change is named in a mapping row.",
-        "placeholders": {
-            "number": {
-                "type": "int"
-            },
-            "channel": {
-                "type": "int"
-            }
-        }
+        "placeholders": { "number": { "type": "int" }, "channel": { "type": "int" } }
     },
     "midiLearnNoteControl": "Note {number} · ch {channel}",
     "@midiLearnNoteControl": {
-        "placeholders": {
-            "number": {
-                "type": "int"
-            },
-            "channel": {
-                "type": "int"
-            }
-        }
+        "placeholders": { "number": { "type": "int" }, "channel": { "type": "int" } }
     },
     "midiLearnTargetVolume": "Track {number} volume",
     "@midiLearnTargetVolume": {
-        "placeholders": {
-            "number": {
-                "type": "int"
-            }
-        }
+        "placeholders": { "number": { "type": "int" } }
     },
     "midiLearnTargetMaster": "Master gain",
     "midiLearnTargetParam": "{stage} · {slot} · {param}",
     "@midiLearnTargetParam": {
         "description": "An FX parameter target: its chain, its slot id, and the parameter name.",
-        "placeholders": {
-            "stage": {
-                "type": "String"
-            },
-            "slot": {
-                "type": "String"
-            },
-            "param": {
-                "type": "String"
-            }
-        }
+        "placeholders": { "stage": { "type": "String" }, "slot": { "type": "String" }, "param": { "type": "String" } }
     },
     "a11yMidiLearnRow": "{control} mapped to {target}",
     "@a11yMidiLearnRow": {
         "description": "Semantics label for one MIDI mapping row.",
-        "placeholders": {
-            "control": {
-                "type": "String"
-            },
-            "target": {
-                "type": "String"
-            }
-        }
+        "placeholders": { "control": { "type": "String" }, "target": { "type": "String" } }
     },
     "a11yMidiLearnLo": "Range low",
     "a11yMidiLearnHi": "Range high",
-    "a11yMidiLearnThreshold": "On threshold",
-    "wifiRescan": "Rescan",
-    "@wifiRescan": {
-        "description": "Tooltip for the Wi-Fi picker's rescan button."
-    },
-    "wifiUnsupported": "Wi-Fi is managed by your computer on this build.",
-    "@wifiUnsupported": {
-        "description": "Shown on the Wi-Fi page for builds that do not manage the radio (desktop)."
-    },
-    "wifiNoNetworks": "No networks found.",
-    "@wifiNoNetworks": {
-        "description": "Empty state on the Wi-Fi picker when a scan returned nothing."
-    },
-    "wifiConnected": "Connected",
-    "@wifiConnected": {
-        "description": "Subtitle of the currently connected Wi-Fi network."
-    },
-    "wifiSecured": "Password required",
-    "@wifiSecured": {
-        "description": "Subtitle of a secured Wi-Fi network with no saved profile."
-    },
-    "wifiOpen": "Open",
-    "@wifiOpen": {
-        "description": "Subtitle of an unsecured Wi-Fi network."
-    },
-    "wifiForget": "Forget",
-    "@wifiForget": {
-        "description": "Tooltip for deleting a saved Wi-Fi network."
-    },
-    "wifiJoin": "Join",
-    "@wifiJoin": {
-        "description": "Confirm button on the Wi-Fi password dialog."
-    },
-    "wifiPassword": "Password",
-    "@wifiPassword": {
-        "description": "Label of the Wi-Fi password field."
-    }
+    "a11yMidiLearnThreshold": "On threshold"
 }

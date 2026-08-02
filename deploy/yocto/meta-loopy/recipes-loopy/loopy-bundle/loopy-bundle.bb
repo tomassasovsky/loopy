@@ -35,8 +35,6 @@ SRC_URI = "file://loopy.service \
            file://loopy-ota-check.service \
            file://loopy-ota-check.timer \
            file://loopy-update-ctl \
-           file://loopy-net-persist \
-           file://loopy-net-persist.service \
            file://update-channel"
 
 # No source tree (prebuilt install). walnascar bans S=${WORKDIR}; SRC_URI local
@@ -75,18 +73,16 @@ inherit systemd
 # launch and the user triggers install/reboot from Settings (via loopy-update-ctl).
 # So loopy-ota-check.timer is installed but NOT auto-enabled — no background
 # auto-staging. (Re-enable the timer manually for a headless auto-update device.)
-SYSTEMD_SERVICE:${PN} = "loopy.service loopy-rtirq.service loopy-data-grow.service \
-                         loopy-net-persist.service boot.mount data.mount"
+SYSTEMD_SERVICE:${PN} = "loopy.service loopy-rtirq.service loopy-data-grow.service boot.mount data.mount"
 
 FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch ${bindir}/loopy-rtirq \
-                ${bindir}/loopy-data-grow ${bindir}/loopy-net-persist \
+                ${bindir}/loopy-data-grow \
                 ${bindir}/loopy-ota-check \
                 ${bindir}/loopy-update-ctl \
                 ${sysconfdir}/loopy/update-channel ${sysconfdir}/loopy/build-version \
                 ${systemd_system_unitdir}/loopy.service \
                 ${systemd_system_unitdir}/loopy-rtirq.service \
                 ${systemd_system_unitdir}/loopy-data-grow.service \
-                ${systemd_system_unitdir}/loopy-net-persist.service \
                 ${systemd_system_unitdir}/boot.mount \
                 ${systemd_system_unitdir}/data.mount \
                 ${systemd_system_unitdir}/loopy-ota-check.service \
@@ -130,12 +126,6 @@ do_install() {
     # runs before loopy.service. See loopy-data-grow + wic/loopy-tryboot.wks.
     install -m 0755 ${UNPACKDIR}/loopy-data-grow ${D}${bindir}/loopy-data-grow
     install -m 0644 ${UNPACKDIR}/loopy-data-grow.service ${D}${systemd_system_unitdir}/loopy-data-grow.service
-
-    # net-persist: bind the durable Wi-Fi credential store on /data over
-    # /etc/NetworkManager/system-connections, which otherwise lives inside the
-    # A/B slot image and is wiped by every OS update.
-    install -m 0755 ${UNPACKDIR}/loopy-net-persist ${D}${bindir}/loopy-net-persist
-    install -m 0644 ${UNPACKDIR}/loopy-net-persist.service ${D}${systemd_system_unitdir}/loopy-net-persist.service
 
     # Mount units: /boot = tryboot selector (autoboot.txt, for the RAUC backend),
     # /data = persistent app data (survives updates).
