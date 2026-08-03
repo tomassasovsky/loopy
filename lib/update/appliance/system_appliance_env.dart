@@ -54,13 +54,9 @@ class SystemApplianceEnv implements ApplianceEnv {
   @override
   Stream<double> stage(String version) => _runHelper(['install', version]);
 
-  @override
-  Stream<double> flashPedal() => _runHelper(['flash-pedal']);
-
   /// Runs the privileged helper with [args], republishing its
   /// `PROGRESS <0-100>` lines as `[0, 1]` and throwing with the collected
-  /// stderr on a non-zero exit. Every verb shares that contract, so they share
-  /// this reader.
+  /// stderr on a non-zero exit.
   Stream<double> _runHelper(List<String> args) async* {
     final process = await Process.start(helperPath, args);
     final stderrLines = <String>[];
