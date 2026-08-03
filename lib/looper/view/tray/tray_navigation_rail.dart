@@ -27,7 +27,7 @@ class TrayNavigationRail extends StatelessWidget {
   ///
   /// From the redesign mockups (#490); the earlier 84px stacked form was built
   /// without them, since the decision record carries no diagrams.
-  static const double _width = 132;
+  static const double _width = 165;
 
   static const double _itemGap = 4;
 
@@ -99,25 +99,27 @@ class TrayNavigationRail extends StatelessWidget {
               // the rail's last band — pad past it so a future destination
               // cannot land under a control that closes the tray.
               padding: const EdgeInsets.only(bottom: kTrayHandleHeight),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (final target in SettingsTrayDestination.values) ...[
-                    const SizedBox(height: _itemGap),
-                    // Stretch so every pill is the rail's width: ragged pills
-                    // sized to their own text read as chips, not as rows of
-                    // one list.
-                    _RailItem(
-                      key: Key('settingsTrayRail_${target.name}'),
-                      icon: _iconFor(target),
-                      label: _labelFor(l10n, target),
-                      selected: destination == target,
-                      onTap: () => cubit.showDestination(target),
-                    ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: _itemGap,
+                  children: [
+                    for (final target in SettingsTrayDestination.values) ...[
+                      // Stretch so every pill is the rail's width: ragged pills
+                      // sized to their own text read as chips, not as rows of
+                      // one list.
+                      _RailItem(
+                        key: Key('settingsTrayRail_${target.name}'),
+                        icon: _iconFor(target),
+                        label: _labelFor(l10n, target),
+                        selected: destination == target,
+                        onTap: () => cubit.showDestination(target),
+                      ),
+                    ],
                   ],
-                  const SizedBox(height: _itemGap),
-                ],
+                ),
               ),
             ),
           ),
@@ -143,7 +145,7 @@ class _RailItem extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  static const double _radius = 14;
+  static const double _radius = 24;
 
   @override
   Widget build(BuildContext context) {
@@ -158,6 +160,7 @@ class _RailItem extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
         padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 11),
+        margin: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(_radius),
           color: selected
