@@ -27,8 +27,6 @@ import 'package:update_repository/update_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockMidiSource extends Mock implements MidiControllerSource {}
-
 /// A supported update backend advertising v0.2.0 (current is v0.1.0), so the
 /// app's startup availability check surfaces the update toast.
 class _FakeUpdateBackend implements PlatformUpdateBackend {
@@ -356,135 +354,15 @@ void main() {
       expect(find.byType(SettingsPage), findsNothing);
     });
 
-    testWidgets('shows a disconnect banner for a lost pinned device, then '
-        'clears it on reconnect', (tester) async {
-      EngineSnapshot snap({required bool devicePresent}) => EngineSnapshot(
-        isRunning: true,
-        devicePresent: devicePresent,
-        sampleRate: 48000,
-        bufferFrames: 128,
-        framesProcessed: 0,
-        xrunCount: 0,
-        inputRms: 0,
-        inputPeak: 0,
-        outputRms: 0,
-        latencyState: le.LatencyState.idle,
-        measuredLatencyMs: -1,
-      );
-
-      final engine = FakeAudioEngine();
-      final ticker = StreamController<void>.broadcast();
-      final reconnectTicker = StreamController<void>.broadcast();
-      final repo = LooperRepository(
-        engine: engine,
-        ticker: ticker.stream,
-        reconnectTicker: reconnectTicker.stream,
-      );
-      addTearDown(repo.dispose);
-      addTearDown(ticker.close);
-      addTearDown(reconnectTicker.close);
-
-      // Pin a device so the supervisor + banner treat it as recoverable.
-      engine
-        ..devices = const [
-          le.AudioDevice(
-            id: 'out-1',
-            name: 'Scarlett 2i2',
-            isDefault: false,
-            isInput: false,
-          ),
-        ]
-        ..nextSnapshot = snap(devicePresent: true);
-      repo.startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
-
-      await tester.pumpWidget(
-        App(
-          repository: repo,
-          controllerRepository: controllerRepository,
-          midiDeviceRepository: midiDeviceRepository,
-          settings: settings,
-          waveformWindow: NoopWaveformWindowService(),
-          sessionRepository: sessionRepository,
-          performanceRepository: performanceRepository,
-          exportDirectory: () async => '.',
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      // Establish the present baseline, then lose the device.
-      ticker.add(null);
-      await tester.pumpAndSettle();
-      engine.nextSnapshot = snap(devicePresent: false);
-      ticker.add(null);
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('app_deviceLost_banner')), findsOneWidget);
-
-      // The device returns: the banner clears.
-      engine.nextSnapshot = snap(devicePresent: true);
-      ticker.add(null);
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('app_deviceLost_banner')), findsNothing);
-
-      // Flush the transient "reconnected" snackbar timer.
-      await tester.pump(const Duration(seconds: 4));
-    });
-
-    testWidgets('shows a MIDI disconnect banner when the pinned controller is '
-        'unplugged, then clears it on replug', (tester) async {
-      const pedal = MidiDevice(id: 'm1', name: 'FCB1010');
-      var enumerated = const <MidiDevice>[pedal];
-      final source = _MockMidiSource();
-      when(source.enumerate).thenAnswer((_) => enumerated);
-      when(() => source.open(any())).thenReturn(0);
-      when(source.close).thenReturn(0);
-      when(() => source.activity).thenAnswer((_) => const Stream.empty());
-
-      // Pin the pedal so the launch hydrate connects it.
-      await settings.saveMidiDevice(id: 'm1', name: 'FCB1010');
-
-      // Wire a repository over the real mock source. The hotplug timer is
-      // disabled so the poll is driven deterministically via [refresh].
-      final midiRepo = MidiDeviceRepository(
-        source: source,
-        settings: settings,
-        pollInterval: Duration.zero,
-      );
-      addTearDown(midiRepo.dispose);
-
-      await tester.pumpWidget(
-        App(
-          repository: repository,
-          controllerRepository: controllerRepository,
-          midiDeviceRepository: midiRepo,
-          settings: settings,
-          waveformWindow: NoopWaveformWindowService(),
-          sessionRepository: sessionRepository,
-          performanceRepository: performanceRepository,
-          exportDirectory: () async => '.',
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      // Unplug: the hotplug poll marks it gone and banners it.
-      enumerated = const [];
-      midiRepo.refresh();
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('app_midiLost_banner')), findsOneWidget);
-
-      // Replug: the banner clears and a transient snackbar shows.
-      enumerated = const [pedal];
-      midiRepo.refresh();
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('app_midiLost_banner')), findsNothing);
-      expect(
-        find.byKey(const Key('app_midiRestored_snackbar')),
-        findsOneWidget,
-      );
-
-      // Flush the transient "reconnected" snackbar timer.
-      await tester.pump(const Duration(seconds: 4));
-    });
+    // The device-lost and MIDI-lost BANNER tests were removed with the toast
+    // rewrite that came in with the Control Center branch: those notifications
+    // are toasts now, so the banner keys they asserted no longer exist.
+    //
+    // Deliberately not re-expressed as toast tests here. A toast auto-hides,
+    // and "your interface is unplugged" is an ongoing STATE rather than an
+    // event — restoring a persistent surface for it is tracked separately, and
+    // the test should be written against whatever that surface turns out to be
+    // rather than against the stopgap.
 
     testWidgets('shows a banner when the waveform window fails to open', (
       tester,
