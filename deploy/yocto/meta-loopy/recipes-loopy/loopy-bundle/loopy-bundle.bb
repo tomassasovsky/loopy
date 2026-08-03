@@ -42,6 +42,8 @@ SRC_URI = "file://loopy.service \
            file://loopy-ssh-persist.service \
            file://loopy-bt-persist \
            file://loopy-bt-persist.service \
+           file://loopy-mark-good \
+           file://loopy-mark-good.service \
            file://dropbear-loopy.conf \
            file://loopy-bt-ctl \
            file://loopy-brightness-ctl \
@@ -89,7 +91,7 @@ inherit systemd
 # launch and the user triggers install/reboot from Settings (via loopy-update-ctl).
 # So loopy-ota-check.timer is installed but NOT auto-enabled — no background
 # auto-staging. (Re-enable the timer manually for a headless auto-update device.)
-SYSTEMD_SERVICE:${PN} = "loopy.service loopy-rtirq.service loopy-data-grow.service loopy-nm-persist.service loopy-ssh-persist.service loopy-bt-persist.service boot.mount data.mount"
+SYSTEMD_SERVICE:${PN} = "loopy.service loopy-rtirq.service loopy-data-grow.service loopy-nm-persist.service loopy-ssh-persist.service loopy-bt-persist.service loopy-mark-good.service boot.mount data.mount"
 
 FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch ${bindir}/loopy-rtirq \
                 ${bindir}/loopy-data-grow \
@@ -99,6 +101,7 @@ FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch ${bindir}/loopy-rtirq \
                 ${bindir}/loopy-nm-persist \
                 ${bindir}/loopy-ssh-persist \
                 ${bindir}/loopy-bt-persist \
+                ${bindir}/loopy-mark-good \
                 ${bindir}/loopy-bt-ctl \
                 ${bindir}/loopy-brightness-ctl \
                 ${sysconfdir}/NetworkManager/conf.d/99-loopy-wifi.conf \
@@ -112,6 +115,7 @@ FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch ${bindir}/loopy-rtirq \
                 ${systemd_system_unitdir}/loopy-nm-persist.service \
                 ${systemd_system_unitdir}/loopy-ssh-persist.service \
                 ${systemd_system_unitdir}/loopy-bt-persist.service \
+                ${systemd_system_unitdir}/loopy-mark-good.service \
                 ${systemd_system_unitdir}/boot.mount \
                 ${systemd_system_unitdir}/data.mount \
                 ${systemd_system_unitdir}/loopy-ota-check.service \
@@ -190,6 +194,14 @@ do_install() {
     install -m 0755 ${UNPACKDIR}/loopy-bt-persist ${D}${bindir}/loopy-bt-persist
     install -m 0644 ${UNPACKDIR}/loopy-bt-persist.service \
         ${D}${systemd_system_unitdir}/loopy-bt-persist.service
+
+    # meta-rauc's own rauc-mark-good.service is condition-gated on a rauc.slot
+    # kernel argument the Pi tryboot backend never sets, so it is skipped every
+    # boot and every update silently rolls back. This replaces it, behind a
+    # health gate (#307).
+    install -m 0755 ${UNPACKDIR}/loopy-mark-good ${D}${bindir}/loopy-mark-good
+    install -m 0644 ${UNPACKDIR}/loopy-mark-good.service \
+        ${D}${systemd_system_unitdir}/loopy-mark-good.service
 
     # Dropbear host keys on /data so A/B OTA does not rotate SSH identity (#309).
     install -m 0755 ${UNPACKDIR}/loopy-ssh-persist ${D}${bindir}/loopy-ssh-persist

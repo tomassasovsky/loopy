@@ -1,0 +1,16 @@
+[Unit]
+Description=Loopy: commit the booted slot once the app proves healthy
+Wants=loopy.service
+After=loopy.service
+ConditionPathExists=/usr/bin/rauc
+
+[Service]
+# Type=exec, not oneshot: the script deliberately sits through a health window,
+# and a oneshot would hold multi-user.target unreached for its whole duration.
+# Here the unit counts as started the moment it execs, and a refusal to mark
+# still surfaces as a failed unit in the journal.
+Type=exec
+ExecStart=/usr/bin/loopy-mark-good
+
+[Install]
+WantedBy=multi-user.target

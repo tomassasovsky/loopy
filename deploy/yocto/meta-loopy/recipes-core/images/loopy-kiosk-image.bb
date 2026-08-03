@@ -3,6 +3,11 @@ LICENSE = "MIT"
 
 # Start from the stock Wayland image (weston + weston-init + GTK3 already present),
 # then add our bundle and its runtime deps. See docs/plan Tier 3a §Phase 2.
+#
+# Note what is NOT here: meta-rauc's rauc-mark-good. Its unit is condition-gated
+# on a `rauc.slot` kernel argument that the Pi tryboot backend never sets, so it
+# was skipped on every boot and every update silently rolled back. loopy-bundle
+# ships loopy-mark-good.service in its place, behind a health gate (#307).
 require recipes-graphics/images/core-image-weston.bb
 
 IMAGE_INSTALL:append = " \
@@ -19,7 +24,6 @@ IMAGE_INSTALL:append = " \
     plymouth \
     plymouth-loopy-theme \
     rauc \
-    rauc-mark-good \
     rauc-conf \
     rauc-rpi-backend \
     raspi-utils \
