@@ -133,6 +133,7 @@ FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch ${bindir}/loopy-rtirq \
                 ${systemd_system_unitdir}/loopy-ota-check.service \
                 ${systemd_system_unitdir}/loopy-ota-check.timer \
                 ${sysconfdir}/systemd/system/wpa_supplicant.service \
+                ${sysconfdir}/systemd/system/serial-getty@ttyS0.service \
                 ${sysconfdir}/tmpfiles.d/loopy-runtime.conf"
 
 python do_fetch:prepend() {
@@ -211,6 +212,11 @@ do_install() {
     install -m 0755 ${UNPACKDIR}/loopy-nm-persist ${D}${bindir}/loopy-nm-persist
     install -m 0644 ${UNPACKDIR}/loopy-nm-persist.service \
         ${D}${systemd_system_unitdir}/loopy-nm-persist.service
+
+    # Nothing on this board exposes /dev/ttyS0, so serial-getty@ttyS0 waits out
+    # systemd's 90s device timeout on every boot — 90 seconds of a dark screen
+    # on an appliance, for a console nobody uses (#464).
+    ln -sf /dev/null ${D}${sysconfdir}/systemd/system/serial-getty@ttyS0.service
 
     # iwd owns the radio now (#468 step 2). wpa_supplicant is still pulled into
     # the image by packagegroup-base-wifi, and letting it get dbus-activated

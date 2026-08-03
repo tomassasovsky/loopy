@@ -18,7 +18,10 @@ IFACE="${LOOPY_WIFI_IFACE:-wlan0}"
 # slow AP would trip it and hand the radio away; with nothing to fall back to,
 # waiting is strictly better than failing.
 NM_CONNECT_WAIT_SECS="${LOOPY_WIFI_NM_CONNECT_TIMEOUT:-45}"
-# Prefer WiFi over the ephemeral wired profile (autoconnect-priority -999).
+# Beats the ephemeral wired profile (autoconnect-priority -999). Used as the
+# floor: next_autoconnect_priority lifts each new join above every saved
+# network, so the one the user just picked is the one that comes back after a
+# reboot (#463).
 WIFI_AUTOCONNECT_PRIORITY="${LOOPY_WIFI_AUTOCONNECT_PRIORITY:-100}"
 
 log() { echo "loopy-wifi-ctl: $*" >&2; }
@@ -75,6 +78,35 @@ iface_enabled() {
     ip -o link show "$IFACE" 2>/dev/null | grep -Eq '[,<]UP[,>]'
 }
 
+# Every saved wifi profile, one SSID per line. The UI needs these separately
+# from a scan: a network you saved is not the same as one that happens to be
+# in range, and until now the two were indistinguishable — you could not
+# forget a saved network unless you were connected to it (#471).
+saved_ssids() {
+    nmcli -t -g NAME,TYPE connection show 2>/dev/null \
+        | awk -F: '$2 ~ /wireless/ { print $1 }'
+}
+
+# One above the highest saved network, so the network the user just chose wins
+# the next autoconnect. Every profile used to get the same constant, which left
+# NetworkManager breaking the tie by timestamp — so a failing network the user
+# had moved on from kept being reselected (#463).
+next_autoconnect_priority() {
+    highest=$(nmcli -t -g NAME,TYPE,802-11-wireless.ssid connection show 2>/dev/null \
+        | awk -F: '$2 ~ /wireless/ { print $1 }' \
+        | while IFS= read -r name; do
+              [ -n "$name" ] || continue
+              nmcli -g connection.autoconnect-priority connection show "$name" 2>/dev/null
+          done \
+        | awk 'BEGIN { m = 0 } /^-?[0-9]+$/ { if ($1 > m) m = $1 } END { print m }')
+    [ -n "$highest" ] || highest=0
+    if [ "$highest" -lt "$WIFI_AUTOCONNECT_PRIORITY" ]; then
+        printf '%s\n' "$WIFI_AUTOCONNECT_PRIORITY"
+    else
+        printf '%s\n' "$((highest + 1))"
+    fi
+}
+
 # ---------- NetworkManager path ----------
 
 # What wpa_supplicant said while this join was being attempted. NetworkManager
@@ -82,9 +114,13 @@ iface_enabled() {
 JOURNALCTL="${LOOPY_JOURNALCTL:-journalctl}"
 JOIN_EVIDENCE_WINDOW="${LOOPY_JOIN_EVIDENCE_WINDOW:-90}"
 
+# iwd drives the radio, NetworkManager narrates it, and older images used
+# wpa_supplicant — match all three rather than one, or a supplicant swap
+# silently turns every failure back into "wrong password" (it did: this grep
+# said wpa_supplicant until #470 removed it).
 supplicant_evidence() {
     "$JOURNALCTL" --since "-${JOIN_EVIDENCE_WINDOW}s" --no-pager 2>/dev/null \
-        | grep -a wpa_supplicant || true
+        | grep -aiE 'wpa_supplicant|iwd|NetworkManager' || true
 }
 
 # NetworkManager reports `Secrets were required` for two unrelated things, and
@@ -119,12 +155,15 @@ map_connect_error() {
         return 0
     fi
 
-    if printf '%s' "$lower" | grep -qE \
-        'secrets were required|no secrets|property is missing|wrong[^[:space:]]*password'
+    # NetworkManager's own words are not evidence about the password. On a
+    # headless console there is no secret agent, so ANY activation failure ends
+    # as `no-secrets` — it said exactly that while holding a key that was
+    # provably correct, and cost a night of debugging (#466, #459).
+    if printf '%s' "$lower" | grep -qE 'wrong[^[:space:]]*password|invalid passphrase'
     then
         log "authentication failed (wrong password?)"
     elif printf '%s' "$lower" | grep -qE \
-        '802\.1x|supplicant took too long|timeout|took too long'
+        'secrets were required|no secrets|802\.1x|took too long|timeout'
     then
         log "timed out waiting for association"
     else
@@ -206,20 +245,35 @@ do_scan_nm() {
         }
     ' | sort -t"$(printf '\t')" -k2,2nr >"$ranked"
 
+    # A saved network that is out of range still belongs in the list. Otherwise
+    # the only way to forget one is to be connected to it, which is impossible
+    # precisely when the saved profile is the thing that will not connect
+    # (#471). Signal -1 marks "saved, not seen right now".
+    saved=$(mktemp)
+    saved_ssids >"$saved"
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        if ! cut -f1 "$ranked" | grep -qxF "$name"; then
+            printf '%s\t-1\ttrue\n' "$name" >>"$ranked"
+        fi
+    done <"$saved"
+
     first=1
     printf '['
     while IFS="$(printf '\t')" read -r ssid signal secured; do
         [ -n "$ssid" ] || continue
+        is_saved=false
+        grep -qxF "$ssid" "$saved" && is_saved=true
         if [ "$first" -eq 1 ]; then
             first=0
         else
             printf ','
         fi
-        printf '{"ssid":"%s","signal":%s,"secured":%s}' \
-            "$(json_escape "$ssid")" "$signal" "$secured"
+        printf '{"ssid":"%s","signal":%s,"secured":%s,"saved":%s}' \
+            "$(json_escape "$ssid")" "$signal" "$secured" "$is_saved"
     done <"$ranked"
     printf ']\n'
-    rm -f "$raw" "$ranked"
+    rm -f "$raw" "$ranked" "$saved"
 }
 
 do_forget_nm() {
@@ -241,11 +295,10 @@ do_connect_nm() {
     ssid=$1
     psk=${2:-}
     nmcli radio wifi on >/dev/null 2>&1 || true
-    # If a prior wpa takeover left the iface unmanaged, reclaim it for NM.
-    nm_claim_wifi
     disable_powersave
     do_forget_nm "$ssid" >/dev/null 2>&1 || true
 
+    join_priority=$(next_autoconnect_priority)
     errf=$(mktemp)
     passf=
     set +e
@@ -258,7 +311,7 @@ do_connect_nm() {
             wifi-sec.key-mgmt wpa-psk \
             wifi-sec.auth-alg open \
             connection.autoconnect yes \
-            connection.autoconnect-priority "$WIFI_AUTOCONNECT_PRIORITY" \
+            connection.autoconnect-priority "$join_priority" \
             802-11-wireless.powersave 2 \
             >"$errf" 2>&1
         rc=$?
@@ -280,7 +333,7 @@ do_connect_nm() {
         nmcli connection add type wifi ifname "$IFACE" con-name "$ssid" \
             ssid "$ssid" \
             connection.autoconnect yes \
-            connection.autoconnect-priority "$WIFI_AUTOCONNECT_PRIORITY" \
+            connection.autoconnect-priority "$join_priority" \
             802-11-wireless.powersave 2 \
             >"$errf" 2>&1 \
             && nmcli --wait "$NM_CONNECT_WAIT_SECS" connection up "$ssid" \

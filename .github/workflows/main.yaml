@@ -373,6 +373,10 @@ jobs:
         run: bash deploy/yocto/meta-loopy/recipes-loopy/loopy-bundle/test/run_wifi_regdom_tests.sh
       - name: Run wifi-backend ownership tests
         run: bash deploy/yocto/meta-loopy/recipes-loopy/loopy-bundle/test/run_wifi_backend_tests.sh
+      - name: Run wifi join-error classification tests
+        run: bash deploy/yocto/meta-loopy/recipes-loopy/loopy-bundle/test/run_wifi_join_error_tests.sh
+      - name: Run wifi saved-network tests
+        run: bash deploy/yocto/meta-loopy/recipes-loopy/loopy-bundle/test/run_wifi_saved_tests.sh
       - name: Run mark-good tests
         run: bash deploy/yocto/meta-loopy/recipes-loopy/loopy-bundle/test/run_mark_good_tests.sh
 
