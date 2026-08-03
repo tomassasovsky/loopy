@@ -125,6 +125,7 @@
     "constexpr",
     "Contador",
     "coreaudiod",
+    "coredumps",
     "cpack",
     "crashy",
     "crossfade",
