@@ -39,6 +39,18 @@ class _FakeEnv implements ApplianceEnv {
     return body;
   }
 
+  String? pendingVersion;
+  int flashCalls = 0;
+
+  @override
+  Future<String?> pedalPending() async => pendingVersion;
+
+  @override
+  Stream<double> flashPedal() {
+    flashCalls++;
+    return Stream.fromIterable(const [0.5, 1.0]);
+  }
+
   @override
   Stream<double> stage(String version) {
     stagedVersionArg = version;

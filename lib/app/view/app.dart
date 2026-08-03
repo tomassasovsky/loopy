@@ -23,7 +23,9 @@ import 'package:loopy/pedal/flashed_firmware.dart';
 import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/performance/performance.dart';
 import 'package:loopy/theme/theme.dart';
+import 'package:loopy/update/cubit/pedal_firmware_cubit.dart';
 import 'package:loopy/update/cubit/update_cubit.dart';
+import 'package:loopy/update/view/pedal_firmware_gate.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:loopy/window/window_chrome.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
@@ -176,6 +178,19 @@ class App extends StatelessWidget {
                 settings: context.read<SettingsRepository>(),
               );
               unawaited(cubit.load());
+              return cubit;
+            },
+          ),
+          // Runs the pedal flash an OS update left pending, and holds the
+          // looper closed while it does. lazy:false so it starts with the app
+          // rather than when something first reads it.
+          BlocProvider(
+            lazy: false,
+            create: (context) {
+              final cubit = PedalFirmwareCubit(
+                updates: context.read<UpdateRepository>(),
+              );
+              unawaited(cubit.run());
               return cubit;
             },
           ),
@@ -704,7 +719,9 @@ class _AppViewState extends State<_AppView> {
           supportedLocales: AppLocalizations.supportedLocales,
           home: Builder(
             builder: (context) {
-              final page = LooperPage(exportDirectory: widget.exportDirectory);
+              final Widget page = PedalFirmwareGate(
+                child: LooperPage(exportDirectory: widget.exportDirectory),
+              );
               if (!loopyUsesFlutterTitleBar && !loopyUsesCursorAutoHide) {
                 return page;
               }

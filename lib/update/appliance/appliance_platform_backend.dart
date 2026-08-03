@@ -113,13 +113,18 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
   /// This method runs inside the image being replaced, so flashing from it ran
   /// the outgoing `loopy-update-ctl` — a fix to `flash-pedal` could never apply
   /// on the update that delivered it, and every such fix shipped its own bug
-  /// one last time on every device (#444). A release that publishes firmware
-  /// now flashes it after the reboot, from `loopy-pedal-flash.service` on the
-  /// slot that actually booted, which also retries a flash that was skipped
-  /// because the pedal happened to be unplugged.
+  /// one last time on every device (#444). The flash now happens on the next
+  /// start of the app, through [pendingPedalFirmware] and [flashPedalFirmware],
+  /// so the flasher that runs is the one that shipped with the running image.
   @override
   Stream<double> downloadAndStage(UpdateManifest manifest) =>
       _env.stage(manifest.version.toString());
+
+  @override
+  Future<String?> pendingPedalFirmware() => _env.pedalPending();
+
+  @override
+  Stream<double> flashPedalFirmware() => _env.flashPedal();
 
   @override
   Future<void> applyAndRestart() => _env.reboot();

@@ -49,4 +49,18 @@ abstract interface class PlatformUpdateBackend {
   /// Applies the staged update by restarting into it: reboot on the appliance,
   /// relaunch on desktop. Meaningful only after [downloadAndStage] completes.
   Future<void> applyAndRestart();
+
+  /// The firmware version the attached pedal is about to be flashed with, or
+  /// null when no flash is coming — nothing published, already up to date, no
+  /// pedal, or no way to ask.
+  ///
+  /// The caller uses this to block its UI for the duration, because a pedal
+  /// being programmed sits in its bootloader with dead switches and a dark
+  /// ring. Anything other than a definite yes must answer null: a console that
+  /// cannot reach the manifest still has to start.
+  Future<String?> pendingPedalFirmware();
+
+  /// Flashes the published pedal firmware, emitting progress in `[0, 1]`.
+  /// Throws with the failure text if the flash does not complete.
+  Stream<double> flashPedalFirmware();
 }

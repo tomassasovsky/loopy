@@ -78,6 +78,16 @@ run_flash() {
         sh "$CTL" flash-pedal 2>"$work/stderr"
 }
 
+run_pending() {
+    LOOPY_UPDATE_BASE="file://$work/channel" \
+    LOOPY_CHANNEL_FILE="/nonexistent" \
+    LOOPY_CHANNEL_OVERRIDE_FILE="/nonexistent" \
+    LOOPY_PEDAL_STATE_FILE="$work/state/pedal-firmware-version" \
+    LOOPY_PEDAL_SERIAL_DIR="$work/serial" \
+    PATH="$work/bin:$PATH" \
+        sh "$CTL" pedal-pending 2>"$work/stderr"
+}
+
 check() {
     local label=$1 expected=$2 actual=$3
     if [ "$expected" = "$actual" ]; then
@@ -270,6 +280,66 @@ check "reports the timeout" yes \
     "$(grep -q 'timed out' "$work/stderr" && echo yes || echo no)"
 check "writes the failure marker" yes \
     "$([ -f "$work/state/pedal-firmware-failed" ] && echo yes || echo no)"
+teardown
+
+# --- pedal-pending: what the app gates the UI on ---------------------------
+#
+# This decides whether the user is shown a blocking "finishing update" screen.
+# Both mistakes are bad and neither is loud: gate when no flash is coming and
+# the console is bricked behind a screen that never clears; do not gate when
+# one is, and the user stomps on a pedal sitting in its bootloader and reads
+# the update as a hardware fault. So every "no" path is asserted, not just the
+# "yes" one.
+
+echo "pedal-pending: a flash is coming"
+setup
+write_manifest <<JSON
+{ "version": "1.0.0", "bundle": "b.raucb", "channel": "production",
+  "pedalFirmware": { "version": "9.9.9", "hex": "loopy-pedal-9.9.9.hex",
+                     "protocolVersion": 3, "sha256": "$hex_sha" } }
+JSON
+attach_pedal
+check "reports the version" "9.9.9" "$(run_pending)"
+teardown
+
+echo "pedal-pending: pedal already up to date"
+setup
+write_manifest <<JSON
+{ "version": "1.0.0", "bundle": "b.raucb", "channel": "production",
+  "pedalFirmware": { "version": "9.9.9", "hex": "loopy-pedal-9.9.9.hex",
+                     "protocolVersion": 3, "sha256": "$hex_sha" } }
+JSON
+attach_pedal
+echo "9.9.9 3" > "$work/state/pedal-firmware-version"
+check "says nothing" "" "$(run_pending)"
+teardown
+
+echo "pedal-pending: pedal unplugged"
+setup
+write_manifest <<JSON
+{ "version": "1.0.0", "bundle": "b.raucb", "channel": "production",
+  "pedalFirmware": { "version": "9.9.9", "hex": "loopy-pedal-9.9.9.hex",
+                     "protocolVersion": 3, "sha256": "$hex_sha" } }
+JSON
+check "does not gate a console with no pedal" "" "$(run_pending)"
+teardown
+
+echo "pedal-pending: release publishes no firmware"
+setup
+write_manifest <<'JSON'
+{ "version": "1.0.0", "bundle": "b.raucb", "sha256": "x", "channel": "production" }
+JSON
+attach_pedal
+check "says nothing" "" "$(run_pending)"
+teardown
+
+echo "pedal-pending: manifest unreachable"
+setup
+attach_pedal
+# No manifest written at all — offline, or the mirror is down.
+run_pending >"$work/out"; rc=$?
+check "exits 0 rather than failing app startup" 0 "$rc"
+check "says nothing" "" "$(cat "$work/out")"
 teardown
 
 echo

@@ -51,4 +51,11 @@ class UpdateRepository {
   /// Restarts into the staged update (reboot on the appliance, relaunch on
   /// desktop). Opt-in: only call in response to a user action.
   Future<void> applyAndRestart() => _backend.applyAndRestart();
+
+  /// The firmware the attached pedal is about to be flashed with, or null when
+  /// no flash is coming. See [PlatformUpdateBackend.pendingPedalFirmware].
+  Future<String?> pendingPedalFirmware() => _backend.pendingPedalFirmware();
+
+  /// Flashes the published pedal firmware, emitting progress in `[0, 1]`.
+  Stream<double> flashPedalFirmware() => _backend.flashPedalFirmware();
 }

@@ -26,6 +26,12 @@ import '../../helpers/helpers.dart';
 class _FakeUpdateBackend implements PlatformUpdateBackend {
   @override
   bool get isSupported => true;
+  // No pending pedal firmware: the App tests are about the looper, and a gate
+  // over it would hide everything they assert on.
+  @override
+  Future<String?> pendingPedalFirmware() async => null;
+  @override
+  Stream<double> flashPedalFirmware() => const Stream.empty();
   @override
   String get channel => 'experimental';
   @override
