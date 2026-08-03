@@ -292,12 +292,39 @@ jobs:
                 --max-time 300 \
                 "$SEGNO_SYNC_URL" || true)
             printf '%s\n' "$out"
-            mirrored=$(curl -fsS --max-time 30 \
-                "https://segno.aquiles.dev/updates/appliance/${CHANNEL}/manifest.json" \
-                | jq -r '.version // empty' || true)
+            base="https://segno.aquiles.dev/updates/appliance/${CHANNEL}"
+            manifest=$(curl -fsS --max-time 30 "$base/manifest.json" || true)
+            mirrored=$(printf '%s' "$manifest" | jq -r '.version // empty' || true)
             if [ "$mirrored" = "$EXPECTED_VERSION" ]; then
-              echo "segno manifest matches $EXPECTED_VERSION"
-              exit 0
+              # The manifest is what tells a console an update exists, so it
+              # arriving is NOT the same as the release being usable. On .63 an
+              # artifact fetch failed, the mirror carried on and published the
+              # manifest anyway, and this check called it green (#478) — the
+              # same shape as #435, which shipped a manifest advertising a .hex
+              # that 404'd and hung the appliance mid-update.
+              #
+              # So verify what the manifest actually points at, by the
+              # checksums the manifest itself carries. No guessing, and it
+              # catches a stale file as well as a missing one.
+              ok=yes
+              for pair in \
+                "$(printf '%s' "$manifest" | jq -r '"\(.bundle) \(.sha256)"')" \
+                "$(printf '%s' "$manifest" | jq -r 'if .pedalFirmware then "\(.pedalFirmware.hex) \(.pedalFirmware.sha256)" else empty end')"
+              do
+                [ -n "$pair" ] || continue
+                name=${pair%% *}; want=${pair##* }
+                [ -n "$name" ] && [ "$name" != "null" ] || continue
+                got=$(curl -fsS --max-time 300 "$base/$name" | sha256sum | cut -d' ' -f1 || true)
+                if [ "$got" != "$want" ]; then
+                  echo "segno $name mismatched (want ${want:-?}, got ${got:-missing})"
+                  ok=no
+                fi
+              done
+              if [ "$ok" = yes ]; then
+                echo "segno manifest and every artifact it references match $EXPECTED_VERSION"
+                exit 0
+              fi
+              echo "segno published the manifest before its artifacts; retrying"
             fi
             echo "segno still at '${mirrored:-unknown}', want $EXPECTED_VERSION"
             sleep 10
