@@ -1340,6 +1340,54 @@
     "@a11yTrayRail": {
         "description": "Accessible label for the settings tray's vertical navigation rail, which selects which config face fills the open tray."
     },
+    "readoutTempoLabel": "TEMPO",
+    "@readoutTempoLabel": {
+        "description": "Caption over the tempo figure on the 7-inch performance readout."
+    },
+    "readoutBarsLabel": "BARS",
+    "@readoutBarsLabel": {
+        "description": "Caption over the master loop length in bars on the 7-inch performance readout."
+    },
+    "readoutModeRecord": "REC",
+    "@readoutModeRecord": {
+        "description": "Mode chip on the 7-inch readout: a track press records. Short by design - read from stage distance."
+    },
+    "readoutModeMute": "MUTE",
+    "@readoutModeMute": {
+        "description": "Mode chip on the 7-inch readout: a track press mutes."
+    },
+    "readoutModeFx": "FX",
+    "@readoutModeFx": {
+        "description": "Mode chip on the 7-inch readout: a track press stomps its FX chain."
+    },
+    "readoutStateRecording": "REC",
+    "@readoutStateRecording": {
+        "description": "Track cell state on the 7-inch readout: capturing a first pass."
+    },
+    "readoutStateOverdubbing": "DUB",
+    "@readoutStateOverdubbing": {
+        "description": "Track cell state on the 7-inch readout: summing input into an existing loop."
+    },
+    "readoutStatePlaying": "PLAY",
+    "@readoutStatePlaying": {
+        "description": "Track cell state on the 7-inch readout: looping playback."
+    },
+    "readoutStateMuted": "MUTED",
+    "@readoutStateMuted": {
+        "description": "Track cell state on the 7-inch readout: muted."
+    },
+    "readoutStatePending": "ARMED",
+    "@readoutStatePending": {
+        "description": "Track cell state on the 7-inch readout: a quantized action is armed and waiting for the loop boundary."
+    },
+    "readoutStateStopped": "STOPPED",
+    "@readoutStateStopped": {
+        "description": "Track cell state on the 7-inch readout: playback halted but the loop buffer is retained. Distinct from empty - the track still holds audio."
+    },
+    "readoutStateEmpty": "EMPTY",
+    "@readoutStateEmpty": {
+        "description": "Track cell state on the 7-inch readout: nothing captured yet."
+    },
     "trayPedalLabel": "Pedal",
     "@trayPedalLabel": {
         "description": "Navigation rail entry for the settings tray's pedal-assignment face. Deliberately shorter than pedalAssignTitle, which titles the face itself \u2014 rail entries are single words."

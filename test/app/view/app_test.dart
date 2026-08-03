@@ -85,6 +85,16 @@ class _RecordingWindowService implements WaveformWindowService {
   int pushCalls = 0;
   bool _open = false;
 
+  /// Every readout the app handed to the service.
+  ///
+  /// Deliberately records EVERY call rather than mirroring the real service's
+  /// change-diff: a double that reimplements the logic under test proves
+  /// nothing about it.
+  final readouts = <PerformanceReadout>[];
+
+  @override
+  void pushReadout(PerformanceReadout readout) => readouts.add(readout);
+
   @override
   bool get isOpen => _open;
 

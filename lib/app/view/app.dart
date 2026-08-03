@@ -505,11 +505,19 @@ class _AppViewState extends State<_AppView> {
         if (!mounted) return;
         final looper = context.read<LooperRepository>();
         final tracks = context.read<TracksCubit>();
-        final cursor = context.read<ControlCubit>().state.cursor;
+        final control = context.read<ControlCubit>().state;
+        final cursor = control.cursor;
         widget.waveformWindow.pushWaveform(
           looper.readWaveform(),
           looper.state.transport.progress,
           tracks.state.nameOf(cursor),
+        );
+        // Same timer, different discipline: the waveform changes every frame,
+        // the readout does not, so `pushReadout` drops anything equal to what
+        // it last sent rather than re-serialising eight track records at frame
+        // rate across an engine boundary.
+        widget.waveformWindow.pushReadout(
+          _readoutOf(looper.state, tracks.state, control.mode, cursor),
         );
       });
     } else {
@@ -517,6 +525,37 @@ class _AppViewState extends State<_AppView> {
       _pushTimer = null;
       await widget.waveformWindow.close();
     }
+  }
+
+  /// Projects engine + control state onto the 7" readout's value type.
+  ///
+  /// Pure and static so it can be tested without a window: what the second
+  /// screen shows is a function of state, never of when the timer fired.
+  static PerformanceReadout _readoutOf(
+    LooperState looper,
+    TracksState tracks,
+    InteractionMode mode,
+    int cursor,
+  ) {
+    final transport = looper.transport;
+    return PerformanceReadout(
+      tracks: [
+        for (final track in looper.tracks)
+          ReadoutTrack(
+            name: tracks.nameOf(track.channel),
+            state: track.state.name,
+            muted: track.muted,
+            pending: track.pending,
+            selected: track.channel == cursor,
+          ),
+      ],
+      tempoBpm: transport.tempoBpm,
+      tsNum: transport.tsNum,
+      tsDen: transport.tsDen,
+      loopBars: transport.loopBars,
+      isRunning: transport.isRunning,
+      mode: mode.token,
+    );
   }
 
   /// Persistent "disconnected — trying to reconnect" toast when a pinned
