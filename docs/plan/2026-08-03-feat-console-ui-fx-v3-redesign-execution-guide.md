@@ -88,7 +88,7 @@ Related work that is **not** in this epic but touches the same code:
 | Part | Scope | Model / effort | Autonomy | Depends on | Status |
 |------|-------|----------------|----------|------------|--------|
 | [1](2026-08-03-feat-console-ui-fx-v3-redesign-part-1-plan.md) | drawer navigation rail (shell only) | Opus · medium | `merge-gate` | — | merged (#480) |
-| 2 | 7″ permanent performance readout | Opus · medium | `merge-gate` | — | pending |
+| 2 | 7″ permanent performance readout | Opus · medium | `merge-gate` | — | in-review (#487) |
 | 3 | rack domain + global library + migration | **Fable · high** | `merge-gate` | — | pending |
 | 4 | FX panel: stage tabs + rack UI | Opus · high | `merge-gate` | 1, 3 | pending |
 | 5 | Routing panel: stage tabs | Opus · high | `merge-gate` | 1, 4 | pending |
