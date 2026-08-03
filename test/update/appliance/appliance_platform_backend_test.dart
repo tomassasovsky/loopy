@@ -10,7 +10,6 @@ class _FakeEnv implements ApplianceEnv {
     this.stageProgress = const [0.5, 1.0],
     this.stageError,
     this.rebootError,
-    this.flashError,
   }) : files = Map.of(files);
 
   final Map<String, String> files;
@@ -18,12 +17,10 @@ class _FakeEnv implements ApplianceEnv {
   final List<double> stageProgress;
   final Object? stageError;
   final Exception? rebootError;
-  final Object? flashError;
 
   Uri? fetchedUrl;
   String? stagedVersionArg;
   int rebootCalls = 0;
-  int flashCalls = 0;
 
   @override
   String? readTextSync(String path) => files[path];
@@ -47,13 +44,6 @@ class _FakeEnv implements ApplianceEnv {
     stagedVersionArg = version;
     if (stageError != null) return Stream.error(stageError!);
     return Stream.fromIterable(stageProgress);
-  }
-
-  @override
-  Stream<double> flashPedal() {
-    flashCalls++;
-    if (flashError != null) return Stream.error(flashError!);
-    return Stream.fromIterable(const [0.5, 1.0]);
   }
 
   @override
@@ -258,53 +248,27 @@ void _pedalFirmwareStagingTests() {
   );
 
   group('downloadAndStage with pedal firmware', () {
-    test('does not flash when the release publishes no firmware', () async {
-      final env = _FakeEnv(files: {version: '0.2.0\n', helper: ''});
-      final backend = AppliancePlatformBackend(env: env);
+    // Staging runs inside the image being replaced, so a flash started here
+    // would run the OUTGOING flasher — which is why a flash-pedal fix could
+    // never apply on the update carrying it (#444). The published firmware is
+    // now flashed after the reboot by loopy-pedal-flash.service, so a manifest
+    // that advertises firmware must stage exactly like one that does not.
+    test('stages identically whether or not firmware is published', () async {
+      final withFirmware = _FakeEnv(files: {version: '0.2.0\n', helper: ''});
+      final without = _FakeEnv(files: {version: '0.2.0\n', helper: ''});
 
-      final progress = await backend.downloadAndStage(manifest()).toList();
+      final a = await AppliancePlatformBackend(
+        env: withFirmware,
+      ).downloadAndStage(manifest(firmware: firmware())).toList();
+      final b = await AppliancePlatformBackend(
+        env: without,
+      ).downloadAndStage(manifest()).toList();
 
-      expect(env.flashCalls, 0);
-      expect(progress.last, 1.0);
+      expect(a, b);
+      expect(withFirmware.stagedVersionArg, '0.3.0');
     });
 
-    test('flashes after staging when firmware is published', () async {
-      final env = _FakeEnv(files: {version: '0.2.0\n', helper: ''});
-      final backend = AppliancePlatformBackend(env: env);
-
-      final progress = await backend
-          .downloadAndStage(manifest(firmware: firmware()))
-          .toList();
-
-      expect(env.stagedVersionArg, '0.3.0');
-      expect(env.flashCalls, 1);
-      // One user gesture, one monotonic bar: the OS takes 0..0.9 and the
-      // firmware the tail, rather than the bar resetting for a second phase.
-      expect(progress, orderedEquals(<double>[...progress]..sort()));
-      expect(progress.last, 1.0);
-      expect(progress.any((p) => p > 0 && p <= 0.9), isTrue);
-    });
-
-    test('a firmware failure does not fail the staged OS update', () async {
-      // The bundle is already staged by the time the flash runs, so throwing
-      // would push the user to redo a ~100 MB download for a pedal that can be
-      // reflashed on its own.
-      final env = _FakeEnv(
-        files: {version: '0.2.0\n', helper: ''},
-        flashError: Exception('avrdude failed'),
-      );
-      final backend = AppliancePlatformBackend(env: env);
-
-      final progress = await backend
-          .downloadAndStage(manifest(firmware: firmware()))
-          .toList();
-
-      expect(env.flashCalls, 1);
-      expect(progress.last, 1.0);
-    });
-
-    test('a staging failure still surfaces', () async {
-      // Only the firmware half is forgiven; the OS half must still report.
+    test('a staging failure surfaces', () async {
       final env = _FakeEnv(
         files: {version: '0.2.0\n', helper: ''},
         stageError: Exception('rauc failed'),
