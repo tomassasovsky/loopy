@@ -1,0 +1,710 @@
+<title>Loopy console — interactive prototype</title>
+<style>
+  :root{
+    --bg:#0b0b0c; --s1:#161618; --s2:#1e1e21; --s3:#26262a;
+    --line:#2a2a2e; --line2:#3a3a40;
+    --tx:#f3f4f7; --tx2:#9a9aa2; --tx3:#6b6b73;
+    --ac:#3b82f6; --acb:#16233d;
+    --rec:#e5484d; --play:#30a46c; --arm:#e0a94a;
+    --r:10px;
+    --font:system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#08080a;color:var(--tx);font-family:var(--font);
+       -webkit-font-smoothing:antialiased;padding:22px}
+  .page{max-width:1240px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+  .hdr h1{font-size:19px;margin:0 0 4px;font-weight:650;letter-spacing:-.01em}
+  .hdr p{margin:0;color:var(--tx2);font-size:13px;max-width:78ch;line-height:1.5}
+  .kbd{font-family:var(--mono);font-size:11px;background:var(--s2);border:1px solid var(--line);
+       border-radius:5px;padding:1px 5px;color:var(--tx2)}
+
+  .rig{display:block}
+
+  /* ---- 16" console ---- */
+  .screen{position:relative;aspect-ratio:16/10;background:var(--bg);border:1px solid var(--line);
+          border-radius:14px;overflow:hidden;min-height:440px}
+  .screenlbl{position:absolute;top:9px;left:12px;font-size:10px;letter-spacing:.09em;
+             text-transform:uppercase;color:var(--tx3);z-index:1;pointer-events:none}
+
+  .stage{position:absolute;inset:0;padding:26px 16px 16px;display:flex;flex-direction:column;gap:12px}
+  .tracks{flex:1;display:grid;grid-template-columns:repeat(4,1fr);gap:12px;min-height:0}
+  .tk{border-radius:var(--r);border:1px solid var(--line);background:var(--s1);padding:12px;
+      display:flex;flex-direction:column;gap:6px;cursor:pointer;transition:border-color .15s}
+  .tk:hover{border-color:var(--line2)}
+  .tk .nm{font-weight:600;font-size:15px}
+  .tk .st{font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.07em}
+  .tk.rec{background:#2a1214;border-color:var(--rec)} .tk.rec .nm{color:var(--rec)}
+  .tk.play{background:#0f2419;border-color:var(--play)} .tk.play .nm{color:var(--play)}
+  .tk.arm{background:#2a2210;border-color:var(--arm)} .tk.arm .nm{color:var(--arm)}
+  .tk .wave{flex:1;border-radius:6px;background:
+      repeating-linear-gradient(90deg,currentColor 0 2px,transparent 2px 6px);opacity:.22;min-height:22px}
+  .tk.empty .wave{background:none;border:1px dashed var(--line2)}
+  .transport{display:flex;justify-content:space-between;font-family:var(--mono);
+             font-size:13px;color:var(--tx2);font-variant-numeric:tabular-nums}
+
+  /* ---- drawer ---- */
+  .drawer{position:absolute;left:0;right:0;top:0;height:90%;background:var(--s1);
+          border-bottom:1px solid var(--line2);border-radius:0 0 14px 14px;
+          box-shadow:0 16px 40px rgba(0,0,0,.6);display:flex;
+          transform:translateY(-100%);transition:transform .32s cubic-bezier(.22,.7,.2,1)}
+  .drawer.open{transform:translateY(0)}
+  @media(prefers-reduced-motion:reduce){.drawer,.pill{transition:none}}
+
+  /* Closed: nothing but this. The stage is otherwise untouched. */
+  .pill{position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:4;
+        border:0;background:rgba(255,255,255,.13);border-radius:99px;cursor:pointer;
+        width:56px;height:5px;padding:0;transition:opacity .2s,background .15s,width .2s}
+  .pill:hover{background:rgba(255,255,255,.26);width:72px}
+  .pill:focus-visible{outline:2px solid var(--ac);outline-offset:4px}
+  .pill.hidden{opacity:0;pointer-events:none}
+
+  /* Open: the grab bar rides the drawer's lower edge. */
+  .handle{position:absolute;bottom:0;left:0;right:0;height:26px;display:flex;align-items:center;
+          justify-content:center;cursor:pointer;z-index:3;background:none;border:0}
+  .handle:focus-visible{outline:2px solid var(--ac);outline-offset:-3px}
+  .handle span{width:52px;height:4px;border-radius:99px;background:var(--line2)}
+
+  .rail{width:150px;flex:0 0 150px;border-right:1px solid var(--line);padding:12px 7px 34px;
+        display:flex;flex-direction:column;gap:3px;overflow-y:auto}
+  .ri{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:9px;border:0;
+      background:none;color:var(--tx2);font-size:14px;font-family:inherit;cursor:pointer;
+      text-align:left;width:100%;transition:background .14s,color .14s}
+  .ri:hover{background:var(--s2);color:var(--tx)}
+  .ri:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+  .ri.on{background:var(--acb);color:var(--ac);font-weight:600}
+  .ri .ic{width:17px;flex:0 0 17px;text-align:center;opacity:.9;font-size:14px}
+  .railgap{flex:1;min-height:8px}
+
+  .face{flex:1;min-width:0;padding:14px 16px 34px;display:flex;flex-direction:column;gap:12px;overflow-y:auto}
+  .facehd{display:flex;align-items:baseline;gap:10px}
+  .facehd h2{margin:0;font-size:17px;font-weight:650}
+  .facehd .hint{font-size:12px;color:var(--tx3)}
+
+  .tabs{display:flex;gap:5px;flex-wrap:wrap}
+  .tab{border:0;background:none;color:var(--tx2);font-family:inherit;font-size:13px;
+       padding:7px 14px;border-radius:7px;cursor:pointer;transition:background .14s,color .14s}
+  .tab:hover{background:var(--s2);color:var(--tx)}
+  .tab:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+  .tab.on{background:var(--acb);color:var(--ac);font-weight:600}
+
+  .racks{display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));gap:10px}
+  .rack{border:1px solid var(--line);border-radius:var(--r);background:var(--s2);padding:12px;
+        text-align:left;font-family:inherit;color:var(--tx);cursor:pointer;display:flex;
+        flex-direction:column;gap:7px;min-height:112px;transition:border-color .15s}
+  .rack:hover{border-color:var(--line2)}
+  .rack:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+  .rack.sel{border-color:var(--ac)}
+  .rack .owner{font-weight:650;font-size:15px}
+  .rack .where{font-family:var(--mono);font-size:10.5px;color:var(--tx3);letter-spacing:.02em}
+  .rack .nm{font-weight:600;font-size:13.5px;color:var(--ac);margin-top:3px;
+            display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .rack .nm.none{color:var(--tx3);font-weight:500}
+  .rack .mod{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--arm);
+             border:1px solid var(--arm);border-radius:99px;padding:0 5px;font-weight:600}
+  .rack .chain{font-size:11.5px;color:var(--tx2);line-height:1.35}
+  .rack .feeds{font-size:11px;color:var(--tx3);display:flex;gap:5px;align-items:center}
+  .rack.vacant{border-style:dashed}
+  .stageblurb{display:flex;align-items:baseline;gap:9px;font-size:12px;color:var(--tx2);
+              line-height:1.5;flex-wrap:wrap}
+  .chip{font-size:10px;text-transform:uppercase;letter-spacing:.06em;font-weight:650;
+        border-radius:99px;padding:2px 8px;background:var(--s3);color:var(--tx2);
+        border:1px solid var(--line2);white-space:nowrap}
+  .chip.printed{background:#2a1214;color:var(--rec);border-color:var(--rec)}
+  .rack .mon{margin-top:auto;font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em}
+  .rack .mon.on{color:var(--ac)}
+  .rack.add{align-items:center;justify-content:center;color:var(--tx3);font-size:22px;border-style:dashed}
+
+  .rows{border:1px solid var(--line);border-radius:var(--r);background:var(--s2);overflow:hidden}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;
+       border:0;border-bottom:1px solid var(--line);background:none;color:var(--tx);
+       font-family:inherit;font-size:14px;padding:12px 14px;text-align:left;cursor:pointer;
+       transition:background .14s}
+  .row:last-child{border-bottom:0}
+  .row:hover{background:var(--s3)}
+  .row:focus-visible{outline:2px solid var(--ac);outline-offset:-2px}
+  .row .v{font-family:var(--mono);font-size:12.5px;color:var(--tx2);white-space:nowrap}
+  .row .sub2{font-size:11.5px;color:var(--tx3);margin-top:2px}
+  .row .l{display:flex;flex-direction:column;min-width:0}
+  .grouphd{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--tx3);
+           margin:4px 0 -4px}
+  .flowrow{display:flex;align-items:center;gap:8px;padding:11px 13px;border-bottom:1px solid var(--line);
+           font-size:13px;flex-wrap:wrap}
+  .flowrow:last-child{border-bottom:0}
+  .node{border:1px solid var(--line2);border-radius:7px;padding:5px 10px;background:var(--s3);
+        font-size:12.5px;white-space:nowrap}
+  .node.src{border-color:var(--ac);color:var(--ac)}
+  .node.rk{border-color:var(--line2);color:var(--tx2)}
+  .node.dim{border-style:dashed;color:var(--tx3)}
+  .arrow{color:var(--tx3);font-size:12px}
+  .tuner{display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 0}
+  .tuner .note{font-size:56px;font-weight:700;line-height:1;letter-spacing:-.02em}
+  .tuner .cents{font-family:var(--mono);font-size:13px;color:var(--tx2)}
+  .tunerbar{width:100%;height:8px;border-radius:99px;background:var(--s3);position:relative}
+  .tunerbar i{position:absolute;top:-3px;width:4px;height:14px;border-radius:2px;background:var(--play)}
+  .tunerbar u{position:absolute;left:50%;top:-5px;width:1px;height:18px;background:var(--line2)}
+  .libhd{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .btn{border:1px solid var(--line2);background:var(--s2);color:var(--tx);font-family:inherit;
+       font-size:12.5px;padding:7px 12px;border-radius:8px;cursor:pointer;transition:background .14s}
+  .btn:hover{background:var(--s3)}
+  .btn:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+  .btn.pri{border-color:var(--ac);color:var(--ac);background:var(--acb)}
+  .ib{border:0;background:none;color:var(--tx3);cursor:pointer;font-family:inherit;
+      font-size:13px;line-height:1;padding:4px;border-radius:6px;transition:color .14s,background .14s}
+  .ib:hover{color:var(--ac);background:var(--s3)}
+  .ib:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+  .detail .nmrow{display:flex;align-items:center;gap:7px}
+  .fxchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line2);
+          border-radius:7px;padding:5px 9px;font-size:12px;background:var(--s3)}
+  .fxchip button{border:0;background:none;color:var(--tx3);cursor:pointer;font-size:13px;
+                 padding:0;line-height:1;font-family:inherit}
+  .fxchip button:hover{color:var(--rec)}
+  .chiprow{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+
+  .detail{border:1px solid var(--ac);border-radius:var(--r);background:var(--s2);padding:14px;
+          display:flex;flex-direction:column;gap:11px}
+  .detail .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .detail .nm{font-size:19px;font-weight:650}
+  .detail .sub{font-size:12px;color:var(--tx3);margin-top:2px}
+  .lbl{font-size:12px;color:var(--tx2)}
+  .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--bg);
+       border-radius:9px;padding:4px}
+  .sg{border:0;background:none;color:var(--tx2);font-family:inherit;font-size:13px;padding:9px 0;
+      border-radius:6px;cursor:pointer;transition:background .14s,color .14s}
+  .sg:hover{color:var(--tx)}
+  .sg:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+  .sg.on{background:var(--ac);color:#fff;font-weight:650}
+  .why{font-size:12px;color:var(--tx3);line-height:1.5}
+
+  /* ---- pedal ---- */
+  .plate{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+  .sw{border:1px solid var(--line);border-radius:var(--r);background:var(--s2);padding:11px;
+      cursor:pointer;font-family:inherit;color:var(--tx);text-align:left;display:flex;
+      flex-direction:column;gap:5px;min-height:84px;transition:border-color .15s}
+  .sw:hover{border-color:var(--line2)}
+  .sw:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+  .sw.sel{border-color:var(--ac);background:var(--acb)}
+  .sw .k{font-family:var(--mono);font-size:10px;color:var(--tx3);letter-spacing:.08em}
+  .sw .t{font-size:13px;font-weight:600;line-height:1.25}
+  .sw .t.none{color:var(--tx3);font-weight:500}
+
+  .picker{border:1px solid var(--line);border-radius:var(--r);background:var(--s2);overflow:hidden}
+  .pk{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
+      border:0;border-bottom:1px solid var(--line);background:none;color:var(--tx);
+      font-family:inherit;font-size:14px;padding:12px 14px;cursor:pointer;text-align:left;
+      transition:background .14s}
+  .pk:last-child{border-bottom:0}
+  .pk:hover{background:var(--s3)}
+  .pk:focus-visible{outline:2px solid var(--ac);outline-offset:-2px}
+  .pk .meta{font-size:12px;color:var(--tx3);font-family:var(--mono)}
+  .pk.sub{padding-left:32px;font-size:13px;color:var(--tx2);background:#191a1d}
+  .pk.back{color:var(--tx2);font-size:13px}
+  .disclose{width:100%;border:0;border-top:1px solid var(--line);background:none;
+            color:var(--tx3);font-family:inherit;font-size:12px;padding:11px;cursor:pointer}
+  .disclose:hover{color:var(--tx2);background:var(--s3)}
+  .disclose:focus-visible{outline:2px solid var(--ac);outline-offset:-2px}
+
+  /* ---- 7" readout ---- */
+  .small{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px;
+         display:flex;flex-direction:column;gap:10px;position:sticky;top:22px}
+  .small .lb{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--tx3)}
+  .rowbars{display:flex;gap:5px}
+  .rowbars i{flex:1;height:9px;border-radius:3px;background:var(--line2);display:block}
+  .rowbars i.rec{background:var(--rec)} .rowbars i.play{background:var(--play)}
+  .rowbars i.arm{background:var(--arm)}
+  .big{font-family:var(--mono);font-size:26px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .small .meta{font-family:var(--mono);font-size:12px;color:var(--tx2)}
+  .small .names{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--tx2)}
+  .small .names span{display:flex;justify-content:space-between}
+
+  .notes{border-top:1px solid var(--line);padding-top:14px;display:grid;
+         grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+  .note h3{margin:0 0 5px;font-size:13px;font-weight:650}
+  .note p{margin:0;font-size:12.5px;color:var(--tx2);line-height:1.55}
+  .note b{color:var(--tx)}
+</style>
+
+<div class="page">
+  <div class="hdr">
+    <h1>Loopy console — interactive prototype</h1>
+    <p>Pull the Control Center <b>down</b> from the indicator at the top — closed, that indicator is the only thing over the stage. Everything in the rail works. Routing merged into <b>Signal</b>. The unresolved question is in <b>Pedal</b>: pick a switch, then choose what it points at. Press <span class="kbd">Esc</span> to close.</p>
+  </div>
+
+  <div class="rig">
+    <div class="screen">
+      <div class="screenlbl">16″ stage</div>
+
+      <div class="stage">
+        <div class="tracks" id="tracks"></div>
+        <div class="transport">
+          <span id="bpm">120.0 bpm</span><span id="pos">0:00:11</span><span>multi</span>
+        </div>
+      </div>
+
+      <button class="pill" id="pill" aria-expanded="false" aria-label="Open Control Center"></button>
+
+      <div class="drawer" id="drawer">
+        <button class="handle" id="handle" aria-label="Close Control Center"><span></span></button>
+        <div class="rail" id="rail"></div>
+        <div class="face" id="face" role="region" aria-live="polite"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="notes">
+    <div class="note"><h3>Routing merged in</h3><p>A separate Routing page showed the same list with arrows — its only addition was a destination derived from the stage tab. Folded into <b>Signal</b>; the rail is seven.</p></div>\n    <div class="note"><h3>Cards are placements</h3><p>Each card is <b>a rack, on something, at a stage</b> — the owner is the headline, the rack name is the accent line. Vacant slots are dashed.</p></div>
+    <div class="note"><h3>Printed or not</h3><p>The chip under the tabs says whether that stage is <b>recorded into the take</b> or monitor-only. Input is the only one that prints.</p></div>
+    <div class="note"><h3>The open question</h3><p>In <b>Pedal</b>, targets are named racks. Slots live under <b>Show individual effects</b>. Is one tap deeper the right price for a short list?</p></div>
+    <div class="note"><h3>Monitor states</h3><p>Open a rack in <b>FX</b>. <b>auto</b> is the default — heard while its track is armed or selected.</p></div>
+    <div class="note"><h3>Names are yours</h3><p>Double-click a track to rename it; open an FX card to rename its input. The hardware says <b>input 2</b>; you say <b>mic</b>.</p></div>\n    <div class="note"><h3>Racks live in a library</h3><p><b>FX → Rack library</b> creates, renames, edits and deletes them, and shows where each one is loaded.</p></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var tracks=[
+    {name:"drums", state:"play", rack:"Room glue"},
+    {name:"bass",  state:"play", rack:null},
+    {name:"rhythm",state:"arm",  rack:"Dirty rhythm"},
+    {name:"lead",  state:"empty",rack:null}
+  ];
+  // A rack is a named, reusable object. What the FX panel lists is a
+  // PLACEMENT of one: this rack, on that track, at that stage.
+  var library=[
+    {name:"Guitar front", fx:["Comp","Drive"]},
+    {name:"Vocal air",    fx:["DeEss","Verb"]},
+    {name:"Dirty rhythm", fx:["Fuzz","Trem","Verb"]},
+    {name:"Room glue",    fx:["Comp"]},
+    {name:"Lead lift",    fx:["Boost","Delay"]},
+    {name:"Bus tape",     fx:["Sat","Limit"]}
+  ];
+  function rackOf(n){return library.filter(function(r){return r.name===n})[0]}
+
+  var stages=[
+    {id:"input", label:"input",
+     printed:true,
+     blurb:"Before the recorder. What you hear while playing — and what gets printed into the take.",
+     slots:[
+       {owner:"guitar",  where:"input 1", rack:"Guitar front", mon:"on",   edited:false},
+       {owner:"mic",     where:"input 2", rack:"Vocal air",    mon:"auto", edited:true}
+     ]},
+    {id:"loop", label:"loop",
+     printed:false,
+     blurb:"On the loop as it plays back. Not printed — the take underneath stays dry.",
+     slots:[
+       {owner:"rhythm",  where:"track 3 · lane A", rack:"Dirty rhythm", mon:"auto", edited:false},
+       {owner:"drums",   where:"track 1 · lane A", rack:"Room glue",    mon:"off",  edited:false},
+       {owner:"bass",    where:"track 2 · lane A", rack:null,           mon:"auto", edited:false}
+     ]},
+    {id:"track", label:"track",
+     printed:false,
+     blurb:"On the whole track, after its loops are summed. Not printed.",
+     slots:[
+       {owner:"lead",    where:"track 4", rack:"Lead lift", mon:"auto", edited:false},
+       {owner:"rhythm",  where:"track 3", rack:null,        mon:"auto", edited:false}
+     ]},
+    {id:"master", label:"master",
+     printed:false,
+     blurb:"On everything, last. Monitors are summed after this.",
+     slots:[
+       {owner:"master out", where:"main", rack:"Bus tape", mon:"on", edited:false}
+     ]}
+  ];
+
+  var dests=[
+    {id:"fx",       icon:"↝", label:"Signal"},
+    {id:"pedal",    icon:"▭", label:"Pedal"},
+    {id:"loop",     icon:"♪", label:"Loop"},
+    {id:"tuner",    icon:"∿", label:"Tuner"},
+    {id:"settings", icon:"⚙", label:"Settings"},
+    {id:"wifi",     icon:"◗", label:"WiFi"},
+    {id:"bt",       icon:"✳", label:"Bluetooth"}
+  ];
+  var switches=[
+    {key:"SW1", target:"Dirty rhythm"},
+    {key:"SW2", target:null},
+    {key:"SW3", target:"Bus tape"},
+    {key:"SW4", target:null}
+  ];
+
+  var open=false, dest="fx", stage="loop", selRack=null, selSwitch=null, picking=false, showSlots=false, libOpen=false;
+
+  var $=function(id){return document.getElementById(id)};
+  function el(t,c,txt){var e=document.createElement(t); if(c)e.className=c; if(txt!=null)e.textContent=txt; return e}
+  // Every rack placement in the rig, for the pedal picker: a switch points at
+  // a rack WHERE IT IS PLACED, so the entry has to name both.
+  function allRacks(){
+    var o=[];
+    stages.forEach(function(sg){
+      sg.slots.forEach(function(pl){
+        if(pl.rack) o.push({stage:sg.label, where:pl.owner, rack:rackOf(pl.rack)});
+      });
+    });
+    return o;
+  }
+
+  function drawTracks(){
+    var w=$("tracks"); w.innerHTML="";
+    tracks.forEach(function(t){
+      var d=el("div","tk "+t.state);
+      d.appendChild(el("div","nm",t.name));
+      d.appendChild(el("div","wave"));
+      d.appendChild(el("div","st", t.state==="empty"?"empty":t.state==="arm"?"armed":t.state==="rec"?"recording":"playing"));
+      d.title="click to cycle state · double-click to rename";
+      d.onclick=function(){
+        var order=["empty","arm","play","rec"];
+        t.state=order[(order.indexOf(t.state)+1)%order.length];
+        drawTracks();
+      };
+      d.ondblclick=function(ev){
+        ev.stopPropagation();
+        var n=prompt("Track name — yours, not the hardware's", t.name);
+        if(n){ t.name=n.trim()||t.name; drawTracks(); drawFace() }
+      };
+      w.appendChild(d);
+    });
+  }
+
+  function drawMini(){}
+
+  function drawRail(){
+    var r=$("rail"); r.innerHTML="";
+    dests.forEach(function(d){
+      var b=el("button","ri"+(d.id===dest?" on":""));
+      b.type="button"; b.setAttribute("aria-current", d.id===dest?"page":"false");
+      b.appendChild(el("span","ic",d.icon)); b.appendChild(el("span",null,d.label));
+      b.onclick=function(){dest=d.id; selRack=null; picking=false; libOpen=false; drawRail(); drawFace()};
+      r.appendChild(b);
+    });
+    r.appendChild(el("div","railgap"));
+    var br=el("button","ri"); br.type="button";
+    br.appendChild(el("span","ic","☀")); br.appendChild(el("span",null,"Bright"));
+    br.onclick=function(){alert("Brightness is still a slider, not a destination — that decision is open.")};
+    r.appendChild(br);
+  }
+
+  function head(title,hint){
+    var h=el("div","facehd"); h.appendChild(el("h2",null,title));
+    if(hint) h.appendChild(el("span","hint",hint)); return h;
+  }
+
+  function faceFx(f){
+    if(libOpen){ faceLibrary(f); return }
+    var hd=el("div","libhd");
+    hd.appendChild(head("Signal","what feeds each stage, and what is applied there"));
+    var lb=el("button","btn","Rack library"); lb.type="button";
+    lb.onclick=function(){libOpen=true; drawFace()};
+    hd.appendChild(lb);
+    f.appendChild(hd);
+    var t=el("div","tabs");
+    stages.forEach(function(sg){
+      var b=el("button","tab"+(sg.id===stage?" on":"")); b.type="button"; b.textContent=sg.label;
+      b.onclick=function(){stage=sg.id; selRack=null; drawFace()};
+      t.appendChild(b);
+    });
+    f.appendChild(t);
+
+    var cur=stages.filter(function(sg){return sg.id===stage})[0];
+    // What this stage does to the audio, in words — the pre/post question.
+    var bl=el("div","stageblurb");
+    bl.appendChild(el("span","chip"+(cur.printed?" printed":""), cur.printed?"printed into the take":"monitor only"));
+    bl.appendChild(el("span",null,cur.blurb));
+    f.appendChild(bl);
+
+    var g=el("div","racks");
+    cur.slots.forEach(function(pl){
+      var b=el("button","rack"+(selRack===pl?" sel":"")+(pl.rack?"":" vacant")); b.type="button";
+      b.appendChild(el("div","owner",pl.owner));
+      b.appendChild(el("div","where",pl.where));
+      // The routing half: where this stage sends what it produces. Derived
+      // from the stage, which is why a separate Routing page had nothing of
+      // its own to say.
+      var to=el("div","feeds");
+      to.appendChild(el("span","arrow","→"));
+      to.appendChild(el("span",null, stage==="input"?"recorder":stage==="master"?"outputs":"mix"));
+      b.appendChild(to);
+      if(pl.rack){
+        var r=rackOf(pl.rack);
+        var nm=el("div","nm",pl.rack);
+        if(pl.edited) nm.appendChild(el("span","mod","modified"));
+        b.appendChild(nm);
+        b.appendChild(el("div","chain", r.fx.join(" → ")));
+        b.appendChild(el("div","mon"+(pl.mon!=="off"?" on":""), "monitor: "+pl.mon));
+      }else{
+        b.appendChild(el("div","nm none","no rack"));
+        b.appendChild(el("div","chain","tap to load one"));
+      }
+      b.onclick=function(){selRack=(selRack===pl?null:pl); drawFace()};
+      g.appendChild(b);
+    });
+    f.appendChild(g);
+
+    if(selRack){
+      var pl=selRack;
+      var d=el("div","detail");
+      var l=el("div");
+      l.appendChild(el("div","nm", pl.rack||"no rack"));
+      var sub=el("div","nmrow");
+      sub.appendChild(el("span","sub", pl.owner+" · "+pl.where+" · "+cur.label+" stage"));
+      var ren=el("button","ib","✎"); ren.type="button";
+      ren.title="Rename “"+pl.owner+"” — the hardware calls it "+pl.where;
+      ren.setAttribute("aria-label","Rename "+pl.owner);
+      ren.onclick=function(){
+        var n=prompt("What do you call this? The hardware calls it "+pl.where+".", pl.owner);
+        if(n){ pl.owner=n.trim()||pl.owner; drawFace() }
+      };
+      sub.appendChild(ren);
+      l.appendChild(sub);
+      var top=el("div","top"); top.appendChild(l); d.appendChild(top);
+
+      d.appendChild(el("div","why", cur.printed
+        ? "Anything here is recorded into the take. Turning it off later will not remove it."
+        : "Nothing here is recorded. The take underneath stays dry, so this is reversible."));
+
+      var pick=el("div","lbl","rack loaded here"); d.appendChild(pick);
+      var sel=el("div","tabs");
+      library.forEach(function(r){
+        var b=el("button","tab"+(pl.rack===r.name?" on":"")); b.type="button"; b.textContent=r.name;
+        b.onclick=function(){pl.rack=(pl.rack===r.name?null:r.name); pl.edited=false; drawFace()};
+        sel.appendChild(b);
+      });
+      d.appendChild(sel);
+
+      if(pl.rack){
+        d.appendChild(el("div","lbl","hear while playing"));
+        var seg=el("div","seg");
+        ["off","auto","on"].forEach(function(m){
+          var b=el("button","sg"+(pl.mon===m?" on":"")); b.type="button"; b.textContent=m;
+          b.onclick=function(){pl.mon=m; drawFace()};
+          seg.appendChild(b);
+        });
+        d.appendChild(seg);
+        var why={off:"Never in the monitor. Recording still works.",
+                 auto:"Heard while this track is armed or selected. The default.",
+                 on:"Always heard, even when another track is armed."};
+        d.appendChild(el("div","why",why[pl.mon]));
+      }
+      f.appendChild(d);
+    }
+  }
+
+  // Racks are made and edited here, then loaded into placements. Keeping the
+  // library separate is what makes a rack reusable rather than a chain that
+  // only exists where it was built.
+  function faceLibrary(f){
+    var hd=el("div","libhd");
+    hd.appendChild(head("Rack library", library.length+" racks"));
+    var back=el("button","btn","← Back to FX"); back.type="button";
+    back.onclick=function(){libOpen=false; drawFace()};
+    hd.appendChild(back);
+    f.appendChild(hd);
+
+    var box=el("div","rows");
+    library.forEach(function(r){
+      var used=[];
+      stages.forEach(function(sg){sg.slots.forEach(function(pl){
+        if(pl.rack===r.name) used.push(pl.owner)})});
+      var row=el("div","row");
+      var l=el("div","l");
+      l.appendChild(el("div",null,r.name));
+      var chips=el("div","chiprow"); chips.style.marginTop="6px";
+      r.fx.forEach(function(fx,i){
+        var c=el("span","fxchip"); c.appendChild(el("span",null,fx));
+        var x=el("button",null,"×"); x.type="button"; x.title="remove";
+        x.onclick=function(ev){ev.stopPropagation(); r.fx.splice(i,1); drawFace()};
+        c.appendChild(x); chips.appendChild(c);
+      });
+      var add=el("button","btn","+ effect"); add.type="button";
+      add.onclick=function(ev){
+        ev.stopPropagation();
+        var n=prompt("Add an effect to “"+r.name+"”","Delay");
+        if(n){ r.fx.push(n.trim()); drawFace() }
+      };
+      chips.appendChild(add);
+      l.appendChild(chips);
+      l.appendChild(el("div","sub2", used.length? "loaded on "+used.join(", ") : "not loaded anywhere"));
+      row.appendChild(l);
+
+      var acts=el("div","chiprow");
+      var rn=el("button","ib","✎"); rn.type="button";
+      rn.title="Rename"; rn.setAttribute("aria-label","Rename "+r.name);
+      rn.onclick=function(){
+        var n=prompt("Rename rack", r.name);
+        if(n&&n.trim()){
+          var old=r.name; r.name=n.trim();
+          stages.forEach(function(sg){sg.slots.forEach(function(pl){
+            if(pl.rack===old) pl.rack=r.name})});
+          drawFace();
+        }
+      };
+      acts.appendChild(rn);
+      var dl=el("button","ib","🗑"); dl.type="button";
+      dl.title="Delete"; dl.setAttribute("aria-label","Delete "+r.name);
+      dl.onclick=function(){
+        if(used.length && !confirm("“"+r.name+"” is loaded on "+used.join(", ")+". Delete it and leave those slots empty?")) return;
+        library.splice(library.indexOf(r),1);
+        stages.forEach(function(sg){sg.slots.forEach(function(pl){
+          if(pl.rack===r.name) pl.rack=null})});
+        drawFace();
+      };
+      acts.appendChild(dl);
+      row.appendChild(acts);
+      box.appendChild(row);
+    });
+    f.appendChild(box);
+
+    var nw=el("button","btn pri","+ New rack"); nw.type="button";
+    nw.onclick=function(){
+      var n=prompt("Name the rack. This is what you will see on the pedal picker.","Solo boost");
+      if(n&&n.trim()){ library.push({name:n.trim(), fx:["Boost"]}); drawFace() }
+    };
+    f.appendChild(nw);
+  }
+
+  function facePedal(f){
+    f.appendChild(head("Pedal", selSwitch?"choose what this switch points at":"pick a switch"));
+    var p=el("div","plate");
+    switches.forEach(function(s){
+      var b=el("button","sw"+(selSwitch===s?" sel":"")); b.type="button";
+      b.appendChild(el("div","k",s.key));
+      b.appendChild(el("div","t"+(s.target?"":" none"), s.target||"unassigned"));
+      b.onclick=function(){selSwitch=(selSwitch===s?null:s); picking=!!selSwitch; showSlots=false; drawFace()};
+      p.appendChild(b);
+    });
+    f.appendChild(p);
+
+    if(selSwitch && picking){
+      var box=el("div","picker");
+      allRacks().forEach(function(x){
+        var b=el("button","pk"); b.type="button";
+        b.appendChild(el("span",null,x.rack.name));
+        b.appendChild(el("span","meta",x.where+" · "+x.stage));
+        b.onclick=function(){selSwitch.target=x.rack.name+" · "+x.where; picking=false; drawFace()};
+        box.appendChild(b);
+      });
+      if(showSlots){
+        allRacks().forEach(function(x){
+          x.rack.fx.forEach(function(fx){
+            var b=el("button","pk sub"); b.type="button";
+            b.appendChild(el("span",null,fx));
+            b.appendChild(el("span","meta","in "+x.rack.name+" · "+x.where));
+            b.onclick=function(){selSwitch.target=fx+" · "+x.where; picking=false; drawFace()};
+            box.appendChild(b);
+          });
+        });
+      }
+      var dsc=el("button","disclose", showSlots?"Hide individual effects":"Show individual effects");
+      dsc.type="button"; dsc.onclick=function(){showSlots=!showSlots; drawFace()};
+      box.appendChild(dsc);
+      if(selSwitch.target){
+        var clr=el("button","disclose","Clear this switch"); clr.type="button";
+        clr.onclick=function(){selSwitch.target=null; picking=false; drawFace()};
+        box.appendChild(clr);
+      }
+      f.appendChild(box);
+      f.appendChild(el("div","why","Every entry is something you named. The old picker listed roughly fifty coordinates like “loop 2 lane 1 slot 3”."));
+    }
+  }
+
+  function rowsBox(items){
+    var b=el("div","rows");
+    items.forEach(function(it){
+      var r=el("button","row"); r.type="button";
+      var l=el("div","l"); l.appendChild(el("div",null,it[0]));
+      if(it[2]) l.appendChild(el("div","sub2",it[2]));
+      r.appendChild(l); r.appendChild(el("div","v",it[1]));
+      if(it[3]) r.onclick=it[3];
+      b.appendChild(r);
+    });
+    return b;
+  }
+
+  function faceLoop(f){
+    f.appendChild(head("Loop","tempo and length"));
+    f.appendChild(rowsBox([
+      ["Tempo","120.0 bpm","tap or type", function(){var n=prompt("Tempo",'120.0'); if(n) drawFace()}],
+      ["Time signature","4/4",""],
+      ["Loop length","8 bars","first take sets it"],
+      ["Quantise","bar","when a switch takes effect"],
+      ["Count-in","1 bar",""]
+    ]));
+  }
+
+  function faceTuner(f){
+    f.appendChild(head("Tuner","input 1 · guitar"));
+    var t=el("div","tuner");
+    t.appendChild(el("div","note","A"));
+    var bar=el("div","tunerbar"); bar.appendChild(el("u"));
+    var i2=el("i"); i2.style.left="54%"; bar.appendChild(i2);
+    t.appendChild(bar);
+    t.appendChild(el("div","cents","+4 cents · 442.1 Hz"));
+    f.appendChild(t);
+  }
+
+  function faceSettings(f){
+    f.appendChild(head("Settings","folded in from a full-screen route"));
+    f.appendChild(el("div","grouphd","Audio"));
+    f.appendChild(rowsBox([
+      ["Device","Scarlett 18i20",""],
+      ["Sample rate / buffer","48 kHz · 128","round-trip 6.8 ms"],
+      ["Inputs","2 named","guitar, mic — rename in FX"]
+    ]));
+    f.appendChild(el("div","grouphd","Control"));
+    f.appendChild(rowsBox([
+      ["MIDI learn","idle","bind a knob or switch"],
+      ["Pedal","4 switches · bank A", "", function(){dest="pedal"; drawRail(); drawFace()}]
+    ]));
+    f.appendChild(el("div","grouphd","System"));
+    f.appendChild(rowsBox([
+      ["Software update","0.1.0-experimental.63","experimental channel"],
+      ["Storage","12.4 GB free",""],
+      ["About","Loopy",""]
+    ]));
+    f.appendChild(el("div","why","This is the face that decides whether consolidation works — it is the densest thing the sheet has to hold."));
+  }
+
+  function faceWifi(f){
+    f.appendChild(head("WiFi","saved networks stay listed"));
+    f.appendChild(rowsBox([
+      ["MyHouseWTF_es","connected","192.168.50.212 · 260 Mbit/s"],
+      ["MyHouseWTF_es_2.4G","saved","not in range"],
+      ["Cafe Free","open","−71 dBm"]
+    ]));
+  }
+
+  function faceBt(f){
+    f.appendChild(head("Bluetooth","pairings survive updates"));
+    f.appendChild(rowsBox([
+      ["WH-1000XM4","connected",""],
+      ["Page turner","paired","not in range"]
+    ]));
+  }
+
+  function drawFace(){
+    var f=$("face"); f.innerHTML="";
+    if(dest==="fx") faceFx(f);
+    else if(dest==="pedal") facePedal(f);
+    else if(dest==="settings") faceSettings(f);
+    else if(dest==="loop") faceLoop(f);
+    else if(dest==="tuner") faceTuner(f);
+    else if(dest==="wifi") faceWifi(f);
+    else faceBt(f);
+    drawMini();
+  }
+
+  function setOpen(v){
+    open=v;
+    $("drawer").classList.toggle("open",open);
+    // Closed, the indicator is the ONLY thing over the stage. Open, it gets
+    // out of the way and the drawer's own grab bar takes over.
+    $("pill").classList.toggle("hidden",open);
+    $("pill").setAttribute("aria-expanded", open?"true":"false");
+  }
+  $("pill").onclick=function(){setOpen(true)};
+  $("handle").onclick=function(){setOpen(false)};
+  document.addEventListener("keydown",function(e){ if(e.key==="Escape"&&open) setOpen(false) });
+
+  drawTracks(); drawRail(); drawFace(); setOpen(false);
+})();
+</script>
