@@ -1405,5 +1405,13 @@
     },
     "a11yMidiLearnLo": "Range low",
     "a11yMidiLearnHi": "Range high",
-    "a11yMidiLearnThreshold": "On threshold"
+    "a11yMidiLearnThreshold": "On threshold",
+    "a11yCacheStateLive": "Wet cache: live",
+    "a11yCacheStateRendering": "Wet cache: rendering",
+    "a11yCacheStateCached": "Wet cache: cached",
+    "a11yCacheStateFailedRetrying": "Wet cache: render failed, retrying",
+    "a11yCacheStateGaveUp": "Wet cache: off, playing live",
+    "@a11yCacheStateGaveUp": {
+        "description": "Semantics label for the per-lane wet-cache debug glyph when the lane can never be cached (e.g. its chain hosts a plugin)."
+    }
 }

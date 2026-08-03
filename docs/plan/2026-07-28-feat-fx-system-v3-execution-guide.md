@@ -31,13 +31,19 @@ issue: 351
 ## Status
 
 **Next up:** every app-side part is merged (0, 1a, 1b, 2, 3a, 3b, 4a, 4b, 5a,
-5b, 6a, 6b, 7 — 7 landed as #415). What remains is the two bench/soak parts.
+5b, 6a, 6b, 7 — 7 landed as #415). **9** is in build as
+[#417](https://github.com/tomassasovsky/loopy/issues/417).
 
-**9** (hardening + export + soak) is the one to run next: **8** is marked
-non-gating precisely so 9 need not wait for hardware. 8 (TRS jack) is
-unblocked too, but it is `blocked-verify` "at bench" — it needs the jack and
-an FS-6 in hand, and it consumes part 7's trigger shapes over the existing
-cable rather than adding a new control path.
+What remains after that is bench/soak work that no CI job can stand in for:
+
+- **8** (TRS jack) is unblocked but `blocked-verify` "at bench" — it needs the
+  jack and an FS-6 in hand, and it consumes part 7's trigger shapes over the
+  existing cable rather than adding a new control path.
+- **9's appliance soak** is device-gated in the same way. Part 9's code-bearing
+  slice (daw_export reader, native stomp replay, cache glyph, docs) merges on
+  CI + review; the soak itself is a manual deliverable — its checklist lands in
+  `docs/RUNNING_ON_RPI.md` marked NOT YET RUN, and the epic must not close on an
+  unmeasured cache claim.
 
 [#410](https://github.com/tomassasovsky/loopy/pull/410) — the #403
 press/long-press gesture-helper collapse this guide called for before 6b —
@@ -95,7 +101,7 @@ Open items carried out of merged parts, neither blocking a new part:
 | 6b | remap bindings + momentary | Opus · high | `merge-gate` | 6a, 5b, 3a | merged (#412) |
 | 7 | expression + external MIDI | Opus · high | `merge-gate` | 3a, 6b | merged (#415) |
 | 8 | TRS jack hardware (non-gating child) | Fable · high (at bench) | `blocked-verify` | 7 | pending |
-| 9 | hardening + export + soak | Opus · medium | `blocked-verify` | all | pending |
+| 9 | hardening + export + soak | Opus · medium | `blocked-verify` | all | building (#417) |
 
 Status values: `pending` → `building (#issue)` → `in-review (#PR)` →
 `merged (#PR)`.

@@ -1074,5 +1074,10 @@
     "a11yMidiLearnRow": "{control} asignado a {target}",
     "a11yMidiLearnLo": "Mínimo del rango",
     "a11yMidiLearnHi": "Máximo del rango",
-    "a11yMidiLearnThreshold": "Umbral de activación"
+    "a11yMidiLearnThreshold": "Umbral de activación",
+    "a11yCacheStateLive": "Caché de efectos: en vivo",
+    "a11yCacheStateRendering": "Caché de efectos: renderizando",
+    "a11yCacheStateCached": "Caché de efectos: en caché",
+    "a11yCacheStateFailedRetrying": "Caché de efectos: falló el renderizado, reintentando",
+    "a11yCacheStateGaveUp": "Caché de efectos: desactivada, sonando en vivo"
 }

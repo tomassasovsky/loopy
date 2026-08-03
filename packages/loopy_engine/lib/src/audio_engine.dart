@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:loopy_engine/src/audio_device.dart';
 import 'package:loopy_engine/src/engine_config.dart';
 import 'package:loopy_engine/src/engine_snapshot.dart';
+import 'package:loopy_engine/src/lane_cache.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
 import 'package:loopy_engine/src/performance_render_progress.dart';
 import 'package:loopy_engine/src/plugin_descriptor.dart';
@@ -583,6 +584,18 @@ abstract interface class EffectsControl {
   /// flags a cache-vs-engine drift. An empty / out-of-range chain hashes to the
   /// FNV-1a offset basis.
   int laneFxFingerprint({required int channel, required int lane});
+
+  /// Lane [lane] of track [channel]'s Loop-stage wet-cache state — debug
+  /// telemetry only (R27), never a signal-path fact (see [LaneCacheState]).
+  ///
+  /// Polling this also drives the cache forward (it drains events and runs a
+  /// scheduler pass), so a caller that polls it per lane is doing real work,
+  /// not just reading a field — an 8-track rig costs a drain plus a full
+  /// scheduler sweep *per lane, per poll*. Gate it on something, rather than
+  /// reading it unconditionally; `LooperRepository.cacheTelemetryEnabled` is
+  /// that gate for the app. An out-of-range address reports
+  /// [LaneCacheState.live].
+  LaneCacheState laneCacheState({required int channel, required int lane});
 
   // ---- Track-stage (per-track stereo bus) chain (FX v3 part 1b) ----
   //

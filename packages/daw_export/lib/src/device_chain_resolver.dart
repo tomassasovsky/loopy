@@ -1,4 +1,5 @@
 import 'package:daw_export/src/daw_effect.dart';
+import 'package:daw_export/src/manifest_json.dart';
 import 'package:meta/meta.dart';
 
 /// Why [resolveDeviceChain] fell back for a channel, rather than resolving a
@@ -121,7 +122,7 @@ DeviceChainResolution resolveDeviceChain(
 ///   existed on the wire.
 List<Map<String, dynamic>> _audibleEntries(List<Map<String, dynamic>> lane) => [
   for (final entry in lane)
-    if (entry['enabled'] != false)
+    if (effectEnabledOf(entry))
       {
         for (final field in entry.entries)
           if (field.key != 'slotId' && field.key != 'enabled')

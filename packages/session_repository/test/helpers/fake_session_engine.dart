@@ -562,6 +562,9 @@ class FakeSessionEngine implements AudioEngine {
   @override
   int monitorFxFingerprint({required int input}) => FxFingerprint.offset;
   @override
+  LaneCacheState laneCacheState({required int channel, required int lane}) =>
+      LaneCacheState.live;
+  @override
   EngineResult setOutputEnabled({
     required int output,
     required bool enabled,

@@ -5,6 +5,7 @@ import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/app.dart';
@@ -156,6 +157,51 @@ void main() {
       );
       await tester.pumpAndSettle();
     }
+
+    testWidgets(
+      'the telemetry gate follows a restored preference that equals the '
+      'compile-time default',
+      (tester) async {
+        // The gate is seeded OFF and driven only by TracksCubit emissions, so
+        // the case where load() restores a value IDENTICAL to the initial
+        // state is the one that could silently never arrive — a fresh desktop
+        // install, i.e. the default. It works because bloc always delivers the
+        // first emit even when the state compares equal; this pins that,
+        // rather than leaving the default path resting on it untested.
+        await settings.saveShowTrackIndicators(value: true);
+        await pumpApp(tester, NoopWaveformWindowService());
+        expect(
+          tester
+              .element(find.byType(LooperPage))
+              .read<TracksCubit>()
+              .state
+              .showIndicators,
+          isTrue,
+        );
+        expect(repository.cacheTelemetryEnabled, isTrue);
+      },
+    );
+
+    testWidgets(
+      'the indicator preference is what gates wet-cache telemetry polling',
+      (tester) async {
+        // The whole visibility story for the cache debug glyph (R27) lives
+        // here: the glyph shows a lane's state only when the repository is
+        // observing it, and this is the one wire that decides that. Seed the
+        // preference OFF so the boot value and a later flip are both covered.
+        await settings.saveShowTrackIndicators(value: false);
+        await pumpApp(tester, NoopWaveformWindowService());
+        expect(repository.cacheTelemetryEnabled, isFalse);
+
+        await tester
+            .element(find.byType(LooperPage))
+            .read<TracksCubit>()
+            .setShowIndicators(value: true);
+        await tester.pumpAndSettle();
+
+        expect(repository.cacheTelemetryEnabled, isTrue);
+      },
+    );
 
     testWidgets('shows the startup update banner when a build is available', (
       tester,

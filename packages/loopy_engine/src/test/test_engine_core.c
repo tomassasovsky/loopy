@@ -13344,6 +13344,192 @@ static void test_perf_render_wet_plugin_passthrough(void) {
   le_engine_destroy(e);
 }
 
+/* ---- FX v3 part 9: mid-capture stomp replay into the wet stem [R3] ---- */
+
+/* Geometry shared by the stomp-replay cases below. DRIVE is stateless
+ * (tanhf(x * (1 + drive*29)) * level), so over constant-DC content every
+ * frame's expected value is hand-computable with no DSP internals to
+ * approximate — the same reason test_perf_render_wet_fx_sweep picked it.
+ *
+ * LE_FX_ENABLE_RAMP_MS (5 ms, engine_fx.h) is 24 frames at this rate. The
+ * settled assertion starts a generous 64 frames after the flip so these
+ * tests pin WHERE the stem flips and WHAT it flips to — never the exact
+ * shape of part 1a's crossfade, which is that part's own business. */
+enum {
+  TEST_STOMP_SR = 4800,
+  TEST_STOMP_LOOP_LEN = 4,
+  TEST_STOMP_FRAMES = 128,
+  TEST_STOMP_TOGGLE_FRAME = 32,
+  TEST_STOMP_SETTLE_FRAME = TEST_STOMP_TOGGLE_FRAME + 64,
+};
+
+static const float k_stomp_dry = 0.5f;
+static const float k_stomp_drive = 0.9f;
+static const float k_stomp_level = 0.2f;
+
+/* What a fully-engaged DRIVE slot makes of the constant dry content. */
+static float test_stomp_wet_value(void) {
+  return tanhf(k_stomp_dry * (1.0f + k_stomp_drive * 29.0f)) * k_stomp_level;
+}
+
+/* Renders a one-track capture whose lane-0 chain is a single DRIVE slot.
+ * `arm_slot_enabled` / `arm_chain_enabled` seed the arm snapshot's two bypass
+ * levels (R3 — the manifest's `enabled` / `chainEnabled` bits). When
+ * `toggle_code` is non-zero, exactly ONE plog entry at TEST_STOMP_TOGGLE_FRAME
+ * flips that same level off mid-capture, standing in for a stomp. Fills `wet`
+ * (capacity >= TEST_STOMP_FRAMES) with the rendered wet stem. */
+static void test_perf_render_stomp_case(const char* dir_name,
+                                        int arm_slot_enabled,
+                                        int arm_chain_enabled,
+                                        int32_t toggle_code, float* wet) {
+  const char* dir = render_test_dir(dir_name);
+
+  char loops_dir[700];
+  snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
+  test_render_mkdir(loops_dir);
+  const float base[TEST_STOMP_LOOP_LEN] = {k_stomp_dry, k_stomp_dry,
+                                           k_stomp_dry, k_stomp_dry};
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", loops_dir);
+  test_write_wav_mono(wav_path, base, TEST_STOMP_LOOP_LEN, TEST_STOMP_SR);
+
+  /* Both flags are written only when false, exactly as the Dart writer emits
+   * them (docs/design/performance-manifest-format.md) — a fixture that always
+   * spelled them out would not exercise the absent-means-enabled default the
+   * real manifests rely on. */
+  char manifest[2048];
+  snprintf(manifest, sizeof(manifest),
+          "{\"sample_rate\": %d, \"capture_frames\": %d, "
+          "\"armSnapshot\": {\"masterGain\": 1.0, \"limiterOn\": false, "
+          "\"limiterCeiling\": 0.99, \"fxStagesVersion\": 1, "
+          "\"tracks\": [{\"channel\": 0, \"volume\": 1.0, \"muted\": false, "
+          "\"lanes\": [{\"lane\": 0, \"deferred\": false, "
+          "\"pcmRef\": \"loops/track0-lane0.wav\", %s"
+          "\"effects\": [{\"type\": 1, \"params\": [%f, %f, 0.0, 0.0]%s}]}]}]}, "
+          "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []}",
+          TEST_STOMP_SR, TEST_STOMP_FRAMES,
+          arm_chain_enabled ? "" : "\"chainEnabled\": false, ",
+          (double)k_stomp_drive, (double)k_stomp_level,
+          arm_slot_enabled ? "" : ", \"enabled\": false");
+  test_write_manifest(dir, manifest);
+
+  if (toggle_code != 0) {
+    char log_path[700];
+    snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+    FILE* lf = fopen(log_path, "wb");
+    CHECK(lf != NULL);
+    if (lf != NULL) {
+      test_write_log_header(lf, TEST_STOMP_SR);
+      /* Per-slot flips ride the `fx` arm (type = the enabled bit); the
+       * chain-level flip rides `lanef` (value = the enabled bit as a float)
+       * — perf_log_ring.h. */
+      const le_command cmd =
+          toggle_code == LE_PLOG_SET_LANE_FX_ENABLED
+              ? (le_command){.code = LE_PLOG_SET_LANE_FX_ENABLED,
+                             .fx = {0, 0, 0, 0}}
+              : (le_command){.code = LE_PLOG_SET_LANE_FX_CHAIN_ENABLED,
+                             .lanef = {0, 0, 0.0f}};
+      test_write_log_entry(lf, TEST_STOMP_TOGGLE_FRAME, cmd);
+      fclose(lf);
+    }
+  }
+
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 2000);
+  int32_t done = 0;
+  CHECK(le_perf_render_poll(e, &done, NULL, NULL) == LE_OK);
+  CHECK(done == 1);
+
+  const int32_t got = test_read_wet_stem(dir, 0, wet, TEST_STOMP_FRAMES);
+  CHECK(got == TEST_STOMP_FRAMES);
+
+  le_engine_destroy(e);
+}
+
+/* Acceptance [R3]: a slot stomped OFF mid-capture flips the rendered wet
+ * stem from wet to bypassed at the logged frame. This is the end-to-end
+ * proof that a performance's FX gestures survive into the export — part 1a
+ * emits LE_PLOG_SET_LANE_FX_ENABLED and taught perf_render's per-frame
+ * switch to replay it; this pins that the audio actually changes, and that
+ * it changes where the log says it did rather than at arm or not at all. */
+static void test_perf_render_wet_stomp_slot_flips_at_logged_frame(void) {
+  printf("test_perf_render_wet_stomp_slot_flips_at_logged_frame\n");
+  float wet[TEST_STOMP_FRAMES];
+  test_perf_render_stomp_case("stomp-slot", 1, 1, LE_PLOG_SET_LANE_FX_ENABLED,
+                              wet);
+
+  const float wet_value = test_stomp_wet_value();
+  /* Engaged right up to the logged frame — not one frame early. */
+  for (int32_t i = 0; i < TEST_STOMP_TOGGLE_FRAME; ++i) {
+    CHECK(fabsf(wet[i] - wet_value) < 1e-5f);
+  }
+  /* Settled at bit-exact dry passthrough (R16) well after the ramp. */
+  for (int32_t i = TEST_STOMP_SETTLE_FRAME; i < TEST_STOMP_FRAMES; ++i) {
+    CHECK(fabsf(wet[i] - k_stomp_dry) < 1e-5f);
+  }
+}
+
+/* Acceptance [R3]: the chain-level twin. Stomping the whole lane chain off
+ * mid-capture (LE_PLOG_SET_LANE_FX_CHAIN_ENABLED) reaches the wet stem the
+ * same way a single slot does — the effective-bit rule is `chain && slot`,
+ * so either level alone must be able to bypass. */
+static void test_perf_render_wet_stomp_chain_flips_at_logged_frame(void) {
+  printf("test_perf_render_wet_stomp_chain_flips_at_logged_frame\n");
+  float wet[TEST_STOMP_FRAMES];
+  test_perf_render_stomp_case("stomp-chain", 1, 1,
+                              LE_PLOG_SET_LANE_FX_CHAIN_ENABLED, wet);
+
+  const float wet_value = test_stomp_wet_value();
+  for (int32_t i = 0; i < TEST_STOMP_TOGGLE_FRAME; ++i) {
+    CHECK(fabsf(wet[i] - wet_value) < 1e-5f);
+  }
+  for (int32_t i = TEST_STOMP_SETTLE_FRAME; i < TEST_STOMP_FRAMES; ++i) {
+    CHECK(fabsf(wet[i] - k_stomp_dry) < 1e-5f);
+  }
+}
+
+/* Acceptance [R3]: a slot already bypassed AT ARM renders bypassed for the
+ * WHOLE capture, from frame 0 — no fade out of a wet it never had. The arm
+ * snapshot's enabled bits (part 3b's writer) seed
+ * le_pr_fx_chain_init_from_lane; before they did, this render assumed every
+ * arm-time chain was audible and would have baked a bypassed effect into the
+ * stem for the first 32 frames and then some. */
+static void test_perf_render_wet_arm_disabled_slot_stays_bypassed(void) {
+  printf("test_perf_render_wet_arm_disabled_slot_stays_bypassed\n");
+  float wet[TEST_STOMP_FRAMES];
+  test_perf_render_stomp_case("stomp-arm-off", 0, 1, 0, wet);
+  for (int32_t i = 0; i < TEST_STOMP_FRAMES; ++i) {
+    CHECK(fabsf(wet[i] - k_stomp_dry) < 1e-5f);
+  }
+}
+
+/* The chain-level twin of the above: `chainEnabled: false` at arm bypasses
+ * every slot under it for the whole capture, even though the slot's own bit
+ * is absent (i.e. enabled). */
+static void test_perf_render_wet_arm_disabled_chain_stays_bypassed(void) {
+  printf("test_perf_render_wet_arm_disabled_chain_stays_bypassed\n");
+  float wet[TEST_STOMP_FRAMES];
+  test_perf_render_stomp_case("stomp-arm-chain-off", 1, 0, 0, wet);
+  for (int32_t i = 0; i < TEST_STOMP_FRAMES; ++i) {
+    CHECK(fabsf(wet[i] - k_stomp_dry) < 1e-5f);
+  }
+}
+
+/* Guard: a manifest with NO enabled bits anywhere — every pre-FX-v3 capture,
+ * and every current one whose rig has nothing bypassed — still renders fully
+ * wet. Absent must keep meaning enabled, or seeding the bits above would
+ * silently mute every legacy export. */
+static void test_perf_render_wet_absent_enable_bits_stay_engaged(void) {
+  printf("test_perf_render_wet_absent_enable_bits_stay_engaged\n");
+  float wet[TEST_STOMP_FRAMES];
+  test_perf_render_stomp_case("stomp-legacy", 1, 1, 0, wet);
+  const float wet_value = test_stomp_wet_value();
+  for (int32_t i = 0; i < TEST_STOMP_FRAMES; ++i) {
+    CHECK(fabsf(wet[i] - wet_value) < 1e-5f);
+  }
+}
+
 /* #255 review follow-up (PR #260 finding 1): a track recorded FRESH while
  * the master already runs finalizes via finalize_new_track
  * (engine_process.c), which does NOT reset the loop clock — its buffer was
@@ -19365,6 +19551,11 @@ int main(void) {
   test_perf_render_multi_channel_dry_fail_isolated();
   test_perf_render_wet_multi_slot_and_count_shrink();
   test_perf_render_wet_plugin_passthrough();
+  test_perf_render_wet_stomp_slot_flips_at_logged_frame();
+  test_perf_render_wet_stomp_chain_flips_at_logged_frame();
+  test_perf_render_wet_arm_disabled_slot_stays_bypassed();
+  test_perf_render_wet_arm_disabled_chain_stays_bypassed();
+  test_perf_render_wet_absent_enable_bits_stay_engaged();
   test_perf_render_fresh_midloop_second_track_phase();
   test_perf_render_fresh_multiloop_second_track_phase();
   test_perf_render_golden_master_parity();

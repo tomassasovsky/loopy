@@ -552,6 +552,55 @@ void main() {
       expect(find.byKey(const Key('signalInherited_0_0')), findsNothing);
     });
 
+    testWidgets('a take shows no cache glyph while telemetry is off', (
+      tester,
+    ) async {
+      // The default lane carries a null cacheState — the repository never
+      // polled it — so the calm default view has nothing extra on it.
+      seed(stateWith());
+      await pump(tester);
+      // Assert the glyph slot IS present and renders nothing, rather than
+      // just that no Text is under the key: a missing key would satisfy the
+      // latter for the wrong reason.
+      expect(find.byKey(const Key('signalCache_0_0')), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('signalCache_0_0')),
+          matching: find.byType(Text),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets('a take shows its cache glyph once a state is observed', (
+      tester,
+    ) async {
+      seed(
+        stateWith(
+          tracks: const [
+            Track(
+              lanes: [
+                Lane(
+                  inputChannel: 1,
+                  outputMask: 0x2,
+                  cacheState: LaneCacheState.cached,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('signalCache_0_0')),
+          matching: find.text('●'),
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('the dock closes via its close affordance', (tester) async {
       seed(stateWith());
       await pump(tester);

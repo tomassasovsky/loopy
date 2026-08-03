@@ -379,10 +379,32 @@ class App extends StatelessWidget {
             },
           ),
         ],
-        child: _AppView(
-          waveformWindow: waveformWindow,
-          exportDirectory: exportDirectory,
-          displayCount: displayCount,
+        child: BlocListener<TracksCubit, TracksState>(
+          // The wet-cache debug glyph rides the existing indicator preference
+          // (R27), and reading that telemetry costs a drain + scheduler pass
+          // per lane — so the repository only polls it while the preference is
+          // on. Console/kiosk builds default the preference OFF, which is
+          // exactly where the cost would matter most (the appliance's xrun
+          // budget).
+          //
+          // Deliberately NO listenWhen, and deliberately no seeding at the
+          // provider: the repository starts with telemetry OFF, and the FIRST
+          // emission — the one `load()` makes once the persisted preference has
+          // actually been read — is what turns it on. Gating on
+          // `previous != current` would drop exactly that emission whenever the
+          // restored value equals the compile-time default, leaving the
+          // repository stuck off; seeding from `state` at provider-create time
+          // would instead read that default before the preference is known and
+          // poll telemetry for a user who had turned it off. The setter's own
+          // equality guard makes the redundant pushes free.
+          listener: (context, state) => context
+              .read<LooperRepository>()
+              .setCacheTelemetryEnabled(enabled: state.showIndicators),
+          child: _AppView(
+            waveformWindow: waveformWindow,
+            exportDirectory: exportDirectory,
+            displayCount: displayCount,
+          ),
         ),
       ),
     );

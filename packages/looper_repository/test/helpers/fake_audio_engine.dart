@@ -774,6 +774,21 @@ class FakeAudioEngine implements AudioEngine {
   @override
   int monitorFxFingerprint({required int input}) => monitorFingerprint;
 
+  /// Per-lane cache states this fake reports, keyed by `(channel, lane)`;
+  /// anything unseeded reads as [LaneCacheState.live].
+  final Map<(int, int), LaneCacheState> laneCacheStates = {};
+
+  /// Every `(channel, lane)` [laneCacheState] was asked about, in call order —
+  /// how a test proves the telemetry gate actually stops the polling rather
+  /// than just hiding the result.
+  final List<(int, int)> laneCacheReads = [];
+
+  @override
+  LaneCacheState laneCacheState({required int channel, required int lane}) {
+    laneCacheReads.add((channel, lane));
+    return laneCacheStates[(channel, lane)] ?? LaneCacheState.live;
+  }
+
   /// Per-output structural gate passed to [setOutputEnabled].
   final Map<int, bool> outputEnabled = {};
 

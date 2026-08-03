@@ -42,6 +42,38 @@ List<int> _generic(int argI, double argF) {
   return b.buffer.asUint8List();
 }
 
+/// Copies the named `test/corpus/manifests/` fixture into [dir] as its
+/// `performance.json` — see that directory's README for what each fixture
+/// pins. Duplicated in `fx_chains_test.dart` rather than shared, per this
+/// package's file-local test-helper convention.
+void _installCorpusManifest(Directory dir, String name) {
+  // `flutter test packages/daw_export` runs from the repo root, a bare
+  // `flutter test` inside the package runs from the package root — resolve
+  // against both rather than assuming either.
+  for (final base in const [
+    'test/corpus/manifests',
+    'packages/daw_export/test/corpus/manifests',
+  ]) {
+    final file = File('$base/$name');
+    if (file.existsSync()) {
+      file.copySync('${dir.path}/performance.json');
+      return;
+    }
+  }
+  fail('corpus fixture $name not found from ${Directory.current.path}');
+}
+
+/// Creates a placeholder wet AND dry stem for each of [channels], so a case
+/// can assert which one the reader chose rather than which one existed.
+void _writeBothStems(Directory dir, List<int> channels) {
+  Directory('${dir.path}/stems/wet').createSync(recursive: true);
+  Directory('${dir.path}/stems/dry').createSync(recursive: true);
+  for (final channel in channels) {
+    File('${dir.path}/stems/wet/track$channel.wav').writeAsBytesSync([0]);
+    File('${dir.path}/stems/dry/track$channel.wav').writeAsBytesSync([0]);
+  }
+}
+
 void main() {
   group('DawManifestReader.read', () {
     late Directory dir;
@@ -707,5 +739,183 @@ void main() {
       final project = DawManifestReader.read(dir.path);
       expect(project!.tracks.single.automationLanes, isEmpty);
     });
+  });
+
+  group('DawManifestReader.read FX v3 stages', () {
+    late Directory dir;
+
+    setUp(() {
+      dir = Directory.systemTemp.createTempSync('daw_export_fx_stages_read_');
+    });
+
+    tearDown(() {
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+
+    test(
+      'a bypassed slot is dropped from the resolved chain, never emitted as '
+      'a live device',
+      () {
+        _installCorpusManifest(dir, 'fx-stages-v1.json');
+        _writeBothStems(dir, [0, 1]);
+
+        final project = DawManifestReader.read(dir.path)!;
+        final track0 = project.tracks.firstWhere((t) => t.name == 'Track 0');
+
+        // Both lanes carry Drive + a bypassed Reverb: they agree (per-slot
+        // bypass and slotId are not part of a chain's sound), and only the
+        // audible Drive survives into the device chain.
+        expect(track0.deviceChainFallbackReason, isNull);
+        expect(track0.deviceChain, hasLength(1));
+        expect(track0.deviceChain!.single.type, 1);
+        // A real chain resolved, so the dry stem is what the arrangement
+        // clip plays through it (D-WETDRY).
+        expect(track0.arrangementClip!.fileRef, 'stems/dry/track0.wav');
+      },
+    );
+
+    test(
+      'a lane whose whole chain is bypassed resolves to an empty chain and '
+      'keeps the wet stem',
+      () {
+        _installCorpusManifest(dir, 'fx-stages-v1.json');
+        _writeBothStems(dir, [0, 1]);
+
+        final project = DawManifestReader.read(dir.path)!;
+        final track1 = project.tracks.firstWhere((t) => t.name == 'Track 1');
+
+        // Channel 1's only lane has `chainEnabled: false`. Its wet stem is
+        // bit-exact passthrough, so there is nothing to emit and no reason
+        // to switch away from the wet-preferred default.
+        expect(track1.deviceChainFallbackReason, isNull);
+        expect(track1.deviceChain, isEmpty);
+        expect(track1.arrangementClip!.fileRef, 'stems/wet/track1.wav');
+      },
+    );
+
+    test(
+      'a bypassed lane chain agrees with a lane that has no chain at all',
+      () {
+        _writeBothStems(dir, [0]);
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000,
+            'armSnapshot': {
+              'fxStagesVersion': 1,
+              'tracks': [
+                {
+                  'channel': 0,
+                  'lanes': [
+                    {
+                      'lane': 0,
+                      'deferred': false,
+                      'pcmRef': 'stems/wet/track0.wav',
+                      'chainEnabled': false,
+                      'effects': [
+                        {
+                          'type': 1,
+                          'params': [0.5, 0.8, 0.0, 0.0],
+                        },
+                      ],
+                    },
+                    {
+                      'lane': 1,
+                      'deferred': false,
+                      'pcmRef': 'stems/wet/track0.wav',
+                      'effects': <dynamic>[],
+                    },
+                  ],
+                },
+              ],
+            },
+            'disarmSnapshot': {'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+
+        final track = DawManifestReader.read(dir.path)!.tracks.single;
+        // Neither lane contributes anything audible, so this is a resolved
+        // empty chain — NOT a mixedLaneChains fallback.
+        expect(track.deviceChainFallbackReason, isNull);
+        expect(track.deviceChain, isEmpty);
+      },
+    );
+
+    test(
+      'an engaged chain still disagrees with the same chain bypassed on '
+      'another lane',
+      () {
+        _writeBothStems(dir, [0]);
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000,
+            'armSnapshot': {
+              'fxStagesVersion': 1,
+              'tracks': [
+                {
+                  'channel': 0,
+                  'lanes': [
+                    {
+                      'lane': 0,
+                      'deferred': false,
+                      'pcmRef': 'stems/wet/track0.wav',
+                      'effects': [
+                        {
+                          'type': 1,
+                          'params': [0.5, 0.8, 0.0, 0.0],
+                        },
+                      ],
+                    },
+                    {
+                      'lane': 1,
+                      'deferred': false,
+                      'pcmRef': 'stems/wet/track0.wav',
+                      'chainEnabled': false,
+                      'effects': [
+                        {
+                          'type': 1,
+                          'params': [0.5, 0.8, 0.0, 0.0],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+            'disarmSnapshot': {'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+
+        final track = DawManifestReader.read(dir.path)!.tracks.single;
+        // These two lanes genuinely sound different and an Ableton track has
+        // one device chain — reporting the difference is the honest outcome.
+        expect(
+          track.deviceChainFallbackReason,
+          DeviceChainFallbackReason.mixedLaneChains,
+        );
+        expect(track.deviceChain, isNull);
+      },
+    );
+
+    test(
+      'a legacy pre-FX-v3 manifest resolves exactly as it always did',
+      () {
+        _installCorpusManifest(dir, 'legacy-pre-fx-v3.json');
+        _writeBothStems(dir, [0]);
+
+        final project = DawManifestReader.read(dir.path)!;
+        final track = project.tracks.single;
+
+        // No fxStagesVersion, no chainEnabled anywhere: every chain reads as
+        // engaged, so the shared Drive resolves and the dry stem wins.
+        expect(track.deviceChainFallbackReason, isNull);
+        expect(track.deviceChain, hasLength(1));
+        expect(track.deviceChain!.single.type, 1);
+        expect(track.arrangementClip!.fileRef, 'stems/dry/track0.wav');
+      },
+    );
   });
 }

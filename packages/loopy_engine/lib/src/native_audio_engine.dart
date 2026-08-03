@@ -9,6 +9,7 @@ import 'package:loopy_engine/src/engine_config.dart';
 import 'package:loopy_engine/src/engine_snapshot.dart';
 import 'package:loopy_engine/src/ffi_strings.dart';
 import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart';
+import 'package:loopy_engine/src/lane_cache.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
 import 'package:loopy_engine/src/performance_render_progress.dart';
 import 'package:loopy_engine/src/plugin_descriptor.dart';
@@ -66,6 +67,7 @@ class NativeAudioEngine implements AudioEngine {
     _snapshotPtr = calloc<le_snapshot>();
     _trackPtr = calloc<le_track_snapshot>();
     _lanePtr = calloc<le_lane_snapshot>();
+    _cachePtr = calloc<le_lane_cache_info>();
     _vizPtr = calloc<Float>(LE_VIZ_POINTS);
   }
 
@@ -86,6 +88,7 @@ class NativeAudioEngine implements AudioEngine {
   late final Pointer<le_snapshot> _snapshotPtr;
   late final Pointer<le_track_snapshot> _trackPtr;
   late final Pointer<le_lane_snapshot> _lanePtr;
+  late final Pointer<le_lane_cache_info> _cachePtr;
   late final Pointer<Float> _vizPtr;
   bool _disposed = false;
 
@@ -1188,6 +1191,19 @@ class NativeAudioEngine implements AudioEngine {
   @override
   int laneFxFingerprint({required int channel, required int lane}) =>
       _bindings.le_engine_lane_fx_fingerprint(_engine, channel, lane);
+
+  @override
+  LaneCacheState laneCacheState({required int channel, required int lane}) {
+    _checkAlive();
+    // A rejected address (out of range) leaves _cachePtr holding the previous
+    // call's bytes, so read the state only on LE_OK — never report a
+    // neighbouring lane's cache as this one's.
+    final result = EngineResult.fromCode(
+      _bindings.le_engine_get_lane_cache(_engine, channel, lane, _cachePtr),
+    );
+    if (result != EngineResult.ok) return LaneCacheState.live;
+    return LaneCacheState.fromNative(_cachePtr.ref.state);
+  }
 
   // ---- Track-stage (per-track stereo bus) chain (FX v3 part 1b) ----
 

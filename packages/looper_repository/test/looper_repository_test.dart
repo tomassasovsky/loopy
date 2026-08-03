@@ -66,6 +66,46 @@ const _playingSnapshot = EngineSnapshot(
   ],
 );
 
+/// One playing track with one real lane — the cache-telemetry gate is a
+/// per-lane concern, and [_playingSnapshot]'s tracks carry no lanes.
+const _laneSnapshot = EngineSnapshot(
+  isRunning: true,
+  sampleRate: 48000,
+  bufferFrames: 128,
+  inputChannels: 2,
+  outputChannels: 4,
+  framesProcessed: 0,
+  xrunCount: 0,
+  inputRms: 0,
+  inputPeak: 0,
+  outputRms: 0,
+  latencyState: le.LatencyState.idle,
+  measuredLatencyMs: -1,
+  masterLengthFrames: 96000,
+  tracks: [
+    TrackSnapshot(
+      state: TrackState.playing,
+      volume: 1,
+      muted: false,
+      lengthFrames: 96000,
+      undoDepth: 0,
+      rms: 0,
+      peak: 0,
+      lanes: [
+        LaneSnapshot(
+          inputChannel: 0,
+          outputMask: 0x3,
+          volume: 1,
+          muted: false,
+          lengthFrames: 96000,
+          rms: 0,
+          peak: 0,
+        ),
+      ],
+    ),
+  ],
+);
+
 void main() {
   late FakeAudioEngine engine;
   late StreamController<void> ticker;
@@ -79,6 +119,111 @@ void main() {
 
   LooperRepository buildRepo() =>
       LooperRepository(engine: engine, ticker: ticker.stream);
+
+  group('cache telemetry gate', () {
+    // The shared snapshot above carries no lanes, and this gate is entirely
+    // about per-LANE reads — so seed one lane to observe.
+    setUp(() => engine.nextSnapshot = _laneSnapshot);
+
+    test('is off by default and polls no lane', () {
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+
+      expect(repo.cacheTelemetryEnabled, isFalse);
+      expect(
+        repo.state.tracks.first.lanes.first.cacheState,
+        isNull,
+        reason: 'unobserved is not the same as live',
+      );
+      // The point of the gate: reading a lane's cache state drains the engine
+      // and runs a scheduler pass, so an off gate must not merely hide the
+      // result — it must not ask.
+      expect(engine.laneCacheReads, isEmpty);
+    });
+
+    test('turning it on republishes immediately with observed states', () {
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      engine.laneCacheStates[(0, 0)] = LaneCacheState.cached;
+
+      repo.setCacheTelemetryEnabled(enabled: true);
+
+      expect(
+        repo.state.tracks.first.lanes.first.cacheState,
+        LaneCacheState.cached,
+      );
+      expect(engine.laneCacheReads, isNotEmpty);
+    });
+
+    test('turning it back off clears every lane state and stops reading', () {
+      final repo = buildRepo()..setCacheTelemetryEnabled(enabled: true);
+      addTearDown(repo.dispose);
+      engine.laneCacheReads.clear();
+
+      repo.setCacheTelemetryEnabled(enabled: false);
+
+      expect(repo.state.tracks.first.lanes.first.cacheState, isNull);
+      expect(engine.laneCacheReads, isEmpty);
+    });
+
+    test(
+      'a local edit reuses the last refresh instead of re-reading the engine',
+      () {
+        // _reproject() runs on every local edit — including each frame of a
+        // dragged FX knob. Reading telemetry there would put a drain plus a
+        // scheduler sweep PER LANE inside the gesture _reproject exists to
+        // keep responsive, so the projection must reuse the polled states.
+        final repo = buildRepo()..setCacheTelemetryEnabled(enabled: true);
+        addTearDown(repo.dispose);
+        repo.setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        );
+        engine.laneCacheReads.clear();
+
+        for (var i = 0; i < 10; i++) {
+          repo.setLaneEffectParam(
+            channel: 0,
+            lane: 0,
+            index: 0,
+            param: 0,
+            value: i / 10,
+          );
+        }
+
+        expect(engine.laneCacheReads, isEmpty);
+      },
+    );
+
+    test('a poll refreshes every lane exactly once', () {
+      final repo = buildRepo()..setCacheTelemetryEnabled(enabled: true);
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      engine.laneCacheReads.clear();
+
+      ticker.add(null);
+
+      // One tick, one read per lane — no duplicates from a projection that
+      // also polls.
+      return Future<void>.delayed(Duration.zero, () {
+        expect(engine.laneCacheReads, [(0, 0)]);
+      });
+    });
+
+    test('setting the same value is a no-op', () {
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      engine.laneCacheReads.clear();
+
+      repo.setCacheTelemetryEnabled(enabled: false);
+
+      // No republish, so no reads — the guard is what keeps a redundant
+      // preference write from costing a full poll.
+      expect(engine.laneCacheReads, isEmpty);
+    });
+  });
 
   group('poll interval', () {
     test('reports and updates the configured cadence', () {

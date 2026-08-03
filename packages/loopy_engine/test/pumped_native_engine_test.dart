@@ -738,4 +738,74 @@ void main() {
       );
     });
   }, skip: skip);
+
+  group('lane wet-cache telemetry (real FFI)', () {
+    late PumpedNativeEngine engine;
+
+    setUp(() {
+      engine = PumpedNativeEngine()
+        ..start(
+          const EngineConfig(
+            sampleRate: 48000,
+            inputChannels: 1,
+            outputChannels: 1,
+            maxLoopFrames: 48000,
+          ),
+        );
+    });
+    tearDown(() => engine.dispose());
+
+    test('a lane with nothing to cache reports live', () {
+      // Nothing recorded and no chain, so there is no key to render — the
+      // honest report is live, which is also what the cache's own
+      // "when in doubt, play live" contract requires.
+      expect(
+        engine.laneCacheState(channel: 0, lane: 0),
+        LaneCacheState.live,
+      );
+    });
+
+    test('an out-of-range address reports live rather than throwing', () {
+      // The native call rejects these, leaving the reused out-struct holding
+      // the PREVIOUS call's bytes — so this pins that the binding checks the
+      // result code instead of reading whatever is in the buffer.
+      expect(
+        engine.laneCacheState(channel: -1, lane: 0),
+        LaneCacheState.live,
+      );
+      expect(
+        engine.laneCacheState(channel: 999, lane: 0),
+        LaneCacheState.live,
+      );
+      expect(
+        engine.laneCacheState(channel: 0, lane: -1),
+        LaneCacheState.live,
+      );
+      expect(
+        engine.laneCacheState(channel: 0, lane: 999),
+        LaneCacheState.live,
+      );
+    });
+
+    test('a rejected read does not corrupt the next valid one', () {
+      // The out-struct is allocated once and reused for every call, so a
+      // rejected read sitting between two valid ones is exactly where stale
+      // bytes would leak through.
+      expect(engine.laneCacheState(channel: 0, lane: 0), LaneCacheState.live);
+      expect(engine.laneCacheState(channel: 999, lane: 0), LaneCacheState.live);
+      expect(engine.laneCacheState(channel: 0, lane: 0), LaneCacheState.live);
+    });
+
+    test('polling it repeatedly is safe and stable', () {
+      // Each call drains events and runs a scheduler pass; the repository
+      // polls it per lane per tick, so it has to survive being hammered.
+      for (var i = 0; i < 50; i++) {
+        engine.pump(frames: 128);
+        expect(
+          engine.laneCacheState(channel: 0, lane: 0),
+          isA<LaneCacheState>(),
+        );
+      }
+    });
+  }, skip: skip);
 }

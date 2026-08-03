@@ -389,8 +389,73 @@ class LooperRepository {
     }
   }
 
+  /// Whether each poll also reads every lane's wet-cache state into
+  /// [Lane.cacheState] (R27 debug telemetry).
+  ///
+  /// Starts off, and stays off until a caller turns it on. While off, every
+  /// lane reports a `null` cache state — honestly "not observed" rather than
+  /// "live".
+  ///
+  /// **This is not free.** Reading one lane's cache state drains the engine's
+  /// event rings and runs a full scheduler pass, so an 8-track rig adds
+  /// 16-32 extra control-thread sweeps per REFRESH on top of the one
+  /// `snapshot()` already does. The app ties it to the track-indicator
+  /// preference, which **defaults on for desktop builds** and off for
+  /// console/kiosk ones — so a desktop session pays this by default, and the
+  /// appliance (where the xrun budget is tight) does not. Scoping it further,
+  /// to whether the Signal surface is actually mounted, is issue #418.
+  bool get cacheTelemetryEnabled => _cacheTelemetryEnabled;
+  bool _cacheTelemetryEnabled = false;
+
+  /// The last-refreshed per-lane cache states, keyed by `(channel, lane)`, or
+  /// empty while telemetry is off.
+  ///
+  /// [_project] reads THIS rather than the engine, and only [_poll] (plus the
+  /// toggle below) refreshes it. That split matters: `_project` also runs from
+  /// [_reproject], which fires on every local edit — including each frame of a
+  /// dragged FX knob — and re-reading telemetry there would put 16-32 engine
+  /// drains inside the very gesture `_reproject` exists to keep responsive.
+  /// A debug glyph can be one poll tick stale; a knob cannot be janky.
+  final Map<(int, int), LaneCacheState> _laneCacheStates = {};
+
+  /// Re-reads every lane's cache state for [snapshot], or clears the cache
+  /// when telemetry is off. The only place the per-lane engine reads happen.
+  void _refreshCacheTelemetry(EngineSnapshot snapshot) {
+    _laneCacheStates.clear();
+    if (!_cacheTelemetryEnabled) return;
+    for (var i = 0; i < snapshot.tracks.length; i++) {
+      for (var l = 0; l < snapshot.tracks[i].lanes.length; l++) {
+        _laneCacheStates[(i, l)] = _engine.laneCacheState(
+          channel: i,
+          lane: l,
+        );
+      }
+    }
+  }
+
+  /// Turns per-lane wet-cache telemetry on or off (see [cacheTelemetryEnabled])
+  /// and republishes immediately, so the glyph appears or clears on the toggle
+  /// rather than at the next tick.
+  ///
+  /// **Single-owner:** this is a plain last-writer-wins switch, not a
+  /// refcounted resource. Exactly one surface is expected to drive it (today
+  /// the app's track-indicator preference, wired in `app.dart`); a second
+  /// independent caller would fight the first. Give it an ownership model
+  /// before adding one.
+  void setCacheTelemetryEnabled({required bool enabled}) {
+    if (enabled == _cacheTelemetryEnabled) return;
+    _cacheTelemetryEnabled = enabled;
+    // Populate (or drop) the states before republishing, so the toggle shows
+    // the real thing immediately instead of a tick of empty glyphs.
+    _refreshCacheTelemetry(_engine.snapshot());
+    // _reproject, not _poll: this is an out-of-band republish like every other
+    // local edit, and it must not run the periodic poll's device supervision.
+    _reproject();
+  }
+
   void _poll() {
     final snapshot = _engine.snapshot();
+    _refreshCacheTelemetry(snapshot);
     _superviseDevice(devicePresent: snapshot.devicePresent);
     // A measurement auto-sets the engine's offset (it never flows through
     // setRecordOffset), so mirror it into the remembered value here — otherwise
@@ -572,6 +637,9 @@ class LooperRepository {
                 chainEnabled: laneChainEnabled(i, l),
                 inheritedFrom: _laneChainMeta[(i, l)] ?? const [],
                 inputChainDiverges: laneChainDivergesFromInput(i, l),
+                // From the last refresh, never a fresh engine read — see
+                // [_laneCacheStates] for why _project must stay cheap.
+                cacheState: _laneCacheStates[(i, l)],
               ),
           ],
           effects: _trackEffects[i] ?? const [],
