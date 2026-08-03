@@ -48,6 +48,9 @@ SRC_URI = "file://loopy.service \
            file://loopy-bt-ctl \
            file://loopy-brightness-ctl \
            file://99-loopy-wifi.conf \
+           file://loopy-wifi-regdom \
+           file://loopy-wifi-regdom.service \
+           file://wifi-country-default \
            file://brcmfmac.conf \
            file://update-channel"
 
@@ -82,6 +85,7 @@ RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
                   parted e2fsprogs-resize2fs \
                   networkmanager-nmcli networkmanager-wifi \
                   bluez5 ddcutil \
+                  iw wireless-regdb \
                   avrdude coreutils"
 
 inherit systemd
@@ -91,7 +95,7 @@ inherit systemd
 # launch and the user triggers install/reboot from Settings (via loopy-update-ctl).
 # So loopy-ota-check.timer is installed but NOT auto-enabled — no background
 # auto-staging. (Re-enable the timer manually for a headless auto-update device.)
-SYSTEMD_SERVICE:${PN} = "loopy.service loopy-rtirq.service loopy-data-grow.service loopy-nm-persist.service loopy-ssh-persist.service loopy-bt-persist.service loopy-mark-good.service boot.mount data.mount"
+SYSTEMD_SERVICE:${PN} = "loopy.service loopy-rtirq.service loopy-data-grow.service loopy-nm-persist.service loopy-wifi-regdom.service loopy-ssh-persist.service loopy-bt-persist.service loopy-mark-good.service boot.mount data.mount"
 
 FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch ${bindir}/loopy-rtirq \
                 ${bindir}/loopy-data-grow \
@@ -99,6 +103,7 @@ FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch ${bindir}/loopy-rtirq \
                 ${bindir}/loopy-update-ctl \
                 ${bindir}/loopy-wifi-ctl \
                 ${bindir}/loopy-nm-persist \
+                ${bindir}/loopy-wifi-regdom \
                 ${bindir}/loopy-ssh-persist \
                 ${bindir}/loopy-bt-persist \
                 ${bindir}/loopy-mark-good \
@@ -109,10 +114,12 @@ FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch ${bindir}/loopy-rtirq \
                 ${sysconfdir}/systemd/system/dropbearkey.service.d/loopy.conf \
                 ${sysconfdir}/modprobe.d/brcmfmac.conf \
                 ${sysconfdir}/loopy/update-channel ${sysconfdir}/loopy/build-version \
+                ${sysconfdir}/loopy/wifi-country \
                 ${systemd_system_unitdir}/loopy.service \
                 ${systemd_system_unitdir}/loopy-rtirq.service \
                 ${systemd_system_unitdir}/loopy-data-grow.service \
                 ${systemd_system_unitdir}/loopy-nm-persist.service \
+                ${systemd_system_unitdir}/loopy-wifi-regdom.service \
                 ${systemd_system_unitdir}/loopy-ssh-persist.service \
                 ${systemd_system_unitdir}/loopy-bt-persist.service \
                 ${systemd_system_unitdir}/loopy-mark-good.service \
@@ -185,6 +192,16 @@ do_install() {
     install -d ${D}${sysconfdir}/NetworkManager/conf.d
     install -m 0644 ${UNPACKDIR}/99-loopy-wifi.conf \
         ${D}${sysconfdir}/NetworkManager/conf.d/99-loopy-wifi.conf
+    # The world regdom leaves 5 GHz ch 36-48 passive-scan, which lets a 5 GHz
+    # AP associate and then silently fail EAPOL (#459). iw + a signed
+    # regulatory.db are what make `iw reg set` actually take.
+    install -m 0755 ${UNPACKDIR}/loopy-wifi-regdom ${D}${bindir}/loopy-wifi-regdom
+    install -m 0644 ${UNPACKDIR}/loopy-wifi-regdom.service \
+        ${D}${systemd_system_unitdir}/loopy-wifi-regdom.service
+    install -d ${D}${sysconfdir}/loopy
+    install -m 0644 ${UNPACKDIR}/wifi-country-default \
+        ${D}${sysconfdir}/loopy/wifi-country
+
     install -m 0755 ${UNPACKDIR}/loopy-nm-persist ${D}${bindir}/loopy-nm-persist
     install -m 0644 ${UNPACKDIR}/loopy-nm-persist.service \
         ${D}${systemd_system_unitdir}/loopy-nm-persist.service
