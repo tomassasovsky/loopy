@@ -18,11 +18,13 @@ import 'package:loopy/wifi/wifi_cubit.dart';
 /// rail's own config face) and the two surfaces that still push a full-screen
 /// route (Settings, Signal).
 ///
-/// The face **fills the pane**. Before the rail landed, the tray was a
-/// Control-Center-style sheet whose small top-anchored tiles made sense; now
-/// that a rail makes it a genuine full-screen panel host, a 72px tile grid
-/// floating in the middle of a 1080p sheet is both odd-looking and the
-/// smallest touch target on a console operated while standing.
+/// Sizing is a deliberate middle ground. The pre-rail 72px tiles were the
+/// smallest touch target on a console operated by hand while standing over
+/// it; letting cards expand to fill a 1080p pane instead turns four
+/// destinations into four billboards. So cards cap at [_maxCardExtent] and
+/// the grid centres as a block. With only four destinations the pane is
+/// simply larger than its content — that resolves as parts 4, 5 and 7 add
+/// their own, not by inflating what is here now.
 class TrayHome extends StatelessWidget {
   /// Creates a [TrayHome].
   const TrayHome({super.key});
@@ -30,6 +32,13 @@ class TrayHome extends StatelessWidget {
   /// Below this pane width the grid drops to a single column — a two-column
   /// grid in a narrow desktop window produces cards too thin to read.
   static const double _twoColumnMinWidth = 520;
+
+  /// Cards stop growing here. Generous for a floor console at arm's length,
+  /// and far short of the full-pane stretch that reads as a billboard.
+  static const double _maxCardExtent = 280;
+
+  /// Width of the brightness column beside the grid.
+  static const double _brightnessWidth = 72;
 
   static const double _gap = 16;
 
@@ -102,24 +111,37 @@ class TrayHome extends StatelessWidget {
       ),
     ];
 
-    // No max extent: the face is meant to FILL the pane. On the 1080p
-    // console these become ~880x500 cards, which is the point — they are the
-    // controls you hit with a hand while standing over the thing.
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(child: _CardGrid(cards: cards)),
-        const SizedBox(width: _gap),
-        // Full height now, rather than the 56x212 stub that matched the old
-        // tile block.
-        SizedBox(
-          width: 72,
-          child: TrayBrightnessSlider(
-            value: state.brightness,
-            onChanged: (value) => unawaited(cubit.setBrightness(value)),
-          ),
+    // The block caps at two columns of [_maxCardExtent] plus the brightness
+    // column, and centres in whatever pane it is given. It grows into a
+    // larger pane only up to that cap — past it the pane keeps the slack
+    // rather than the cards.
+    const blockWidth = _maxCardExtent * 2 + _gap * 2 + _brightnessWidth;
+    const blockHeight = _maxCardExtent * 2 + _gap;
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          maxWidth: blockWidth,
+          maxHeight: blockHeight,
         ),
-      ],
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(child: _CardGrid(cards: cards)),
+            const SizedBox(width: _gap),
+            // Taller than the old 56x212 stub — it tracks the card block
+            // rather than the whole pane, so it reads as part of the same
+            // object.
+            SizedBox(
+              width: _brightnessWidth,
+              child: TrayBrightnessSlider(
+                value: state.brightness,
+                onChanged: (value) => unawaited(cubit.setBrightness(value)),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
