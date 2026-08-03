@@ -36,7 +36,16 @@ class PedalFirmwareGate extends StatelessWidget {
                 color: Colors.black87,
               ),
             ),
-            Positioned.fill(child: _GateBody(state: state)),
+            // The gate wraps the looper from `home:`, so it sits ABOVE the
+            // Scaffold and has no Material ancestor of its own — text fell
+            // back to the debug style and the button had nothing to paint on.
+            // Transparent so the barrier behind it still shows through.
+            Positioned.fill(
+              child: Material(
+                type: MaterialType.transparency,
+                child: _GateBody(state: state),
+              ),
+            ),
           ],
         );
       },

@@ -134,6 +134,29 @@ void main() {
     await backend.progress.close();
   });
 
+  testWidgets('the gate brings its own Material', (tester) async {
+    // The gate wraps the looper from `home:`, so it renders ABOVE the page's
+    // Scaffold and inherits no Material. Without one of its own the text falls
+    // back to the debug style and the button has nothing to paint on — which
+    // is exactly how it shipped and what the console showed (#456).
+    final backend = _FakeBackend(pending: '0.4.0');
+    final cubit = await pumpGate(tester, backend);
+
+    unawaited(cubit.run());
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.ancestor(
+        of: find.byKey(const Key('pedal_firmware_gate')),
+        matching: find.byType(Material),
+      ),
+      findsWidgets,
+    );
+
+    await backend.progress.close();
+  });
+
   testWidgets('a failure explains itself and lets the user through', (
     tester,
   ) async {
