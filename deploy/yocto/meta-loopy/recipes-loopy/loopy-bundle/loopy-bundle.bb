@@ -77,6 +77,11 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # the Pro Micro (avrdude -c avr109) after stty does the Caterina 1200bps touch
 # reset. avrdude comes from meta-loopy's own recipe (#430) — no layer we use
 # ships one.
+# iw: loopy-wifi-regdom. NOT wireless-regdb — packagegroup-base-wifi already
+# pulls wireless-regdb-static and the two RCONFLICT, so requesting the modern
+# db here fails the rootfs outright. Whether this kernel reads the CRDA
+# regulatory.bin the image has, or the /lib/firmware/regulatory.db it does not,
+# is answered on device: loopy-wifi-regdom warns when the latter is missing.
 # networkmanager-nmcli: loopy-wifi-ctl (NM owns wpa_supplicant via -wifi plugin).
 # bluez5: loopy-bt-ctl. ddcutil: loopy-brightness-ctl.
 RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
@@ -85,7 +90,7 @@ RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
                   parted e2fsprogs-resize2fs \
                   networkmanager-nmcli networkmanager-wifi \
                   bluez5 ddcutil \
-                  iw wireless-regdb \
+                  iw \
                   avrdude coreutils"
 
 inherit systemd
