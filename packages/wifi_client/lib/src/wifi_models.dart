@@ -61,6 +61,8 @@ class WifiNetwork extends Equatable {
     required this.ssid,
     required this.signal,
     required this.secured,
+    this.saved = false,
+    this.inRange = true,
   });
 
   /// Parses one scan-result object.
@@ -68,6 +70,8 @@ class WifiNetwork extends Equatable {
     ssid: '${json['ssid'] ?? ''}',
     signal: _asInt(json['signal']),
     secured: json['secured'] == true,
+    saved: json['saved'] == true,
+    inRange: json['inRange'] != false,
   );
 
   /// Network name.
@@ -79,8 +83,21 @@ class WifiNetwork extends Equatable {
   /// Whether the network requires a password.
   final bool secured;
 
+  /// Whether a profile for this network is already stored, so joining needs no
+  /// password and forgetting is possible. A saved network can appear here while
+  /// out of range — see [inRange].
+  final bool saved;
+
+  /// Whether the last scan actually saw this network.
+  ///
+  /// Saved networks are listed even when they are not in range, so a profile
+  /// that refuses to connect can still be forgotten. Carried explicitly rather
+  /// than inferred from [signal]: signal is reported in dBm in some paths and
+  /// as a 0-100 quality in others, so no sentinel value is safe.
+  final bool inRange;
+
   @override
-  List<Object?> get props => [ssid, signal, secured];
+  List<Object?> get props => [ssid, signal, secured, saved, inRange];
 }
 
 int _asInt(Object? value) {

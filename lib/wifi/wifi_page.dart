@@ -170,6 +170,13 @@ class _WifiPageState extends State<WifiPage> {
                                         onJoin: (network) => unawaited(
                                           _join(context, cubit, network),
                                         ),
+                                        onForgetNetwork: (network) => unawaited(
+                                          _confirmForget(
+                                            context,
+                                            cubit,
+                                            network.ssid,
+                                          ),
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -193,7 +200,12 @@ class _WifiPageState extends State<WifiPage> {
     WifiNetwork network,
   ) async {
     final l10n = context.l10n;
-    if (!network.secured) {
+    // An open network needs no secret, and a saved one already has its secret
+    // stored (psk-flags=0) — NetworkManager will use it. Asking again for a
+    // password the console is holding is how a user ends up re-typing a
+    // correct key at a network that is failing for some entirely other reason
+    // (#471, and #459 for what that costs).
+    if (!network.secured || network.saved) {
       await cubit.connect(network.ssid);
       return;
     }
@@ -370,10 +382,15 @@ class _WifiStatusStrip extends StatelessWidget {
 }
 
 class _WifiNetworkList extends StatelessWidget {
-  const _WifiNetworkList({required this.state, required this.onJoin});
+  const _WifiNetworkList({
+    required this.state,
+    required this.onJoin,
+    required this.onForgetNetwork,
+  });
 
   final WifiState state;
   final ValueChanged<WifiNetwork> onJoin;
+  final ValueChanged<WifiNetwork> onForgetNetwork;
 
   @override
   Widget build(BuildContext context) {
@@ -404,7 +421,12 @@ class _WifiNetworkList extends StatelessWidget {
                   _NetworkRow(
                     network: entry.value,
                     connecting: state.connectingSsid == entry.value.ssid,
-                    onTap: state.busy ? null : () => onJoin(entry.value),
+                    onTap: state.busy || !entry.value.inRange
+                        ? null
+                        : () => onJoin(entry.value),
+                    onForget: state.busy || !entry.value.saved
+                        ? null
+                        : () => onForgetNetwork(entry.value),
                   ),
                 ],
               ],
@@ -420,21 +442,33 @@ class _NetworkRow extends StatelessWidget {
     required this.network,
     required this.connecting,
     required this.onTap,
+    required this.onForget,
   });
 
   final WifiNetwork network;
   final bool connecting;
   final VoidCallback? onTap;
 
+  /// Offered on every saved network, in range or not. Requiring a connection
+  /// first made a profile that refuses to connect impossible to remove (#471).
+  final VoidCallback? onForget;
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final meta = connecting
-        ? l10n.wifiConnectingLabel
-        : network.secured
-        ? '${l10n.wifiSecuredLabel} · ${network.signal}'
-        : '${l10n.wifiOpenLabel} · ${network.signal}';
+    final String meta;
+    if (connecting) {
+      meta = l10n.wifiConnectingLabel;
+    } else if (network.saved && !network.inRange) {
+      meta = l10n.wifiSavedOutOfRange;
+    } else if (network.saved) {
+      meta = '${l10n.wifiSavedLabel} · ${network.signal}';
+    } else if (network.secured) {
+      meta = '${l10n.wifiSecuredLabel} · ${network.signal}';
+    } else {
+      meta = '${l10n.wifiOpenLabel} · ${network.signal}';
+    }
 
     return FocusableTapTarget(
       onTap: onTap,
@@ -469,6 +503,23 @@ class _NetworkRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
+              if (network.saved && !connecting) ...[
+                Text(
+                  network.inRange
+                      ? l10n.wifiSavedLabel
+                      : l10n.wifiSavedOutOfRange,
+                  style: TextStyle(color: surface.accent, fontSize: 11),
+                ),
+                IconButton(
+                  key: Key('wifi_network_forget_${network.ssid}'),
+                  onPressed: onForget,
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 16,
+                  color: surface.textTertiary,
+                  tooltip: l10n.wifiForget,
+                  icon: const Icon(Icons.delete_outline),
+                ),
+              ],
               if (connecting)
                 SizedBox(
                   width: 14,
@@ -479,7 +530,7 @@ class _NetworkRow extends StatelessWidget {
                     color: surface.accent,
                   ),
                 )
-              else
+              else if (network.inRange)
                 Text(
                   '${network.signal} dBm',
                   style: TextStyle(
