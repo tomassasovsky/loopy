@@ -133,9 +133,15 @@ void main() {
     // connected slot — until association succeeds.
     expect(find.byKey(const Key('wifi_status_spinner')), findsNothing);
     expect(find.byKey(const Key('wifi_network_spinner_Cafe')), findsOneWidget);
+    // The joining row swaps its signal readout for the spinner rather than
+    // adding a label, so "Connecting…" reaches the user through semantics.
     expect(
-      find.textContaining(l10n.wifiConnectingLabel),
-      findsOneWidget,
+      tester.widgetList<Semantics>(find.byType(Semantics)).any((s) {
+        final label = s.properties.label ?? '';
+        return label.contains('Cafe') &&
+            label.contains(l10n.wifiConnectingLabel);
+      }),
+      isTrue,
     );
     expect(find.textContaining(l10n.wifiStatusDisconnected), findsOneWidget);
 
