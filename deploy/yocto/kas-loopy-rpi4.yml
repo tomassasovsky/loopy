@@ -25,6 +25,22 @@ env:
 target:
   - loopy-kiosk-image
 
+# Every upstream layer is pinned to a COMMIT, not just a branch.
+#
+# Without this each build fetched whatever happened to be on `walnascar` at
+# that moment, so two builds of the same loopy commit could ship different
+# kernels, different WiFi firmware and different NetworkManager — and a
+# regression could appear in a release with no matching change in this repo.
+# During #459 the console demonstrably worked on 0.1.0-experimental.42 and
+# failed on every build after it, and there was no way to tell from the
+# repository whether anything underneath had moved. Bisecting our own history
+# could never have found it.
+#
+# Bumps are now explicit, reviewable commits. Refresh with:
+#
+#   git ls-remote <url> refs/heads/walnascar
+#
+# See #465.
 repos:
   # This repo (contains meta-loopy). No url => the repo holding this kas file.
   loopy:
@@ -34,6 +50,7 @@ repos:
   poky:
     url: https://git.yoctoproject.org/poky
     branch: walnascar
+    commit: d0b46a6624ec9c61c47270745dd0b2d5abbe6ac1
     layers:
       meta:
       meta-poky:
@@ -41,6 +58,7 @@ repos:
   meta-openembedded:
     url: https://git.openembedded.org/meta-openembedded
     branch: walnascar
+    commit: 07330a98cf93806b7a4e0170a541b94962ff3960
     layers:
       meta-oe:
       meta-python:
@@ -51,6 +69,7 @@ repos:
   meta-raspberrypi:
     url: https://git.yoctoproject.org/meta-raspberrypi
     branch: walnascar
+    commit: 0f68e8754514d64f2fe5480195b8992f341d54af
 
   # RAUC (A/B atomic updates). The tryboot bits (wks, WIC selector plugin, cmdline
   # class, bootloader backend, bundle recipe) are vendored INTO meta-loopy rather
@@ -58,6 +77,7 @@ repos:
   meta-rauc:
     url: https://github.com/rauc/meta-rauc.git
     branch: walnascar
+    commit: a0b83842d131093e89fa4fefaaa1997f05afdf62
 
 local_conf_header:
   standard: |
