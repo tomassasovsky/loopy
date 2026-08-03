@@ -132,6 +132,7 @@ FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch ${bindir}/loopy-rtirq \
                 ${systemd_system_unitdir}/data.mount \
                 ${systemd_system_unitdir}/loopy-ota-check.service \
                 ${systemd_system_unitdir}/loopy-ota-check.timer \
+                ${sysconfdir}/systemd/system/wpa_supplicant.service \
                 ${sysconfdir}/tmpfiles.d/loopy-runtime.conf"
 
 python do_fetch:prepend() {
@@ -210,6 +211,13 @@ do_install() {
     install -m 0755 ${UNPACKDIR}/loopy-nm-persist ${D}${bindir}/loopy-nm-persist
     install -m 0644 ${UNPACKDIR}/loopy-nm-persist.service \
         ${D}${systemd_system_unitdir}/loopy-nm-persist.service
+
+    # iwd owns the radio now (#468 step 2). wpa_supplicant is still pulled into
+    # the image by packagegroup-base-wifi, and letting it get dbus-activated
+    # alongside iwd would recreate the two-supplicants bug this release exists
+    # to remove — so mask it rather than trust that nothing activates it.
+    install -d ${D}${sysconfdir}/systemd/system
+    ln -sf /dev/null ${D}${sysconfdir}/systemd/system/wpa_supplicant.service
 
     # BlueZ has no keyfile.path equivalent, so loopy-bt-persist bind-mounts
     # /data/bluetooth over /var/lib/bluetooth before bluetoothd starts (#451).
