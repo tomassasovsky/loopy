@@ -378,6 +378,17 @@ void main() {
           ),
           findsOneWidget,
         );
+
+        // The full-pane card carries the SSID as a status line *under* the
+        // label, rather than replacing it the way the old 72px tile had to.
+        final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('settingsTray_wifi')),
+            matching: find.text(l10n.trayWifiLabel),
+          ),
+          findsOneWidget,
+        );
       },
     );
 

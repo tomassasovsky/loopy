@@ -11,22 +11,27 @@ import 'package:loopy/looper/view/tray/tray_brightness_slider.dart';
 import 'package:loopy/looper/view/tray/tray_tile.dart';
 import 'package:loopy/wifi/wifi_cubit.dart';
 
-/// Home face: quick-access tiles + brightness slider.
+/// Home face: quick-access cards + brightness.
 ///
-/// The tiles that stay here are the ones the navigation rail deliberately
+/// The cards that stay here are the ones the navigation rail deliberately
 /// does not carry: the two radio *toggles* (tap toggles, long-press opens the
 /// rail's own config face) and the two surfaces that still push a full-screen
 /// route (Settings, Signal).
+///
+/// The face **fills the pane**. Before the rail landed, the tray was a
+/// Control-Center-style sheet whose small top-anchored tiles made sense; now
+/// that a rail makes it a genuine full-screen panel host, a 72px tile grid
+/// floating in the middle of a 1080p sheet is both odd-looking and the
+/// smallest touch target on a console operated while standing.
 class TrayHome extends StatelessWidget {
   /// Creates a [TrayHome].
   const TrayHome({super.key});
 
-  /// Fixed tile footprint — real Control Center tiles stay small no matter
-  /// how large the sheet behind them is. Taller than it is wide, to leave
-  /// room for the label under the icon.
-  static const double _tileWidth = 72;
-  static const double _tileHeight = 100;
-  static const double _gap = 12;
+  /// Below this pane width the grid drops to a single column — a two-column
+  /// grid in a narrow desktop window produces cards too thin to read.
+  static const double _twoColumnMinWidth = 520;
+
+  static const double _gap = 16;
 
   @override
   Widget build(BuildContext context) {
@@ -35,117 +40,80 @@ class TrayHome extends StatelessWidget {
     final cubit = context.read<SettingsTrayCubit>();
     final wifi = context.watch<WifiCubit>().state;
     final bluetooth = context.watch<BluetoothCubit>().state;
-    const blockHeight = _tileHeight * 2 + _gap;
 
+    final wifiConnected = wifi.status.connected && wifi.status.ssid.isNotEmpty;
+    final bluetoothConnected =
+        bluetooth.status.connected && bluetooth.status.device.isNotEmpty;
+
+    final cards = <Widget>[
+      TrayTile(
+        key: const Key('settingsTray_settings'),
+        icon: Icons.settings_outlined,
+        label: l10n.settingsTooltip,
+        isOn: false,
+        onTap: state.isNavigating
+            ? null
+            : () => unawaited(_navigate(context, openLoopySettings)),
+      ),
+      TrayTile(
+        key: const Key('settingsTray_signal'),
+        icon: Icons.account_tree_outlined,
+        label: l10n.signalTooltip,
+        isOn: false,
+        onTap: state.isNavigating
+            ? null
+            : () => unawaited(
+                _navigate(context, () => showSignalPage(context)),
+              ),
+      ),
+      TrayTile(
+        key: const Key('settingsTray_wifi'),
+        // On = radio up (`enabled`), not association (`connected`).
+        icon: wifi.status.enabled ? Icons.wifi : Icons.wifi_off,
+        label: l10n.trayWifiLabel,
+        // The card has room for a status line, so the SSID no longer has to
+        // displace the label the way it did on the old single-caption tile.
+        subtitle: wifiConnected ? wifi.status.ssid : null,
+        semanticLabel: wifiConnected
+            ? '${l10n.trayWifiLabel}, ${wifi.status.ssid}'
+            : l10n.trayWifiLabel,
+        isOn: wifi.supported && wifi.status.enabled,
+        onTap: wifi.supported && !wifi.busy
+            ? () => unawaited(_toggleWifi(context))
+            : null,
+        onLongPress: cubit.openWifi,
+      ),
+      TrayTile(
+        key: const Key('settingsTray_bluetooth'),
+        // On = adapter powered, not discoverable/advertising.
+        icon: bluetooth.status.powered
+            ? Icons.bluetooth
+            : Icons.bluetooth_disabled,
+        label: l10n.trayBluetoothLabel,
+        subtitle: bluetoothConnected ? bluetooth.status.device : null,
+        semanticLabel: bluetoothConnected
+            ? '${l10n.trayBluetoothLabel}, ${bluetooth.status.device}'
+            : l10n.trayBluetoothLabel,
+        isOn: bluetooth.supported && bluetooth.status.powered,
+        onTap: bluetooth.supported && !bluetooth.busy
+            ? () => unawaited(_toggleBluetooth(context))
+            : null,
+        onLongPress: cubit.openBluetooth,
+      ),
+    ];
+
+    // No max extent: the face is meant to FILL the pane. On the 1080p
+    // console these become ~880x500 cards, which is the point — they are the
+    // controls you hit with a hand while standing over the thing.
     return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Column(
-          mainAxisSize: MainAxisSize.min,
-          // Rows are left-aligned: the second row holds fewer tiles than the
-          // first, and centring it reads as a stray tile rather than a grid.
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: _tileWidth,
-                  height: _tileHeight,
-                  child: TrayTile(
-                    key: const Key('settingsTray_settings'),
-                    icon: Icons.settings_outlined,
-                    label: l10n.settingsTooltip,
-                    isOn: false,
-                    onTap: state.isNavigating
-                        ? null
-                        : () => unawaited(
-                            _navigate(context, openLoopySettings),
-                          ),
-                  ),
-                ),
-                const SizedBox(width: _gap),
-                SizedBox(
-                  width: _tileWidth,
-                  height: _tileHeight,
-                  child: TrayTile(
-                    key: const Key('settingsTray_signal'),
-                    icon: Icons.account_tree_outlined,
-                    label: l10n.signalTooltip,
-                    isOn: false,
-                    onTap: state.isNavigating
-                        ? null
-                        : () => unawaited(
-                            _navigate(context, () => showSignalPage(context)),
-                          ),
-                  ),
-                ),
-                const SizedBox(width: _gap),
-                SizedBox(
-                  width: _tileWidth,
-                  height: _tileHeight,
-                  child: TrayTile(
-                    key: const Key('settingsTray_wifi'),
-                    // On = radio up (`enabled`), not association (`connected`).
-                    icon: wifi.status.enabled ? Icons.wifi : Icons.wifi_off,
-                    // Caption: SSID when associated, else the generic label.
-                    label: wifi.status.connected && wifi.status.ssid.isNotEmpty
-                        ? wifi.status.ssid
-                        : l10n.trayWifiLabel,
-                    semanticLabel:
-                        wifi.status.connected && wifi.status.ssid.isNotEmpty
-                        ? '${l10n.trayWifiLabel}, ${wifi.status.ssid}'
-                        : l10n.trayWifiLabel,
-                    isOn: wifi.supported && wifi.status.enabled,
-                    onTap: wifi.supported && !wifi.busy
-                        ? () => unawaited(_toggleWifi(context))
-                        : null,
-                    onLongPress: cubit.openWifi,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: _gap),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: _tileWidth,
-                  height: _tileHeight,
-                  child: TrayTile(
-                    key: const Key('settingsTray_bluetooth'),
-                    // On = adapter powered, not discoverable/advertising.
-                    icon: bluetooth.status.powered
-                        ? Icons.bluetooth
-                        : Icons.bluetooth_disabled,
-                    // Caption: peer name when Connected, else the generic label
-                    label:
-                        bluetooth.status.connected &&
-                            bluetooth.status.device.isNotEmpty
-                        ? bluetooth.status.device
-                        : l10n.trayBluetoothLabel,
-                    semanticLabel:
-                        bluetooth.status.connected &&
-                            bluetooth.status.device.isNotEmpty
-                        ? '${l10n.trayBluetoothLabel}, '
-                              '${bluetooth.status.device}'
-                        : l10n.trayBluetoothLabel,
-                    isOn: bluetooth.supported && bluetooth.status.powered,
-                    onTap: bluetooth.supported && !bluetooth.busy
-                        ? () => unawaited(_toggleBluetooth(context))
-                        : null,
-                    onLongPress: cubit.openBluetooth,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+        Expanded(child: _CardGrid(cards: cards)),
         const SizedBox(width: _gap),
+        // Full height now, rather than the 56x212 stub that matched the old
+        // tile block.
         SizedBox(
-          width: 56,
-          height: blockHeight,
+          width: 72,
           child: TrayBrightnessSlider(
             value: state.brightness,
             onChanged: (value) => unawaited(cubit.setBrightness(value)),
@@ -156,13 +124,65 @@ class TrayHome extends StatelessWidget {
   }
 }
 
+/// Lays [cards] out as an even grid that fills its box — one column when
+/// narrow, two otherwise.
+///
+/// Deliberately not a `GridView`: every card is visible at once and none of
+/// them scroll, so what is needed is an even *division* of the available box,
+/// which nested `Expanded`s express directly. A `GridView` would size cells
+/// from a cross-axis extent and leave the main axis to scroll.
+class _CardGrid extends StatelessWidget {
+  const _CardGrid({required this.cards});
+
+  final List<Widget> cards;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns =
+            constraints.maxWidth >= TrayHome._twoColumnMinWidth &&
+                cards.length > 1
+            ? 2
+            : 1;
+        final rows = (cards.length + columns - 1) ~/ columns;
+
+        return Column(
+          children: [
+            for (var row = 0; row < rows; row++) ...[
+              if (row > 0) const SizedBox(height: TrayHome._gap),
+              Expanded(
+                child: Row(
+                  children: [
+                    for (var column = 0; column < columns; column++) ...[
+                      if (column > 0) const SizedBox(width: TrayHome._gap),
+                      Expanded(
+                        // The last row can be short of a full set of cards;
+                        // the empty cell holds the grid's shape rather than
+                        // letting the final card stretch across it.
+                        child:
+                            cards.elementAtOrNull(row * columns + column) ??
+                            const SizedBox.shrink(),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
 /// Runs a tray nav-button push (`openLoopySettings` or `showSignalPage`,
 /// unchanged from the `S`/`G` keyboard shortcuts and desktop toolbar — both
 /// pick up the app-wide fade + scale-up transition from
 /// `AppTheme`'s `pageTransitionsTheme`). Closes the tray synchronously —
 /// before [push] resolves — and holds the `isNavigating` guard for the
 /// push's duration even if it throws, so a failed navigation can never leave
-/// both nav tiles stuck disabled.
+/// both nav cards stuck disabled.
 Future<void> _navigate(
   BuildContext context,
   Future<void> Function() push,

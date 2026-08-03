@@ -60,64 +60,60 @@ class TrayPanel extends StatelessWidget {
                       Expanded(
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(20, 18, 20, 40),
-                          // Home stays content-sized + centered; the config
-                          // faces use a fixed [_TrayFaceFrame] footprint so
-                          // they don't float as a tight blob in the middle of
-                          // the sheet.
-                          child: Center(
-                            child: AnimatedSwitcher(
-                              duration: reduceMotion
-                                  ? Duration.zero
-                                  : const Duration(milliseconds: 240),
-                              switchInCurve: Curves.easeOutCubic,
-                              switchOutCurve: Curves.easeInCubic,
-                              transitionBuilder: (child, animation) {
-                                // Vertical handoff: incoming rises from below.
-                                final offset =
-                                    Tween<Offset>(
-                                      begin: const Offset(0, 0.12),
-                                      end: Offset.zero,
-                                    ).animate(
-                                      CurvedAnimation(
-                                        parent: animation,
-                                        curve: Curves.easeOutCubic,
-                                      ),
-                                    );
-                                return FadeTransition(
-                                  opacity: animation,
-                                  child: SlideTransition(
-                                    position: offset,
-                                    child: child,
+                          // Home FILLS the pane — it is a grid of cards sized
+                          // from the space available, not a content-sized
+                          // blob. The config faces keep a fixed
+                          // [_TrayFaceFrame] footprint and are centred
+                          // individually, since a WiFi list stretched across
+                          // a 1080p sheet reads worse than a centred panel.
+                          child: AnimatedSwitcher(
+                            duration: reduceMotion
+                                ? Duration.zero
+                                : const Duration(milliseconds: 240),
+                            switchInCurve: Curves.easeOutCubic,
+                            switchOutCurve: Curves.easeInCubic,
+                            transitionBuilder: (child, animation) {
+                              // Vertical handoff: incoming rises from below.
+                              final offset =
+                                  Tween<Offset>(
+                                    begin: const Offset(0, 0.12),
+                                    end: Offset.zero,
+                                  ).animate(
+                                    CurvedAnimation(
+                                      parent: animation,
+                                      curve: Curves.easeOutCubic,
+                                    ),
+                                  );
+                              return FadeTransition(
+                                opacity: animation,
+                                child: SlideTransition(
+                                  position: offset,
+                                  child: child,
+                                ),
+                              );
+                            },
+                            child: KeyedSubtree(
+                              key: ValueKey(state.destination),
+                              child: switch (state.destination) {
+                                SettingsTrayDestination.home =>
+                                  const TrayHome(),
+                                SettingsTrayDestination.tuner => _TrayFaceFrame(
+                                  child: TunerTrayPanel(
+                                    onBack: cubit.showHome,
                                   ),
-                                );
+                                ),
+                                SettingsTrayDestination.wifi => _TrayFaceFrame(
+                                  child: WifiTrayPanel(
+                                    onBack: cubit.showHome,
+                                  ),
+                                ),
+                                SettingsTrayDestination.bluetooth =>
+                                  _TrayFaceFrame(
+                                    child: BluetoothTrayPanel(
+                                      onBack: cubit.showHome,
+                                    ),
+                                  ),
                               },
-                              child: KeyedSubtree(
-                                key: ValueKey(state.destination),
-                                child: switch (state.destination) {
-                                  SettingsTrayDestination.home =>
-                                    const SingleChildScrollView(
-                                      child: TrayHome(),
-                                    ),
-                                  SettingsTrayDestination.tuner =>
-                                    _TrayFaceFrame(
-                                      child: TunerTrayPanel(
-                                        onBack: cubit.showHome,
-                                      ),
-                                    ),
-                                  SettingsTrayDestination.wifi =>
-                                    _TrayFaceFrame(
-                                      child: WifiTrayPanel(
-                                        onBack: cubit.showHome,
-                                      ),
-                                    ),
-                                  SettingsTrayDestination.bluetooth =>
-                                    _TrayFaceFrame(
-                                      child: BluetoothTrayPanel(
-                                        onBack: cubit.showHome,
-                                      ),
-                                    ),
-                                },
-                              ),
                             ),
                           ),
                         ),
@@ -149,10 +145,12 @@ class _TrayFaceFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: _size.width,
-      height: _size.height,
-      child: child,
+    return Center(
+      child: SizedBox(
+        width: _size.width,
+        height: _size.height,
+        child: child,
+      ),
     );
   }
 }
