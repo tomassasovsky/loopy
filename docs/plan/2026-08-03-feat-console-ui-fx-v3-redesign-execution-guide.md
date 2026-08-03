@@ -34,10 +34,16 @@ issue: 442
 
 ## Status
 
-**Next up:** **part 1** (drawer rail) is split out and building — parts 4, 5
-and 7 all mount into the shell it creates. **Part 7** is the cheapest win (it
-closes filed bug #440) and **part 3** is the long pole, so running 3 and 7 in
-parallel sessions is the fastest path to something usable on hardware.
+**Next up:** **part 1** (drawer rail) is in review as
+[#480](https://github.com/tomassasovsky/loopy/pull/480), which also carries
+the plan docs. **Parts 3 and 7 are unblocked and independent** — 7 is the
+cheapest win (it closes filed bug #440, and only needs part 1's rail as a
+mount point), 3 is the long pole. Running them in parallel sessions is the
+fastest path to something usable on hardware.
+
+Part 1 dropped the Tuner *tile* from the home face (the rail item replaces
+it) and therefore needs no `openTuner()` on the cubit — `showDestination` is
+the rail's single entry point. Parts 4/5/7 should follow the same shape.
 
 Part 1's split amended two index assumptions the code contradicted: the tray
 is already near-fullscreen with a destination-keyed face switcher, and the
@@ -74,7 +80,7 @@ Related work that is **not** in this epic but touches the same code:
 
 | Part | Scope | Model / effort | Autonomy | Depends on | Status |
 |------|-------|----------------|----------|------------|--------|
-| [1](2026-08-03-feat-console-ui-fx-v3-redesign-part-1-plan.md) | drawer navigation rail (shell only) | Opus · medium | `merge-gate` | — | pending |
+| [1](2026-08-03-feat-console-ui-fx-v3-redesign-part-1-plan.md) | drawer navigation rail (shell only) | Opus · medium | `merge-gate` | — | in-review (#480) |
 | 2 | 7″ permanent performance readout | Opus · medium | `merge-gate` | — | pending |
 | 3 | rack domain + global library + migration | **Fable · high** | `merge-gate` | — | pending |
 | 4 | FX panel: stage tabs + rack UI | Opus · high | `merge-gate` | 1, 3 | pending |
