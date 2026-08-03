@@ -115,9 +115,19 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
     ),
   );
 
-  /// Returns from a WiFi/Bluetooth expand to the tile grid.
+  /// Returns from an expanded panel to the tile grid.
   void showHome() =>
       emit(state.copyWith(destination: SettingsTrayDestination.home));
+
+  /// Selects [destination] without changing whether the tray is open — the
+  /// navigation rail's one entry point.
+  ///
+  /// Deliberately does NOT set `dragProgress`: the rail is only reachable
+  /// while the tray is already open, and writing an open bit here would give
+  /// the destination a second say in whether the tray is showing. Openness
+  /// stays [SettingsTrayState.dragProgress]'s alone.
+  void showDestination(SettingsTrayDestination destination) =>
+      emit(state.copyWith(destination: destination));
 
   /// Marks a tray nav-button push as in flight — the tray disables both nav
   /// buttons until [endNavigating].

@@ -173,5 +173,33 @@ void main() {
         const SettingsTrayState(),
       ],
     );
+
+    blocTest<SettingsTrayCubit, SettingsTrayState>(
+      'showDestination switches face without touching dragProgress — the '
+      'rail must never become a second say in whether the tray is open',
+      build: buildCubit,
+      seed: () => const SettingsTrayState(dragProgress: 1),
+      act: (cubit) => cubit
+        ..showDestination(SettingsTrayDestination.tuner)
+        ..showDestination(SettingsTrayDestination.home),
+      expect: () => [
+        const SettingsTrayState(
+          dragProgress: 1,
+          destination: SettingsTrayDestination.tuner,
+        ),
+        const SettingsTrayState(dragProgress: 1),
+      ],
+    );
+
+    blocTest<SettingsTrayCubit, SettingsTrayState>(
+      'showDestination on a closed tray leaves it closed',
+      build: buildCubit,
+      act: (cubit) => cubit.showDestination(SettingsTrayDestination.wifi),
+      expect: () => [
+        const SettingsTrayState(
+          destination: SettingsTrayDestination.wifi,
+        ),
+      ],
+    );
   });
 }
