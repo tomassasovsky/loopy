@@ -76,7 +76,12 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
   Future<Version> currentVersion() async => _readVersion(versionFile);
 
   @override
-  Future<Version> stagedVersion() async => _readVersion(stagedFile);
+  Future<Version> stagedVersion() async {
+    // Drop a staged marker left behind by a failed tryboot / rollback so
+    // Check Now can re-offer the published build.
+    await _env.reconcileStaged();
+    return _readVersion(stagedFile);
+  }
 
   Version _readVersion(String path) {
     final text = _env.readTextSync(path)?.trim();

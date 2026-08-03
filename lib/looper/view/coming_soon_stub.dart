@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:loopy/l10n/l10n.dart';
 
 /// Shows a shared placeholder for a settings-tray feature with no real
-/// functionality yet (WiFi / Bluetooth / Tuner). Dismissed by tap-outside or
-/// the close button; the tray stays open underneath — this isn't a real
-/// navigation, so nothing auto-closes it.
+/// functionality yet (Tuner). Dismissed by tap-outside or the close button;
+/// the tray stays open underneath — this isn't a real navigation, so nothing
+/// auto-closes it.
 Future<void> showComingSoonStub(
   BuildContext context, {
   required String feature,

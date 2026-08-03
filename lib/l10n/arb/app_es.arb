@@ -61,20 +61,36 @@
     "sessionNameInvalid": "Introduce un nombre de sesión válido.",
     "sessionNameDuplicate": "Ya existe una sesión llamada «{name}».",
     "@sessionNameDuplicate": {
-        "placeholders": { "name": { "type": "String" } }
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
     },
     "sessionDeleteConfirmTitle": "¿Eliminar «{name}»?",
     "@sessionDeleteConfirmTitle": {
-        "placeholders": { "name": { "type": "String" } }
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
     },
     "sessionDeleteConfirmBody": "Esto elimina permanentemente la sesión guardada. El montaje actual sigue sonando.",
     "a11ySessionRename": "Renombrar sesión {name}",
     "@a11ySessionRename": {
-        "placeholders": { "name": { "type": "String" } }
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
     },
     "a11ySessionDelete": "Eliminar sesión {name}",
     "@a11ySessionDelete": {
-        "placeholders": { "name": { "type": "String" } }
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
     },
     "sessionErrorSampleRate": "No se pudo cargar la sesión: se grabó a una frecuencia de muestreo distinta a la del dispositivo actual. Vuelve a abrir el dispositivo a la frecuencia de la sesión e inténtalo de nuevo.",
     "sessionErrorUnsupportedVersion": "No se pudo cargar la sesión: se guardó con una versión más reciente de Loopy. Actualiza la aplicación e inténtalo de nuevo.",
@@ -199,8 +215,12 @@
     "signalFieldTracks": "PIS",
     "signalTakesCount": "{count} tomas",
     "@signalTakesCount": {
-      "description": "Badge on a multi-lane track header counting its takes.",
-      "placeholders": { "count": { "type": "int" } }
+        "description": "Badge on a multi-lane track header counting its takes.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
     },
     "signalLegendLive": "entrada LIVE monitorizada",
     "signalLegendSnapshot": "instantánea de FX al grabar",
@@ -208,19 +228,31 @@
     "signalCleanTake": "toma limpia",
     "signalRecInput": "grab Ent {inputNumber}",
     "@signalRecInput": {
-      "description": "Badge on a take naming the hardware input it recorded.",
-      "placeholders": { "inputNumber": { "type": "int" } }
+        "description": "Badge on a take naming the hardware input it recorded.",
+        "placeholders": {
+            "inputNumber": {
+                "type": "int"
+            }
+        }
     },
     "signalRouteTooltip": "Enrutar a una salida",
     "signalRouteToOutput": "Enviar a Sal {outputNumber}",
     "@signalRouteToOutput": {
-      "description": "Menu item / a11y label to add a route to an output.",
-      "placeholders": { "outputNumber": { "type": "int" } }
+        "description": "Menu item / a11y label to add a route to an output.",
+        "placeholders": {
+            "outputNumber": {
+                "type": "int"
+            }
+        }
     },
     "signalUnrouteOutput": "Dejar de enviar a Sal {outputNumber}",
     "@signalUnrouteOutput": {
-      "description": "a11y label on a lit routing chip (tap removes the route).",
-      "placeholders": { "outputNumber": { "type": "int" } }
+        "description": "a11y label on a lit routing chip (tap removes the route).",
+        "placeholders": {
+            "outputNumber": {
+                "type": "int"
+            }
+        }
     },
     "signalInputNone": "Ninguna (limpia)",
     "signalReassignInput": "Cambiar entrada grabada",
@@ -289,8 +321,12 @@
     "signalPluginScanProgress": "Escaneando… {scanned}/{total}",
     "@signalPluginScanProgress": {
         "placeholders": {
-            "scanned": { "type": "int" },
-            "total": { "type": "int" }
+            "scanned": {
+                "type": "int"
+            },
+            "total": {
+                "type": "int"
+            }
         }
     },
     "signalPluginCancelScan": "Cancelar",
@@ -309,7 +345,9 @@
     "signalInheritedFrom": "Copiada de {inputs} al grabar esta toma",
     "@signalInheritedFrom": {
         "placeholders": {
-            "inputs": { "type": "String" }
+            "inputs": {
+                "type": "String"
+            }
         }
     },
     "fxEffectPowerOnTooltip": "Encender este efecto",
@@ -323,7 +361,9 @@
     "fxEditorInputTitle": "Entrada {number}",
     "@fxEditorInputTitle": {
         "placeholders": {
-            "number": { "type": "int" }
+            "number": {
+                "type": "int"
+            }
         }
     },
     "fxEditorInputConsequence": "se graba en las nuevas tomas",
@@ -331,24 +371,28 @@
     "fxEditorTrackTitle": "Bus de la pista {number}",
     "@fxEditorTrackTitle": {
         "placeholders": {
-            "number": { "type": "int" }
+            "number": {
+                "type": "int"
+            }
         }
     },
     "fxEditorMasterTitle": "Master",
-    "fxEditorTrackConsequence": "moldea toda la pista, despu\u00e9s de sus carriles",
+    "fxEditorTrackConsequence": "moldea toda la pista, después de sus carriles",
     "fxEditorMasterConsequence": "moldea toda la mezcla, antes del limitador",
-    "fxChainOffInputConsequence": "cadena apagada \u2014 esta entrada se monitorea en seco y las nuevas tomas se graban en seco",
-    "fxChainOffLoopConsequence": "cadena apagada \u2014 esta toma suena en seco",
-    "fxChainOffTrackConsequence": "cadena apagada \u2014 esta pista pasa por su bus en seco",
-    "fxChainOffMasterConsequence": "cadena apagada \u2014 toda la mezcla pasa en seco",
+    "fxChainOffInputConsequence": "cadena apagada — esta entrada se monitorea en seco y las nuevas tomas se graban en seco",
+    "fxChainOffLoopConsequence": "cadena apagada — esta toma suena en seco",
+    "fxChainOffTrackConsequence": "cadena apagada — esta pista pasa por su bus en seco",
+    "fxChainOffMasterConsequence": "cadena apagada — toda la mezcla pasa en seco",
     "fxResyncFromInput": "Resincronizar desde la entrada",
-    "fxResyncFromInputTooltip": "Vuelve a copiar la cadena de la entrada enrutada sobre esta toma. Las dem\u00e1s tomas no se tocan.",
-    "fxOverdubMismatchHint": "La cadena de la entrada ya no coincide con esta toma \u2014 esta sobregrabaci\u00f3n se captura en seco y no vuelve a heredar.",
+    "fxResyncFromInputTooltip": "Vuelve a copiar la cadena de la entrada enrutada sobre esta toma. Las demás tomas no se tocan.",
+    "fxOverdubMismatchHint": "La cadena de la entrada ya no coincide con esta toma — esta sobregrabación se captura en seco y no vuelve a heredar.",
     "fxEditorScopeGone": "Esta cadena ya no existe.",
     "fxEditorEditBlock": "Editar {name}",
     "@fxEditorEditBlock": {
         "placeholders": {
-            "name": { "type": "String" }
+            "name": {
+                "type": "String"
+            }
         }
     },
     "startEngine": "Iniciar motor",
@@ -1020,25 +1064,25 @@
         }
     },
     "pedalAssignTitle": "Asignaciones del pedal",
-    "pedalAssignIntro": "Eleg\u00ed un pedal en la placa y despu\u00e9s qu\u00e9 controla en modo FX. Los pedales sin asignar conservan su comportamiento normal.",
-    "pedalAssignSelectPrompt": "Seleccion\u00e1 un pedal para asignarlo.",
-    "pedalAssignUnbindable": "MODE y BANK no se pueden reasignar: son la \u00fanica salida del modo FX y el \u00fanico acceso al otro banco.",
+    "pedalAssignIntro": "Elegí un pedal en la placa y después qué controla en modo FX. Los pedales sin asignar conservan su comportamiento normal.",
+    "pedalAssignSelectPrompt": "Seleccioná un pedal para asignarlo.",
+    "pedalAssignUnbindable": "MODE y BANK no se pueden reasignar: son la única salida del modo FX y el único acceso al otro banco.",
     "pedalAssignBankLabel": "Banco {bank}",
     "pedalAssignTarget": "Controla",
     "pedalAssignBehavior": "Comportamiento",
     "pedalAssignToggle": "Conmutar",
-    "pedalAssignMomentary": "Moment\u00e1neo",
-    "pedalAssignToggleHint": "Al pisarlo cambia y queda as\u00ed.",
-    "pedalAssignMomentaryHint": "Activo mientras lo manten\u00e9s; al soltarlo vuelve como estaba.",
+    "pedalAssignMomentary": "Momentáneo",
+    "pedalAssignToggleHint": "Al pisarlo cambia y queda así.",
+    "pedalAssignMomentaryHint": "Activo mientras lo mantenés; al soltarlo vuelve como estaba.",
     "pedalAssignRebind": "Reasignar",
     "pedalAssignClear": "Quitar",
     "pedalAssignUnassigned": "Sin asignar",
     "pedalAssignStale": "Destino ausente",
     "pedalAssignStaleDetail": "La cadena o el efecto al que apuntaba ya no existe. Pisarlo no hace nada hasta que lo reasignes o lo quites.",
-    "pedalAssignNoTargets": "Todav\u00eda no hay cadenas FX para asignar. Agreg\u00e1 un efecto primero.",
+    "pedalAssignNoTargets": "Todavía no hay cadenas FX para asignar. Agregá un efecto primero.",
     "pedalAssignChainTarget": "Cadena de {stage}",
     "pedalAssignStageInput": "Entrada {number}",
-    "pedalAssignStageLoop": "Pista {number} l\u00ednea {lane}",
+    "pedalAssignStageLoop": "Pista {number} línea {lane}",
     "pedalAssignStageTrack": "Pista {number}",
     "pedalAssignStageMaster": "Master",
     "a11yPedalAssignRow": "{button}: {target}",
@@ -1074,5 +1118,202 @@
     "a11yMidiLearnRow": "{control} asignado a {target}",
     "a11yMidiLearnLo": "Mínimo del rango",
     "a11yMidiLearnHi": "Máximo del rango",
-    "a11yMidiLearnThreshold": "Umbral de activación"
+    "a11yMidiLearnThreshold": "Umbral de activación",
+    "wifiRescan": "Reescanear",
+    "wifiUnsupported": "Tu computadora administra el Wi-Fi en esta versión.",
+    "wifiNoNetworks": "No se encontraron redes.",
+    "wifiConnected": "Conectado",
+    "wifiSecured": "Requiere contraseña",
+    "wifiOpen": "Abierta",
+    "wifiForget": "Olvidar",
+    "wifiJoin": "Conectar",
+    "wifiPassword": "Contraseña",
+    "signalPluginBypassTooltip": "Omitir plugin",
+    "fxEditorChainIn": "ENT",
+    "fxEditorChainOut": "SAL",
+    "fxEditorEmptySelection": "Selecciona un bloque para editar sus controles.",
+    "octaverLatencyHint": "El vocoder de fase añade ~{ms} ms — usa PSOLA para monitoreo en vivo",
+    "trayBackLabel": "Atrás",
+    "@trayBackLabel": {
+        "description": "Back control on an in-tray WiFi/Bluetooth expand panel — returns to the Control Center tiles without dismissing the tray."
+    },
+    "wifiUnsupportedBody": "WiFi solo está disponible en la consola Loopy.",
+    "@wifiUnsupportedBody": {
+        "description": "Shown on the WiFi page when loopy-wifi-ctl is not present (desktop builds)."
+    },
+    "wifiStatusLabel": "Estado",
+    "@wifiStatusLabel": {
+        "description": "WiFi status table label."
+    },
+    "wifiStatusConnected": "Conectado",
+    "@wifiStatusConnected": {
+        "description": "WiFi connected status value."
+    },
+    "wifiStatusDisconnected": "Sin conexión",
+    "@wifiStatusDisconnected": {
+        "description": "WiFi disconnected status value."
+    },
+    "wifiStatusDisconnecting": "Desconectando…",
+    "@wifiStatusDisconnecting": {
+        "description": "WiFi status while dropping the current association."
+    },
+    "wifiConnectingLabel": "Conectando…",
+    "@wifiConnectingLabel": {
+        "description": "Shown while joining a WiFi network (status strip and row)."
+    },
+    "wifiConnectFailedPassword": "No se pudo unir — revisá la contraseña e intentá de nuevo.",
+    "@wifiConnectFailedPassword": {
+        "description": "Shown when WPA authentication fails while joining a network."
+    },
+    "wifiConnectFailedTimeout": "No se pudo unir — la red no terminó de conectar.",
+    "@wifiConnectFailedTimeout": {
+        "description": "Shown when WiFi association times out before COMPLETED."
+    },
+    "wifiConnectFailedGeneric": "No se pudo unir a esa red.",
+    "@wifiConnectFailedGeneric": {
+        "description": "Fallback error when WiFi connect fails for an unknown reason."
+    },
+    "wifiSsidLabel": "Red",
+    "@wifiSsidLabel": {
+        "description": "WiFi SSID table label."
+    },
+    "wifiIpLabel": "Dirección IP",
+    "@wifiIpLabel": {
+        "description": "WiFi IP address table label."
+    },
+    "wifiDisconnectTitle": "Desconectar",
+    "@wifiDisconnectTitle": {
+        "description": "WiFi disconnect action title."
+    },
+    "wifiDisconnectSubtitle": "Cortar la asociación WiFi actual",
+    "@wifiDisconnectSubtitle": {
+        "description": "WiFi disconnect action subtitle."
+    },
+    "wifiForgetTitle": "Olvidar red",
+    "@wifiForgetTitle": {
+        "description": "WiFi forget action title."
+    },
+    "wifiForgetSubtitle": "Eliminar las credenciales guardadas de {ssid}",
+    "@wifiForgetSubtitle": {
+        "description": "WiFi forget action subtitle.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiForgetConfirm": "¿Olvidar “{ssid}” y eliminar su contraseña guardada?",
+    "@wifiForgetConfirm": {
+        "description": "WiFi forget confirmation dialog body.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiScanTitle": "Buscar redes",
+    "@wifiScanTitle": {
+        "description": "WiFi scan action title."
+    },
+    "wifiScanSubtitle": "Actualizar la lista de redes cercanas",
+    "@wifiScanSubtitle": {
+        "description": "WiFi scan action subtitle when idle."
+    },
+    "wifiScanningSubtitle": "Buscando…",
+    "@wifiScanningSubtitle": {
+        "description": "WiFi scan action subtitle while scanning."
+    },
+    "wifiNetworksGroup": "Redes",
+    "@wifiNetworksGroup": {
+        "description": "Group label above the WiFi scan results list."
+    },
+    "wifiEmptyNetworks": "No se encontraron redes. Toca buscar para reintentar.",
+    "@wifiEmptyNetworks": {
+        "description": "Empty state when a WiFi scan returns no SSIDs."
+    },
+    "wifiSecuredLabel": "Protegida",
+    "@wifiSecuredLabel": {
+        "description": "Subtitle fragment for a password-protected WiFi network."
+    },
+    "wifiOpenLabel": "Abierta",
+    "@wifiOpenLabel": {
+        "description": "Subtitle fragment for an open WiFi network."
+    },
+    "wifiPasswordTitle": "Contraseña de {ssid}",
+    "@wifiPasswordTitle": {
+        "description": "WiFi password dialog title.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiPasswordHint": "Contraseña de la red",
+    "@wifiPasswordHint": {
+        "description": "Hint for the WiFi password field."
+    },
+    "wifiJoinAction": "Unirse",
+    "@wifiJoinAction": {
+        "description": "Confirm button on the WiFi password dialog."
+    },
+    "bluetoothUnsupportedBody": "Bluetooth solo está disponible en la consola Loopy.",
+    "@bluetoothUnsupportedBody": {
+        "description": "Shown on the Bluetooth page when loopy-bt-ctl is not present."
+    },
+    "bluetoothIntro": "Haz que esta consola sea visible para que un teléfono o sidecar la encuentre. El emparejamiento llega después.",
+    "@bluetoothIntro": {
+        "description": "Intro copy on the Bluetooth page (discovery/broadcast only)."
+    },
+    "bluetoothAliasLabel": "Nombre",
+    "@bluetoothAliasLabel": {
+        "description": "Bluetooth adapter alias table label."
+    },
+    "bluetoothPoweredLabel": "Adaptador",
+    "@bluetoothPoweredLabel": {
+        "description": "Bluetooth powered table label."
+    },
+    "bluetoothOn": "Encendido",
+    "@bluetoothOn": {
+        "description": "Bluetooth adapter on value."
+    },
+    "bluetoothOff": "Apagado",
+    "@bluetoothOff": {
+        "description": "Bluetooth adapter off value."
+    },
+    "bluetoothDiscoverableTitle": "Visible",
+    "@bluetoothDiscoverableTitle": {
+        "description": "Toggle title for classic Bluetooth discoverable."
+    },
+    "bluetoothDiscoverableSubtitle": "Otros dispositivos pueden ver esta consola",
+    "@bluetoothDiscoverableSubtitle": {
+        "description": "Toggle subtitle for classic Bluetooth discoverable."
+    },
+    "bluetoothAdvertiseTitle": "Transmitir",
+    "@bluetoothAdvertiseTitle": {
+        "description": "Toggle title for BLE advertising."
+    },
+    "bluetoothAdvertiseSubtitle": "Anunciar como Loopy por Bluetooth LE",
+    "@bluetoothAdvertiseSubtitle": {
+        "description": "Toggle subtitle for BLE advertising."
+    },
+    "bluetoothScanTitle": "Buscar dispositivos",
+    "@bluetoothScanTitle": {
+        "description": "Bluetooth scan action title."
+    },
+    "bluetoothScanSubtitle": "Encontrar dispositivos Bluetooth cercanos",
+    "@bluetoothScanSubtitle": {
+        "description": "Bluetooth scan action subtitle when idle."
+    },
+    "bluetoothScanningSubtitle": "Buscando…",
+    "@bluetoothScanningSubtitle": {
+        "description": "Bluetooth scan action subtitle while scanning."
+    },
+    "bluetoothDevicesGroup": "Dispositivos cercanos",
+    "@bluetoothDevicesGroup": {
+        "description": "Group label above Bluetooth scan results."
+    },
+    "bluetoothEmptyDevices": "Aún no hay dispositivos. Toca buscar para explorar.",
+    "@bluetoothEmptyDevices": {
+        "description": "Empty state when a Bluetooth scan returns nothing."
+    }
 }

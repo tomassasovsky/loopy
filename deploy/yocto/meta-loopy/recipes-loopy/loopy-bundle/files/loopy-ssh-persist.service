@@ -1,0 +1,14 @@
+[Unit]
+Description=Loopy: Dropbear host keys on /data (stable across OTA)
+DefaultDependencies=no
+Requires=data.mount
+After=data.mount
+Before=dropbearkey.service dropbear.socket
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/loopy-ssh-persist
+
+[Install]
+WantedBy=dropbear.socket multi-user.target

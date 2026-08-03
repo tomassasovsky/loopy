@@ -1,3 +1,5 @@
+import 'package:bluetooth_repository/bluetooth_repository.dart';
+import 'package:brightness_client/brightness_client.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/widgets.dart';
@@ -18,6 +20,7 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:update_repository/update_repository.dart';
+import 'package:wifi_repository/wifi_repository.dart';
 
 /// Shared entrypoint for every flavor: routes the secondary waveform window,
 /// otherwise wires the repositories, auto-starts the engine (from the saved
@@ -113,6 +116,9 @@ Future<void> runLoopy(
   // In-app updates. The backend is inert until the appliance/desktop backends
   // are wired, so the update UI stays hidden on unsupported builds.
   final updates = UpdateRepository(backend: createPlatformUpdateBackend());
+  final wifi = WifiRepository(client: createWifiClient());
+  final bluetooth = BluetoothRepository(client: createBluetoothClient());
+  final brightness = createBrightnessClient();
   // Owns the MIDI input device lifecycle (enumerate / open / close, hotplug,
   // persistence). Borrows the shared [midiSource] (owned by the controller
   // pipeline) and never disposes it. Held independent of the engine so MIDI
@@ -169,6 +175,9 @@ Future<void> runLoopy(
       exportDirectory: defaultExportDirectory,
       initialAsioDrivers: asioDrivers,
       updates: updates,
+      wifi: wifi,
+      bluetooth: bluetooth,
+      brightness: brightness,
     ),
   );
 }

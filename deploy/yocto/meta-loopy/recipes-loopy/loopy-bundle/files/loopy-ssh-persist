@@ -1,0 +1,51 @@
+#!/bin/sh
+# Persist Dropbear SSH host keys on /data across A/B rootfs updates.
+#
+# Each slot ships its own /etc/dropbear keys, so OTA A<->B changes the host
+# identity and SSH clients scream MITM. Keep the real keys on the shared
+# /data partition; /etc/dropbear entries become symlinks. Generate once.
+#
+# See https://github.com/tomassasovsky/loopy/issues/309
+set -eu
+
+DATA_DIR="${LOOPY_SSH_KEY_DIR:-/data/dropbear}"
+ETC_DIR="${LOOPY_SSH_ETC_DIR:-/etc/dropbear}"
+KEY_NAME="dropbear_rsa_host_key"
+
+mkdir -p "$DATA_DIR" "$ETC_DIR"
+chmod 700 "$DATA_DIR"
+
+data_key="$DATA_DIR/$KEY_NAME"
+etc_key="$ETC_DIR/$KEY_NAME"
+
+if [ ! -f "$data_key" ]; then
+    if [ -f "$etc_key" ] && [ ! -L "$etc_key" ]; then
+        # First boot after enabling persist: keep the live slot's identity.
+        cp -a "$etc_key" "$data_key"
+        if [ -f "${etc_key}.pub" ] && [ ! -L "${etc_key}.pub" ]; then
+            cp -a "${etc_key}.pub" "${data_key}.pub"
+        fi
+    else
+        if ! command -v dropbearkey >/dev/null 2>&1; then
+            echo "loopy-ssh-persist: dropbearkey not found" >&2
+            exit 1
+        fi
+        dropbearkey -t rsa -f "$data_key" >/dev/null
+    fi
+fi
+
+chmod 600 "$data_key"
+[ -f "${data_key}.pub" ] && chmod 644 "${data_key}.pub"
+
+# Point the paths Dropbear's units still check at /data.
+for f in "$KEY_NAME" "${KEY_NAME}.pub"; do
+    src="$DATA_DIR/$f"
+    dst="$ETC_DIR/$f"
+    [ -e "$src" ] || continue
+    if [ -L "$dst" ]; then
+        target=$(readlink "$dst" 2>/dev/null || true)
+        [ "$target" = "$src" ] && continue
+    fi
+    rm -f "$dst"
+    ln -s "$src" "$dst"
+done

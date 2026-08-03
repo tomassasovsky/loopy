@@ -24,6 +24,10 @@ IMAGE_INSTALL:append = " \
     rauc-rpi-backend \
     raspi-utils \
     dtc \
+    ddcutil \
+    networkmanager-nmcli \
+    networkmanager-wifi \
+    bluez5 \
     "
 # tryboot-cmdline.bbclass edits cmdline.txt inside the .wic (mtools) and regenerates
 # the bmap (bmaptool) — both are native build tools its task needs.
@@ -73,6 +77,17 @@ IMAGE_ROOTFS_EXTRA_SPACE = "1048576"
 # weston must reach /run/seatd.sock (the weston user in seatd's group, or seatd
 # started with a shared group) and run with LIBSEAT_BACKEND=seatd.
 SYSTEMD_AUTO_ENABLE:pn-seatd = "enable"
+
+# NetworkManager owns eth0 + wlan*. Mask systemd-networkd so the two managers
+# never fight over the same interfaces (SSH still comes up via NM DHCP).
+loopy_mask_networkd() {
+    # Mask into /etc so it wins over /lib unit files without deleting packages.
+    install -d ${IMAGE_ROOTFS}/etc/systemd/system
+    ln -sf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/systemd-networkd.service
+    ln -sf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/systemd-networkd.socket
+    ln -sf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/systemd-networkd-wait-online.service
+}
+ROOTFS_POSTPROCESS_COMMAND += "loopy_mask_networkd; "
 
 # ALSA-only by design (no PipeWire/JACK): the engine falls straight to ALSA, so no
 # pw-jack shim is needed (cleaner than the Pi OS / Tier 2 path). See plan §Phase 3.

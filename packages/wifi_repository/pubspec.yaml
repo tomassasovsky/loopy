@@ -1,0 +1,16 @@
+name: wifi_repository
+description: >-
+  Repository for Loopy appliance WiFi — thin orchestration over wifi_client.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  wifi_client:
+    path: ../wifi_client
+
+dev_dependencies:
+  test: ^1.25.0
+  very_good_analysis: ^10.2.0

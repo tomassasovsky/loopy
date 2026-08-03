@@ -121,6 +121,7 @@ void main() {
         providers: [
           RepositoryProvider<LooperRepository>.value(value: repository),
           RepositoryProvider<PerformanceRepository>.value(value: performance),
+          RepositoryProvider<SettingsRepository>.value(value: settings),
         ],
         child: MultiBlocProvider(
           providers: [

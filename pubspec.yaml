@@ -10,6 +10,10 @@ environment:
 
 dependencies:
   bloc: ^9.2.1
+  bluetooth_repository:
+    path: packages/bluetooth_repository
+  brightness_client:
+    path: packages/brightness_client
   controller_repository:
     path: packages/controller_repository
   daw_export:
@@ -41,15 +45,23 @@ dependencies:
     path: packages/session_repository
   settings_repository:
     path: packages/settings_repository
+  toastification: ^3.2.0
   update_repository:
     path: packages/update_repository
   url_launcher: ^6.3.0
+  wifi_repository:
+    path: packages/wifi_repository
   window_manager: ^0.5.2
 
 dev_dependencies:
   bloc_lint: ^0.4.1
   bloc_test: ^10.0.0
   bloc_tools: ^0.1.0-dev.24
+  # Data packages used directly by the test suite only (fakes + integration
+  # tests import them); production code reaches them transitively via the
+  # repositories, so they are dev-only here.
+  bluetooth_client:
+    path: packages/bluetooth_client
   # The control-sequence fuzzer (test/fuzz/) runs under controlled time; the
   # package resolves via flutter_test anyway, declared explicitly for
   # depend_on_referenced_packages.
@@ -58,15 +70,14 @@ dev_dependencies:
     sdk: flutter
   integration_test:
     sdk: flutter
-  # Data packages used directly by the test suite only (fakes + integration
-  # tests import them); production code reaches them transitively via the
-  # repositories, so they are dev-only here.
   loopy_engine:
     path: packages/loopy_engine
   midi_client:
     path: packages/midi_client
   mocktail: ^1.0.5
   very_good_analysis: ^10.3.0
+  wifi_client:
+    path: packages/wifi_client
 
 flutter:
   generate: true

@@ -1,0 +1,15 @@
+#!/bin/sh
+# Prepare NetworkManager's persistent connection store on /data.
+#
+# A/B rootfs updates replace /etc, so profiles under the default
+# /etc/NetworkManager/system-connections path are lost on every OTA.
+# 99-loopy-wifi.conf points keyfile.path at /data/...; this oneshot
+# creates that directory before NetworkManager starts.
+set -eu
+
+DIR="${LOOPY_NM_CONNECTIONS_DIR:-/data/NetworkManager/system-connections}"
+
+mkdir -p "$DIR"
+chmod 700 "$DIR"
+# NM refuses to load world-readable keyfiles; keep the tree root-only.
+find "$DIR" -type f -name '*.nmconnection' -exec chmod 600 {} +
