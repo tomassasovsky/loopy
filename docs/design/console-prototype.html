@@ -705,6 +705,37 @@
   $("handle").onclick=function(){setOpen(false)};
   document.addEventListener("keydown",function(e){ if(e.key==="Escape"&&open) setOpen(false) });
 
-  drawTracks(); drawRail(); drawFace(); setOpen(false);
+  // Every screen is addressable, so a headless renderer (or a link in a
+  // review) can land directly on one. Without this, capturing the set meant
+  // driving the UI with browser automation — which is how the first attempt
+  // at a Canva reference stalled.
+  function applyHash(){
+    var h=(location.hash||"").replace(/^#/,"");
+    var want=true;
+    switch(h){
+      case "": case "stage": want=false; break;
+      case "signal-input":  dest="fx"; stage="input"; break;
+      case "signal-loop":   dest="fx"; stage="loop"; break;
+      case "signal-detail": dest="fx"; stage="loop";
+        selRack=stages.filter(function(x){return x.id==="loop"})[0].slots[0]; break;
+      case "library":       dest="fx"; libOpen=true; break;
+      case "pedal":         dest="pedal"; selSwitch=switches[1]; picking=true; break;
+      case "pedal-slots":   dest="pedal"; selSwitch=switches[1]; picking=true; showSlots=true; break;
+      case "settings":      dest="settings"; break;
+      case "loop":          dest="loop"; break;
+      case "tuner":         dest="tuner"; break;
+      case "wifi":          dest="wifi"; break;
+      case "bluetooth":     dest="bt"; break;
+      default: want=false;
+    }
+    drawRail(); drawFace(); setOpen(want);
+  }
+
+  drawTracks(); drawRail(); drawFace();
+  applyHash();
+  window.addEventListener("hashchange", function(){
+    selRack=null; selSwitch=null; picking=false; showSlots=false; libOpen=false;
+    applyHash();
+  });
 })();
 </script>
