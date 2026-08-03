@@ -38,6 +38,7 @@ class TrayNavigationRail extends StatelessWidget {
   static IconData _iconFor(SettingsTrayDestination destination) =>
       switch (destination) {
         SettingsTrayDestination.home => Icons.tune,
+        SettingsTrayDestination.pedal => Icons.piano_outlined,
         SettingsTrayDestination.tuner => Icons.graphic_eq,
         SettingsTrayDestination.wifi => Icons.wifi,
         SettingsTrayDestination.bluetooth => Icons.bluetooth,
@@ -50,6 +51,7 @@ class TrayNavigationRail extends StatelessWidget {
     SettingsTrayDestination destination,
   ) => switch (destination) {
     SettingsTrayDestination.home => l10n.trayHomeLabel,
+    SettingsTrayDestination.pedal => l10n.trayPedalLabel,
     SettingsTrayDestination.tuner => l10n.trayTunerLabel,
     SettingsTrayDestination.wifi => l10n.trayWifiLabel,
     SettingsTrayDestination.bluetooth => l10n.trayBluetoothLabel,

@@ -31,22 +31,48 @@ Future<void> showPedalAssignmentPage(BuildContext context) {
   );
 }
 
-/// The screen where footswitches are remapped onto FX targets (part 6b).
+/// The full-screen route where footswitches are remapped onto FX targets
+/// (part 6b). Thin chrome around [PedalAssignmentView].
 ///
 /// Composes part 6a's presentational `PedalPlate`: tapping a footswitch on the
 /// plate selects it (the widget's injected `selected` set draws the
 /// highlight), and the editor below edits that switch's binding. MODE and Bank
 /// are selectable — so the user gets an explanation rather than an inert
 /// switch — but never offered a target (B12).
-class PedalAssignmentPage extends StatefulWidget {
+class PedalAssignmentPage extends StatelessWidget {
   /// Creates a [PedalAssignmentPage].
   const PedalAssignmentPage({super.key});
 
   @override
-  State<PedalAssignmentPage> createState() => _PedalAssignmentPageState();
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: context.surface.background,
+      appBar: AppBar(title: Text(context.l10n.pedalAssignTitle)),
+      body: const PedalAssignmentView(),
+    );
+  }
 }
 
-class _PedalAssignmentPageState extends State<PedalAssignmentPage> {
+/// The assignment surface itself, without route chrome.
+///
+/// Split out of [PedalAssignmentPage] so the console's settings tray can mount
+/// it as a rail destination (#440) while Settings -> Audio -> Pedal keeps
+/// pushing it as a full-screen route. Both render this same widget; neither is
+/// a copy of the other.
+///
+/// Provides nothing: it reads [ControlCubit] and `LooperRepository` from
+/// context. The pushed route re-provides them because a route does not inherit
+/// the caller's providers; the tray does not need to, since it mounts below
+/// them already.
+class PedalAssignmentView extends StatefulWidget {
+  /// Creates a [PedalAssignmentView].
+  const PedalAssignmentView({super.key});
+
+  @override
+  State<PedalAssignmentView> createState() => _PedalAssignmentViewState();
+}
+
+class _PedalAssignmentViewState extends State<PedalAssignmentView> {
   PedalButton? _selected;
 
   /// Which bank the selected TRACK button is being assigned for (A3);
@@ -71,37 +97,33 @@ class _PedalAssignmentPageState extends State<PedalAssignmentPage> {
     // editor below both read the live set.
     final cubit = context.watch<ControlCubit>();
 
-    return Scaffold(
-      backgroundColor: surface.background,
-      appBar: AppBar(title: Text(l10n.pedalAssignTitle)),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text(
-            l10n.pedalAssignIntro,
-            style: TextStyle(color: surface.textSecondary),
-          ),
-          const SizedBox(height: 16),
-          _PlatePicker(
-            selected: _selected,
-            onSelect: (button) => setState(() {
-              _selected = button;
-              if (PedalBindingKey.isBankKeyed(button)) {
-                // Follow the plate's own bank so the row being edited is the
-                // one the highlighted switch would act on.
-                _bank = cubit.state.activeBank;
-              }
-            }),
-          ),
-          const SizedBox(height: 16),
-          _Editor(
-            selected: _selected,
-            bindingKey: _key,
-            bank: _bank,
-            onBank: (bank) => setState(() => _bank = bank),
-          ),
-        ],
-      ),
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Text(
+          l10n.pedalAssignIntro,
+          style: TextStyle(color: surface.textSecondary),
+        ),
+        const SizedBox(height: 16),
+        _PlatePicker(
+          selected: _selected,
+          onSelect: (button) => setState(() {
+            _selected = button;
+            if (PedalBindingKey.isBankKeyed(button)) {
+              // Follow the plate's own bank so the row being edited is the
+              // one the highlighted switch would act on.
+              _bank = cubit.state.activeBank;
+            }
+          }),
+        ),
+        const SizedBox(height: 16),
+        _Editor(
+          selected: _selected,
+          bindingKey: _key,
+          bank: _bank,
+          onBank: (bank) => setState(() => _bank = bank),
+        ),
+      ],
     );
   }
 }

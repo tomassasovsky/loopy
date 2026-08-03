@@ -81,6 +81,11 @@ class PedalSettingsSection extends StatelessWidget {
         ],
         // No hint line under this one: the assignment page opens with the
         // same sentence, so repeating it here only costs height.
+        //
+        // Kept alongside the tray's own pedal rail destination (#440) on
+        // purpose — this is where you already are when configuring the pedal.
+        // Both mount the same `PedalAssignmentView`, so this is a second
+        // entry point, not a second implementation.
         Align(
           alignment: Alignment.centerLeft,
           child: OutlinedButton.icon(

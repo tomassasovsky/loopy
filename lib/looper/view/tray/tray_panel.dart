@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:loopy/bluetooth/bluetooth_tray_panel.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/cubit/settings_tray_cubit.dart';
+import 'package:loopy/looper/view/tray/pedal_tray_panel.dart';
 import 'package:loopy/looper/view/tray/tray_home.dart';
 import 'package:loopy/looper/view/tray/tray_navigation_rail.dart';
 import 'package:loopy/looper/view/tray/tuner_tray_panel.dart';
@@ -97,6 +98,15 @@ class TrayPanel extends StatelessWidget {
                               child: switch (state.destination) {
                                 SettingsTrayDestination.home =>
                                   const TrayHome(),
+                                SettingsTrayDestination.pedal => _TrayFaceFrame(
+                                  // Landscape: the plate is a 2.08:1 diagram
+                                  // of real hardware, so the radios' portrait
+                                  // frame would squash it to nothing.
+                                  size: _TrayFaceFrame.wide,
+                                  child: PedalTrayPanel(
+                                    onBack: cubit.showHome,
+                                  ),
+                                ),
                                 SettingsTrayDestination.tuner => _TrayFaceFrame(
                                   child: TunerTrayPanel(
                                     onBack: cubit.showHome,
@@ -136,10 +146,18 @@ class TrayPanel extends StatelessWidget {
 /// Named for the frame rather than the radios: it started out sizing only the
 /// WiFi and Bluetooth faces, and now sizes the Tuner too.
 class _TrayFaceFrame extends StatelessWidget {
-  const _TrayFaceFrame({required this.child});
+  const _TrayFaceFrame({required this.child, this.size = _portrait});
 
-  /// Designated panel size (1080p console Control Center).
-  static const Size _size = Size(520, 680);
+  /// Designated panel size (1080p console Control Center) — the list-shaped
+  /// faces: WiFi, Bluetooth, Tuner.
+  static const Size _portrait = Size(520, 680);
+
+  /// Landscape frame for faces built around the pedal plate, whose
+  /// `AspectRatio` is 846:406.6.
+  static const Size wide = Size(980, 700);
+
+  /// Frame to size [child] to.
+  final Size size;
 
   final Widget child;
 
@@ -147,8 +165,8 @@ class _TrayFaceFrame extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: SizedBox(
-        width: _size.width,
-        height: _size.height,
+        width: size.width,
+        height: size.height,
         child: child,
       ),
     );

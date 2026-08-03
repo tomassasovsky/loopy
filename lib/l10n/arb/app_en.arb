@@ -1340,6 +1340,10 @@
     "@a11yTrayRail": {
         "description": "Accessible label for the settings tray's vertical navigation rail, which selects which config face fills the open tray."
     },
+    "trayPedalLabel": "Pedal",
+    "@trayPedalLabel": {
+        "description": "Navigation rail entry for the settings tray's pedal-assignment face. Deliberately shorter than pedalAssignTitle, which titles the face itself \u2014 rail entries are single words."
+    },
     "trayTunerLabel": "Tuner",
     "@trayTunerLabel": {
         "description": "Label for the settings tray's Tuner shortcut button (stub — no real functionality yet)."
