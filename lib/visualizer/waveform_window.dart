@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/theme/theme.dart';
+import 'package:loopy/visualizer/performance_readout.dart';
+import 'package:loopy/visualizer/performance_readout_view.dart';
 import 'package:loopy/visualizer/waveform_window_args.dart';
 import 'package:loopy/visualizer/waveform_window_channel.dart';
 import 'package:loopy/visualizer/widgets/waveform_view.dart';
@@ -99,6 +101,9 @@ Future<void> runWaveformWindow(WindowController controller) async {
   final frame = ValueNotifier<WaveformFrame>(
     (samples: Float32List(0), progress: 0, selectedTrack: ''),
   );
+  final readout = ValueNotifier<PerformanceReadout>(
+    const PerformanceReadout(),
+  );
 
   // Register the shared channel before any slow init so the main window can
   // reach us as soon as [WindowController.create] returns.
@@ -112,6 +117,13 @@ Future<void> runWaveformWindow(WindowController controller) async {
             samples: _toFloat32List(map['samples']),
             progress: progress is num ? progress.toDouble() : 0.0,
             selectedTrack: map['selectedTrack'] as String,
+          );
+        }
+        return null;
+      case 'readout':
+        if (call.arguments is Map) {
+          readout.value = PerformanceReadout.fromMap(
+            call.arguments as Map<Object?, Object?>,
           );
         }
         return null;
@@ -160,7 +172,7 @@ Future<void> runWaveformWindow(WindowController controller) async {
     },
   );
 
-  runApp(WaveformWindowApp(frame: frame, title: title));
+  runApp(WaveformWindowApp(frame: frame, readout: readout, title: title));
 }
 
 /// Coerces a method-channel payload (a [Float32List], or a `List` of numbers
@@ -184,6 +196,7 @@ class WaveformWindowApp extends StatelessWidget {
   /// Creates a [WaveformWindowApp] rendering [frame].
   const WaveformWindowApp({
     required this.frame,
+    required this.readout,
     required this.title,
     super.key,
   });
@@ -191,29 +204,39 @@ class WaveformWindowApp extends StatelessWidget {
   /// The latest waveform frame, updated as the main window pushes new data.
   final ValueListenable<WaveformFrame> frame;
 
+  /// The latest performance readout, pushed only when it changes.
+  final ValueListenable<PerformanceReadout> readout;
+
   /// OS window title.
   final String title;
 
   @override
   Widget build(BuildContext context) {
+    // Real localization delegates, not a one-off `lookupAppLocalizations`
+    // against the platform locale: the readout has real copy in it now, and a
+    // second engine is still an app.
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: AppTheme.neon,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: LoopyWindowChromeShell(
         title: title,
         body: Padding(
-          padding: const EdgeInsets.all(24),
-          child: ValueListenableBuilder<WaveformFrame>(
-            valueListenable: frame,
-            builder: (context, data, _) => WaveformView(
-              selectedTrack: data.selectedTrack,
-              samples: data.samples,
-              progress: data.progress,
-              // This window has no Localizations ancestor, so resolve the label
-              // from the platform locale directly.
-              semanticLabel: lookupAppLocalizations(
-                PlatformDispatcher.instance.locale,
-              ).a11yWaveform,
+          padding: const EdgeInsets.all(16),
+          child: ValueListenableBuilder<PerformanceReadout>(
+            valueListenable: readout,
+            builder: (context, readoutData, _) => PerformanceReadoutView(
+              readout: readoutData,
+              waveform: ValueListenableBuilder<WaveformFrame>(
+                valueListenable: frame,
+                builder: (context, data, _) => WaveformView(
+                  selectedTrack: data.selectedTrack,
+                  samples: data.samples,
+                  progress: data.progress,
+                  semanticLabel: context.l10n.a11yWaveform,
+                ),
+              ),
             ),
           ),
         ),

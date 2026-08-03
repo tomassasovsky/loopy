@@ -53,7 +53,12 @@ void main() {
     );
     addTearDown(frame.dispose);
 
-    await tester.pumpWidget(WaveformWindowApp(frame: frame, title: 'Output'));
+    final readout = ValueNotifier(const PerformanceReadout());
+    addTearDown(readout.dispose);
+
+    await tester.pumpWidget(
+      WaveformWindowApp(frame: frame, readout: readout, title: 'Output'),
+    );
     await tester.pump();
 
     expect(find.byType(WaveformView), findsOneWidget);
