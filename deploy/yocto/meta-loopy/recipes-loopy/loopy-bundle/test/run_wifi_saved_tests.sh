@@ -70,8 +70,8 @@ echo "a saved network that is out of range is still listed"
 setup
 SAVED="Cafe" run scan
 check "listed" yes "$(grep -q '"ssid":"Cafe"' "$work/stdout" && echo yes || echo no)"
-check "flagged saved, signal -1" yes \
-    "$(grep -q '"ssid":"Cafe","signal":-1,"secured":true,"saved":true' "$work/stdout" && echo yes || echo no)"
+check "flagged saved and out of range" yes \
+    "$(grep -q '"ssid":"Cafe","signal":0,"secured":true,"saved":true,"inRange":false' "$work/stdout" && echo yes || echo no)"
 teardown
 
 echo "an in-range network that is saved is marked, not duplicated"
@@ -80,14 +80,14 @@ SAVED="Studio" run scan
 check "exactly one entry" 1 \
     "$(grep -o '"ssid":"Studio"' "$work/stdout" | wc -l | tr -d ' ')"
 check "marked saved" yes \
-    "$(grep -q '"ssid":"Studio","signal":70,"secured":true,"saved":true' "$work/stdout" && echo yes || echo no)"
+    "$(grep -q '"ssid":"Studio","signal":70,"secured":true,"saved":true,"inRange":true' "$work/stdout" && echo yes || echo no)"
 teardown
 
 echo "an unsaved network is marked unsaved"
 setup
 SAVED="" run scan
 check "saved:false" yes \
-    "$(grep -q '"ssid":"Studio","signal":70,"secured":true,"saved":false' "$work/stdout" && echo yes || echo no)"
+    "$(grep -q '"ssid":"Studio","signal":70,"secured":true,"saved":false,"inRange":true' "$work/stdout" && echo yes || echo no)"
 teardown
 
 echo "the network the user just picked outranks the saved ones"

@@ -248,20 +248,23 @@ do_scan_nm() {
     # A saved network that is out of range still belongs in the list. Otherwise
     # the only way to forget one is to be connected to it, which is impossible
     # precisely when the saved profile is the thing that will not connect
-    # (#471). Signal -1 marks "saved, not seen right now".
+    # (#471). inRange says whether the scan actually saw it — carried
+    # explicitly because signal is dBm on some paths and 0-100 quality on
+    # others, so no sentinel value is safe.
     saved=$(mktemp)
     saved_ssids >"$saved"
     while IFS= read -r name; do
         [ -n "$name" ] || continue
         if ! cut -f1 "$ranked" | grep -qxF "$name"; then
-            printf '%s\t-1\ttrue\n' "$name" >>"$ranked"
+            printf '%s\t0\ttrue\tfalse\n' "$name" >>"$ranked"
         fi
     done <"$saved"
 
     first=1
     printf '['
-    while IFS="$(printf '\t')" read -r ssid signal secured; do
+    while IFS="$(printf '\t')" read -r ssid signal secured in_range; do
         [ -n "$ssid" ] || continue
+        [ -n "$in_range" ] || in_range=true
         is_saved=false
         grep -qxF "$ssid" "$saved" && is_saved=true
         if [ "$first" -eq 1 ]; then
@@ -269,8 +272,8 @@ do_scan_nm() {
         else
             printf ','
         fi
-        printf '{"ssid":"%s","signal":%s,"secured":%s,"saved":%s}' \
-            "$(json_escape "$ssid")" "$signal" "$secured" "$is_saved"
+        printf '{"ssid":"%s","signal":%s,"secured":%s,"saved":%s,"inRange":%s}' \
+            "$(json_escape "$ssid")" "$signal" "$secured" "$is_saved" "$in_range"
     done <"$ranked"
     printf ']\n'
     rm -f "$raw" "$ranked" "$saved"
