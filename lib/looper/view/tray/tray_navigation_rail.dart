@@ -21,10 +21,13 @@ class TrayNavigationRail extends StatelessWidget {
   /// Creates a [TrayNavigationRail].
   const TrayNavigationRail({super.key});
 
-  /// Rail width. Wide enough for the icon plus a two-line caption at the tile
-  /// caption's own size, so a rail item and a tile read as the same species
-  /// of control.
-  static const double _width = 84;
+  /// Rail width. Sized for an icon beside a full-size label, because the rail
+  /// is a navigation spine and should read as one — a column of icon-over-
+  /// caption tiles reads as more of the tile grid the rail exists to replace.
+  ///
+  /// From the redesign mockups (#490); the earlier 84px stacked form was built
+  /// without them, since the decision record carries no diagrams.
+  static const double _width = 132;
 
   static const double _itemGap = 4;
 
@@ -98,9 +101,13 @@ class TrayNavigationRail extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: kTrayHandleHeight),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   for (final target in SettingsTrayDestination.values) ...[
                     const SizedBox(height: _itemGap),
+                    // Stretch so every pill is the rail's width: ragged pills
+                    // sized to their own text read as chips, not as rows of
+                    // one list.
                     _RailItem(
                       key: Key('settingsTrayRail_${target.name}'),
                       icon: _iconFor(target),
@@ -120,7 +127,7 @@ class TrayNavigationRail extends StatelessWidget {
   }
 }
 
-/// One rail entry: icon over caption, accent-tinted and pill-backed while it
+/// One rail entry: icon beside label, accent-tinted and pill-backed while it
 /// is the showing destination.
 class _RailItem extends StatelessWidget {
   const _RailItem({
@@ -150,28 +157,31 @@ class _RailItem extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 11),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(_radius),
           color: selected
               ? surface.accent.withValues(alpha: 0.18)
               : Colors.transparent,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        // Icon beside the label, one row per destination. The label is at
+        // reading size rather than caption size: this is the surface you aim
+        // at to change what the sheet is showing, not a dense tile.
+        child: Row(
           children: [
-            Icon(icon, color: tint, size: 24),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: tint,
-                fontSize: 10,
-                height: 1.1,
-                fontWeight: FontWeight.w600,
+            Icon(icon, color: tint, size: 20),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: tint,
+                  fontSize: 14,
+                  height: 1.1,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                ),
               ),
             ),
           ],
