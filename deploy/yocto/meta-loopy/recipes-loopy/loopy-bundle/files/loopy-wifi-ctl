@@ -9,21 +9,15 @@
 #   forget <ssid>          {}
 #   radio on|off           {}  (Control Center tap toggle)
 #
-# Backend selection:
-#   1) NetworkManager / nmcli when present (Yocto NM images)
-#   2) else wpa_cli + wpa_supplicant (older images / live-patched helpers)
-# Returning supported:false only when *neither* stack is available — otherwise
-# Control Center shows "WiFi only on appliance" even though the radio works.
+# NetworkManager owns the radio, and nothing else may. There is deliberately no
+# second backend: see reclaim_wifi below for what having one cost us (#468).
 set -eu
 
 IFACE="${LOOPY_WIFI_IFACE:-wlan0}"
-# Keep wpa_supplicant.conf on /data so the fallback path survives A/B OTA too.
-CONF="${LOOPY_WPA_CONF:-/data/wpa_supplicant/wpa_supplicant-${IFACE}.conf}"
-CTRL_DIR="${LOOPY_WPA_CTRL:-/run/wpa_supplicant}"
-CONNECT_WAIT_SECS="${LOOPY_WIFI_CONNECT_TIMEOUT:-45}"
-# NM gets a shorter budget so we can fall back to wpa_supplicant quickly.
-NM_CONNECT_WAIT_SECS="${LOOPY_WIFI_NM_CONNECT_TIMEOUT:-20}"
-CONNECT_TIMEOUT_SECS="${LOOPY_WIFI_CONNECT_TIMEOUT:-45}"
+# The join budget. This was 20s while a wpa_supplicant fallback existed, so a
+# slow AP would trip it and hand the radio away; with nothing to fall back to,
+# waiting is strictly better than failing.
+NM_CONNECT_WAIT_SECS="${LOOPY_WIFI_NM_CONNECT_TIMEOUT:-45}"
 # Prefer WiFi over the ephemeral wired profile (autoconnect-priority -999).
 WIFI_AUTOCONNECT_PRIORITY="${LOOPY_WIFI_AUTOCONNECT_PRIORITY:-100}"
 
@@ -34,52 +28,37 @@ json_escape() {
 }
 
 have_nmcli() { command -v nmcli >/dev/null 2>&1; }
-have_wpa_cli() { command -v wpa_cli >/dev/null 2>&1; }
+# The appliance image always ships NetworkManager, so it is the single owner
+# of the radio. There used to be a wpa_supplicant fallback here for when an NM
+# join failed. It was worse than the problem: taking over meant setting wlan0
+# `managed no`, which made every later call pick the fallback again, so a
+# console ran our supplicant and NM's dbus-owned one at the same time. Two
+# supplicants on one interface tear down each other's association — the AP saw
+# the console reconnect every few seconds forever. See #468.
 
-# Prefer NM when it still owns the iface; once we hand wlan0 to wpa
-# (managed no), keep using wpa so status/scan/connect stay coherent.
-wifi_backend() {
-    if have_nmcli; then
-        nm_state=$(nmcli -t -f GENERAL.STATE device show "$IFACE" 2>/dev/null \
-            | head -n1 || true)
-        case "$nm_state" in
-            *unmanaged*)
-                if have_wpa_cli; then
-                    printf '%s\n' wpa
-                    return 0
-                fi
-                ;;
-        esac
-        printf '%s\n' nm
-    elif have_wpa_cli; then
-        printf '%s\n' wpa
-    else
-        printf '%s\n' none
-    fi
-}
-
-# Release wlan0 from NetworkManager so wpa_supplicant can own association.
-# Never killall wpa_supplicant — that breaks NM's dbus-owned instance.
-nm_release_wifi() {
+# Undo that state if an older image (or a live-patched helper) left it behind,
+# so the first run after an update repairs the console instead of inheriting a
+# radio nobody owns.
+reclaim_wifi() {
     have_nmcli || return 0
-    nmcli device disconnect "$IFACE" >/dev/null 2>&1 || true
-    nmcli device set "$IFACE" managed no >/dev/null 2>&1 || true
-}
-
-# Ask NetworkManager to take wlan0 back (e.g. after forget/radio-off cleanup).
-nm_claim_wifi() {
-    have_nmcli || return 0
-    nmcli device set "$IFACE" managed yes >/dev/null 2>&1 || true
-}
-
-dhcp_wifi() {
-    [ -n "$(iface_ip)" ] && return 0
-    if command -v udhcpc >/dev/null 2>&1; then
-        udhcpc -i "$IFACE" -n -q -t 5 >/dev/null 2>&1 || true
-    elif command -v dhclient >/dev/null 2>&1; then
-        dhclient -1 "$IFACE" >/dev/null 2>&1 || true
+    # Only ever our own supplicant, matched by its config path. NM's instance
+    # is `wpa_supplicant -u` and killing it would take WiFi down entirely.
+    if [ -d /proc ]; then
+        for pid in /proc/[0-9]*; do
+            [ -r "$pid/cmdline" ] || continue
+            if tr '\0' ' ' <"$pid/cmdline" 2>/dev/null \
+                | grep -q "wpa_supplicant-${IFACE}.conf"; then
+                log "killing a stale fallback supplicant (${pid##*/})"
+                kill "${pid##*/}" 2>/dev/null || true
+            fi
+        done
     fi
-    [ -n "$(iface_ip)" ]
+    case "$(nmcli -t -f GENERAL.STATE device show "$IFACE" 2>/dev/null | head -n1)" in
+        *unmanaged*)
+            log "reclaiming $IFACE for NetworkManager"
+            nmcli device set "$IFACE" managed yes >/dev/null 2>&1 || true
+            ;;
+    esac
 }
 
 disable_powersave() {
@@ -98,9 +77,48 @@ iface_enabled() {
 
 # ---------- NetworkManager path ----------
 
+# What wpa_supplicant said while this join was being attempted. NetworkManager
+# is not a reliable narrator here, so go to the source.
+JOURNALCTL="${LOOPY_JOURNALCTL:-journalctl}"
+JOIN_EVIDENCE_WINDOW="${LOOPY_JOIN_EVIDENCE_WINDOW:-90}"
+
+supplicant_evidence() {
+    "$JOURNALCTL" --since "-${JOIN_EVIDENCE_WINDOW}s" --no-pager 2>/dev/null \
+        | grep -a wpa_supplicant || true
+}
+
+# NetworkManager reports `Secrets were required` for two unrelated things, and
+# on this console it is nearly always the wrong one.
+#
+# A headless appliance runs no secret agent. So when an association times out,
+# NM's fallback is to ask for fresh secrets, find nobody to ask, and fail the
+# connection as `no-secrets` — even when it logged "secrets exist, no new
+# secrets needed" moments earlier. Believing it tells the user to re-enter a
+# password that is provably correct, and hides an AP that accepted the
+# association and then never started the handshake.
+#
+# wpa_supplicant distinguishes the two plainly, so ask it instead and only fall
+# back to NM's wording when it has nothing to say.
 map_connect_error() {
     err=$1
     lower=$(printf '%s' "$err" | tr '[:upper:]' '[:lower:]')
+    evidence=$(supplicant_evidence)
+
+    # A real key failure: the AP sent M1 and the MIC did not check out.
+    if printf '%s' "$evidence" | grep -qiE \
+        '4-way handshake failed|pre-shared key may be incorrect|reason=wrong_key'
+    then
+        log "authentication failed (wrong password?)"
+        return 0
+    fi
+    # Associated, then silence. The key was never tested.
+    if printf '%s' "$evidence" | grep -qiE \
+        'authentication with .* timed out|association took too long'
+    then
+        log "timed out waiting for association"
+        return 0
+    fi
+
     if printf '%s' "$lower" | grep -qE \
         'secrets were required|no secrets|property is missing|wrong[^[:space:]]*password'
     then
@@ -285,339 +303,30 @@ do_disconnect_nm() {
     echo '{}'
 }
 
-# ---------- wpa_supplicant path ----------
-
-wpa_ok() {
-    out=$(wpa_cli -i "$IFACE" "$@" 2>&1) || true
-    case "$out" in
-        OK*) return 0 ;;
-        *)
-            log "wpa_cli $* -> $out"
-            return 1
-            ;;
-    esac
-}
-
-ensure_conf() {
-    mkdir -p "$(dirname "$CONF")"
-    if [ ! -f "$CONF" ]; then
-        cat >"$CONF" <<EOF
-ctrl_interface=DIR=${CTRL_DIR}
-update_config=1
-EOF
-        return 0
-    fi
-    if grep -q 'GROUP=netdev' "$CONF" 2>/dev/null \
-        && ! grep -q '^netdev:' /etc/group 2>/dev/null; then
-        sed -i 's/ GROUP=netdev//' "$CONF"
-    fi
-}
-
-ensure_wpa() {
-    ensure_conf
-    mkdir -p "$CTRL_DIR"
-    if wpa_cli -i "$IFACE" ping >/dev/null 2>&1; then
-        disable_powersave
-        return 0
-    fi
-    if command -v systemctl >/dev/null 2>&1 \
-        && systemctl start "wpa_supplicant@${IFACE}.service" 2>/dev/null; then
-        sleep 0.5
-    fi
-    if ! wpa_cli -i "$IFACE" ping >/dev/null 2>&1; then
-        if ! command -v wpa_supplicant >/dev/null 2>&1; then
-            log "wpa_supplicant not installed"
-            return 1
-        fi
-        wpa_supplicant -B -i "$IFACE" -c "$CONF" || true
-        sleep 0.5
-    fi
-    disable_powersave
-    wpa_cli -i "$IFACE" ping >/dev/null 2>&1
-}
-
-wpa_state() {
-    wpa_cli -i "$IFACE" status 2>/dev/null | sed -n 's/^wpa_state=//p' | head -n1
-}
-
-network_temp_disabled() {
-    id=$1
-    wpa_cli -i "$IFACE" list_networks 2>/dev/null \
-        | awk -v id="$id" 'NR>1 && $1==id {print; exit}' \
-        | grep -q 'TEMP-DISABLED'
-}
-
-wait_for_completed() {
-    id=$1
-    i=0
-    while [ "$i" -lt "$CONNECT_TIMEOUT_SECS" ]; do
-        state=$(wpa_state)
-        if [ "$state" = "COMPLETED" ]; then
-            return 0
-        fi
-        # brcmfmac often sticks on ASSOCIATED without ever reporting
-        # COMPLETED even after the 4-way handshake is done — probe DHCP.
-        if [ "$state" = "ASSOCIATED" ]; then
-            dhcp_wifi || true
-            if [ -n "$(iface_ip)" ]; then
-                return 0
-            fi
-        fi
-        if network_temp_disabled "$id"; then
-            log "authentication failed for network $id (wrong password?)"
-            return 1
-        fi
-        sleep 1
-        i=$((i + 1))
-    done
-    state=$(wpa_state)
-    if [ "$state" = "COMPLETED" ]; then
-        return 0
-    fi
-    if [ "$state" = "ASSOCIATED" ]; then
-        dhcp_wifi || true
-        [ -n "$(iface_ip)" ] && return 0
-    fi
-    log "timed out waiting for association (state=${state:-unknown})"
-    return 1
-}
-
-do_status_wpa() {
-    enabled=false
-    iface_enabled && enabled=true
-    if [ "$enabled" != true ]; then
-        echo '{"supported":true,"enabled":false,"connected":false,"ssid":"","ip":"","signal":0}'
-        return 0
-    fi
-    state=$(wpa_cli -i "$IFACE" status 2>/dev/null || true)
-    if [ -z "$state" ]; then
-        echo '{"supported":true,"enabled":true,"connected":false,"ssid":"","ip":"","signal":0}'
-        return 0
-    fi
-    wpa_st=$(printf '%s\n' "$state" | sed -n 's/^wpa_state=//p' | head -n1)
-    ssid=$(printf '%s\n' "$state" | sed -n 's/^ssid=//p' | head -n1)
-    signal=$(printf '%s\n' "$state" | sed -n 's/^rssi=//p' | head -n1)
-    if [ -z "$signal" ] || [ "$signal" = "0" ]; then
-        signal=$(wpa_cli -i "$IFACE" signal_poll 2>/dev/null \
-            | sed -n 's/^RSSI=//p' | head -n1)
-    fi
-    [ -n "$signal" ] || signal=0
-    ip=$(iface_ip)
-    connected=false
-    if [ "$wpa_st" = "COMPLETED" ] || {
-        [ "$wpa_st" = "ASSOCIATED" ] && [ -n "$ip" ]
-    }; then
-        connected=true
-    fi
-    printf '{"supported":true,"enabled":true,"connected":%s,"ssid":"%s","ip":"%s","signal":%s}\n' \
-        "$connected" "$(json_escape "$ssid")" "$(json_escape "${ip:-}")" "$signal"
-}
-
-do_radio_wpa() {
-    onoff=$1
-    case "$onoff" in on|off) ;; *) log "radio needs on|off"; return 2 ;; esac
-    if [ "$onoff" = on ]; then
-        ip link set "$IFACE" up 2>/dev/null || true
-        ensure_wpa || return 1
-        disable_powersave
-    else
-        wpa_cli -i "$IFACE" disconnect >/dev/null 2>&1 || true
-        ip link set "$IFACE" down 2>/dev/null || true
-    fi
-    echo '{}'
-}
-
-do_scan_wpa() {
-    ensure_wpa || {
-        echo '[]'
-        return 1
-    }
-    disable_powersave
-    wpa_cli -i "$IFACE" scan >/dev/null 2>&1 || true
-    sleep 3
-    results=$(wpa_cli -i "$IFACE" scan_results 2>/dev/null | tail -n +2 || true)
-    if [ -z "$results" ]; then
-        sleep 2
-        results=$(wpa_cli -i "$IFACE" scan_results 2>/dev/null | tail -n +2 || true)
-    fi
-    tmp=$(mktemp)
-    printf '%s\n' "$results" | while IFS= read -r line; do
-        [ -n "$line" ] || continue
-        ssid=$(printf '%s\n' "$line" | awk '{
-            for (i=5; i<=NF; i++) printf "%s%s", (i>5?" ":""), $i
-        }')
-        [ -n "$ssid" ] || continue
-        signal=$(printf '%s\n' "$line" | awk '{print $3}')
-        flags=$(printf '%s\n' "$line" | awk '{print $4}')
-        secured=false
-        case "$flags" in *WPA*|*WEP*|*RSN*) secured=true ;; esac
-        printf '{"ssid":"%s","signal":%s,"secured":%s}\n' \
-            "$(json_escape "$ssid")" "${signal:-0}" "$secured"
-    done >"$tmp"
-    first=1
-    printf '['
-    while IFS= read -r obj; do
-        [ -n "$obj" ] || continue
-        if [ "$first" -eq 1 ]; then
-            first=0
-        else
-            printf ','
-        fi
-        printf '%s' "$obj"
-    done <"$tmp"
-    printf ']\n'
-    rm -f "$tmp"
-}
-
-do_forget_wpa() {
-    ssid=$1
-    ensure_wpa || return 1
-    list=$(wpa_cli -i "$IFACE" list_networks 2>/dev/null | tail -n +2 || true)
-    printf '%s\n' "$list" | while IFS= read -r line; do
-        [ -n "$line" ] || continue
-        id=$(printf '%s\n' "$line" | cut -f1)
-        net_ssid=$(printf '%s\n' "$line" | cut -f2)
-        if [ "$net_ssid" = "$ssid" ]; then
-            wpa_cli -i "$IFACE" remove_network "$id" >/dev/null || true
-        fi
-    done
-    wpa_cli -i "$IFACE" save_config >/dev/null || true
-    echo '{}'
-}
-
-do_connect_wpa() {
-    ssid=$1
-    psk=${2:-}
-    # Hand the radio to wpa_supplicant. NM's brcmfmac path often associates
-    # then never finishes the 4-way handshake ("association took too long").
-    nm_release_wifi
-    ip link set "$IFACE" up 2>/dev/null || true
-    ensure_wpa || return 1
-    disable_powersave
-    do_forget_wpa "$ssid" >/dev/null 2>&1 || true
-    id=$(wpa_cli -i "$IFACE" add_network | tr -d '[:space:]')
-    case "$id" in ''|*[!0-9]*) log "add_network failed: $id"; return 1 ;; esac
-
-    wpa_ok set_network "$id" ssid "\"$ssid\"" || return 1
-
-    if [ -n "$psk" ]; then
-        if command -v wpa_passphrase >/dev/null 2>&1; then
-            hex=$(wpa_passphrase "$ssid" "$psk" 2>/dev/null \
-                | awk -F= '/^[[:space:]]*psk=/ {print $2; exit}')
-            if [ -z "$hex" ]; then
-                log "invalid passphrase for '$ssid'"
-                wpa_cli -i "$IFACE" remove_network "$id" >/dev/null 2>&1 || true
-                return 1
-            fi
-            wpa_ok set_network "$id" psk "$hex" || return 1
-        else
-            wpa_ok set_network "$id" psk "\"$psk\"" || return 1
-        fi
-        wpa_ok set_network "$id" key_mgmt WPA-PSK || return 1
-        wpa_ok set_network "$id" proto RSN || true
-        wpa_ok set_network "$id" pairwise CCMP || true
-    else
-        wpa_ok set_network "$id" key_mgmt NONE || return 1
-    fi
-
-    wpa_ok enable_network "$id" || return 1
-    wpa_ok select_network "$id" || return 1
-    wpa_cli -i "$IFACE" save_config >/dev/null 2>&1 || true
-
-    if ! wait_for_completed "$id"; then
-        # One more DHCP probe — handshake may have finished without COMPLETED.
-        dhcp_wifi || true
-        if [ -z "$(iface_ip)" ]; then
-            wpa_cli -i "$IFACE" disable_network "$id" >/dev/null 2>&1 || true
-            return 1
-        fi
-    fi
-
-    dhcp_wifi || true
-    i=0
-    while [ "$i" -lt 8 ]; do
-        [ -n "$(iface_ip)" ] && break
-        sleep 1
-        i=$((i + 1))
-    done
-    if [ -z "$(iface_ip)" ]; then
-        log "associated but got no IPv4 address"
+# Every verb repairs the ownership state first: it is idempotent, costs one
+# nmcli read, and means a console does not stay broken until someone reboots it.
+require_nm() {
+    if ! have_nmcli; then
+        log "NetworkManager (nmcli) is not installed"
         return 1
     fi
-
-    echo '{}'
+    reclaim_wifi
 }
-
-do_disconnect_wpa() {
-    ensure_wpa || return 1
-    wpa_cli -i "$IFACE" disconnect >/dev/null || true
-    echo '{}'
-}
-
-# ---------- dispatch ----------
 
 do_status() {
-    case "$(wifi_backend)" in
-        nm) do_status_nm ;;
-        wpa) do_status_wpa ;;
-        *)
-            echo '{"supported":false,"enabled":false,"connected":false,"ssid":"","ip":"","signal":0}'
-            ;;
-    esac
-}
-
-do_radio() {
-    case "$(wifi_backend)" in
-        nm) do_radio_nm "$@" ;;
-        wpa) do_radio_wpa "$@" ;;
-        *) log "no wifi backend (need nmcli or wpa_cli)"; return 1 ;;
-    esac
-}
-
-do_scan() {
-    case "$(wifi_backend)" in
-        nm) do_scan_nm ;;
-        wpa) do_scan_wpa ;;
-        *)
-            echo '[]'
-            return 1
-            ;;
-    esac
-}
-
-do_connect() {
-    # NM join is preferred for persistence, but brcmfmac + NM commonly fails
-    # the 4-way handshake. Fall back to wpa_supplicant takeover so the
-    # console actually gets online.
-    if have_nmcli; then
-        if do_connect_nm "$@"; then
-            return 0
-        fi
-        log "NM join failed; falling back to wpa_supplicant"
+    if ! have_nmcli; then
+        echo '{"supported":false,"enabled":false,"connected":false,"ssid":"","ip":"","signal":0}'
+        return 0
     fi
-    if have_wpa_cli; then
-        do_connect_wpa "$@"
-        return $?
-    fi
-    log "no wifi backend (need nmcli or wpa_cli)"
-    return 1
+    reclaim_wifi
+    do_status_nm
 }
 
-do_disconnect() {
-    case "$(wifi_backend)" in
-        nm) do_disconnect_nm ;;
-        wpa) do_disconnect_wpa ;;
-        *) log "no wifi backend (need nmcli or wpa_cli)"; return 1 ;;
-    esac
-}
-
-do_forget() {
-    case "$(wifi_backend)" in
-        nm) do_forget_nm "$@" ;;
-        wpa) do_forget_wpa "$@" ;;
-        *) log "no wifi backend (need nmcli or wpa_cli)"; return 1 ;;
-    esac
-}
+do_radio() { require_nm && do_radio_nm "$@"; }
+do_scan() { require_nm || { echo '[]'; return 1; }; do_scan_nm; }
+do_connect() { require_nm && do_connect_nm "$@"; }
+do_disconnect() { require_nm && do_disconnect_nm; }
+do_forget() { require_nm && do_forget_nm "$@"; }
 
 usage() {
     log "usage: $0 status|scan|connect <ssid> [psk]|disconnect|forget <ssid>|radio on|off"
