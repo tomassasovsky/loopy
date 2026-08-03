@@ -113,10 +113,36 @@ teardown
 echo "no supplicant evidence at all"
 setup
 run_connect
-# Nothing to go on: fall back to NM's own wording rather than inventing a
-# verdict. Reporting "the network did not respond" with no evidence would be
-# the same mistake in the other direction.
-check "falls back to NM's reading" yes "$(said 'wrong password')"
+# Deliberately NOT NM's reading. On a headless appliance there is no secret
+# agent, so `no-secrets` is what EVERY activation failure decays into — it is
+# a statement about the missing agent, not about the key. Absent evidence that
+# a supplicant actually tested the key, the honest answer is that the join did
+# not finish. #459 is what the other choice costs.
+check "does not blame the password" no "$(said 'wrong password')"
+check "reports the join as not completing" yes "$(said 'timed out waiting')"
+teardown
+
+echo "iwd reports a real key failure"
+setup
+# The evidence grep matched only wpa_supplicant until #470 swapped the
+# supplicant out from under it — which silently reclassified every genuine
+# wrong password as a timeout. Whatever drives the radio must be readable here.
+supplicant_logged <<'LOG'
+Aug 03 05:00:00 pi iwd[452]: wlan0: 4-Way Handshake failed - pre-shared key may be incorrect
+LOG
+run_connect
+check "blames the password" yes "$(said 'wrong password')"
+teardown
+
+echo "NetworkManager alone says no-secrets"
+setup
+supplicant_logged <<'LOG'
+Aug 03 05:00:00 pi NetworkManager[614]: <warn> device (wlan0): no secrets: No agents were available for this request.
+Aug 03 05:00:00 pi NetworkManager[614]: <warn> device (wlan0): Activation: (wifi) association took too long
+LOG
+run_connect
+check "reads the association timeout, not the agent" yes "$(said 'timed out waiting')"
+check "does not blame the password" no "$(said 'wrong password')"
 teardown
 
 echo "evidence names a handshake failure AND a later timeout"
