@@ -239,6 +239,10 @@ class _TrackCell extends StatelessWidget {
       'recording' => surface.ledRed,
       'overdubbing' => surface.ledAmber,
       'playing' => surface.ledGreen,
+      // Brighter than [empty]'s tertiary: a stopped track still HOLDS audio,
+      // and rendering it identically to a never-recorded one is the readout
+      // lying about the one thing it exists to report.
+      'stopped' => surface.textSecondary,
       _ => surface.textTertiary,
     };
   }
@@ -250,6 +254,7 @@ class _TrackCell extends StatelessWidget {
       'recording' => l10n.readoutStateRecording,
       'overdubbing' => l10n.readoutStateOverdubbing,
       'playing' => l10n.readoutStatePlaying,
+      'stopped' => l10n.readoutStateStopped,
       _ => l10n.readoutStateEmpty,
     };
   }

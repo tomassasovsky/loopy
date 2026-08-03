@@ -4,6 +4,7 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/visualizer/performance_readout.dart';
 import 'package:loopy/visualizer/performance_readout_view.dart';
+import 'package:loopy_engine/loopy_engine.dart' show TrackState;
 
 void main() {
   const readout = PerformanceReadout(
@@ -105,6 +106,37 @@ void main() {
       // showing the raw mode, never to showing the wrong one.
       await pump(tester, const PerformanceReadout(mode: 'custom'));
       expect(find.text('CUSTOM'), findsOneWidget);
+    });
+
+    testWidgets('gives every engine TrackState its own label — only empty '
+        'may read EMPTY', (tester) async {
+      // Driven by TrackState.values, NOT by a hand-listed set: the states I
+      // remembered were four of five, and `stopped` (which retains its loop
+      // buffer) silently rendered as EMPTY. Anything added to the engine enum
+      // fails here until the readout has a word for it.
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+
+      for (final state in TrackState.values) {
+        await pump(
+          tester,
+          PerformanceReadout(
+            tracks: [ReadoutTrack(name: 'Drums', state: state.name)],
+          ),
+        );
+
+        final readsEmpty = find
+            .text(l10n.readoutStateEmpty)
+            .evaluate()
+            .isNotEmpty;
+        expect(
+          readsEmpty,
+          state == TrackState.empty,
+          reason: state == TrackState.empty
+              ? 'empty must read EMPTY'
+              : '${state.name} renders as EMPTY — a track holding audio is '
+                    'being reported as having none',
+        );
+      }
     });
 
     testWidgets('shows a dash for tempo before the engine reports one', (
