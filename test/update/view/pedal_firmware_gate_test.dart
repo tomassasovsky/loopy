@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,26 +7,62 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/update/cubit/pedal_firmware_cubit.dart';
 import 'package:loopy/update/view/pedal_firmware_gate.dart';
+import 'package:update_repository/update_repository.dart';
 
-class _StubCubit extends Cubit<PedalFirmwareState>
-    implements PedalFirmwareCubit {
-  _StubCubit(super.initialState);
+/// Drives the real cubit rather than a stand-in, so these assertions are about
+/// what a user would actually see for a given helper response.
+class _FakeBackend implements PlatformUpdateBackend {
+  _FakeBackend({this.pending, this.flashError});
 
-  int dismissCalls = 0;
+  final String? pending;
+  final Object? flashError;
+  final progress = StreamController<double>();
 
   @override
-  void dismiss() {
-    dismissCalls++;
-    emit(const PedalFirmwareState(stage: PedalFirmwareStage.idle));
+  bool get isSupported => true;
+
+  @override
+  Future<String?> pendingPedalFirmware() async => pending;
+
+  @override
+  Stream<double> flashPedalFirmware() {
+    if (flashError != null) return Stream.error(flashError!);
+    return progress.stream;
   }
 
   @override
-  Future<void> run() async {}
+  String get channel => 'experimental';
+
+  @override
+  Future<void> setChannel(String channel) async {}
+
+  @override
+  Future<Version> currentVersion() async => Version.none;
+
+  @override
+  Future<Version> stagedVersion() async => Version.none;
+
+  @override
+  Future<UpdateManifest?> fetchManifest() async => null;
+
+  @override
+  Stream<double> downloadAndStage(UpdateManifest manifest) =>
+      const Stream.empty();
+
+  @override
+  Future<void> applyAndRestart() async {}
 }
 
 void main() {
-  Future<void> pumpGate(WidgetTester tester, _StubCubit cubit) {
-    return tester.pumpWidget(
+  Future<PedalFirmwareCubit> pumpGate(
+    WidgetTester tester,
+    _FakeBackend backend,
+  ) async {
+    final cubit = PedalFirmwareCubit(
+      updates: UpdateRepository(backend: backend),
+    );
+    addTearDown(cubit.close);
+    await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.neon,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -37,6 +75,7 @@ void main() {
         ),
       ),
     );
+    return cubit;
   }
 
   testWidgets('draws nothing while the answer is still unknown', (
@@ -44,10 +83,17 @@ void main() {
   ) async {
     // The check resolves in milliseconds on desktop; flashing a screen for it
     // would be worse than not having one.
-    final cubit = _StubCubit(const PedalFirmwareState());
-    addTearDown(cubit.close);
+    await pumpGate(tester, _FakeBackend());
 
-    await pumpGate(tester, cubit);
+    expect(find.byKey(const Key('pedal_firmware_gate')), findsNothing);
+    expect(find.byKey(const Key('looper')), findsOneWidget);
+  });
+
+  testWidgets('nothing pending leaves the looper alone', (tester) async {
+    final cubit = await pumpGate(tester, _FakeBackend());
+
+    await cubit.run();
+    await tester.pump();
 
     expect(find.byKey(const Key('pedal_firmware_gate')), findsNothing);
     expect(find.byKey(const Key('looper')), findsOneWidget);
@@ -56,18 +102,17 @@ void main() {
   testWidgets('shows progress and seals the looper off while flashing', (
     tester,
   ) async {
-    final cubit = _StubCubit(
-      const PedalFirmwareState(
-        stage: PedalFirmwareStage.flashing,
-        version: '0.4.0',
-        progress: 0.4,
-      ),
-    );
-    addTearDown(cubit.close);
+    final backend = _FakeBackend(pending: '0.4.0');
+    final cubit = await pumpGate(tester, backend);
 
-    await pumpGate(tester, cubit);
+    unawaited(cubit.run());
+    await tester.pump();
+    await tester.pump();
+    backend.progress.add(0.4);
+    await tester.idle();
+    await tester.pump();
+
     final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-
     expect(find.text(l10n.pedalFirmwareGateTitle), findsOneWidget);
     expect(find.textContaining('0.4.0'), findsOneWidget);
     expect(
@@ -85,33 +130,28 @@ void main() {
       find.byKey(const Key('pedal_firmware_gate_barrier')),
     );
     expect(barrier.dismissible, isFalse);
+
+    await backend.progress.close();
   });
 
   testWidgets('a failure explains itself and lets the user through', (
     tester,
   ) async {
-    final cubit = _StubCubit(
-      const PedalFirmwareState(
-        stage: PedalFirmwareStage.failed,
-        version: '0.4.0',
-        error: 'avrdude failed',
-      ),
+    final cubit = await pumpGate(
+      tester,
+      _FakeBackend(pending: '0.4.0', flashError: Exception('avrdude failed')),
     );
-    addTearDown(cubit.close);
 
-    await pumpGate(tester, cubit);
+    await cubit.run();
+    await tester.pump();
+
     final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-
     expect(find.text(l10n.pedalFirmwareGateFailedTitle), findsOneWidget);
-    expect(
-      find.byKey(const Key('pedal_firmware_gate_progress')),
-      findsNothing,
-    );
+    expect(find.byKey(const Key('pedal_firmware_gate_progress')), findsNothing);
 
     await tester.tap(find.byKey(const Key('pedal_firmware_gate_continue')));
     await tester.pumpAndSettle();
 
-    expect(cubit.dismissCalls, 1);
     expect(find.byKey(const Key('pedal_firmware_gate')), findsNothing);
     expect(find.byKey(const Key('looper')), findsOneWidget);
   });
