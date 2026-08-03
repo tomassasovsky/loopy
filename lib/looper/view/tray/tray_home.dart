@@ -111,39 +111,75 @@ class TrayHome extends StatelessWidget {
       ),
     ];
 
-    // The block caps at two columns of [_maxCardExtent] plus the brightness
-    // column, and centres in whatever pane it is given. It grows into a
-    // larger pane only up to that cap — past it the pane keeps the slack
-    // rather than the cards.
-    const blockWidth = _maxCardExtent * 2 + _gap * 2 + _brightnessWidth;
-    const blockHeight = _maxCardExtent * 2 + _gap;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // The block is sized from the grid's ACTUAL shape, not an assumed
+        // 2x2: `_maxCardExtent` is a cap on a *card*, so the block has to
+        // grow with the row and column count or the cap silently stops
+        // governing card size as destinations are added.
+        final columns = _columnsFor(
+          constraints.maxWidth - _brightnessWidth - _gap,
+          cards.length,
+        );
+        final rows = (cards.length + columns - 1) ~/ columns;
 
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(
-          maxWidth: blockWidth,
-          maxHeight: blockHeight,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(child: _CardGrid(cards: cards)),
-            const SizedBox(width: _gap),
-            // Taller than the old 56x212 stub — it tracks the card block
-            // rather than the whole pane, so it reads as part of the same
-            // object.
-            SizedBox(
-              width: _brightnessWidth,
-              child: TrayBrightnessSlider(
-                value: state.brightness,
-                onChanged: (value) => unawaited(cubit.setBrightness(value)),
-              ),
+        // Solve for one square cell that fits both axes, capped at
+        // [_maxCardExtent], then size the block to exactly that many cells.
+        // Sizing the block EXPLICITLY rather than via a max-constraint
+        // matters: under the loose constraints a `Center` hands down, a
+        // stretch `Row` takes its cross-axis extent from its children's
+        // intrinsics, so a maximum alone leaves the height to whatever the
+        // brightness slider happens to report.
+        final cell = [
+          (constraints.maxWidth -
+                  _brightnessWidth -
+                  _gap -
+                  (columns - 1) * _gap) /
+              columns,
+          (constraints.maxHeight - (rows - 1) * _gap) / rows,
+          _maxCardExtent,
+        ].reduce((a, b) => a < b ? a : b).clamp(0.0, _maxCardExtent);
+
+        final blockWidth =
+            columns * cell + (columns - 1) * _gap + _gap + _brightnessWidth;
+        final blockHeight = rows * cell + (rows - 1) * _gap;
+
+        return Center(
+          child: SizedBox(
+            width: blockWidth,
+            height: blockHeight,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _CardGrid(cards: cards, columns: columns),
+                ),
+                const SizedBox(width: _gap),
+                // Taller than the old 56x212 stub — it tracks the card block
+                // rather than the whole pane, so it reads as part of the same
+                // object.
+                SizedBox(
+                  width: _brightnessWidth,
+                  child: TrayBrightnessSlider(
+                    value: state.brightness,
+                    onChanged: (value) => unawaited(cubit.setBrightness(value)),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
+
+  /// Column count for [cardCount] cards in [gridWidth] of space.
+  ///
+  /// The one place this is decided: [TrayHome] needs it to size the block and
+  /// [_CardGrid] needs it to lay the cards out, and the two disagreeing is
+  /// exactly how the block stops matching its contents.
+  static int _columnsFor(double gridWidth, int cardCount) =>
+      gridWidth >= _twoColumnMinWidth && cardCount > 1 ? 2 : 1;
 }
 
 /// Lays [cards] out as an even grid that fills its box — one column when
@@ -154,46 +190,41 @@ class TrayHome extends StatelessWidget {
 /// which nested `Expanded`s express directly. A `GridView` would size cells
 /// from a cross-axis extent and leave the main axis to scroll.
 class _CardGrid extends StatelessWidget {
-  const _CardGrid({required this.cards});
+  const _CardGrid({required this.cards, required this.columns});
 
   final List<Widget> cards;
 
+  /// Column count, decided by [TrayHome] so the block it sizes and the grid
+  /// it contains can never disagree.
+  final int columns;
+
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns =
-            constraints.maxWidth >= TrayHome._twoColumnMinWidth &&
-                cards.length > 1
-            ? 2
-            : 1;
-        final rows = (cards.length + columns - 1) ~/ columns;
+    final rows = (cards.length + columns - 1) ~/ columns;
 
-        return Column(
-          children: [
-            for (var row = 0; row < rows; row++) ...[
-              if (row > 0) const SizedBox(height: TrayHome._gap),
-              Expanded(
-                child: Row(
-                  children: [
-                    for (var column = 0; column < columns; column++) ...[
-                      if (column > 0) const SizedBox(width: TrayHome._gap),
-                      Expanded(
-                        // The last row can be short of a full set of cards;
-                        // the empty cell holds the grid's shape rather than
-                        // letting the final card stretch across it.
-                        child:
-                            cards.elementAtOrNull(row * columns + column) ??
-                            const SizedBox.shrink(),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ],
-        );
-      },
+    return Column(
+      children: [
+        for (var row = 0; row < rows; row++) ...[
+          if (row > 0) const SizedBox(height: TrayHome._gap),
+          Expanded(
+            child: Row(
+              children: [
+                for (var column = 0; column < columns; column++) ...[
+                  if (column > 0) const SizedBox(width: TrayHome._gap),
+                  Expanded(
+                    // The last row can be short of a full set of cards;
+                    // the empty cell holds the grid's shape rather than
+                    // letting the final card stretch across it.
+                    child:
+                        cards.elementAtOrNull(row * columns + column) ??
+                        const SizedBox.shrink(),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

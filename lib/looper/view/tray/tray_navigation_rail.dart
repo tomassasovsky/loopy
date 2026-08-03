@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/cubit/settings_tray_cubit.dart';
+import 'package:loopy/looper/view/tray/tray_metrics.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 
@@ -92,7 +93,7 @@ class TrayNavigationRail extends StatelessWidget {
               // The drag handle rides at the open panel's bottom edge, over
               // the rail's last band — pad past it so a future destination
               // cannot land under a control that closes the tray.
-              padding: const EdgeInsets.only(bottom: _handleOverlap),
+              padding: const EdgeInsets.only(bottom: kTrayHandleHeight),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -116,11 +117,6 @@ class TrayNavigationRail extends StatelessWidget {
     );
   }
 }
-
-/// Height of the tray's drag handle, which overlaps the rail's bottom edge
-/// while the tray is open. Kept in sync with `_TrayHandle.height` by the
-/// widget test that taps rail background.
-const double _handleOverlap = 21;
 
 /// One rail entry: icon over caption, accent-tinted and pill-backed while it
 /// is the showing destination.

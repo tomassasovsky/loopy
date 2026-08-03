@@ -248,7 +248,11 @@ class _TrayHandle extends StatelessWidget {
   /// position the handle at the drawer's own bottom edge, not just its own
   /// intrinsic size, since it's wrapped in an `AnimatedPositioned` with no
   /// `bottom`/`height` of its own.
-  static const double height = 21;
+  ///
+  /// Shared with the navigation rail, which pads its scroll view past this
+  /// band so no rail item can sit under the handle. Change it here and the
+  /// rail follows.
+  static const double height = kTrayHandleHeight;
 
   @override
   Widget build(BuildContext context) {
