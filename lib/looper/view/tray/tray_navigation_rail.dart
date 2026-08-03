@@ -188,15 +188,18 @@ class _RailItem extends StatelessWidget {
             Icon(icon, color: tint, size: 20),
             const SizedBox(width: 9),
             Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: tint,
-                  fontSize: 14,
-                  height: 1.1,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              child: Transform.translate(
+                offset: const Offset(0, 1),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: tint,
+                    fontSize: 14,
+                    height: 1.1,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             ),
