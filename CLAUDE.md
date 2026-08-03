@@ -2,6 +2,11 @@
 
 Guidance for any agent session in this repo. Keep it lean — it loads into every session.
 
+## Engineering principles
+
+How to make design and implementation calls in this repo lives in
+**`AGENTS.md`** at the repo root — read it before designing anything.
+
 ## Build / test / environment
 
 Canonical build, test, and environment gotchas live in **`docs/PROGRESS.md`** —
