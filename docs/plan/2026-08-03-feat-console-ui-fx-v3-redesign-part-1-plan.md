@@ -93,8 +93,8 @@ Key files (all paths repo-relative):
   retires the Signal push; Settings keeps its own page (nesting the settings
   page's own rail inside the tray's rail is not on the table).
 - **`dragProgress` stays the only open/closed bit.** A destination must never
-  become a second, desyncable "is it open" signal. `closeTray` keeps resetting
-  the destination to `home`.
+  become a second "is it open" signal that can drift out of sync with it.
+  `closeTray` keeps resetting the destination to `home`.
 
 ## Tasks
 

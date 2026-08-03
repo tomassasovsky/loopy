@@ -178,7 +178,7 @@ be reachable and behave identically.
 - **Risk:** the tray is drag-driven off a single `dragProgress` field. A rail
   changes what "open" means (height depends on destination). Keep
   `dragProgress` as the only open/closed source of truth; destination must not
-  become a second, desyncable open bit.
+  become a second open bit that can drift out of sync with it.
 
 ### Part 2 — 7″ permanent performance readout
 
@@ -320,8 +320,9 @@ The data part, and the largest. No UI.
   Custom mode's slots resolve through the same machinery, and
   `releaseAllMomentary()` stays the one enforcement point.
 - `InteractionMode.bootDefaults` excludes `fx` on purpose (R12: booting into a
-  dead surface). Custom mode has the same hazard — an unconfigured Custom mode
-  is ten dead switches. Exclude it from boot defaults for the same reason.
+  dead surface). Custom mode has the same hazard — a Custom mode with nothing
+  assigned to it is ten dead switches. Exclude it from boot defaults for the
+  same reason.
 - Carries a `blocked-verify` hardware slice: mode cycle on a real pedal, and a
   v3 pedal receiving a v4-mode frame.
 
