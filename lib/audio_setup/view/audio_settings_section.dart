@@ -96,19 +96,24 @@ class AudioSettingsSection extends StatelessWidget {
             includeSystemDefault: !consoleMode,
           ),
         ],
-        // MIDI foot-controller + pedal LED pickers are desktop-only. On the
-        // console the Pro Micro is fixed hardware (#331) — no chooser UI.
+        // The MIDI foot-controller PICKER is desktop-only: on the console the
+        // Pro Micro is fixed hardware that auto-detect binds by product name
+        // (#421), so a chooser would only offer the one answer.
         if (!consoleMode) ...[
           const SizedBox(height: 28),
           const MidiDevicePicker(),
-          const SizedBox(height: 28),
-          const PedalSettingsSection(),
-          const SizedBox(height: 28),
-          // External MIDI mappings (part 7) sit under the MIDI input picker
-          // they listen through: the device chosen above is the one a learn
-          // captures from, and a row goes inert when it disconnects.
-          const MidiLearnSection(),
         ],
+        // CONFIGURING the pedal is not the same as choosing it, and hiding
+        // both together left the console — the build most likely to need a
+        // footswitch remapped — with no route to the assignment surface at
+        // all. These stay on every build; the sections drop their own
+        // device-chooser bits on console.
+        const SizedBox(height: 28),
+        const PedalSettingsSection(),
+        const SizedBox(height: 28),
+        // External MIDI mappings (part 7) listen through the bound input —
+        // chosen above on desktop, auto-detected on console.
+        const MidiLearnSection(),
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.sampleRateGroup),
         const SizedBox(height: 12),
