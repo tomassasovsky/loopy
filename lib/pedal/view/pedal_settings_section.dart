@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:loopy/common/console_mode.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/pedal/cubit/pedal_cubit.dart';
 import 'package:loopy/pedal/view/pedal_assignment_page.dart';
@@ -27,7 +28,20 @@ const _kPedalVersionUnknownValue = 0;
 /// state frames to.
 class PedalSettingsSection extends StatelessWidget {
   /// Creates a [PedalSettingsSection].
-  const PedalSettingsSection({super.key});
+  const PedalSettingsSection({this.consoleMode = kConsoleMode, super.key});
+
+  /// Whether this is the floor-console build. Defaults to [kConsoleMode].
+  ///
+  /// Console hides the parts that CHOOSE hardware — the output picker and the
+  /// manual firmware-version gate — because auto-detect binds the pedal by
+  /// product name (#421) and the flasher records what it wrote (#427), so both
+  /// controls would be stale hand-cranks for values the appliance already
+  /// knows.
+  ///
+  /// It does NOT hide the parts that CONFIGURE it. Bind assignments and the
+  /// bind-status line stay: the console is the build most likely to need a
+  /// footswitch remapped, and it is the only one with no other way in.
+  final bool consoleMode;
 
   @override
   Widget build(BuildContext context) {
@@ -42,23 +56,29 @@ class PedalSettingsSection extends StatelessWidget {
       children: [
         SetupGroupLabel(l10n.pedalOutputGroup),
         const SizedBox(height: 12),
-        if (outputs.isEmpty && boundId == null)
-          const _PedalEmptyState()
-        else
-          _PedalDropdown(
-            outputs: outputs,
-            boundId: boundId,
-            onSelectNone: cubit.selectNone,
-            onSelected: cubit.selectOutput,
-          ),
-        const SizedBox(height: 12),
+        if (!consoleMode) ...[
+          if (outputs.isEmpty && boundId == null)
+            const _PedalEmptyState()
+          else
+            _PedalDropdown(
+              outputs: outputs,
+              boundId: boundId,
+              onSelectNone: cubit.selectNone,
+              onSelected: cubit.selectOutput,
+            ),
+          const SizedBox(height: 12),
+        ],
+        // Kept on console: with no picker there, this line is the ONLY way to
+        // see whether auto-detect actually found the pedal.
         _PedalStatusLine(
           status: cubit.state.bindStatus,
           deviceName: _boundName(outputs, boundId),
         ),
         const SizedBox(height: 12),
-        Text(l10n.pedalOutputHint, style: setupBody),
-        const SizedBox(height: 24),
+        if (!consoleMode) ...[
+          Text(l10n.pedalOutputHint, style: setupBody),
+          const SizedBox(height: 24),
+        ],
         // No hint line under this one: the assignment page opens with the
         // same sentence, so repeating it here only costs height.
         Align(
@@ -73,12 +93,14 @@ class PedalSettingsSection extends StatelessWidget {
         const SizedBox(height: 24),
         SetupGroupLabel(l10n.pedalFirmwareGroup),
         const SizedBox(height: 12),
-        _PedalFirmwareVersionDropdown(
-          firmwareVersion: cubit.state.firmwareVersion,
-          onSelected: cubit.selectFirmwareVersion,
-        ),
-        const SizedBox(height: 12),
-        Text(l10n.pedalFirmwareHint, style: setupBody),
+        if (!consoleMode) ...[
+          _PedalFirmwareVersionDropdown(
+            firmwareVersion: cubit.state.firmwareVersion,
+            onSelected: cubit.selectFirmwareVersion,
+          ),
+          const SizedBox(height: 12),
+          Text(l10n.pedalFirmwareHint, style: setupBody),
+        ],
         // The condition itself is the cubit's (it reads the repository's
         // resolved wire version) — this only renders the answer.
         if (cubit.state.firmwareUpdateAvailable) ...[
