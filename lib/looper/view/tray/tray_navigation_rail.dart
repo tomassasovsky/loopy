@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:loopy/l10n/l10n.dart';
@@ -67,64 +69,75 @@ class TrayNavigationRail extends StatelessWidget {
     final destination = context.watch<SettingsTrayCubit>().state.destination;
     final cubit = context.read<SettingsTrayCubit>();
 
-    return SizedBox(
-      width: _width,
-      // The rail absorbs taps that miss an item. Without this they fall
-      // through to the panel's full-bleed dismiss detector and close the
-      // tray — fine for the home face's tile grid (Control Center dismisses
-      // on a miss), wrong for a persistent navigation surface you are aiming
-      // at.
-      //
-      // `excludeFromSemantics` because this detector exists purely to stop
-      // pointers: left in the tree it collapses the whole rail into one
-      // tappable node whose activation does nothing, so a screen reader
-      // offers a no-op action over the real items.
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        excludeFromSemantics: true,
-        onTap: () {},
-        child: Semantics(
-          explicitChildNodes: true,
-          label: l10n.a11yTrayRail,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              border: Border(
-                right: BorderSide(
-                  color: surface.line.withValues(alpha: 0.4),
+    // Clamped rather than fixed: a sheet narrower than the rail's natural
+    // width would otherwise overflow the item Row. Real on a small display,
+    // not only in a test harness.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth.isFinite
+            ? math.min(_width, constraints.maxWidth)
+            : _width;
+        return SizedBox(
+          width: width,
+          // The rail absorbs taps that miss an item. Without this they fall
+          // through to the panel's full-bleed dismiss detector and close the
+          // tray — fine for the home face's tile grid (Control Center
+          // dismisses on a miss), wrong for a persistent navigation
+          // surface you are aiming at.
+          //
+          // `excludeFromSemantics` because this detector exists purely to stop
+          // pointers: left in the tree it collapses the whole rail into one
+          // tappable node whose activation does nothing, so a screen reader
+          // offers a no-op action over the real items.
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            excludeFromSemantics: true,
+            onTap: () {},
+            child: Semantics(
+              explicitChildNodes: true,
+              label: l10n.a11yTrayRail,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border(
+                    right: BorderSide(
+                      color: surface.line.withValues(alpha: 0.4),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            child: SingleChildScrollView(
-              // The drag handle rides at the open panel's bottom edge, over
-              // the rail's last band — pad past it so a future destination
-              // cannot land under a control that closes the tray.
-              padding: const EdgeInsets.only(bottom: kTrayHandleHeight),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  spacing: _itemGap,
-                  children: [
-                    for (final target in SettingsTrayDestination.values) ...[
-                      // Stretch so every pill is the rail's width: ragged pills
-                      // sized to their own text read as chips, not as rows of
-                      // one list.
-                      _RailItem(
-                        key: Key('settingsTrayRail_${target.name}'),
-                        icon: _iconFor(target),
-                        label: _labelFor(l10n, target),
-                        selected: destination == target,
-                        onTap: () => cubit.showDestination(target),
-                      ),
-                    ],
-                  ],
+                child: SingleChildScrollView(
+                  // The drag handle rides at the open panel's bottom edge, over
+                  // the rail's last band — pad past it so a future destination
+                  // cannot land under a control that closes the tray.
+                  padding: const EdgeInsets.only(bottom: kTrayHandleHeight),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      spacing: _itemGap,
+                      children: [
+                        for (final target
+                            in SettingsTrayDestination.values) ...[
+                          // Stretch so every pill spans the rail: pills
+                          // sized to their own text read as chips, not
+                          // as rows of one list.
+                          _RailItem(
+                            key: Key('settingsTrayRail_${target.name}'),
+                            icon: _iconFor(target),
+                            label: _labelFor(l10n, target),
+                            selected: destination == target,
+                            onTap: () => cubit.showDestination(target),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
