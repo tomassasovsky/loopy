@@ -1236,6 +1236,8 @@
     "@wifiEmptyNetworks": {
         "description": "Empty state when a WiFi scan returns no SSIDs."
     },
+    "wifiSavedLabel": "Guardada",
+    "wifiSavedOutOfRange": "Guardada · fuera de alcance",
     "wifiSecuredLabel": "Protegida",
     "@wifiSecuredLabel": {
         "description": "Subtitle fragment for a password-protected WiFi network."

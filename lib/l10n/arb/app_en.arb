@@ -1698,6 +1698,14 @@
     "@wifiEmptyNetworks": {
         "description": "Empty state when a WiFi scan returns no SSIDs."
     },
+    "wifiSavedLabel": "Saved",
+    "@wifiSavedLabel": {
+        "description": "Marks a network whose password the console already has stored."
+    },
+    "wifiSavedOutOfRange": "Saved · not in range",
+    "@wifiSavedOutOfRange": {
+        "description": "Marks a saved network the last scan did not see."
+    },
     "wifiSecuredLabel": "Secured",
     "@wifiSecuredLabel": {
         "description": "Subtitle fragment for a password-protected WiFi network."
