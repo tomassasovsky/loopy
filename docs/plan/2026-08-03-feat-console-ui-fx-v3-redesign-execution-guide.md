@@ -34,16 +34,23 @@ issue: 442
 
 ## Status
 
-**Next up:** **part 1** (drawer rail) is in review as
-[#480](https://github.com/tomassasovsky/loopy/pull/480), which also carries
-the plan docs. **Parts 3 and 7 are unblocked and independent** — 7 is the
-cheapest win (it closes filed bug #440, and only needs part 1's rail as a
-mount point), 3 is the long pole. Running them in parallel sessions is the
-fastest path to something usable on hardware.
+**Next up:** part 1 is MERGED (#480) and part 7 is in review (#485). **Part 3
+(racks) is the next real work** — it is the long pole and has no in-epic
+dependencies. Part 2 (7" readout) is also unblocked and independent.
 
-Part 1 dropped the Tuner *tile* from the home face (the rail item replaces
-it) and therefore needs no `openTuner()` on the cubit — `showDestination` is
-the rail's single entry point. Parts 4/5/7 should follow the same shape.
+Before starting part 3, land
+[#389](https://github.com/tomassasovsky/loopy/issues/389): it rewrites the
+same persistence paths and is a `plan-gate` direction call, so it is cheaper
+to settle first than to unpick afterwards.
+
+Two shapes parts 4/5 should copy from 1 and 7:
+- The cubit has ONE destination entry point, `showDestination`. Part 1 dropped
+  the Tuner *tile* (the rail item replaces it) and therefore needs no
+  `openTuner()`; a per-destination opener with no production caller is dead
+  code with a passing test in front of it.
+- `_iconFor`, `_labelFor` and the panel's face switch are all exhaustive over
+  `SettingsTrayDestination`, so adding a value breaks the build in every place
+  that must change. Part 7 confirmed this works — keep it.
 
 Part 1's split amended two index assumptions the code contradicted: the tray
 is already near-fullscreen with a destination-keyed face switcher, and the
@@ -80,13 +87,13 @@ Related work that is **not** in this epic but touches the same code:
 
 | Part | Scope | Model / effort | Autonomy | Depends on | Status |
 |------|-------|----------------|----------|------------|--------|
-| [1](2026-08-03-feat-console-ui-fx-v3-redesign-part-1-plan.md) | drawer navigation rail (shell only) | Opus · medium | `merge-gate` | — | in-review (#480) |
+| [1](2026-08-03-feat-console-ui-fx-v3-redesign-part-1-plan.md) | drawer navigation rail (shell only) | Opus · medium | `merge-gate` | — | merged (#480) |
 | 2 | 7″ permanent performance readout | Opus · medium | `merge-gate` | — | pending |
 | 3 | rack domain + global library + migration | **Fable · high** | `merge-gate` | — | pending |
 | 4 | FX panel: stage tabs + rack UI | Opus · high | `merge-gate` | 1, 3 | pending |
 | 5 | Routing panel: stage tabs | Opus · high | `merge-gate` | 1, 4 | pending |
 | 6 | three-state live-monitor control | Opus · high | `merge-gate` | 3, 4 | pending |
-| [7](2026-08-03-feat-console-ui-fx-v3-redesign-part-7-plan.md) | Pedal panel as a rail destination (#440) | Sonnet · medium | `auto` | 1 | built, PR held until 1 merges |
+| [7](2026-08-03-feat-console-ui-fx-v3-redesign-part-7-plan.md) | Pedal panel as a rail destination (#440) | Sonnet · medium | `auto` | 1 | in-review (#485) |
 | 8 | Custom pedal mode + protocol v4 | **Fable · high** | `merge-gate` (hardware slice `blocked-verify`) | 7 | pending |
 | 9 | hardening: goldens, soak, docs | Opus · medium | `blocked-verify` | all | pending |
 
