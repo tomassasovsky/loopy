@@ -54,6 +54,22 @@ class SystemApplianceEnv implements ApplianceEnv {
   @override
   Stream<double> stage(String version) => _runHelper(['install', version]);
 
+  @override
+  Stream<double> flashPedal() => _runHelper(['flash-pedal']);
+
+  @override
+  Future<String?> pedalPending() async {
+    try {
+      final result = await Process.run(helperPath, const ['pedal-pending']);
+      if (result.exitCode != 0) return null;
+      final version = '${result.stdout}'.trim();
+      return version.isEmpty ? null : version;
+    } on Exception {
+      // Helper missing / old image: no gate, rather than no app.
+      return null;
+    }
+  }
+
   /// Runs the privileged helper with [args], republishing its
   /// `PROGRESS <0-100>` lines as `[0, 1]` and throwing with the collected
   /// stderr on a non-zero exit.

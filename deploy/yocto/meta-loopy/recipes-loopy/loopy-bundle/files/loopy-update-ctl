@@ -244,6 +244,47 @@ pedal_touch_reset() {
     sleep 2
 }
 
+# What the pedal is running, as recorded by the last successful flash.
+# 0.0.0 stands for "never flashed by us", which always looks out of date.
+pedal_current_version() {
+    version=""
+    if [ -f "$PEDAL_STATE_FILE" ]; then
+        version=$(cut -d' ' -f1 "$PEDAL_STATE_FILE" 2>/dev/null || true)
+    fi
+    [ -n "$version" ] || version=0.0.0
+    printf '%s\n' "$version"
+}
+
+# Prints the firmware version this pedal is about to be flashed with, or
+# nothing. Only the app calls this, to decide whether to put a blocking
+# "finishing update" screen in front of the looper: programming drops the pedal
+# into its bootloader, where the footswitches are dead and the ring is dark, so
+# a user left in the looper would read the update as a broken pedal.
+#
+# Everything that is not "yes, work is about to happen" is silence and exit 0 —
+# no firmware published, already up to date, pedal unplugged, no network. The
+# gate is a courtesy; refusing to start the app because the manifest was
+# unreachable would be a far worse failure than not showing it.
+do_pedal_pending() {
+    channel=$(resolve_channel)
+    work=$(mktemp -d /tmp/loopy-pedal-pending.XXXXXX)
+    trap 'rm -rf "$work"' EXIT
+
+    curl -fsSL --max-time 10 -o "$work/manifest.json" \
+        "$BASE_URL/$channel/manifest.json" 2>/dev/null || return 0
+
+    fw_version=$(jq -r '.pedalFirmware.version // empty' "$work/manifest.json" \
+        2>/dev/null || echo "")
+    [ -n "$fw_version" ] || return 0
+    [ "$(pedal_current_version)" != "$fw_version" ] || return 0
+
+    # No pedal, no flash, so no gate — the app must not stall on a console
+    # whose pedal is simply unplugged.
+    pedal_port >/dev/null 2>&1 || return 0
+
+    printf '%s\n' "$fw_version"
+}
+
 do_flash_pedal() {
     command -v "$AVRDUDE" >/dev/null 2>&1 || { log "avrdude not installed"; return 1; }
     channel=$(resolve_channel)
@@ -270,11 +311,7 @@ do_flash_pedal() {
         return 0
     fi
 
-    current=0.0.0
-    if [ -f "$PEDAL_STATE_FILE" ]; then
-        current=$(cut -d' ' -f1 "$PEDAL_STATE_FILE" 2>/dev/null || echo "0.0.0")
-        [ -n "$current" ] || current=0.0.0
-    fi
+    current=$(pedal_current_version)
     if [ "$current" = "$fw_version" ]; then
         log "pedal already runs $fw_version; nothing to do"
         progress 100
@@ -413,7 +450,8 @@ do_reconcile_staged() {
 case "${1:-}" in
     install)          do_install ;;
     flash-pedal)      do_flash_pedal ;;
+    pedal-pending)    do_pedal_pending ;;
     reconcile-staged) do_reconcile_staged ;;
     reboot)           log "rebooting into the staged slot"; exec systemctl reboot ;;
-    *)                log "usage: loopy-update-ctl {install|flash-pedal|reconcile-staged|reboot}"; exit 2 ;;
+    *)                log "usage: loopy-update-ctl {install|flash-pedal|pedal-pending|reconcile-staged|reboot}"; exit 2 ;;
 esac

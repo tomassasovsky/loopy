@@ -102,6 +102,27 @@
             }
         }
     },
+    "pedalFirmwareGateTitle": "Finishing update",
+    "@pedalFirmwareGateTitle": {
+        "description": "Shown full-screen while the pedal's firmware is being flashed after an OS update."
+    },
+    "pedalFirmwareGateBody": "Updating your pedal to {version}. Its footswitches and lights are off until this finishes — don't unplug it.",
+    "@pedalFirmwareGateBody": {
+        "description": "Body of the pedal firmware gate. {version} is a semantic version.",
+        "placeholders": { "version": { "type": "String" } }
+    },
+    "pedalFirmwareGateFailedTitle": "Pedal update didn't finish",
+    "@pedalFirmwareGateFailedTitle": {
+        "description": "Shown when flashing the pedal firmware failed."
+    },
+    "pedalFirmwareGateFailedBody": "Your pedal still works on its previous firmware. Loopy will try again next time it starts.",
+    "@pedalFirmwareGateFailedBody": {
+        "description": "Reassurance shown when the pedal firmware flash failed."
+    },
+    "pedalFirmwareGateContinue": "Continue",
+    "@pedalFirmwareGateContinue": {
+        "description": "Button that dismisses the failed pedal firmware gate and opens the looper."
+    },
     "dismiss": "Dismiss",
     "waveformWindowFailedBanner": "The waveform display didn't open — check the second screen.",
     "@waveformWindowFailedBanner": {

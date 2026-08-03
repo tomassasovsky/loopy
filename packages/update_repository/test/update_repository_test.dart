@@ -50,6 +50,18 @@ class _FakeBackend implements PlatformUpdateBackend {
 
   @override
   Future<void> applyAndRestart() async => applyCount++;
+
+  String? pending;
+  int flashCount = 0;
+
+  @override
+  Future<String?> pendingPedalFirmware() async => pending;
+
+  @override
+  Stream<double> flashPedalFirmware() {
+    flashCount++;
+    return Stream.fromIterable(const [0.5, 1.0]);
+  }
 }
 
 /// Builds a manifest with minor component [minor] (e.g. `_manifest(2)` ==
@@ -157,6 +169,23 @@ void main() {
         expect(backend.stagedArg, _manifest(2));
       },
     );
+
+    test('pendingPedalFirmware forwards to the backend', () async {
+      final backend = _FakeBackend()..pending = '0.4.0';
+
+      expect(
+        await UpdateRepository(backend: backend).pendingPedalFirmware(),
+        '0.4.0',
+      );
+    });
+
+    test('flashPedalFirmware forwards to the backend', () async {
+      final backend = _FakeBackend();
+
+      await UpdateRepository(backend: backend).flashPedalFirmware().toList();
+
+      expect(backend.flashCount, 1);
+    });
 
     test('applyAndRestart forwards to the backend', () async {
       final backend = _FakeBackend();
