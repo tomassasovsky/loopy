@@ -744,3 +744,13 @@ final class LooperOutputEnabledToggled extends LooperEvent {
   @override
   List<Object?> get props => [output, enabled];
 }
+
+/// A session load landed, so the bloc must write its chains back to the
+/// boot-restore keys — see `_resyncSessionChains`.
+///
+/// Named for the trigger rather than the work, like every other event here: a
+/// load is what HAPPENED; re-persisting is this bloc's response to it.
+final class LooperSessionLoaded extends LooperEvent {
+  /// Creates a [LooperSessionLoaded].
+  const LooperSessionLoaded();
+}
