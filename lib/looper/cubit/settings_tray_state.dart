@@ -16,6 +16,10 @@ enum SettingsTrayDestination {
   /// Tile grid + brightness.
   home,
 
+  /// In-tray pedal-assignment panel (#440) — the console's path to remapping
+  /// footswitches, which otherwise sits three levels deep in Settings.
+  pedal,
+
   /// In-tray tuner panel. Placement only — the tuner itself is not
   /// implemented, and this face says so.
   tuner,

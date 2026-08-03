@@ -86,7 +86,7 @@ Related work that is **not** in this epic but touches the same code:
 | 4 | FX panel: stage tabs + rack UI | Opus · high | `merge-gate` | 1, 3 | pending |
 | 5 | Routing panel: stage tabs | Opus · high | `merge-gate` | 1, 4 | pending |
 | 6 | three-state live-monitor control | Opus · high | `merge-gate` | 3, 4 | pending |
-| 7 | Pedal panel as a rail destination (#440) | Sonnet · medium | `auto` | 1 | pending |
+| [7](2026-08-03-feat-console-ui-fx-v3-redesign-part-7-plan.md) | Pedal panel as a rail destination (#440) | Sonnet · medium | `auto` | 1 | built, PR held until 1 merges |
 | 8 | Custom pedal mode + protocol v4 | **Fable · high** | `merge-gate` (hardware slice `blocked-verify`) | 7 | pending |
 | 9 | hardening: goldens, soak, docs | Opus · medium | `blocked-verify` | all | pending |
 
