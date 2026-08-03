@@ -155,18 +155,23 @@ Turn `SettingsTray` from a tile grid that pushes routes into a rail-driven
 panel host. No feature changes: every destination that exists today must still
 be reachable and behave identically.
 
+> **Amended when split** (see the [part 1 plan](2026-08-03-feat-console-ui-fx-v3-redesign-part-1-plan.md)):
+> the tray is *already* near-fullscreen and already swaps faces through an
+> `AnimatedSwitcher` keyed on destination, so there is no "grow the tray"
+> work; and the destination enum is **not** pre-populated with placeholders —
+> shipping dead FX/Routing/Pedal rail items is worse than letting parts 4, 5
+> and 7 each add their own enum value alongside their panel.
+
 - Widen `SettingsTrayDestination` (`settings_tray_state.dart:5`) from
-  `home | wifi | bluetooth` to the full destination set: `home`, `fx`,
-  `routing`, `pedal`, `tuner`, `wifi`, `bluetooth`, `settings`. Destinations
-  that later parts fill land as placeholders now, so no part after this one
-  touches the enum or the rail.
+  `home | wifi | bluetooth` with `tuner`, so the rail ships with the four
+  faces that exist today: Home, Tuner, WiFi, Bluetooth.
 - Add the rail widget and the panel host inside the tray; keep `_TrayHome`
   (`settings_tray.dart:430`) as the `home` destination so the tile grid does
   not disappear from under the user in one step.
-- The tray grows to near-fullscreen when a rail destination other than `home`
-  is showing. Drag-to-dismiss stays the single exit gesture.
-- `isNavigating` (`settings_tray_state.dart`) guarded route pushes stay for
-  `settings` and `signal` in this part; parts 4/5/7 convert them.
+- The rail hosts **in-tray faces only**. Settings and Signal keep their tiles
+  and their `isNavigating`-guarded route pushes; parts 4/5 convert them.
+- Drag-to-dismiss stays the single exit gesture, and `dragProgress` stays the
+  only open/closed bit.
 - `settings_tray.dart` is already 833 lines. Extract the rail, the panel host
   and each panel into their own files — widget classes, not `_build` methods
   [VGV].

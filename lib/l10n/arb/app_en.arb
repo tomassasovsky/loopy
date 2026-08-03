@@ -1332,6 +1332,14 @@
     "@trayBluetoothLabel": {
         "description": "Label for the settings tray's Bluetooth shortcut button (stub — no real functionality yet)."
     },
+    "trayHomeLabel": "Controls",
+    "@trayHomeLabel": {
+        "description": "Navigation rail entry for the settings tray's home face — the quick-access tiles and brightness slider."
+    },
+    "a11yTrayRail": "Tray destinations",
+    "@a11yTrayRail": {
+        "description": "Accessible label for the settings tray's vertical navigation rail, which selects which config face fills the open tray."
+    },
     "trayTunerLabel": "Tuner",
     "@trayTunerLabel": {
         "description": "Label for the settings tray's Tuner shortcut button (stub — no real functionality yet)."

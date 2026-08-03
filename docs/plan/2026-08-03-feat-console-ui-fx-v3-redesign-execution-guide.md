@@ -34,11 +34,17 @@ issue: 442
 
 ## Status
 
-**Next up:** nothing built yet. **Part 1** (drawer rail) is the natural first
-build — parts 4, 5 and 7 all mount into the shell it creates. **Part 7** is
-the cheapest win (it closes filed bug #440) and **part 3** is the long pole,
-so running 1, 3 and 7 in parallel is the fastest path to something usable on
-hardware.
+**Next up:** **part 1** (drawer rail) is split out and building — parts 4, 5
+and 7 all mount into the shell it creates. **Part 7** is the cheapest win (it
+closes filed bug #440) and **part 3** is the long pole, so running 3 and 7 in
+parallel sessions is the fastest path to something usable on hardware.
+
+Part 1's split amended two index assumptions the code contradicted: the tray
+is already near-fullscreen with a destination-keyed face switcher, and the
+destination enum is **not** pre-populated with placeholders — each of parts 4,
+5 and 7 adds its own enum value alongside its panel rather than shipping dead
+rail items. Later part splits should expect the same: the index is source
+material, the part file is canonical.
 
 **Direction decisions D1–D7** are pinned in the index plan's "Key Decisions"
 section and are not to be revisited by a part session. If a part discovers a
@@ -68,7 +74,7 @@ Related work that is **not** in this epic but touches the same code:
 
 | Part | Scope | Model / effort | Autonomy | Depends on | Status |
 |------|-------|----------------|----------|------------|--------|
-| 1 | drawer navigation rail (shell only) | Opus · medium | `merge-gate` | — | pending |
+| [1](2026-08-03-feat-console-ui-fx-v3-redesign-part-1-plan.md) | drawer navigation rail (shell only) | Opus · medium | `merge-gate` | — | pending |
 | 2 | 7″ permanent performance readout | Opus · medium | `merge-gate` | — | pending |
 | 3 | rack domain + global library + migration | **Fable · high** | `merge-gate` | — | pending |
 | 4 | FX panel: stage tabs + rack UI | Opus · high | `merge-gate` | 1, 3 | pending |

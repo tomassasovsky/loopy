@@ -2,6 +2,7 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +13,7 @@ import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/settings_tray_cubit.dart';
 import 'package:loopy/looper/cubit/tracks_cubit.dart';
 import 'package:loopy/looper/view/settings_tray.dart';
+import 'package:loopy/looper/view/tray/tray_navigation_rail.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
@@ -152,7 +154,6 @@ void main() {
       expect(find.byKey(const Key('settingsTray_signal')), findsOneWidget);
       expect(find.byKey(const Key('settingsTray_wifi')), findsOneWidget);
       expect(find.byKey(const Key('settingsTray_bluetooth')), findsOneWidget);
-      expect(find.byKey(const Key('settingsTray_tuner')), findsOneWidget);
       expect(
         find.byKey(const Key('settingsTray_brightness')),
         findsOneWidget,
@@ -245,7 +246,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  group('WiFi / Bluetooth / Tuner tiles', () {
+  group('WiFi / Bluetooth tiles and the Tuner face', () {
     testWidgets(
       'tapping WiFi while on turns radio off and stays on home',
       (tester) async {
@@ -401,28 +402,154 @@ void main() {
     );
 
     testWidgets(
-      'tapping Tuner opens a coming-soon stub and leaves the tray open',
+      'the Tuner is an in-tray face, not a dialog, and says it is not ready',
       (tester) async {
         cubit.open();
         await pump(tester);
         await tester.pump();
 
-        await tester.tap(find.byKey(const Key('settingsTray_tuner')));
+        await tester.tap(
+          find.byKey(const Key('settingsTrayRail_tuner')),
+        );
         await tester.pumpAndSettle();
 
         final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-        expect(find.byKey(const Key('comingSoonStub_dialog')), findsOneWidget);
+        expect(find.byKey(const Key('tuner_tray_panel')), findsOneWidget);
+        expect(find.byType(AlertDialog), findsNothing);
         expect(
           find.text(l10n.trayComingSoonMessage(l10n.trayTunerLabel)),
           findsOneWidget,
         );
         expect(cubit.state.dragProgress, 1);
 
-        await tester.tap(find.byKey(const Key('comingSoonStub_close')));
+        await tester.tap(find.byKey(const Key('tuner_back')));
         await tester.pumpAndSettle();
-        expect(find.byKey(const Key('comingSoonStub_dialog')), findsNothing);
+        expect(cubit.state.destination, SettingsTrayDestination.home);
       },
     );
+  });
+
+  group('navigation rail', () {
+    testWidgets('renders one item per in-tray destination', (tester) async {
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
+
+      for (final destination in SettingsTrayDestination.values) {
+        expect(
+          find.byKey(Key('settingsTrayRail_${destination.name}')),
+          findsOneWidget,
+          reason: 'no rail item for ${destination.name}',
+        );
+      }
+    });
+
+    testWidgets('selecting an item swaps the face without closing', (
+      tester,
+    ) async {
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('settingsTrayRail_bluetooth')));
+      await tester.pumpAndSettle();
+
+      expect(cubit.state.destination, SettingsTrayDestination.bluetooth);
+      expect(find.byKey(const Key('bluetooth_tray_panel')), findsOneWidget);
+      expect(cubit.state.dragProgress, 1);
+
+      await tester.tap(find.byKey(const Key('settingsTrayRail_home')));
+      await tester.pumpAndSettle();
+
+      expect(cubit.state.destination, SettingsTrayDestination.home);
+      expect(find.byKey(const Key('settingsTray_brightness')), findsOneWidget);
+    });
+
+    testWidgets('a tap that misses an item does not dismiss the tray', (
+      tester,
+    ) async {
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
+
+      // Below the last rail item, still inside the rail's own column: this
+      // lands on the rail background, which must absorb it rather than let it
+      // fall through to the panel's full-bleed dismiss detector.
+      //
+      // Deliberately NOT measured from the rail's bottom edge — the drag
+      // handle rides at the open panel's bottom edge, overlapping the rail's
+      // last 21px, so a tap there hits the handle and closes the tray for a
+      // completely different (correct) reason.
+      final rail = tester.getRect(find.byType(TrayNavigationRail));
+      final lastItem = tester.getRect(
+        find.byKey(const Key('settingsTrayRail_bluetooth')),
+      );
+      final tapPoint = Offset(rail.center.dx, lastItem.bottom + 40);
+      // Assert the point really is rail background before tapping, so a
+      // layout change fails here with an obvious reason rather than through
+      // the dragProgress assertion below.
+      expect(rail.contains(tapPoint), isTrue);
+
+      await tester.tapAt(tapPoint);
+      await tester.pumpAndSettle();
+
+      expect(cubit.state.dragProgress, 1);
+    });
+
+    testWidgets('is in the semantics tree only while the tray is open', (
+      tester,
+    ) async {
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+
+      await pump(tester);
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel(l10n.a11yTrayRail), findsNothing);
+
+      cubit.open();
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel(l10n.a11yTrayRail), findsOneWidget);
+    });
+
+    testWidgets('the tap-absorbing background is not itself an a11y action', (
+      tester,
+    ) async {
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
+
+      // The rail's opaque GestureDetector exists purely to stop pointers. If
+      // it stays in the semantics tree it collapses the rail into a single
+      // tappable node whose activation does nothing — so the rail's own
+      // labelled node must carry no tap action of its own.
+      final rail = tester.getSemantics(find.byType(TrayNavigationRail));
+      expect(
+        rail.getSemanticsData().hasAction(SemanticsAction.tap),
+        isFalse,
+      );
+    });
+
+    testWidgets('focus traversal runs rail before face', (tester) async {
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
+
+      // Tab from a cold start: the first stop must be the rail's first item,
+      // not a control on the face beside it. Keyboard and switch-access users
+      // otherwise land mid-face with no way back to navigation.
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+
+      final focused = primaryFocus;
+      expect(focused, isNotNull);
+      expect(
+        find.descendant(
+          of: find.byType(TrayNavigationRail),
+          matching: find.byWidget(focused!.context!.widget),
+        ),
+        findsOneWidget,
+        reason: 'first tab stop landed outside the rail',
+      );
+    });
   });
 
   group('isNavigating guard on Settings/Signal', () {

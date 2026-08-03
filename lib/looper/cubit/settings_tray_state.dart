@@ -1,10 +1,24 @@
 part of 'settings_tray_cubit.dart';
 
-/// Which face the open tray is showing — home tiles, or an in-tray WiFi /
-/// Bluetooth panel (Control-Center expand, not a full-screen route).
+/// Which face the open tray is showing — home tiles, or one of the in-tray
+/// config panels (Control-Center expand, not a full-screen route).
+///
+/// Every value here is a destination the tray's own navigation rail can
+/// select. Surfaces that still push a full-screen route (Settings, and the
+/// Signal page until the Routing panel lands) deliberately have no value:
+/// a rail item that navigates away would lie about what the rail is.
+///
+/// Later parts of the console redesign (#442) each add their own value here
+/// alongside the panel that fills it — the enum is not pre-populated with
+/// placeholders, because a rail item that does nothing when tapped is worse
+/// than a two-line enum edit.
 enum SettingsTrayDestination {
   /// Tile grid + brightness.
   home,
+
+  /// In-tray tuner panel. Placement only — the tuner itself is not
+  /// implemented, and this face says so.
+  tuner,
 
   /// In-tray WiFi panel.
   wifi,
