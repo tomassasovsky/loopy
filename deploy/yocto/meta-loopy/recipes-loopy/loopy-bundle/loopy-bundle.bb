@@ -213,6 +213,11 @@ do_install() {
     install -m 0644 ${UNPACKDIR}/loopy-nm-persist.service \
         ${D}${systemd_system_unitdir}/loopy-nm-persist.service
 
+    # Units masked by symlinking to /dev/null. The directory has to exist
+    # before anything links into it — putting a mask above this line is what
+    # broke the first build after #464.
+    install -d ${D}${sysconfdir}/systemd/system
+
     # Nothing on this board exposes /dev/ttyS0, so serial-getty@ttyS0 waits out
     # systemd's 90s device timeout on every boot — 90 seconds of a dark screen
     # on an appliance, for a console nobody uses (#464).
@@ -222,7 +227,6 @@ do_install() {
     # the image by packagegroup-base-wifi, and letting it get dbus-activated
     # alongside iwd would recreate the two-supplicants bug this release exists
     # to remove — so mask it rather than trust that nothing activates it.
-    install -d ${D}${sysconfdir}/systemd/system
     ln -sf /dev/null ${D}${sysconfdir}/systemd/system/wpa_supplicant.service
 
     # BlueZ has no keyfile.path equivalent, so loopy-bt-persist bind-mounts
