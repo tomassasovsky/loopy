@@ -34,14 +34,16 @@ issue: 442
 
 ## Status
 
-**Next up:** part 1 is MERGED (#480) and part 7 is in review (#485). **Part 3
-(racks) is the next real work** — it is the long pole and has no in-epic
-dependencies. Part 2 (7" readout) is also unblocked and independent.
+**Next up:** parts 1, 2 and 7 are MERGED (#480, #487, #485). **Part 3 (racks)
+is the next real work** — the long pole, no in-epic dependencies.
 
-Before starting part 3, land
-[#389](https://github.com/tomassasovsky/segno/issues/389): it rewrites the
-same persistence paths and is a `plan-gate` direction call, so it is cheaper
-to settle first than to unpick afterwards.
+[#389](https://github.com/tomassasovsky/segno/issues/389) is **merged**
+(#489): a session load owns the boot-restore settings keys. Plan:
+[2026-08-03-fix-session-load-owns-chain-settings-plan.md](2026-08-03-fix-session-load-owns-chain-settings-plan.md).
+That clears the persistence-path collision with part 3's format migration.
+
+Part 8 (Custom pedal mode + protocol v4) is also unblocked now that 7 is
+merged, but it needs a wire-format bump and carries a hardware-gated slice.
 
 Two shapes parts 4/5 should copy from 1 and 7:
 - The cubit has ONE destination entry point, `showDestination`. Part 1 dropped
@@ -74,10 +76,9 @@ machine and rots silently. Every UI part regenerates and eyeballs them;
 part 9 is the backstop, not the only pass.
 
 Related work that is **not** in this epic but touches the same code:
-- [#389](https://github.com/tomassasovsky/segno/issues/389) (`plan-gate`) — a
-  session load never writes applied chains back to settings, so a cold boot
-  resurrects the previous session's chains. Part 3 rewrites the same
-  persistence paths; schedule #389 **before** part 3, not after.
+- [#389](https://github.com/tomassasovsky/segno/issues/389) — **merged**
+  (#489). A session load owns the boot-restore settings keys. Landed before
+  part 3 so the racks migration is written once.
 - [#372](https://github.com/tomassasovsky/segno/issues/372) — virtual slider
   pots on the 7″, overlapping part 2's surface.
 - [#453](https://github.com/tomassasovsky/segno/issues/453) — persistent
@@ -88,12 +89,12 @@ Related work that is **not** in this epic but touches the same code:
 | Part | Scope | Model / effort | Autonomy | Depends on | Status |
 |------|-------|----------------|----------|------------|--------|
 | [1](2026-08-03-feat-console-ui-fx-v3-redesign-part-1-plan.md) | drawer navigation rail (shell only) | Opus · medium | `merge-gate` | — | merged (#480) |
-| 2 | 7″ permanent performance readout | Opus · medium | `merge-gate` | — | in-review (#487) |
+| 2 | 7″ permanent performance readout | Opus · medium | `merge-gate` | — | merged (#487) |
 | 3 | rack domain + global library + migration | **Fable · high** | `merge-gate` | — | pending |
 | 4 | FX panel: stage tabs + rack UI | Opus · high | `merge-gate` | 1, 3 | pending |
 | 5 | Routing panel: stage tabs | Opus · high | `merge-gate` | 1, 4 | pending |
 | 6 | three-state live-monitor control | Opus · high | `merge-gate` | 3, 4 | pending |
-| [7](2026-08-03-feat-console-ui-fx-v3-redesign-part-7-plan.md) | Pedal panel as a rail destination (#440) | Sonnet · medium | `auto` | 1 | in-review (#485) |
+| [7](2026-08-03-feat-console-ui-fx-v3-redesign-part-7-plan.md) | Pedal panel as a rail destination (#440) | Sonnet · medium | `auto` | 1 | merged (#485) |
 | 8 | Custom pedal mode + protocol v4 | **Fable · high** | `merge-gate` (hardware slice `blocked-verify`) | 7 | pending |
 | 9 | hardening: goldens, soak, docs | Opus · medium | `blocked-verify` | all | pending |
 
