@@ -256,6 +256,11 @@ D_M3      = 3.2      # M3 clearance (Pi/board standoffs)
 D_M2      = 2.4      # M2 clearance (external buck standoffs)
 D_M4      = 4.3      # M4 clearance (bottom plate -> shell)
 PEM_M4    = 6.3      # PEM M4 clinch hole (DISTINCT from M4 clearance)
+# --- powder-coat masking (annotation only; issue #396) ---
+# PEMs are clinched BEFORE the coating line, so the thread has to be plugged. The
+# earth stud needs a bare land on both faces or the ring terminal bonds to paint.
+MASK_PEM_D = 12.0    # silicone plug / masking disc over an M4 clinch thread
+MASK_GND_D = 20.0    # bare bonding land around the M6 earth stud
 PEM_EDGE  = 8.0      # min PEM centre-to-edge distance
 R_FILLET  = 3.0      # inside corner radius on rectangular cutouts
 
@@ -892,6 +897,10 @@ def _doc():
     doc.layers.add("WELD", color=6)
     doc.layers.add("NOTE", color=8)
     doc.layers.add("SILK", color=5)    # silkscreen (printed labels)
+    # MASK is annotation, never cut: rings around the features the powder coater
+    # has to keep bare (PEM threads, the earth stud's bonding land). Excluded from
+    # every area/extents pass the same way NOTE/ENGRAVE are.
+    doc.layers.add("MASK", color=1)
     return doc
 
 def _circle(msp, x, y, d, layer="CUT"):
@@ -1133,6 +1142,14 @@ def dxf_base(path):
     for f in (0.18, 0.5, 0.82):
         _circle(msp, BW*f, BD + SEAM_PEM_V, PEM_M4)                    # lid-lap PEM on the transition
                                                                        # (concentric with the lap M4s)
+        _circle(msp, BW*f, BD + SEAM_PEM_V, MASK_PEM_D, "MASK")        # keep the M4 thread bare
+    for c in io:                                                       # bonding land: paint is an
+        if c.get("ref") == "EARTH_STUD":                               # insulator, so the ring
+            _circle(msp, c["u"], c["v"], MASK_GND_D, "MASK")           # terminal needs bare metal
+    _text(msp, 8, BD+Hr+Ht+22, 7,
+          "MASK (rojo / no pintar): 3x rosca PEM M4 en la transicion + "
+          "zona de masa alrededor del perno M6 (ambas caras)", "MASK")
+
     _text(msp, 8, BD+Hr+Ht+10, 9,
           f"Segno BASE  2.0mm  x1  bottom + front/rear/sides fold up (bend ded {bdd:.2f}); WELD-FREE: rivet the 4 corners via L-brackets; rear 2nd fold = transition (flange FULL width, seats on the relieved side-wall tops); FOLD with the DRAWN side as the INSIDE face (canonical mirror: encoder lands on the player's LEFT)",
           "NOTE")
@@ -1182,8 +1199,10 @@ def dxf_screen_bracket(path):
     _poly(msp, [(0, 0), (bl, 0)], "BEND", closed=False)
     for x in (15, bl-15):
         _circle(msp, x, -bf/2.0, PEM_M4)
+        _circle(msp, x, -bf/2.0, MASK_PEM_D, "MASK")   # keep the M4 thread bare
         _circle(msp, x, bh/2.0, D_M4)
     _text(msp, 5, bh+6, 6, "Segno SCREEN BRACKET  2.0mm  x4 (16in) + x4 (7in)", "NOTE")
+    _text(msp, 5, bh+14, 5, "MASK (rojo / no pintar): 2x rosca PEM M4", "MASK")
     doc.saveas(path); return {}
 
 def dxf_post(path):
@@ -1651,7 +1670,7 @@ def dxf_to_pdf(dxf_path, pdf_path, title="", material="2.0 mm 5052-H32 Al", qty=
     ax = fig.add_axes([0.04, 0.10, 0.92, 0.86]); ax.set_axis_off()
     Frontend(RenderContext(doc), MatplotlibBackend(ax)).draw_layout(msp, finalize=True)
     ax.set_aspect("equal")
-    bb = extents(e for e in msp if e.dxf.layer not in ("NOTE", "ENGRAVE", "ACRYLIC"))
+    bb = extents(e for e in msp if e.dxf.layer not in ("NOTE", "ENGRAVE", "ACRYLIC", "MASK"))
     if bb.has_data:
         x0, y0, _ = bb.extmin; x1, y1, _ = bb.extmax
         ax.annotate(f"{x1-x0:.1f}", ((x0+x1)/2, y0), ha="center", va="top", fontsize=11, color="#0a4")
@@ -1662,6 +1681,197 @@ def dxf_to_pdf(dxf_path, pdf_path, title="", material="2.0 mm 5052-H32 Al", qty=
              f"CUT(thru) · BEND(score) · WELD · VENT · ENGRAVE   |   bend R {RI:.1f}",
              fontsize=9, color="#333")
     fig.savefig(pdf_path, dpi=150); plt.close(fig)
+
+# ===========================================================================
+# PAINT QUOTE PACK  (issue #396)
+# ---------------------------------------------------------------------------
+# Powder coaters quote by m^2, so the one number they cannot work without is the
+# painted surface -- and nobody can eyeball it off a flat pattern riddled with
+# pedal slots and screen apertures. Everything here is DERIVED (areas from the
+# CUT layer of the generated DXFs, sizes from the STEPs) so the sheet cannot go
+# stale the way a hand-typed parts table does.
+# ===========================================================================
+
+AL_2MM = "Aluminio 2,0 mm"
+ST_16  = "Acero laminado en frio 1,6 mm"
+
+PAINT_FINISH = "Negro texturado mate (RAL 9005) - a confirmar contra cupon de muestra"
+
+# dxf stem, label (ES), qty per unit, material, remark (ES).
+# segno_overlay is a printed adhesive graphic, NOT metal -- it is never painted.
+# segno_rear_panel_nopi is the ALTERNATIVE to _pi, so only one ships per unit.
+# segno_screen_bracket is NOT here: the screens are bonded to the shell instead of
+# clamped, so the brackets are never manufactured (they stay in DXF_PARTS as the
+# fallback if bonding is abandoned).
+PAINT_BOM = [
+    ("segno_base",               "Cuerpo: piso + frente + laterales + trasera", 1, AL_2MM, "Pieza mas grande"),
+    ("segno_faceplate",          "Tapa superior (faceplate)",                   1, AL_2MM, "Cara vista principal"),
+    ("segno_rear_panel_pi",      "Panel trasero de I/O",                        1, AL_2MM, "Intercambiable"),
+    ("segno_corner_bracket_rear","Angulo de esquina trasera",                   2, AL_2MM, "Interno"),
+    ("segno_ring_disc",          "Disco central del aro de LEDs",               1, AL_2MM, "Interno"),
+    ("segno_post",               "Poste de apoyo de la tapa",                   2, ST_16,  "ACERO: otro pretratamiento"),
+]
+
+def _poly_area(pts):
+    a = 0.0
+    for i in range(len(pts)):
+        x0, y0 = pts[i][0], pts[i][1]
+        x1, y1 = pts[(i + 1) % len(pts)][0], pts[(i + 1) % len(pts)][1]
+        a += x0 * y1 - x1 * y0
+    return abs(a) / 2.0
+
+def _flat_area_mm2(dxf_path):
+    """Net area of one face of the flat blank: the outer contour minus every
+    aperture inside it. Cut-outs live on CUT and VENT; bulges are ignored, which
+    costs a rounding error on fillets and nothing on the total."""
+    import ezdxf
+    msp = ezdxf.readfile(dxf_path).modelspace()
+    areas = []
+    for e in msp:
+        if e.dxf.layer not in ("CUT", "VENT"):
+            continue
+        if e.dxftype() == "LWPOLYLINE":
+            pts = [(p[0], p[1]) for p in e.get_points()]
+            if len(pts) >= 3:
+                areas.append(_poly_area(pts))
+        elif e.dxftype() == "CIRCLE":
+            areas.append(math.pi * e.dxf.radius ** 2)
+    if not areas:
+        return 0.0
+    areas.sort(reverse=True)
+    return max(0.0, areas[0] - sum(areas[1:]))
+
+def _step_size(stem):
+    """Folded bounding box (mm) of the modelled part, or None when there is no
+    STEP for it. Sorted big-to-small: orientation in the file is not meaningful
+    to a coater, only whether it fits the oven."""
+    p = os.path.join(OUT, stem + ".step")
+    if not os.path.exists(p):
+        return None
+    try:
+        import cadquery as cq
+        bb = cq.importers.importStep(p).val().BoundingBox()
+        return tuple(sorted((bb.xlen, bb.ylen, bb.zlen), reverse=True))
+    except Exception:  # pragma: no cover - STEP is optional for this sheet
+        return None
+
+def _paint_rows():
+    rows, tot = [], {}
+    for stem, label, qty, mat, remark in PAINT_BOM:
+        dxf = os.path.join(OUT, stem + ".dxf")
+        if not os.path.exists(dxf):
+            continue
+        one = _flat_area_mm2(dxf) / 1e6           # m^2, one face
+        total = one * 2 * qty                      # both faces get coated
+        size = _step_size(stem)
+        rows.append({"label": label, "qty": qty, "mat": mat, "remark": remark,
+                     "size": size, "one": one, "total": total})
+        tot[mat] = tot.get(mat, 0.0) + total
+    return rows, tot
+
+def _draw_dxf(ax, dxf_path):
+    """Render a flat pattern into an axes: cuts black, masking rings red."""
+    import ezdxf
+    from ezdxf.addons.drawing import RenderContext, Frontend
+    from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
+    doc = ezdxf.readfile(dxf_path)
+    doc.layers.get("CUT").rgb = (0, 0, 0)
+    doc.layers.get("MASK").rgb = (220, 30, 30)
+    ax.set_axis_off()
+    Frontend(RenderContext(doc), MatplotlibBackend(ax)).draw_layout(doc.modelspace(), finalize=True)
+    ax.set_aspect("equal")
+
+def paint_quote_pdf(path):
+    """Supplier-facing sheet (Spanish) for the powder-coating quote: parts table
+    with painted area, then a masking page per part that has bare-metal zones."""
+    import matplotlib; matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
+    rows, tot = _paint_rows()
+    grand = sum(tot.values())
+    mono = {"family": "monospace", "fontsize": 8.6}
+
+    with PdfPages(path) as pdf:
+        # ---- page 1: what has to be painted -------------------------------
+        fig = plt.figure(figsize=(11.7, 8.3))   # A4 landscape
+        fig.text(0.06, 0.995, "Segno - gabinete de controlador de audio", va="top",
+                 fontsize=17, weight="bold")
+        fig.text(0.06, 0.945, "Pedido de cotizacion: pintura en polvo termoconvertible",
+                 va="top", fontsize=12, color="#444")
+        y = 0.885
+        for k, v in (("Envolvente del equipo armado",
+                      f"{W:.0f} x {D:.0f} x {H_REAR:.0f} mm (lo que tiene que entrar al horno)"),
+                     ("Material del cuerpo", "Aluminio 2,0 mm (aleacion 1050 o 5052 segun proveedor de corte)"),
+                     ("Terminacion pedida", PAINT_FINISH),
+                     ("Superficie total a pintar", f"{grand:.2f} m2 por equipo (ambas caras, sin contar cantos)"),
+                     ("Cantidad", "1 unidad prototipo; despues por lotes")):
+            fig.text(0.06, y, k, fontsize=9.5, color="#666")
+            fig.text(0.30, y, v, fontsize=10.5, weight="bold")
+            y -= 0.042
+
+        hdr = (f"{'Pieza':<42}{'Cant':>5}{'Material':>31}{'Tamano (mm)':>20}"
+               f"{'1 cara m2':>11}{'Total m2':>10}")
+        y -= 0.030
+        fig.text(0.06, y, hdr, **mono, weight="bold")
+        y -= 0.012
+        fig.text(0.06, y, "-" * len(hdr), **mono, color="#999")
+        for r in rows:
+            y -= 0.030
+            sz = ("%.0f x %.0f x %.0f" % r["size"]) if r["size"] else "-"
+            fig.text(0.06, y, f"{r['label']:<42}{r['qty']:>5}{r['mat']:>31}"
+                              f"{sz:>20}{r['one']:>11.4f}{r['total']:>10.4f}", **mono)
+            y -= 0.018
+            fig.text(0.075, y, r["remark"], fontsize=7.6, color="#777", style="italic")
+        y -= 0.030
+        fig.text(0.06, y, "-" * len(hdr), **mono, color="#999")
+        for mat, m2 in sorted(tot.items()):
+            y -= 0.030
+            fig.text(0.06, y, f"{'Subtotal ' + mat:<109}{m2:>10.4f}", **mono, weight="bold")
+        y -= 0.032
+        fig.text(0.06, y, f"{'TOTAL por equipo':<109}{grand:>10.4f}",
+                 **mono, weight="bold", color="#0a4")
+
+        notes = [
+            "Notas para el aplicador:",
+            "  1. La superficie es NETA: contorno exterior menos aperturas (ranuras de pedales, pantallas, ventilaciones). No incluye cantos.",
+            "  2. Las piezas llegan cortadas y plegadas, sin ningun recubrimiento ni aceite protector. Pretratamiento para aluminio a cargo del aplicador.",
+            "  3. Los postes son ACERO laminado en frio, no aluminio: van en linea aparte porque llevan otro pretratamiento.",
+            "  4. Enmascarado: ver las paginas siguientes. Roscas PEM M4 tapadas y zona de masa alrededor del perno M6 sin pintura, en ambas caras.",
+            "  5. Las aperturas de pantalla son ajustadas: la pelicula come decimas por cara. Si el espesor supera 100 um avisar antes de aplicar.",
+            "  6. El aluminio es blando: colgar para pintar, no apoyar sobre las caras vistas.",
+            "  7. La tapa figura con su tamano PLANO (850 x 407 x 2): plegada suma la pestana frontal de 12 mm y la solapa trasera.",
+        ]
+        # anchored, not flowed: the table above grows with the BOM and the notes
+        # must not walk off the bottom of the sheet when it does
+        y = 0.150
+        for i, n in enumerate(notes):
+            fig.text(0.06, y, n, fontsize=8.2, color="#222" if i == 0 else "#444",
+                     weight="bold" if i == 0 else "normal")
+            y -= 0.0195
+        pdf.savefig(fig); plt.close(fig)
+
+        # ---- masking / detail pages ---------------------------------------
+        sheets = [
+            ("segno_base", "CUERPO - plano de enmascarado",
+             "Rojo = NO PINTAR. 3x rosca PEM M4 sobre la transicion (tapon de silicona) y "
+             "zona de masa de 20 mm alrededor del perno M6, en ambas caras."),
+            ("segno_faceplate", "TAPA SUPERIOR - aperturas criticas",
+             "Sin enmascarado. Las dos aperturas grandes son de pantalla y quedan ajustadas "
+             "contra el display: contemplar el espesor de pelicula."),
+        ]
+        for stem, title, note in sheets:
+            dxf = os.path.join(OUT, stem + ".dxf")
+            if not os.path.exists(dxf):
+                continue
+            fig = plt.figure(figsize=(11.7, 8.3))
+            ax = fig.add_axes([0.04, 0.12, 0.92, 0.80])
+            _draw_dxf(ax, dxf)
+            fig.text(0.04, 0.965, title, fontsize=14, weight="bold")
+            fig.text(0.04, 0.055, note, fontsize=9.5, color="#b00")
+            fig.text(0.04, 0.025, "Segno loopstation enclosure   |   medidas en mm   |   "
+                                  "patron plano (la pieza se entrega plegada)", fontsize=8, color="#555")
+            pdf.savefig(fig); plt.close(fig)
+    return path
 
 # ===========================================================================
 # REPORT
@@ -1911,6 +2121,10 @@ def build_quote_packages():
          ["segno_platform_front", "segno_platform_mid",
           "segno_led_diffuser", "segno_ring_diffuser"],
          (".step", ".stl"))
+    # Powder-coat quote pack: the Spanish sheet + every painted part's PDF.
+    # Deliberately NO DXFs -- the coater cuts nothing, and a flat pattern only
+    # invites confusion. Narrowed to the paint BOM -- not every DXF_PART.
+    pack("segno_pintura.zip", ["segno_paint_quote"] + [s for s, *_ in PAINT_BOM], (".pdf",))
     return zips
 
 def main(argv):
@@ -1934,6 +2148,12 @@ def main(argv):
                 print("  out/" + name + ".pdf")
             except Exception as e:  # pragma: no cover
                 print(f"    (pdf skipped: {e})")
+    if "--no-pdf" not in argv:
+        try:
+            paint_quote_pdf(os.path.join(OUT, "segno_paint_quote.pdf"))
+            print("\nPaint quote sheet: out/segno_paint_quote.pdf")
+        except Exception as e:  # pragma: no cover
+            print(f"\n(paint quote skipped: {e})")
     if "--no-step" not in argv:
         try:
             d = build_diffuser_step()
