@@ -34,14 +34,14 @@ unchanged on every PR).
 ## Tasks
 
 - [ ] **A1 — tempo grid + engine state** (`autonomy:auto`)
-  - New `packages/loopy_engine/src/core/tempo_grid.c` + `tempo_grid.h`: pure
+  - New `packages/segno_engine/src/core/tempo_grid.c` + `tempo_grid.h`: pure
     math over `{bpm, ts_num, ts_den, sample_rate}` — frames-per-beat-unit,
     frames-per-bar, `next_boundary(pos, subdivision)`, loop-length↔BPM
     derivation (D7). Beat unit = denominator note (verify vs. manual, index
     Architecture §1). Valid signatures — exactly 17 (manual §5.9.1): den 4 →
     num 2–7; den 8 → num 5–15; reject all else (test 2/8 and 8/4 rejections).
   - Grid atomics + snapshot fields on `le_engine`
-    (`engine_private.h`, `engine_snapshot.c`, `loopy_engine_api.h`).
+    (`engine_private.h`, `engine_snapshot.c`, `segno_engine_api.h`).
   - Commands (free slots 9–12, 18–19): `LE_CMD_SET_TEMPO`,
     `LE_CMD_SET_TIME_SIGNATURE`, `LE_CMD_TAP_TEMPO`, `LE_CMD_SET_SYNC_TEMPO`,
     `LE_CMD_SET_QUANTIZE_DIV` + exported `le_engine_set_*` wrappers
@@ -51,7 +51,7 @@ unchanged on every PR).
     `beat_at`), generic over signatures.
   - ffigen regen + `dart format` **in this PR** (snapshot struct grew); zero
     Dart *behavior* change.
-  - Tests (`packages/loopy_engine/src/test/test_engine_core.c`): modernize
+  - Tests (`packages/segno_engine/src/test/test_engine_core.c`): modernize
     the 13 deleted tempo tests (`git show 2f0513a`), add signature-generic
     grid math, lock, and precedence cases (derive-only-from-none, tap vs.
     manual last-writer, dead-tempo survival).
@@ -82,7 +82,7 @@ unchanged on every PR).
     boundary sample; one-capturer hand-off with a pending quantized end.
 - [ ] **A4a — FFI seam** (`autonomy:auto`)
   - New role interface `TempoControl` in
-    `packages/loopy_engine/lib/src/audio_engine.dart` (compose at `:643-654`
+    `packages/segno_engine/lib/src/audio_engine.dart` (compose at `:643-654`
     pattern); impls in `native_audio_engine.dart` + `mock_audio_engine.dart`
     (mock parity is the compile-time seam guarantee).
   - `EngineSnapshot` tempo fields + `QuantizeDiv`/`TempoSource`/`ClockMode`
@@ -140,8 +140,8 @@ unchanged on every PR).
 GOAL: Musician can set/tap tempo in any of 15 signatures, hear a routed click, count in, and record beat/bar-quantized loops in Multi — with the grid-off path bit-identical.
 
 SUCCESS CRITERIA:
-- Existing native suites pass unchanged on every PR; new A1–A3/A6 behaviors have named C tests | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- ASAN-clean | verify: EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g" bash packages/loopy_engine/src/test/run_native_tests.sh
+- Existing native suites pass unchanged on every PR; new A1–A3/A6 behaviors have named C tests | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- ASAN-clean | verify: EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g" bash packages/segno_engine/src/test/run_native_tests.sh
 - Dart suites green with coverage gates (root ≥90, daw_export 100) | verify: /Users/Tomas/development/flutter/bin/flutter analyze && /Users/Tomas/development/flutter/bin/flutter test --coverage
 - v3 loads as grid-off defaults; v4 round-trips A fields | verify: /Users/Tomas/development/flutter/bin/flutter test packages/session_repository
 - .als emits session tempo | verify: /Users/Tomas/development/flutter/bin/flutter test packages/daw_export
@@ -149,7 +149,7 @@ SUCCESS CRITERIA:
 
 NON-GOALS: modes (part 2), clock I/O (parts 3/5), stretch (part 4), bar-aligned .als clips.
 
-VERIFICATION COMMAND: bash packages/loopy_engine/src/test/run_native_tests.sh && /Users/Tomas/development/flutter/bin/flutter analyze && /Users/Tomas/development/flutter/bin/flutter test --coverage
+VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && /Users/Tomas/development/flutter/bin/flutter analyze && /Users/Tomas/development/flutter/bin/flutter test --coverage
 ```
 
 ## References

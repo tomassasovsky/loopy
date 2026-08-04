@@ -1,4 +1,4 @@
-/// Session persistence for Loopy: save/load `.loopy` bundles and export
+/// Session persistence for Segno: save/load `.segno` bundles and export
 /// mixdown + per-track WAV stems.
 library;
 

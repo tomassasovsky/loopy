@@ -137,11 +137,11 @@ authoritative part (engine, persistence, UI) now derives from the one owner.
 - `packages/looper_repository/lib/src/looper_repository.dart` — `record` pushes
   the snapshotted lane chains to the engine (`_applyLaneEffects`) on
   record-from-EMPTY. (Repo is now the sole snapshot computer.)
-- `packages/loopy_engine/src/core/engine_commands.c` — remove the
+- `packages/segno_engine/src/core/engine_commands.c` — remove the
   `le_snapshot_input_fx_to_lanes` call from `le_engine_record` + the function;
   drop `snapshot_copy_count` (engine.c / engine_private.h / engine_internal.h /
   the `_for_test` accessor).
-- `packages/loopy_engine/src/test/test_engine_core.c` — rewrite the snapshot
+- `packages/segno_engine/src/test/test_engine_core.c` — rewrite the snapshot
   assertions to the new contract (engine does not self-snapshot).
 - `packages/looper_repository/test/…` — the deterministic race + plugin tests,
   and the record-from-EMPTY-snapshots / overdub-does-not assertions (moved here

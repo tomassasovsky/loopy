@@ -62,8 +62,8 @@ Key files:
 - `packages/daw_export/lib/src/event_log_reader.dart` + tests and
   `packages/daw_export/test/corpus/` — fixtures need a manifest with the new
   stages and mixed enabled bits; legacy fixtures must keep parsing.
-- `packages/loopy_engine/src/test/test_engine_core.c` +
-  `packages/loopy_engine/src/test/run_native_tests.sh` — home of the
+- `packages/segno_engine/src/test/test_engine_core.c` +
+  `packages/segno_engine/src/test/run_native_tests.sh` — home of the
   mid-capture stomp replay test (Part 1a wired `perf_render`'s per-frame
   switch to replay the enabled plog codes).
 - `docs/design/performance-event-log-format.md` — audit table with a verdict
@@ -174,7 +174,7 @@ GOAL: The v3 epic is hardened and closable — exports understand all four stage
 
 SUCCESS CRITERIA:
 - daw_export reader renders Track/Master stages (fx-chains.txt + manifest reader) with enabled bits, presence-keyed back-compat; chains in manifest, never baked into stems [R20] | verify: /Users/Tomas/development/flutter/bin/flutter test packages/daw_export
-- Mid-capture stomp replay: rendered wet stem flips at the logged frame; slot disabled at arm renders bypassed; chain-level twin covered [R3] | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
+- Mid-capture stomp replay: rendered wet stem flips at the logged frame; slot disabled at arm renders bypassed; chain-level twin covered [R3] | verify: bash packages/segno_engine/src/test/run_native_tests.sh
 - Appliance soak: cache hit-rate + xrun budget under a full 8-track set; session-load render storm xrun-free with playing-lanes-first ordering [B6][flow SC-7]; cap tuned + limits documented | verify: manual xrun/cache-hit soak report on Pi console per docs/RUNNING_ON_RPI.md
 - Cache debug glyph shows all five telemetry states, only when the indicator toggle is on; hidden in the calm default UI [R27] | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper
 - Undo/redo contract posted on #219; FX-mode undo still inert (Part 5b negative tests green); PROGRESS.md rewrite + release notes merged | verify: manual — #219 comment linked in the PR body, docs reviewed in-diff

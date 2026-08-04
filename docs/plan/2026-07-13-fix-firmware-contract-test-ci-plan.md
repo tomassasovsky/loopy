@@ -23,27 +23,27 @@ runs this test with the exact command already documented in
 GOAL: firmware/test/test_pedal_protocol.c is built and run on every CI push/PR via the existing native-tests job, so a firmware/Dart wire-format regression fails CI instead of merging silently.
 
 SUCCESS CRITERIA:
-- .github/workflows/main.yaml's native-tests job has a step that compiles and runs firmware/test/test_pedal_protocol.c against firmware/loopy_pedal/pedal_protocol.c using the command documented in firmware/README.md | verify: grep -n "test_pedal_protocol.c" .github/workflows/main.yaml
-- The exact command from firmware/README.md's "Contract test (host, no board)" section builds and passes locally from the repo root, printing "ALL PASSED" | verify: gcc -std=c11 -Wall -I firmware/loopy_pedal firmware/test/test_pedal_protocol.c firmware/loopy_pedal/pedal_protocol.c -o /tmp/pedal_protocol_tests && /tmp/pedal_protocol_tests | grep -q "ALL PASSED"
+- .github/workflows/main.yaml's native-tests job has a step that compiles and runs firmware/test/test_pedal_protocol.c against firmware/segno_pedal/pedal_protocol.c using the command documented in firmware/README.md | verify: grep -n "test_pedal_protocol.c" .github/workflows/main.yaml
+- The exact command from firmware/README.md's "Contract test (host, no board)" section builds and passes locally from the repo root, printing "ALL PASSED" | verify: gcc -std=c11 -Wall -I firmware/segno_pedal firmware/test/test_pedal_protocol.c firmware/segno_pedal/pedal_protocol.c -o /tmp/pedal_protocol_tests && /tmp/pedal_protocol_tests | grep -q "ALL PASSED"
 - The new CI step is inside the native-tests job (not a new job) and comes after the existing native engine/MIDI step | verify: manual 1. Open .github/workflows/main.yaml 2. Confirm the new step's YAML key is nested under `native-tests: steps:` 3. Confirm it appears after the "Build + run native engine/MIDI tests" step
 - main.yaml is valid YAML | verify: python3 -c "import yaml,sys; yaml.safe_load(open('.github/workflows/main.yaml'))"
 - No other CI job, script, or unrelated file is modified | verify: git diff --stat master... | grep -v -E "main.yaml|test_pedal_protocol.c|docs/(brainstorm|plan)/" ; test $? -eq 1
 
 NON-GOALS:
-- Folding the firmware test into packages/loopy_engine/src/test/run_native_tests.sh (rejected in brainstorm — different working-directory convention, no benefit).
+- Folding the firmware test into packages/segno_engine/src/test/run_native_tests.sh (rejected in brainstorm — different working-directory convention, no benefit).
 - Adding a new standalone CI job for this test.
 - Changing pedal_protocol.c/.h, PedalCodec, or any golden .syx fixtures.
 - Fixing any other finding from the same review pass.
 
-VERIFICATION COMMAND: gcc -std=c11 -Wall -I firmware/loopy_pedal firmware/test/test_pedal_protocol.c firmware/loopy_pedal/pedal_protocol.c -o /tmp/pedal_protocol_tests && /tmp/pedal_protocol_tests | grep -q "ALL PASSED" && grep -n "test_pedal_protocol.c" .github/workflows/main.yaml && python3 -c "import yaml; yaml.safe_load(open('.github/workflows/main.yaml'))"
+VERIFICATION COMMAND: gcc -std=c11 -Wall -I firmware/segno_pedal firmware/test/test_pedal_protocol.c firmware/segno_pedal/pedal_protocol.c -o /tmp/pedal_protocol_tests && /tmp/pedal_protocol_tests | grep -q "ALL PASSED" && grep -n "test_pedal_protocol.c" .github/workflows/main.yaml && python3 -c "import yaml; yaml.safe_load(open('.github/workflows/main.yaml'))"
 ```
 
 ## Context
 
 - `firmware/README.md` lines 116-132 ("Contract test (host, no board)") documents the canonical build/run command:
   ```sh
-  gcc -std=c11 -Wall -I firmware/loopy_pedal \
-    firmware/test/test_pedal_protocol.c firmware/loopy_pedal/pedal_protocol.c \
+  gcc -std=c11 -Wall -I firmware/segno_pedal \
+    firmware/test/test_pedal_protocol.c firmware/segno_pedal/pedal_protocol.c \
     -o pedal_protocol_tests && ./pedal_protocol_tests
   # expected last line: ALL PASSED
   ```
@@ -52,12 +52,12 @@ VERIFICATION COMMAND: gcc -std=c11 -Wall -I firmware/loopy_pedal firmware/test/t
   `firmware/test/test_pedal_protocol.c:38`) is relative to cwd.
 - `.github/workflows/main.yaml`'s `native-tests` job (~line 104-113) already
   runs on `ubuntu-latest`, installs `build-essential libasound2-dev`, and runs
-  `packages/loopy_engine/src/test/run_native_tests.sh`. GitHub Actions
+  `packages/segno_engine/src/test/run_native_tests.sh`. GitHub Actions
   `run:` steps default to the repo-root working directory, so the documented
   command works unmodified as a new step here — no extra `working-directory:`
   needed.
-- `packages/loopy_engine/src/test/run_native_tests.sh` is NOT touched: it
-  opens with `cd "$(dirname "$0")/../.."`, landing in `packages/loopy_engine`,
+- `packages/segno_engine/src/test/run_native_tests.sh` is NOT touched: it
+  opens with `cd "$(dirname "$0")/../.."`, landing in `packages/segno_engine`,
   a different cwd than the firmware test needs. Keeping the firmware step as
   its own `run:` step (rather than folding it into that script) avoids
   fighting that convention (per brainstorm doc, rejected alternative).
@@ -81,8 +81,8 @@ the existing `- name: Build + run native engine/MIDI tests` step:
 ```yaml
       - name: Build + run firmware/Dart protocol contract test
         run: |
-          gcc -std=c11 -Wall -I firmware/loopy_pedal \
-            firmware/test/test_pedal_protocol.c firmware/loopy_pedal/pedal_protocol.c \
+          gcc -std=c11 -Wall -I firmware/segno_pedal \
+            firmware/test/test_pedal_protocol.c firmware/segno_pedal/pedal_protocol.c \
             -o pedal_protocol_tests
           ./pedal_protocol_tests
 ```
@@ -99,5 +99,5 @@ any fixtures.
 - `firmware/README.md` — "Contract test (host, no board)" section (canonical command)
 - `firmware/test/test_pedal_protocol.c` — header comment + default fixtures path
 - `.github/workflows/main.yaml` — `native-tests` job
-- `packages/loopy_engine/src/test/run_native_tests.sh` — sibling native-suite runner (not modified, kept as reference for job comment wording)
+- `packages/segno_engine/src/test/run_native_tests.sh` — sibling native-suite runner (not modified, kept as reference for job comment wording)
 - Brainstorm: `docs/brainstorm/2026-07-13-firmware-contract-test-ci-brainstorm-doc.md`

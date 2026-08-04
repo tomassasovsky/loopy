@@ -1,0 +1,67 @@
+/// Native low-latency duplex audio engine for Segno.
+///
+/// Exposes a typed Dart API (`AudioEngine`) over a hand-written miniaudio
+/// looping core via FFI. The generated low-level bindings are intentionally not
+/// exported — depend on `AudioEngine` and the value objects instead.
+library;
+
+export 'src/audio_device.dart' show AudioDevice;
+export 'src/audio_engine.dart'
+    show
+        AudioEngine,
+        EffectsControl,
+        EngineException,
+        EngineLifecycle,
+        EngineMetering,
+        EnginePerformanceCapture,
+        EnginePluginHosting,
+        EngineResult,
+        EngineRouting,
+        LooperModeControl,
+        LooperTransport,
+        MasterBusControl,
+        MonitorControl,
+        SessionIo,
+        TempoControl;
+export 'src/engine_config.dart' show AudioBackend, EngineConfig;
+export 'src/engine_snapshot.dart'
+    show
+        ClickMode,
+        EngineSnapshot,
+        GridDivision,
+        LaneSnapshot,
+        LatencyState,
+        LooperMode,
+        TempoSource,
+        TrackSnapshot,
+        TrackState,
+        kMaxInputs,
+        kMaxLanes;
+export 'src/fx_fingerprint.dart' show FxFingerprint;
+export 'src/loopback_info.dart' show LoopbackInfo, LoopbackKind;
+export 'src/mock_audio_engine.dart' show MockAudioEngine, MockPluginSlotHandle;
+export 'src/native_audio_engine.dart'
+    show NativeAudioEngine, PumpedNativeEngine;
+export 'src/performance_render_progress.dart'
+    show PerformanceRenderProgress, PerformanceRenderTrackStatus;
+export 'src/plugin_descriptor.dart'
+    show
+        PluginDescriptor,
+        PluginFormat,
+        PluginParamInfo,
+        PluginScanProgress,
+        PluginSlotHandle;
+export 'src/track_effect.dart'
+    show
+        BuiltInEffect,
+        ParamReadout,
+        PluginEffect,
+        PluginRef,
+        TrackEffect,
+        TrackEffectParam,
+        TrackEffectType,
+        decodeTrackEffects,
+        encodeTrackEffects,
+        kPluginFxCode,
+        kTrackEffectMax,
+        kTrackEffectParams;

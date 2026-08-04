@@ -149,6 +149,6 @@ brackets the latency-length change, so the mix never combs across the switch.
 
 - `le_psola_tick` design, D1/D2/D4/D5: [umbrella](./2026-06-14-feat-formant-preserving-octaver-plan.md).
 - Builds on part 3: [part-3](./2026-06-14-feat-formant-preserving-octaver-part-3-plan.md).
-- `fx_octaver` / state: [engine.c:411](../../packages/loopy_engine/src/engine.c),
-  `le_octaver_state` ([engine_private.h](../../packages/loopy_engine/src/engine_private.h)).
+- `fx_octaver` / state: [engine.c:411](../../packages/segno_engine/src/engine.c),
+  `le_octaver_state` ([engine_private.h](../../packages/segno_engine/src/engine_private.h)).
 - Algorithm: TD-PSOLA with autocorrelation voicing detection.

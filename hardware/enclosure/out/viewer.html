@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>VAMP — 3D viewer</title>
+<title>Segno — 3D viewer</title>
 <style>
   html,body{margin:0;height:100%;background:#0f1623;color:#cbd5e1;font-family:Helvetica,Arial,sans-serif;overflow:hidden}
   #c{width:100vw;height:100vh;display:block}
@@ -36,7 +36,7 @@
 <body>
 <canvas id="c"></canvas>
 <div id="hud">
-  <div><b>VAMP</b> loopstation · drag to rotate</div>
+  <div><b>Segno</b> loopstation · drag to rotate</div>
   <div class="k">drag = orbit · scroll = zoom · right-drag = pan</div>
   <div class="btnrow">
     <button id="spin">⏵ auto-spin</button>
@@ -194,7 +194,7 @@ function applyVisibility(){
 }
 
 let home = null;
-new GLTFLoader().load('vamp_fromdxf.glb?t=' + Date.now(), (gltf)=>{
+new GLTFLoader().load('segno_fromdxf.glb?t=' + Date.now(), (gltf)=>{
   const model = gltf.scene;
   // cadquery exports Z-up for this assembly (explode lifts +Z)
   model.traverse(o=>{ if(o.isMesh && o.material){ o.material.side = THREE.DoubleSide; } });
@@ -211,7 +211,7 @@ new GLTFLoader().load('vamp_fromdxf.glb?t=' + Date.now(), (gltf)=>{
     const k = classify(o.name); if(k) register(k, o);
   });
   // ---- electronics (all GLBs are Y-up; enclosure local frame is x=width(u), y=height,
-  // z=-depth). ONE main board (THT Pro Micro loopy_pedal_main) in BOTH builds. PI build
+  // z=-depth). ONE main board (THT Pro Micro segno_pedal_main) in BOTH builds. PI build
   // adds a Raspberry Pi at the rear wall (power + UART/USB to the board) with its port
   // cluster out the I/O window; BASE build is the board alone (external host). The two rear
   // I/O sub-panels live in the chassis GLB (rearpanel_pi / rearpanel_nopi), toggled by name.
@@ -241,7 +241,7 @@ new GLTFLoader().load('vamp_fromdxf.glb?t=' + Date.now(), (gltf)=>{
     register(typeKey, o); scheduleTree(); applyVisibility();
   }, undefined, ()=>console.warn(file+' not loaded'));
   // placeFn sets X/Z; the post-placement correction above sets Y (PCB on the standoffs/risers)
-  mk('loopy_pedal_tht.glb','common','board',1000,(o,bb,bc)=>o.position.set(BU-bc.x, 0, -274-bc.z));
+  mk('segno_pedal_tht.glb','common','board',1000,(o,bb,bc)=>o.position.set(BU-bc.x, 0, -274-bc.z));
   // Raspberry Pi — Pi build only: ports face the wall (rotate); PCB lands on the 38mm risers,
   // depth 373 so the USB/Ethernet sits flush in the rear window
   mk('raspberry_pi4.glb','pi','pi', 1, (o,bb,bc)=>o.position.set(BU-bc.x, 0, -373-bc.z),

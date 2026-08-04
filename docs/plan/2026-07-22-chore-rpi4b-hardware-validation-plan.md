@@ -60,7 +60,7 @@ deploy/rpi/build/build-arm64-bundle.sh   # docker build+run; passthrough extra a
 - Flutter **3.44.4** (repo-pinned), `flutter config --enable-linux-desktop`,
   `flutter pub get`.
 - **Build:** `flutter build linux --release --target lib/main_production.dart
-  --dart-define=LOOPY_CONSOLE=true`.
+  --dart-define=SEGNO_CONSOLE=true`.
   - The `main_*` entrypoints are **byte-identical on Linux** (no flavored CMake
     configs — `RUNNING_ON_RPI.md:87`); `main_production` is a naming choice, not a
     behavior change. **All three build commands must agree** (see the deploy-doc fix
@@ -69,10 +69,10 @@ deploy/rpi/build/build-arm64-bundle.sh   # docker build+run; passthrough extra a
     the define** — the script forwards any extra `--dart-define=…`/args to
     `flutter build` (passthrough), matching `deploy/rpi/README.md`'s existing "omit the
     define for a normal desktop build" convention. No bespoke flag.
-- **Output** `build/linux/arm64/release/bundle/` (`loopy` + `libloopy_engine.so` +
-  `lib/` + `data/`; path confirmed against `autostart:16` `LOOPY_BIN`). Optional
+- **Output** `build/linux/arm64/release/bundle/` (`segno` + `libsegno_engine.so` +
+  `lib/` + `data/`; path confirmed against `autostart:16` `SEGNO_BIN`). Optional
   `--deploy pi@<host>` runs `rsync -avz build/linux/arm64/release/bundle/
-  pi@<host>:~/loopy/build/linux/arm64/release/bundle/`.
+  pi@<host>:~/segno/build/linux/arm64/release/bundle/`.
 - On Apple Silicon the arm64 container runs natively; on Intel, under qemu (slower).
 
 **Honest CI-coverage note (was an overclaim):** CI only ever builds `--debug --target
@@ -85,7 +85,7 @@ producer, not a CI gate.
 
 **Also in PR-1 (fixes a real latent bug):** `deploy/rpi/README.md:29` and
 `deploy/rpi/compositor/labwc/autostart:14` show `flutter build linux --release
---dart-define=LOOPY_CONSOLE=true` with **no `--target`** — which **fails** because
+--dart-define=SEGNO_CONSOLE=true` with **no `--target`** — which **fails** because
 `lib/main.dart` does not exist. Add `--target lib/main_production.dart` to both so all
 build commands agree.
 
@@ -106,9 +106,9 @@ a restatement:
   current budget); the pedal's **LEDs need external 9V** (USB-MIDI carries LED *frames*
   only); official 5V/3A PSU (`vcgencmd get_throttled` == `0x0`).
 - **Connectors:** Pi 4 = 2× micro-HDMI → `HDMI-A-1`/`HDMI-A-2`; set
-  `LOOPY_MAIN_OUTPUT`/`LOOPY_WAVE_OUTPUT` + `--scale` in `deploy/rpi/pin-displays.sh`;
+  `SEGNO_MAIN_OUTPUT`/`SEGNO_WAVE_OUTPUT` + `--scale` in `deploy/rpi/pin-displays.sh`;
   **TV overscan** → "Just Scan"/1:1 or `disable_overscan=1`.
-- **First-run device setup:** `LOOPY_CONSOLE` hides the transport chrome; device
+- **First-run device setup:** `SEGNO_CONSOLE` hides the transport chrome; device
   pickers are in **Settings** (right-click / `S`). Bind (a) **MIDI FOOT CONTROLLER**
   input, (b) **PEDAL LINK** output, (c) **Audio** interface as **both in and out** @
   **512 frames**; these persist (`tryAutoStartEngine` + hotplug reconnect). **Open-Q
@@ -161,7 +161,7 @@ GOAL: Prove the Tier 2 GTK-on-Wayland floor-console stack runs on a Pi 4B (SD, m
 SUCCESS CRITERIA:
 - CI arm64 compile guard stays green (existing job; deploy-doc fix doesn't break it) | verify: flutter analyze
 - Runbook + docs pass spell-check (new terms added to cspell) | verify: npx --yes cspell "docs/**/*.md"
-- [local-dev, needs Docker] container emits an aarch64 release bundle | verify: manual 1) run deploy/rpi/build/build-arm64-bundle.sh 2) file build/linux/arm64/release/bundle/loopy | grep 'ARM aarch64'
+- [local-dev, needs Docker] container emits an aarch64 release bundle | verify: manual 1) run deploy/rpi/build/build-arm64-bundle.sh 2) file build/linux/arm64/release/bundle/segno | grep 'ARM aarch64'
 - Deploy-doc build commands all carry --target and succeed | verify: manual 1) grep -n "flutter build linux" deploy/rpi/README.md deploy/rpi/compositor/labwc/autostart 2) confirm each has --target lib/main_production.dart
 - Goal 1 dual-display (see Proposed Solution §Goal 1) | verify: manual 1) boot kiosk 2) both outputs render 3) reboot 3x, mapping holds 4) unplug TV, banner appears
 - Goal 2 USB-MIDI pedal (see §Goal 2) | verify: manual 1) bind both pickers 2) reboot, auto-selected 3) stomp CC80-83, correct actions 4) LEDs follow state 5) replug re-attaches without engine restart
@@ -204,7 +204,7 @@ issue**; file **two child issues** at build time — one for the tooling (`merge
 one for the runbook/validation (`blocked-verify`) — each closed by its own PR, both
 `Refs #271`.
 
-**Risks:** first-run setup blocked under `LOOPY_CONSOLE` (mitigation: non-console
+**Risks:** first-run setup blocked under `SEGNO_CONSOLE` (mitigation: non-console
 bundle via `--dart-define` omission — no new code); Pi 4 USB power for the Focusrite
 (powered hub); TV overscan; Wayfire-instead-of-labwc breaking `wlr-randr`; pedal 9V LED
 rail off → LEDs dark despite correct MIDI; release-mode GTK build unproven by CI
@@ -212,7 +212,7 @@ rail off → LEDs dark despite correct MIDI; release-mode GTK build unproven by 
 
 ## References & Research
 
-- Kiosk config: `deploy/rpi/loopy-kiosk.service`, `deploy/rpi/compositor/labwc/{autostart,rc.xml}`, `deploy/rpi/pin-displays.sh`
+- Kiosk config: `deploy/rpi/segno-kiosk.service`, `deploy/rpi/compositor/labwc/{autostart,rc.xml}`, `deploy/rpi/pin-displays.sh`
 - Audio backend gotcha: `docs/RUNNING_ON_LINUX.md` (JACK preference, silent-capture, port pinning)
 - CI arm64 recipe: `.github/workflows/main.yaml` `build-linux-arm64` (`--debug --target lib/main_development.dart`)
 - Broken deploy build cmd: `deploy/rpi/README.md:29`, `deploy/rpi/compositor/labwc/autostart:14` (no `--target`)

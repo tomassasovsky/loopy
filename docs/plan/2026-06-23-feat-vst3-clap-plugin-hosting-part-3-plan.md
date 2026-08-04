@@ -34,9 +34,9 @@ watchdog), and §Plugin-slot lifecycle.
 
 ### Native (C/C++)
 - [ ] Add `LE_FX_PLUGIN` to `le_fx_type`
-  ([loopy_engine_api.h:185](../../packages/loopy_engine/src/core/loopy_engine_api.h))
+  ([segno_engine_api.h:185](../../packages/segno_engine/src/core/segno_engine_api.h))
   and a vtable row in `LE_FX[]`
-  ([engine_fx.c:923](../../packages/loopy_engine/src/core/engine_fx.c)) whose
+  ([engine_fx.c:923](../../packages/segno_engine/src/core/engine_fx.c)) whose
   `process` forwards to the slot's `IPluginHost::process`, `defaults` = no-op.
 - [ ] VST3 host `load/activate/process`: create `IComponent`/`IAudioProcessor`/
   `IEditController`, connect, `setBusArrangements(kStereo)`, `setupProcessing`,
@@ -50,7 +50,7 @@ watchdog), and §Plugin-slot lifecycle.
   alloc/lock/dylib-load on the audio thread.**
 - [ ] **Sanitize (D-RT):** after `process`, flush denormals + map NaN/Inf→0 at the
   slot boundary in `fx_apply_chain`
-  ([engine_fx.c:951](../../packages/loopy_engine/src/core/engine_fx.c)) before output
+  ([engine_fx.c:951](../../packages/segno_engine/src/core/engine_fx.c)) before output
   re-enters the chain.
 - [ ] `le_plugin_slot` opaque handle; `le_engine_set_lane_plugin` /
   `set_monitor_plugin` (load into a slot, publish ready, return handle); clearing the
@@ -65,12 +65,12 @@ watchdog), and §Plugin-slot lifecycle.
 
 ## File References
 
-- [loopy_engine_api.h](../../packages/loopy_engine/src/core/loopy_engine_api.h),
-  [engine_fx.c](../../packages/loopy_engine/src/core/engine_fx.c),
-  [engine_process.c](../../packages/loopy_engine/src/core/engine_process.c)
-- New: `packages/loopy_engine/src/host/host_vst3.cpp`, `…/host_clap.cpp`, `…/slot.cpp`
-- [native_audio_engine.dart](../../packages/loopy_engine/lib/src/native_audio_engine.dart),
-  [mock_audio_engine.dart](../../packages/loopy_engine/lib/src/mock_audio_engine.dart)
+- [segno_engine_api.h](../../packages/segno_engine/src/core/segno_engine_api.h),
+  [engine_fx.c](../../packages/segno_engine/src/core/engine_fx.c),
+  [engine_process.c](../../packages/segno_engine/src/core/engine_process.c)
+- New: `packages/segno_engine/src/host/host_vst3.cpp`, `…/host_clap.cpp`, `…/slot.cpp`
+- [native_audio_engine.dart](../../packages/segno_engine/lib/src/native_audio_engine.dart),
+  [mock_audio_engine.dart](../../packages/segno_engine/lib/src/mock_audio_engine.dart)
 
 ## Acceptance Criteria
 

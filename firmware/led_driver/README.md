@@ -1,4 +1,4 @@
-# Loopy floor-console LED driver (RP2040)
+# Segno floor-console LED driver (RP2040)
 
 Drives the floor console's WS2812 ring + per-track indicator LEDs from an RP2040,
 offloading the hard-real-time WS2812 timing from the Raspberry Pi. The Pi pushes

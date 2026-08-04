@@ -8,7 +8,7 @@ topic: loop-top-sync-docs-drift
 ## What We're Building
 
 A docs-and-comment fix (option B from the issue) rather than a firmware
-behavior change (option A). `firmware/loopy_pedal/loopy_pedal.ino` captures
+behavior change (option A). `firmware/segno_pedal/segno_pedal.ino` captures
 the loop-top sync pulse (`onLoopTop()` writes `g_lastLoopTopMs = millis()`)
 but never reads it — the ring animation in `renderRing()` is driven entirely
 by a free-running fixed-cadence timer (`kRingMsPerRev = 700`), independent of

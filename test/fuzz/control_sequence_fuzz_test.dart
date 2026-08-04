@@ -7,21 +7,21 @@ import 'dart:io';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
-import 'package:loopy/pedal/cubit/pedal_cubit.dart';
+import 'package:pedal_repository/pedal_repository.dart';
+import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/pedal/cubit/pedal_cubit.dart';
 // The effect models come from the looper_repository barrel (the domain types
 // setLaneEffects expects); hide the engine-package originals to disambiguate.
-import 'package:loopy_engine/loopy_engine.dart'
+import 'package:segno_engine/segno_engine.dart'
     hide
         BuiltInEffect,
         EngineConfig,
         PluginEffect,
         TrackEffect,
         TrackEffectType;
-import 'package:pedal_repository/pedal_repository.dart';
-import 'package:performance_repository/performance_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_key_value_store.dart';
@@ -42,13 +42,13 @@ import '../helpers/fake_key_value_store.dart';
 /// On failure: the seed and a shrunk, replayable action list are printed —
 /// paste the sequence into the corpus below as a permanent regression test.
 ///
-/// Self-skips when LOOPY_ENGINE_LIB is unset:
-///   export LOOPY_ENGINE_LIB="$(bash packages/loopy_engine/tool/build_test_lib.sh)"
+/// Self-skips when SEGNO_ENGINE_LIB is unset:
+///   export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
 ///   flutter test --tags fuzz
 void main() {
-  final lib = Platform.environment['LOOPY_ENGINE_LIB'];
+  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
   final skip = lib == null || lib.isEmpty
-      ? 'LOOPY_ENGINE_LIB not set — run packages/loopy_engine/tool/build_test_lib.sh'
+      ? 'SEGNO_ENGINE_LIB not set — run packages/segno_engine/tool/build_test_lib.sh'
       : null;
 
   group('corpus (found-bug regressions, replayed every run)', () {
@@ -702,9 +702,9 @@ void main() {
   });
 
   test('seeded random sequences hold every invariant', () {
-    const seeds = int.fromEnvironment('LOOPY_FUZZ_SEEDS', defaultValue: 12);
-    const steps = int.fromEnvironment('LOOPY_FUZZ_STEPS', defaultValue: 120);
-    const baseSeed = int.fromEnvironment('LOOPY_FUZZ_BASE', defaultValue: 6407);
+    const seeds = int.fromEnvironment('SEGNO_FUZZ_SEEDS', defaultValue: 12);
+    const steps = int.fromEnvironment('SEGNO_FUZZ_STEPS', defaultValue: 120);
+    const baseSeed = int.fromEnvironment('SEGNO_FUZZ_BASE', defaultValue: 6407);
 
     for (var i = 0; i < seeds; i++) {
       final seed = baseSeed + i * 7919;
@@ -738,7 +738,7 @@ class _Harness {
     // an observed leak — if a MODE long-press ever fires for real in a fuzz
     // sequence, or `arm()` picks up sync file I/O, this is what stands
     // between that and polluting the repo working directory.
-    tempDir = Directory.systemTemp.createTempSync('loopy_control_fuzz');
+    tempDir = Directory.systemTemp.createTempSync('segno_control_fuzz');
     repo = LooperRepository(
       engine: engine,
       ticker: ticker.stream,

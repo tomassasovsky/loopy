@@ -4,11 +4,11 @@ import 'dart:io';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/control.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/control/control.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -153,7 +153,7 @@ void main() {
         ),
       ).thenReturn(EngineResult.ok);
 
-      tempDir = Directory.systemTemp.createTempSync('loopy_control_midi');
+      tempDir = Directory.systemTemp.createTempSync('segno_control_midi');
       performance = PerformanceRepository(
         engine: FakeAudioEngine(),
         exportsRoot: () async => tempDir.path,

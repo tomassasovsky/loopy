@@ -1,10 +1,10 @@
 import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/theme/app_theme.dart';
-import 'package:loopy/theme/looper_theme.dart';
-import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/theme/app_theme.dart';
+import 'package:segno/theme/looper_theme.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 void main() {
   group('AppTheme', () {

@@ -25,7 +25,7 @@ The repo builds Linux x86_64 (compile-only) but has **no ARM64 job** ([`.github/
 ### Tasks
 
 - [ ] Add a `build-linux-arm64` job to [`.github/workflows/main.yaml`](../../.github/workflows/main.yaml) mirroring `build-linux` (GTK deps: `ninja-build libgtk-3-dev libglib2.0-dev libpango1.0-dev libasound2-dev clang cmake pkg-config`). Use `FLUTTER_TARGET_PLATFORM_SYSROOT` (the root [`linux/CMakeLists.txt:20`](../../linux/CMakeLists.txt) already honors it) or an ARM runner. Compile-only (no audio in CI), `--target lib/main_development.dart`.
-- [ ] **On-device bring-up spike:** boot Pi OS on a Pi 5, run a hand-built ARM64 Loopy bundle, confirm the Skia renderer path ([`linux/runner/main.cc:15`](../../linux/runner/main.cc)) renders Material icons correctly (not "tofu").
+- [ ] **On-device bring-up spike:** boot Pi OS on a Pi 5, run a hand-built ARM64 Segno bundle, confirm the Skia renderer path ([`linux/runner/main.cc:15`](../../linux/runner/main.cc)) renders Material icons correctly (not "tofu").
 - [ ] **Kiosk-target spike:** GTK-on-Wayland vs `flutter-pi`. Confirm whether `desktop_multi_window` + `window_manager` open and control the waveform second window under the candidate target. Record the decision.
 - [ ] **Compositor selection:** pick a concrete compositor (e.g. `labwc` or `sway`, both wlr-based) and confirm it exposes `wlr-output-management` / `wlr-randr` for Part 5's output-name pinning. Record the choice.
 - [ ] Create `docs/RUNNING_ON_RPI.md` with the bring-up steps + the recorded kiosk-target and compositor decisions.
@@ -40,7 +40,7 @@ The repo builds Linux x86_64 (compile-only) but has **no ARM64 job** ([`.github/
 ### Functional
 
 - [ ] `build-linux-arm64` CI job is green (ARM64 bundle compiles).
-- [ ] An ARM64 Loopy bundle launches full-screen on a Pi 5 with correct Material icons.
+- [ ] An ARM64 Segno bundle launches full-screen on a Pi 5 with correct Material icons.
 - [ ] The waveform second window opens and is controllable on the chosen kiosk target.
 - [ ] The chosen compositor exposes `wlr-output-management` (verified with `wlr-randr`).
 

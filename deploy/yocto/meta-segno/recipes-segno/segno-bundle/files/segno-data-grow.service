@@ -1,0 +1,15 @@
+# Expand /data (p7) to fill unused SD space before the app starts.
+# See /usr/bin/segno-data-grow. Idempotent; safe every boot. Delivered via OTA.
+[Unit]
+Description=Segno: grow /data partition to fill the SD card
+After=data.mount
+Before=segno.service
+RequiresMountsFor=/data
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/segno-data-grow
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -29,7 +29,7 @@ Breakpoint thinning happens only in `daw_export` (part 10).
 
 - The logged set is an **audited table, not a prose list**: derive it by
   auditing every `LE_CMD_*` in `apply_command`
-  ([engine_process.c:553+](../../packages/loopy_engine/src/core/engine_process.c))
+  ([engine_process.c:553+](../../packages/segno_engine/src/core/engine_process.c))
   for audibility effects. It must include at minimum: record/play/stop, track
   + per-lane volume and mute, multiple, FX type/count/param changes, clear,
   undo/redo, per-lane output routing (`SET_LANE_OUTPUT`), the output-enabled
@@ -67,14 +67,14 @@ Breakpoint thinning happens only in `daw_export` (part 10).
 
 ## Tasks
 
-- [ ] `packages/loopy_engine/src/core/engine_private.h` — perf log ring
+- [ ] `packages/segno_engine/src/core/engine_private.h` — perf log ring
       (4096-slot `le_command`-shaped entries + frame tag) on `le_engine`.
-- [ ] `packages/loopy_engine/src/core/engine_process.c` — emission in
+- [ ] `packages/segno_engine/src/core/engine_process.c` — emission in
       `apply_command` per the audited table + transport-fact emission at
       exact frames.
-- [ ] `packages/loopy_engine/src/core/engine_commands.c` — control-side
+- [ ] `packages/segno_engine/src/core/engine_commands.c` — control-side
       emission for direct-atomic param setters while armed.
-- [ ] `packages/loopy_engine/src/core/perf_drain.c` — log-ring drain → append
+- [ ] `packages/segno_engine/src/core/perf_drain.c` — log-ring drain → append
       to `events.log` (binary, versioned header), same flush cadence.
 - [ ] `docs/design/performance-event-log-format.md` — wire format + audited
       command table.
@@ -83,13 +83,13 @@ Breakpoint thinning happens only in `daw_export` (part 10).
 
 ## Files touched (primary)
 
-`packages/loopy_engine/src/core/{engine_private.h,engine_process.c,engine_commands.c,perf_drain.c}`,
-`packages/loopy_engine/src/test/test_engine_core.c`,
+`packages/segno_engine/src/core/{engine_private.h,engine_process.c,engine_commands.c,perf_drain.c}`,
+`packages/segno_engine/src/test/test_engine_core.c`,
 `docs/design/performance-event-log-format.md`.
 
 ## Verification
 
-1. `bash packages/loopy_engine/src/test/run_native_tests.sh` — "ALL PASSED".
+1. `bash packages/segno_engine/src/test/run_native_tests.sh` — "ALL PASSED".
 2. `flutter analyze` clean; `dart format --set-exit-if-changed .` stable.
 
 ## Dependencies

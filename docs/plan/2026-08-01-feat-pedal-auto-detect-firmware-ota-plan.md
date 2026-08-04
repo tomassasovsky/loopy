@@ -18,7 +18,7 @@ impossible as specified. Re-verified against the tree at `872cd17d`:
 
 | 2026-07-25 plan said | Reality at `872cd17d` |
 | --- | --- |
-| Prerequisite: `hardware/firmware/loopy_pedal_32u4/pedal_protocol.h` has drifted to V1; add a CI diff-check | **Already done.** Both copies are byte-identical at `PEDAL_PROTOCOL_VERSION_V3`, and [firmware/test/run_tests.sh:20-26](../../firmware/test/run_tests.sh) is the enforced drift gate (wired into the repo's required verify loop). |
+| Prerequisite: `hardware/firmware/segno_pedal_32u4/pedal_protocol.h` has drifted to V1; add a CI diff-check | **Already done.** Both copies are byte-identical at `PEDAL_PROTOCOL_VERSION_V3`, and [firmware/test/run_tests.sh:20-26](../../firmware/test/run_tests.sh) is the enforced drift gate (wired into the repo's required verify loop). |
 | Part A: auto-bind by "attempting `PedalRepository.bind()`'s existing identity handshake, binding the first that **replies**" | **Impossible.** The identity request goes *out*, but no reply can come *back*: the native capture delivers 3-byte Note/CC only and drops SysEx ([pedal_transport.dart:5-10](../../packages/pedal_repository/lib/src/pedal_transport.dart), [pedal_repository.dart:13-16](../../packages/pedal_repository/lib/src/pedal_repository.dart)). There is no reply-based auto-detect to reuse. |
 | Part B: report the firmware version "in the identity handshake reply" — "no native/FFI change" | Same blocker. Reading a version *off the pedal* requires a SysEx-capable inbound path in all three native backends — exactly the native work the plan ruled out. |
 | Desktop keeps the dropdown; console gets auto-detect | Still true, but **#343 already hid the MIDI/pedal pickers on console.** So today a fresh console has *no* way to bind the pedal at all — it works only if a selection was persisted while the pickers were still visible. Part A went from "remove friction" to "fix a real gap." |
@@ -47,7 +47,7 @@ automatic version discovery must feed that same seam, not add a second one.
 **D1 — Match rule: name-match only.** Auto-detect binds a MIDI device whose reported
 name identifies it as the pedal; it never binds "the only device present."
 
-*Consequence, accepted:* a Pro Micro flashed **before** the `build.usb_product="VAMP
+*Consequence, accepted:* a Pro Micro flashed **before** the `build.usb_product="Segno
 Loopstation"` rename enumerates as `Arduino Leonardo` and will never auto-bind — and on
 console there is no picker to fall back on. Recovery is to reflash it from a desktop
 build. This is the price of predictability: sole-device fallback would bind *any* stray
@@ -55,7 +55,7 @@ USB-MIDI device as if it were the pedal.
 
 *Implementation note the rule needs:* the OS-reported name is not equal to the product
 string on every platform. ALSA (the console's backend) typically reports
-`VAMP Loopstation MIDI 1` or `VAMP Loopstation:VAMP Loopstation MIDI 1 20:0`, not the
+`Segno Loopstation MIDI 1` or `Segno Loopstation:Segno Loopstation MIDI 1 20:0`, not the
 bare string. The match must therefore be a **case-insensitive substring** test against
 one shared token constant, not string equality — with the token defined once and used by
 both the input and output sides.
@@ -87,7 +87,7 @@ hotplug, replug, and retry-after-error keep working unchanged for free.
 - No native/FFI change, and — unlike the old Part A — no dependency on an identity reply.
 
 **Tests:** repository/cubit unit tests for match-hit, match-miss (nothing bound, no
-crash), substring/case variants (`VAMP Loopstation MIDI 1`), two matching devices (bind
+crash), substring/case variants (`Segno Loopstation MIDI 1`), two matching devices (bind
 first deterministically), console-off (no auto-pin), and auto-pin not clobbering an
 existing user selection.
 
@@ -102,8 +102,8 @@ support. Two ways forward, and they are not equal in cost:
   too. Large, native, hardware-verified.
 - **B2 — record what was flashed, appliance-side.** The console flasher (Part D) is the
   only thing that ever writes firmware to that pedal, so it already knows the version.
-  Write it to `/etc/loopy/pedal-firmware-version`, mirroring the existing
-  `/etc/loopy/build-version` convention ([loopy-update-ctl:19-25](../../deploy/yocto/meta-loopy/recipes-loopy/loopy-bundle/files/loopy-update-ctl)),
+  Write it to `/etc/segno/pedal-firmware-version`, mirroring the existing
+  `/etc/segno/build-version` convention ([segno-update-ctl:19-25](../../deploy/yocto/meta-segno/recipes-segno/segno-bundle/files/segno-update-ctl)),
   and have the app read it into the existing `_applyFirmwareVersion` seam. No native
   work; console-only; degrades to the current manual setting on desktop.
 
@@ -117,8 +117,8 @@ Unchanged from the old plan and still accurate — no `arduino` reference exists
 `.github/workflows/**` today.
 
 - New light job (no self-hosted runner needed): `arduino-cli compile` for
-  `hardware/firmware/loopy_pedal_32u4` with the documented build properties
-  (`arduino:avr:leonardo`, `build.pid=0x7D00`, `build.usb_product="VAMP Loopstation"`).
+  `hardware/firmware/segno_pedal_32u4` with the documented build properties
+  (`arduino:avr:leonardo`, `build.pid=0x7D00`, `build.usb_product="Segno Loopstation"`).
 - Version stamped from the repo-root `VERSION` file (it exists; no sibling firmware
   VERSION file needed — one release version covering app + firmware is what "ships with
   the app" means).
@@ -127,11 +127,11 @@ Unchanged from the old plan and still accurate — no `arduino` reference exists
 
 ### Part D — On-device flashing helper (`autonomy:blocked-verify`)
 
-Unchanged in shape from the old plan: `avrdude` into `loopy-bundle.bb` `RDEPENDS`
-([:59](../../deploy/yocto/meta-loopy/recipes-loopy/loopy-bundle/loopy-bundle.bb)), a
-`flash-pedal` verb matching `loopy-update-ctl`'s exact shape (`set -eu`, `PROGRESS <0-100>`
+Unchanged in shape from the old plan: `avrdude` into `segno-bundle.bb` `RDEPENDS`
+([:59](../../deploy/yocto/meta-segno/recipes-segno/segno-bundle/segno-bundle.bb)), a
+`flash-pedal` verb matching `segno-update-ctl`'s exact shape (`set -eu`, `PROGRESS <0-100>`
 on stdout, `log()` to stderr), 1200bps Caterina touch-reset then `avrdude -p atmega32u4
--c avr109`. Under B2 it also writes `/etc/loopy/pedal-firmware-version` on success.
+-c avr109`. Under B2 it also writes `/etc/segno/pedal-firmware-version` on success.
 
 **This part cannot be proven from CI** — it is the one piece that must be validated on
 real hardware. See O2 for the safety story it still needs.

@@ -11,7 +11,7 @@ the RIFF chunk size (`36 + dataBytes`) and `data` chunk size (`dataBytes`)
 into 32-bit header fields via `ByteData.setUint32`, which silently wraps
 (truncates mod 2^32) rather than throwing when the value exceeds
 `0xFFFFFFFF`. Once encoded audio data exceeds ~4 GiB (a few hours of
-recording, realistic for Loopy's own performance-recording feature), the
+recording, realistic for Segno's own performance-recording feature), the
 header lies about the file's size while the underlying byte buffer is the
 correct, full length. Downstream readers that trust the header — including
 this package's own `decodeFloat32`, which derives sample count from the
@@ -69,7 +69,7 @@ VERIFICATION COMMAND: cd packages/wav_codec && /Users/Tomas/development/flutter/
 - `wav_codec` is a pure-Dart package (no Flutter dependency) — uses
   `package:test`, run via plain `dart test`, not `flutter test` or the
   `very_good` test runner (which is broken per project memory
-  `loopy-test-runner-gotcha.md` — that gotcha is about the Flutter-side
+  `segno-test-runner-gotcha.md` — that gotcha is about the Flutter-side
   runner; this package predates/avoids that entirely by being pure Dart).
 - `meta` is already a dependency of `wav_codec` (used for `@immutable` on
   `WavData`), so `@visibleForTesting` is available with no pubspec change.
@@ -158,6 +158,6 @@ test description is chosen if it differs from this sketch.
 ## References
 
 - Brainstorm: `docs/brainstorm/2026-07-13-wav-codec-encode-size-overflow-guard-brainstorm-doc.md`
-- Related project memory: `loopy-test-runner-gotcha.md` (very_good MCP
+- Related project memory: `segno-test-runner-gotcha.md` (very_good MCP
   runner is broken for Flutter packages — not applicable here since
   `wav_codec` is pure Dart and already tested via plain `dart test`).

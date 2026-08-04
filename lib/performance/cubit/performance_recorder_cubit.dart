@@ -332,7 +332,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// Re-runs `.als`/`fx-chains.txt` generation from the capture directory's
   /// already-persisted `performance.json` — no engine, no re-render, no
   /// audio-file writes
-  /// (part 11, D-REEXPORT). Useful after installing Loopy's VST3 plugins (a
+  /// (part 11, D-REEXPORT). Useful after installing Segno's VST3 plugins (a
   /// fresh export can then resolve a live device chain a prior export
   /// couldn't, though resolution itself never depended on local plugin
   /// installation — only on the manifest's own effects data) or simply to

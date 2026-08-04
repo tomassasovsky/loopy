@@ -13,7 +13,7 @@ topic: ci-package-format-analyze-coverage
 `working_directory: "."`), so `dart format --set-exit-if-changed lib test` and
 `flutter analyze lib test` only ever look at the root app. None of the 13
 packages under `packages/` (daw_export, performance_repository, wav_codec,
-loopy_engine, controller_repository, local_storage_client, looper_repository,
+segno_engine, controller_repository, local_storage_client, looper_repository,
 midi_client, midi_device_repository, pedal_repository, routing_graph,
 session_repository, settings_repository) get a format or analyze gate in CI.
 Analyzer lints and `dart format` drift in package code can merge silently —

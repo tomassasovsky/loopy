@@ -1,4 +1,4 @@
-# Contributing to Loopy
+# Contributing to Segno
 
 ## Start here
 Read **`docs/PROGRESS.md`** — it's the living source of truth for what's built,
@@ -14,8 +14,8 @@ This is how progress survives across sessions — treat it as part of "done".
 The native engine is the real-time-critical core; it has **deterministic,
 device-free tests** that are the primary safety net (the audio thread can't be
 runtime-validated in CI). Build & run them with
-`bash packages/loopy_engine/src/test/run_native_tests.sh` (documented in
-`docs/PROGRESS.md`). After changing `packages/loopy_engine/src/loopy_engine_api.h`,
+`bash packages/segno_engine/src/test/run_native_tests.sh` (documented in
+`docs/PROGRESS.md`). After changing `packages/segno_engine/src/segno_engine_api.h`,
 regenerate bindings: `dart run ffigen --config ffigen.yaml`.
 
 Every state-management unit, repository, and view also has Dart tests. Run the

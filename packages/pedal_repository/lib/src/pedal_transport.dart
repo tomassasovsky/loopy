@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:midi_client/midi_client.dart' show MidiDevice;
 
-/// A raw inbound pedal message, as delivered by loopy's native 3-byte MIDI
+/// A raw inbound pedal message, as delivered by segno's native 3-byte MIDI
 /// capture: `status` (with channel in the low nibble), `data1`, `data2`.
 ///
 /// Only Note-On/Note-Off/Control-Change arrive here — the native capture drops

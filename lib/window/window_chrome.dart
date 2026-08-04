@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:loopy/common/console_mode.dart';
-import 'package:loopy/l10n/l10n.dart';
+import 'package:segno/common/console_mode.dart';
+import 'package:segno/l10n/l10n.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// The chrome renders in both the main window and the secondary waveform window
@@ -12,26 +12,26 @@ import 'package:window_manager/window_manager.dart';
 AppLocalizations get _chromeL10n =>
     lookupAppLocalizations(PlatformDispatcher.instance.locale);
 
-/// Whether Loopy uses a Flutter-drawn title bar instead of the native one.
+/// Whether Segno uses a Flutter-drawn title bar instead of the native one.
 ///
 /// Enabled on Windows so the chrome matches the dark tracks theme.
-bool get loopyUsesFlutterTitleBar =>
+bool get segnoUsesFlutterTitleBar =>
     !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
 
-/// Whether Loopy should auto-hide the idle mouse cursor.
+/// Whether Segno should auto-hide the idle mouse cursor.
 ///
-/// Enabled wherever [loopyUsesFlutterTitleBar] draws custom chrome, and also
+/// Enabled wherever [segnoUsesFlutterTitleBar] draws custom chrome, and also
 /// on the Linux console/kiosk build ([kConsoleMode]) — the RPi floor console
 /// has no title bar (it's driven by foot pedals, not a pointer), but the OS
 /// cursor should still vanish after idle instead of sitting on the touchscreen.
-bool get loopyUsesCursorAutoHide =>
-    loopyUsesFlutterTitleBar ||
+bool get segnoUsesCursorAutoHide =>
+    segnoUsesFlutterTitleBar ||
     (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux && kConsoleMode);
 
 /// Hides the native title bar on Windows so Flutter can draw
-/// [LoopyWindowTitleBar].
-Future<void> configureLoopyDesktopWindow({String title = 'Loopy'}) async {
-  if (!loopyUsesFlutterTitleBar) return;
+/// [SegnoWindowTitleBar].
+Future<void> configureSegnoDesktopWindow({String title = 'Segno'}) async {
+  if (!segnoUsesFlutterTitleBar) return;
   await windowManager.ensureInitialized();
   await windowManager.setTitle(title);
   await windowManager.setTitleBarStyle(
@@ -41,15 +41,15 @@ Future<void> configureLoopyDesktopWindow({String title = 'Loopy'}) async {
 }
 
 /// Whether desktop window controls (fullscreen, etc.) are available.
-bool get loopySupportsDesktopWindowing =>
+bool get segnoSupportsDesktopWindowing =>
     !kIsWeb &&
     (defaultTargetPlatform == TargetPlatform.windows ||
         defaultTargetPlatform == TargetPlatform.macOS ||
         defaultTargetPlatform == TargetPlatform.linux);
 
 /// Toggles OS fullscreen for the current window.
-Future<void> toggleLoopyFullScreen() async {
-  if (!loopySupportsDesktopWindowing) return;
+Future<void> toggleSegnoFullScreen() async {
+  if (!segnoSupportsDesktopWindowing) return;
   try {
     await windowManager.ensureInitialized();
     await windowManager.setFullScreen(!(await windowManager.isFullScreen()));
@@ -66,9 +66,9 @@ bool shouldFullscreenMainWindow(int displayCount) => displayCount >= 2;
 /// Full-screens the main window on the primary display at launch when the
 /// console has a second display (the output waveform fills the secondary, so
 /// the control surface fills the primary). No-op on a single display or in
-/// tests; the user can still toggle it off with [toggleLoopyFullScreen].
+/// tests; the user can still toggle it off with [toggleSegnoFullScreen].
 Future<void> applyMainWindowFullscreen(int displayCount) async {
-  if (!loopySupportsDesktopWindowing) return;
+  if (!segnoSupportsDesktopWindowing) return;
   if (!shouldFullscreenMainWindow(displayCount)) return;
   try {
     await windowManager.ensureInitialized();
@@ -79,9 +79,9 @@ Future<void> applyMainWindowFullscreen(int displayCount) async {
 }
 
 /// Wraps [body] with an optional hideable custom title bar on Windows.
-class LoopyWindowChromeShell extends StatefulWidget {
-  /// Creates a [LoopyWindowChromeShell].
-  const LoopyWindowChromeShell({
+class SegnoWindowChromeShell extends StatefulWidget {
+  /// Creates a [SegnoWindowChromeShell].
+  const SegnoWindowChromeShell({
     required this.title,
     required this.body,
     this.backgroundColor = const Color(0xFF06060A),
@@ -98,19 +98,19 @@ class LoopyWindowChromeShell extends StatefulWidget {
   final Color backgroundColor;
 
   @override
-  State<LoopyWindowChromeShell> createState() => _LoopyWindowChromeShellState();
+  State<SegnoWindowChromeShell> createState() => _SegnoWindowChromeShellState();
 }
 
 /// Height of the drag strip when the title bar is hidden.
-const loopyHiddenTitleStripHeight = 12.0;
+const segnoHiddenTitleStripHeight = 12.0;
 
 /// How long the reveal button stays visible after the last pointer move.
-const loopyChromeRevealIdle = Duration(seconds: 2);
+const segnoChromeRevealIdle = Duration(seconds: 2);
 
 /// How long after the last pointer move before the cursor is hidden.
-const loopyCursorHideIdle = Duration(seconds: 3);
+const segnoCursorHideIdle = Duration(seconds: 3);
 
-class _LoopyWindowChromeShellState extends State<LoopyWindowChromeShell> {
+class _SegnoWindowChromeShellState extends State<SegnoWindowChromeShell> {
   var _titleBarVisible = true;
   var _chromeRevealed = false;
   var _cursorVisible = true;
@@ -120,7 +120,7 @@ class _LoopyWindowChromeShellState extends State<LoopyWindowChromeShell> {
   @override
   void initState() {
     super.initState();
-    if (loopyUsesCursorAutoHide) {
+    if (segnoUsesCursorAutoHide) {
       _scheduleCursorHide();
     }
   }
@@ -169,7 +169,7 @@ class _LoopyWindowChromeShellState extends State<LoopyWindowChromeShell> {
     _cursorHideTimer?.cancel();
 
     if (!_titleBarVisible) {
-      _chromeHideTimer = Timer(loopyChromeRevealIdle, () {
+      _chromeHideTimer = Timer(segnoChromeRevealIdle, () {
         if (mounted && !_titleBarVisible) {
           setState(() => _chromeRevealed = false);
         }
@@ -181,7 +181,7 @@ class _LoopyWindowChromeShellState extends State<LoopyWindowChromeShell> {
 
   void _scheduleCursorHide() {
     _cursorHideTimer?.cancel();
-    _cursorHideTimer = Timer(loopyCursorHideIdle, () {
+    _cursorHideTimer = Timer(segnoCursorHideIdle, () {
       if (mounted) {
         setState(() => _cursorVisible = false);
       }
@@ -190,20 +190,20 @@ class _LoopyWindowChromeShellState extends State<LoopyWindowChromeShell> {
 
   @override
   Widget build(BuildContext context) {
-    if (!loopyUsesFlutterTitleBar && !loopyUsesCursorAutoHide) {
+    if (!segnoUsesFlutterTitleBar && !segnoUsesCursorAutoHide) {
       return widget.body;
     }
 
     var content = widget.body;
-    if (loopyUsesFlutterTitleBar) {
+    if (segnoUsesFlutterTitleBar) {
       content = Scaffold(
         backgroundColor: widget.backgroundColor,
         appBar: _titleBarVisible
-            ? LoopyWindowTitleBar(
+            ? SegnoWindowTitleBar(
                 title: widget.title,
                 onHide: _hideTitleBar,
               )
-            : LoopyWindowHiddenTitleStrip(
+            : SegnoWindowHiddenTitleStrip(
                 revealed: _chromeRevealed,
                 onShow: _showTitleBar,
               ),
@@ -211,7 +211,7 @@ class _LoopyWindowChromeShellState extends State<LoopyWindowChromeShell> {
       );
     }
 
-    if (!loopyUsesCursorAutoHide) {
+    if (!segnoUsesCursorAutoHide) {
       return content;
     }
 
@@ -228,11 +228,11 @@ class _LoopyWindowChromeShellState extends State<LoopyWindowChromeShell> {
   }
 }
 
-/// Dark custom title bar for Loopy desktop windows on Windows.
-class LoopyWindowTitleBar extends StatefulWidget
+/// Dark custom title bar for Segno desktop windows on Windows.
+class SegnoWindowTitleBar extends StatefulWidget
     implements PreferredSizeWidget {
-  /// Creates a [LoopyWindowTitleBar] showing [title].
-  const LoopyWindowTitleBar({
+  /// Creates a [SegnoWindowTitleBar] showing [title].
+  const SegnoWindowTitleBar({
     required this.title,
     this.onHide,
     super.key,
@@ -251,10 +251,10 @@ class LoopyWindowTitleBar extends StatefulWidget
   Size get preferredSize => const Size.fromHeight(kWindowCaptionHeight);
 
   @override
-  State<LoopyWindowTitleBar> createState() => _LoopyWindowTitleBarState();
+  State<SegnoWindowTitleBar> createState() => _SegnoWindowTitleBarState();
 }
 
-class _LoopyWindowTitleBarState extends State<LoopyWindowTitleBar>
+class _SegnoWindowTitleBarState extends State<SegnoWindowTitleBar>
     with WindowListener {
   var _isMaximized = false;
 
@@ -281,7 +281,7 @@ class _LoopyWindowTitleBarState extends State<LoopyWindowTitleBar>
     return SizedBox(
       height: kWindowCaptionHeight,
       child: DecoratedBox(
-        decoration: const BoxDecoration(color: LoopyWindowTitleBar.barColor),
+        decoration: const BoxDecoration(color: SegnoWindowTitleBar.barColor),
         child: Row(
           children: [
             Expanded(
@@ -300,7 +300,7 @@ class _LoopyWindowTitleBarState extends State<LoopyWindowTitleBar>
               ),
             ),
             if (widget.onHide != null)
-              _LoopyChromeIconButton(
+              _SegnoChromeIconButton(
                 icon: Icons.expand_less,
                 tooltip: _chromeL10n.a11yHideTitleBar,
                 onPressed: widget.onHide!,
@@ -343,10 +343,10 @@ class _LoopyWindowTitleBarState extends State<LoopyWindowTitleBar>
 }
 
 /// Thin drag strip shown when the title bar is hidden.
-class LoopyWindowHiddenTitleStrip extends StatelessWidget
+class SegnoWindowHiddenTitleStrip extends StatelessWidget
     implements PreferredSizeWidget {
-  /// Creates a [LoopyWindowHiddenTitleStrip].
-  const LoopyWindowHiddenTitleStrip({
+  /// Creates a [SegnoWindowHiddenTitleStrip].
+  const SegnoWindowHiddenTitleStrip({
     required this.onShow,
     this.revealed = false,
     super.key,
@@ -359,7 +359,7 @@ class LoopyWindowHiddenTitleStrip extends StatelessWidget
   final bool revealed;
 
   @override
-  Size get preferredSize => const Size.fromHeight(loopyHiddenTitleStripHeight);
+  Size get preferredSize => const Size.fromHeight(segnoHiddenTitleStripHeight);
 
   @override
   Widget build(BuildContext context) {
@@ -371,13 +371,13 @@ class LoopyWindowHiddenTitleStrip extends StatelessWidget
     return AnimatedContainer(
       duration: motion,
       color: revealed
-          ? LoopyWindowTitleBar.barColor.withValues(alpha: 0.85)
+          ? SegnoWindowTitleBar.barColor.withValues(alpha: 0.85)
           : Colors.transparent,
       child: Row(
         children: [
           const Expanded(
             child: DragToMoveArea(
-              child: SizedBox(height: loopyHiddenTitleStripHeight),
+              child: SizedBox(height: segnoHiddenTitleStripHeight),
             ),
           ),
           AnimatedOpacity(
@@ -385,7 +385,7 @@ class LoopyWindowHiddenTitleStrip extends StatelessWidget
             duration: motion,
             child: IgnorePointer(
               ignoring: !revealed,
-              child: _LoopyChromeIconButton(
+              child: _SegnoChromeIconButton(
                 icon: Icons.expand_more,
                 tooltip: _chromeL10n.a11yShowTitleBar,
                 onPressed: onShow,
@@ -399,8 +399,8 @@ class LoopyWindowHiddenTitleStrip extends StatelessWidget
   }
 }
 
-class _LoopyChromeIconButton extends StatelessWidget {
-  const _LoopyChromeIconButton({
+class _SegnoChromeIconButton extends StatelessWidget {
+  const _SegnoChromeIconButton({
     required this.icon,
     required this.onPressed,
     required this.tooltip,
@@ -417,7 +417,7 @@ class _LoopyChromeIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final height = compact ? loopyHiddenTitleStripHeight : kWindowCaptionHeight;
+    final height = compact ? segnoHiddenTitleStripHeight : kWindowCaptionHeight;
     final width = compact ? 28.0 : 46.0;
     return Tooltip(
       message: tooltip,

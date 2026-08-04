@@ -10,7 +10,7 @@ topic: firmware-contract-test-ci
 `firmware/test/test_pedal_protocol.c` is the only thing that proves the AVR
 firmware's `pedal_protocol.c` and Dart's `PedalCodec`
 (`packages/pedal_repository`) agree byte-for-byte on the SysEx wire format. It
-compiles on the host (no board), links `firmware/loopy_pedal/pedal_protocol.c`,
+compiles on the host (no board), links `firmware/segno_pedal/pedal_protocol.c`,
 and decodes/re-encodes the same golden `.syx` fixtures
 `packages/pedal_repository/test` uses.
 
@@ -34,7 +34,7 @@ misleading header comment now that it will actually be true.
 routed through `run_native_tests.sh`).**
 
 - `run_native_tests.sh` opens with `cd "$(dirname "$0")/../.."`, which lands it
-  in `packages/loopy_engine` — a different working directory than the firmware
+  in `packages/segno_engine` — a different working directory than the firmware
   test needs. The firmware README is explicit that the contract test must run
   "from the repo root, so the default fixtures path resolves"
   (`packages/pedal_repository/test/fixtures`, a relative default baked into
@@ -77,8 +77,8 @@ run; a step is proportionate.
 - **Exact command**: reuse verbatim the command already documented in
   `firmware/README.md`:
   ```sh
-  gcc -std=c11 -Wall -I firmware/loopy_pedal \
-    firmware/test/test_pedal_protocol.c firmware/loopy_pedal/pedal_protocol.c \
+  gcc -std=c11 -Wall -I firmware/segno_pedal \
+    firmware/test/test_pedal_protocol.c firmware/segno_pedal/pedal_protocol.c \
     -o pedal_protocol_tests && ./pedal_protocol_tests
   ```
   Reusing the documented command (rather than inventing a new invocation)

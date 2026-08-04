@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/looper/view/signal_graph/signal_routing_chips.dart';
+import 'package:segno/looper/view/signal_graph/signal_routing_chips.dart';
 
 import '../../../helpers/helpers.dart';
 

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/looper/view/signal_graph/signal_fx_chrome.dart';
-import 'package:loopy/looper/view/signal_graph/signal_fx_summary.dart';
+import 'package:segno/looper/view/signal_graph/signal_fx_chrome.dart';
+import 'package:segno/looper/view/signal_graph/signal_fx_summary.dart';
 
 import '../../../helpers/helpers.dart';
 

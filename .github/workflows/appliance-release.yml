@@ -99,12 +99,12 @@ jobs:
 
       - name: Build the aarch64 app bundle
         run: |
-          docker build -t loopy-arm64-build deploy/rpi/build
-          docker run --rm -v "$PWD":/workspace loopy-arm64-build --dart-define=LOOPY_CONSOLE=true
+          docker build -t segno-arm64-build deploy/rpi/build
+          docker run --rm -v "$PWD":/workspace segno-arm64-build --dart-define=SEGNO_CONSOLE=true
 
       - uses: actions/upload-artifact@v7
         with:
-          name: loopy-app-bundle
+          name: segno-app-bundle
           path: build/linux/arm64/release/bundle
           retention-days: 1
 
@@ -124,7 +124,7 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh -s 0.35.3
           echo "$PWD/bin" >> "$GITHUB_PATH"
 
-      - name: Compile loopy_pedal_32u4
+      - name: Compile segno_pedal_32u4
         env:
           VERSION: ${{ needs.determine-meta.outputs.version }}
         run: |
@@ -132,11 +132,11 @@ jobs:
           arduino-cli core update-index
           arduino-cli core install arduino:avr
           # One shared recipe with the PR gate in main.yaml — see build.sh.
-          hardware/firmware/loopy_pedal_32u4/build.sh pedal-firmware "$VERSION"
+          hardware/firmware/segno_pedal_32u4/build.sh pedal-firmware "$VERSION"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: loopy-pedal-firmware
+          name: segno-pedal-firmware
           path: pedal-firmware
           retention-days: 1
 
@@ -151,22 +151,22 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          name: loopy-app-bundle
+          name: segno-app-bundle
           path: deploy/yocto/prebuilt/bundle
 
       - uses: actions/download-artifact@v8
         with:
-          name: loopy-pedal-firmware
+          name: segno-pedal-firmware
           path: pedal-firmware
 
       - name: Restore the app binary's executable bit
-        # loopy-bundle.bb's do_install checks `[ -x "${bundle}/loopy" ]`; the
+        # segno-bundle.bb's do_install checks `[ -x "${bundle}/segno" ]`; the
         # upload/download-artifact round-trip doesn't reliably preserve it.
-        run: chmod +x deploy/yocto/prebuilt/bundle/loopy
+        run: chmod +x deploy/yocto/prebuilt/bundle/segno
 
       - name: Stage RAUC signing material
         run: |
-          kd=deploy/yocto/meta-loopy/.rauc-keys
+          kd=deploy/yocto/meta-segno/.rauc-keys
           mkdir -p "$kd"
           printf '%s' "${{ secrets.RAUC_SIGNING_KEY }}"  > "$kd/development-1.key.pem"
           printf '%s' "${{ secrets.RAUC_SIGNING_CERT }}" > "$kd/development-1.cert.pem"
@@ -179,9 +179,9 @@ jobs:
             # via socket mount needs an identical path on both sides for
             # kas-container's own nested `docker run` bind mounts to resolve;
             # see homelab-gh-runner's README). Path is keyed by this
-            # deployment's RUNNER_NAME (proxmox-loopy-yocto); persists across
+            # deployment's RUNNER_NAME (proxmox-segno-yocto); persists across
             # builds without touching the GitHub Actions cache at all.
-            echo "YOCTO_WORK_DIR=/opt/gh-runner-cache/proxmox-loopy-yocto/build-cache/yocto" >> "$GITHUB_ENV"
+            echo "YOCTO_WORK_DIR=/opt/gh-runner-cache/proxmox-segno-yocto/build-cache/yocto" >> "$GITHUB_ENV"
           else
             echo "YOCTO_WORK_DIR=$HOME/yocto-build" >> "$GITHUB_ENV"
           fi
@@ -209,17 +209,17 @@ jobs:
           chmod +x kas-container
           mkdir -p "$YOCTO_WORK_DIR"
           KAS_WORK_DIR="$YOCTO_WORK_DIR" KAS_CONTAINER_ENGINE=docker \
-            ./kas-container shell deploy/yocto/kas-loopy-rpi4.yml \
-            -c "LOOPY_BUILD_VERSION=${{ needs.determine-meta.outputs.version }} LOOPY_UPDATE_CHANNEL=${{ needs.determine-meta.outputs.channel }} bitbake loopy-update-bundle"
+            ./kas-container shell deploy/yocto/kas-segno-rpi4.yml \
+            -c "SEGNO_BUILD_VERSION=${{ needs.determine-meta.outputs.version }} SEGNO_UPDATE_CHANNEL=${{ needs.determine-meta.outputs.channel }} bitbake segno-update-bundle"
 
       - name: Collect bundle + write manifest
         id: artifacts
         run: |
           set -eu
           out=release-artifacts; mkdir -p "$out"
-          raucb=$(readlink -f "$YOCTO_WORK_DIR"/*/tmp/deploy/images/raspberrypi4-64/loopy-update-bundle-raspberrypi4-64.raucb 2>/dev/null \
-                  || find "$YOCTO_WORK_DIR" -name 'loopy-update-bundle-raspberrypi4-64-*.raucb' | sort | tail -1)
-          bundle="loopy-appliance-${{ needs.determine-meta.outputs.version }}.raucb"
+          raucb=$(readlink -f "$YOCTO_WORK_DIR"/*/tmp/deploy/images/raspberrypi4-64/segno-update-bundle-raspberrypi4-64.raucb 2>/dev/null \
+                  || find "$YOCTO_WORK_DIR" -name 'segno-update-bundle-raspberrypi4-64-*.raucb' | sort | tail -1)
+          bundle="segno-appliance-${{ needs.determine-meta.outputs.version }}.raucb"
           cp "$raucb" "$out/$bundle"
           sha=$(sha256sum "$out/$bundle" | cut -d' ' -f1)
           # version is a semver string (e.g. "0.2.0" / "0.2.0-experimental.9")
@@ -232,7 +232,7 @@ jobs:
           # USB-attached MCU flashed with avrdude. A missing .hex degrades to a
           # manifest with no pedalFirmware block — an OS-only update — rather
           # than failing the release.
-          hex="loopy-pedal-${version}.hex"
+          hex="segno-pedal-${version}.hex"
           pedal_block=""
           if [ -f "pedal-firmware/$hex" ]; then
             cp "pedal-firmware/$hex" "$out/$hex"

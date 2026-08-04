@@ -64,9 +64,9 @@ save/editor-close), and §Data Model (dual-decode, no envelope).
 
 ## File References
 
-- [loopy_engine_api.h](../../packages/loopy_engine/src/core/loopy_engine_api.h),
-  `packages/loopy_engine/src/host/state_*.cpp`
-- [track_effect.dart](../../packages/loopy_engine/lib/src/track_effect.dart),
+- [segno_engine_api.h](../../packages/segno_engine/src/core/segno_engine_api.h),
+  `packages/segno_engine/src/host/state_*.cpp`
+- [track_effect.dart](../../packages/segno_engine/lib/src/track_effect.dart),
   [models/track_effect.dart](../../packages/looper_repository/lib/src/models/track_effect.dart)
 - [looper_repository.dart:511](../../packages/looper_repository/lib/src/looper_repository.dart) (`_snapshotMonitorChainsOntoLanes`)
 - [settings_repository.dart](../../packages/settings_repository/lib/src/settings_repository.dart)

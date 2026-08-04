@@ -8,11 +8,11 @@ date: 2026-06-19
 
 ## Overview
 
-The `loopy_engine` package is a mature, real-time-correct audio engine with an
-excellent C ABI (`loopy_engine_api.h`) and clean layering **above** the ABI
+The `segno_engine` package is a mature, real-time-correct audio engine with an
+excellent C ABI (`segno_engine_api.h`) and clean layering **above** the ABI
 (`AudioEngine` interface → `LooperRepository` → cubits, with an injectable
 `MockAudioEngine`). The robustness debt is concentrated **below** the ABI, inside
-a single translation unit: [`packages/loopy_engine/src/engine.c`](../../packages/loopy_engine/src/engine.c)
+a single translation unit: [`packages/segno_engine/src/engine.c`](../../packages/segno_engine/src/engine.c)
 is **3 817 lines** owning eight unrelated concerns, and its real-time callback
 `le_engine_process()` is a **561-line** function.
 
@@ -43,7 +43,7 @@ and **no audio output changes** (verified by the existing deterministic
 ## What is deliberately NOT in scope
 
 - No DSP algorithm changes (effects produce bit-identical output).
-- No ABI changes in S1–S3 (`loopy_engine_api.h` is frozen). S4 is internal-only
+- No ABI changes in S1–S3 (`segno_engine_api.h` is frozen). S4 is internal-only
   (ring encoding is private; the public `le_engine_post_command` signature and the
   per-command producer functions are unchanged). S5 is Dart-only.
 - No new features (no new effects, backends, or transport modes).
@@ -75,7 +75,7 @@ thread — the single most important invariant in the system.
 
 ### Secondary smells
 
-- **Arg-packing footgun.** `loopy_engine_api.h:108-159` documents *two different*
+- **Arg-packing footgun.** `segno_engine_api.h:108-159` documents *two different*
   bit encodings for lane commands — FX commands pack `(input<<16)|(lane<<8)|index`
   in `arg_i`; output/volume/mute use a flat `input*LE_MAX_LANES+lane` — and the
   header says *"This matches the track lane convention, not a bug."* Needing to
@@ -95,7 +95,7 @@ thread — the single most important invariant in the system.
 
 ### Approach
 
-Move functions verbatim into new TUs compiled into the same `loopy_engine` target
+Move functions verbatim into new TUs compiled into the same `segno_engine` target
 (CMakeLists `add_library` source list grows; `add_subdirectory(../src)` on
 Windows/Linux and the macOS include-shims pick them up unchanged). Cross-TU helpers
 that were `static` get an `engine_private.h` (or a new `engine_dsp.h`) declaration

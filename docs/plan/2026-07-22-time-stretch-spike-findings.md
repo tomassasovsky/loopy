@@ -6,7 +6,7 @@ issue: 263
 index: 2026-07-22-feat-tempo-aware-looper-modes-plan.md
 ---
 
-## Spike D0 — can loopy time-stretch 8 tracks × 8 lanes in real time?
+## Spike D0 — can segno time-stretch 8 tracks × 8 lanes in real time?
 
 **Short answer: yes — GO for 0.5×–2×, inline on the audio thread, no worker
 thread needed.** With `presetCheaper` and hop-phase staggering, even the
@@ -21,12 +21,12 @@ The varispeed leg (linear-interp resample) is effectively free.
   (MIT), release tag **`1.1.0`**, commit
   **`44c8f865af9da8c29cc4a70a2d5a3ec83639c711`** (2025-01-29). Snapshot
   vendored (no `.git`) at
-  `packages/loopy_engine/src/test/bench/third_party/signalsmith-stretch/`
+  `packages/segno_engine/src/test/bench/third_party/signalsmith-stretch/`
   — kept: `signalsmith-stretch.h`, `dsp/` (bundled signalsmith-dsp, also
   MIT), licenses, README; stripped: `web/` (compiled JS + mp3), `cmd/`
   (CLI example). Header-only C++ template; D1 vendors it properly into
   `src/stretch/`.
-- **Harness:** `packages/loopy_engine/src/test/bench/bench_stretch.cpp`,
+- **Harness:** `packages/segno_engine/src/test/bench/bench_stretch.cpp`,
   built by `bench.sh` (host `c++`, `-std=c++17 -O2 -DNDEBUG`). **Outside the
   native test gate** (`run_native_tests.sh` compiles explicit file lists and
   never looks in `src/test/bench/`).
@@ -43,7 +43,7 @@ The varispeed leg (linear-interp resample) is effectively free.
   occasional 15–26 ms `max` outlier is scheduler preemption, not the
   library; a real audio thread at RT priority will not see those. Judge
   against p99.
-- Reproduce: `cd packages/loopy_engine/src/test/bench && ./bench.sh`
+- Reproduce: `cd packages/segno_engine/src/test/bench && ./bench.sh`
   (add `--wav <dir>` to dump listening files, `--only-wav` to skip timing).
 
 ### Memory: per-stream state

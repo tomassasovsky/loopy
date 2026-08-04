@@ -10,10 +10,10 @@
 library;
 
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/cubit/control_cubit.dart';
-import 'package:loopy/control/invariants.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/cubit/control_cubit.dart';
+import 'package:segno/control/invariants.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
 
 /// Whether the play transport is PARKED: content exists but none of it is
 /// running. State-based and mute-ignored — keyboard-muting every track does

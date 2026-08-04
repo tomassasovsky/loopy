@@ -17,15 +17,15 @@ cluster** (the highest-friction types — they flow through the audio-setup, boo
 wiring), folds `settings_repository`'s lone `AudioBackend` coupling, and — corrected after
 technical review — adds a **pedal output-device** domain model in `pedal_repository` so the
 pedal UI stops importing `midi_client`. Behavior-preserving. After this PR, no shared `lib/`
-file imports `midi_client`, and `loopy_engine` survives only in `run_loopy.dart` (cleared in
+file imports `midi_client`, and `segno_engine` survives only in `run_segno.dart` (cleared in
 Part 4).
 
 ## Problem Statement
 
 - `looper_repository` re-exports `AudioBackend`, `AudioDevice`, `EngineConfig`,
   `LatencyState`, `LoopbackInfo`, `LoopbackKind`; these flow into `audio_setup_cubit/state`,
-  `audio_bootstrap`, `audio_settings_section`, `audio_device_picker`, `app.dart`, `run_loopy`.
-- `packages/settings_repository/lib/src/settings_repository.dart:7` imports `loopy_engine`
+  `audio_bootstrap`, `audio_settings_section`, `audio_device_picker`, `app.dart`, `run_segno`.
+- `packages/settings_repository/lib/src/settings_repository.dart:7` imports `segno_engine`
   solely for the `AudioBackend` enum.
 - **Pedal output leak (corrected):** `pedal_cubit.dart:6` and `pedal_settings_section.dart:7`
   do `show MidiDevice` from `midi_client` because `PedalRepository.availableOutputs()`
@@ -47,10 +47,10 @@ Domain audio-config models in `looper_repository`; `settings_repository` gets it
       `lib/audio_setup/cubit/audio_setup_state.dart`, `lib/app/audio_bootstrap.dart`,
       `lib/audio_setup/view/audio_settings_section.dart`,
       `lib/audio_setup/view/audio_device_picker.dart`, `lib/app/view/app.dart` (audio portions),
-      `lib/app/run_loopy.dart` (the `AudioDevice` list now comes from the domain barrel),
+      `lib/app/run_segno.dart` (the `AudioDevice` list now comes from the domain barrel),
       `lib/l10n/localized.dart` (audio-config portion).
 - [ ] Give `packages/settings_repository` its **own** domain `AudioBackend` enum (round-trip
-      persistence test); remove its `loopy_engine` import. Do **not** import
+      persistence test); remove its `segno_engine` import. Do **not** import
       `looper_repository` (no repo→repo dependency).
 - [ ] **Pedal output (corrected scope):** add a domain output-device model in
       `packages/pedal_repository/lib/src/models/`; change
@@ -66,9 +66,9 @@ Domain audio-config models in `looper_repository`; `settings_repository` gets it
 
 ## Acceptance Criteria
 
-- [ ] No `lib/` file imports `loopy_engine` except `lib/app/run_loopy.dart` (cleared in Part 4).
+- [ ] No `lib/` file imports `segno_engine` except `lib/app/run_segno.dart` (cleared in Part 4).
 - [ ] `pedal_cubit` and `pedal_settings_section` import no data package.
-- [ ] `settings_repository` no longer imports `loopy_engine`; audio config persistence
+- [ ] `settings_repository` no longer imports `segno_engine`; audio config persistence
       round-trips unchanged.
 - [ ] ASIO/device pickers, loopback detection, latency display, and the pedal output dropdown
       behave exactly as before.
@@ -77,7 +77,7 @@ Domain audio-config models in `looper_repository`; `settings_repository` gets it
 ## Dependencies
 
 - **Requires Part 2a (D2 effects) merged** — both edit the `looper_repository` barrel and the
-  shared `localized.dart` / `app.dart` / `run_loopy.dart`; landing in sequence avoids a
+  shared `localized.dart` / `app.dart` / `run_segno.dart`; landing in sequence avoids a
   three-way merge.
 - Blocks Part 4 (V2) — V2's `pubspec` removals are only safe once this PR clears the audio +
   pedal-output leaks.

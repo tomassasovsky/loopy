@@ -2,12 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/session/session.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
 
 /// Opens the **Sessions** popup — the single place to handle sessions (like
-/// Loopy Pro's projects browser): the current session with Save / Save As, a
+/// Segno Pro's projects browser): the current session with Save / Save As, a
 /// grid of saved-session cards (load-on-tap; per-card rename / duplicate /
 /// delete), and the mixdown / stems exports. Refreshes the catalog first, then
 /// hands the live [SessionCubit] down through the dialog route (which sits

@@ -214,5 +214,5 @@ def export(solid, name="rc20_pad"):
 
 if __name__ == "__main__":
     export(build())                    # RC-20 master (85.9 x 62.8, measured)
-    set_pedal(100.0, 75.0)             # VAMP ASP-1 pad (footprint PROVISIONAL,
-    export(build(), name="asp1_pad")   # tracks ASP1_W/D in vamp_enclosure.py)
+    set_pedal(100.0, 75.0)             # Segno ASP-1 pad (footprint PROVISIONAL,
+    export(build(), name="asp1_pad")   # tracks ASP1_W/D in segno_enclosure.py)

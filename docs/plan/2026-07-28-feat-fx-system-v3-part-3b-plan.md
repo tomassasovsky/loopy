@@ -248,7 +248,7 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test packages
   always invoke `/Users/Tomas/development/flutter/bin/flutter test` (absolute
   path) directly. See `docs/PROGRESS.md` "How to build / test".
 - **No native surface expected:** this part is pure Dart. If any
-  `loopy_engine` API does end up churning, remember ffigen regen emits
+  `segno_engine` API does end up churning, remember ffigen regen emits
   short-style formatting → run `dart format` on the generated bindings or the
   diff drowns (documented in `ffigen.yaml`).
 - **Idempotence trap:** fresh slotIds for legacy entries must be minted

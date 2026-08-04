@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/lane.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
-import 'package:loopy_engine/loopy_engine.dart' hide TrackEffect;
+import 'package:segno_engine/segno_engine.dart' hide TrackEffect;
 
 /// A single looper track: a multi-lane container that owns the transport
 /// (state, loop multiple, undo/redo depth) and its [lanes].

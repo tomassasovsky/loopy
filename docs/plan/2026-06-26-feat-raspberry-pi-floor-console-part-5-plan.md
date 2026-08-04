@@ -14,7 +14,7 @@ date: 2026-06-26
 
 ## Overview
 
-Make the unit boot straight into the Loopy app full-screen across both displays: a systemd-launched kiosk session on the compositor chosen in Part 1, with the 16″ as the main UI ([`BigPictureView`](../../lib/looper/view/big_picture_view.dart:26)) and the 7″ as the waveform ([`WaveformWindowService`](../../lib/visualizer/waveform_window_service.dart:29)), pinned deterministically across boots. Includes per-display DPI/scale and a single-display fallback with a visible notice. This is the display/launch half of the original Phase 4.
+Make the unit boot straight into the Segno app full-screen across both displays: a systemd-launched kiosk session on the compositor chosen in Part 1, with the 16″ as the main UI ([`BigPictureView`](../../lib/looper/view/big_picture_view.dart:26)) and the 7″ as the waveform ([`WaveformWindowService`](../../lib/visualizer/waveform_window_service.dart:29)), pinned deterministically across boots. Includes per-display DPI/scale and a single-display fallback with a visible notice. This is the display/launch half of the original Phase 4.
 
 ## Problem Statement
 
@@ -32,7 +32,7 @@ The app is already chromeless on `BigPictureView` and opens a second waveform wi
 
 ### Mock files
 
-- `deploy/rpi/loopy-kiosk.service` (new — systemd unit)
+- `deploy/rpi/segno-kiosk.service` (new — systemd unit)
 - `deploy/rpi/compositor/` (new — compositor config + output-name pinning)
 - `lib/visualizer/waveform_window_service.dart` (modified — surface open failure; coverage-excluded glue)
 - `docs/RUNNING_ON_RPI.md` (modified — kiosk/display setup)
@@ -50,7 +50,7 @@ The app is already chromeless on `BigPictureView` and opens a second waveform wi
 
 - [ ] Display pinning verified across ≥5 reboots (no output-naming race).
 - [ ] `docs/RUNNING_ON_RPI.md` documents the kiosk + display setup reproducibly.
-- [ ] Note: `waveform_window_service.dart` / `run_loopy.dart` / `bootstrap.dart` are in CI `coverage_excludes` ([`.github/workflows/main.yaml:29`](../../.github/workflows/main.yaml)) — correctness here rests on the on-hardware checks, so the reboot/display verification is the real gate.
+- [ ] Note: `waveform_window_service.dart` / `run_segno.dart` / `bootstrap.dart` are in CI `coverage_excludes` ([`.github/workflows/main.yaml:29`](../../.github/workflows/main.yaml)) — correctness here rests on the on-hardware checks, so the reboot/display verification is the real gate.
 
 ## Risk Analysis & Mitigation
 

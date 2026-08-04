@@ -1,19 +1,19 @@
 ---
-title: Fix Loopy Delay VST3 delay-ring capacity to scale with host sample rate
+title: Fix Segno Delay VST3 delay-ring capacity to scale with host sample rate
 type: fix
 date: 2026-07-13
 ---
 
-## Fix Loopy Delay VST3 delay-ring capacity to scale with host sample rate - Standard
+## Fix Segno Delay VST3 delay-ring capacity to scale with host sample rate - Standard
 
 ## Overview
 
-`packages/loopy_engine/vst3/delay/processor.h` hardcodes
+`packages/segno_engine/vst3/delay/processor.h` hardcodes
 `static constexpr int kDelayCapFrames = 48000;` and the Delay processor never
 overrides `setupProcessing()`, so the delay-ring capacity is fixed at 48000
 frames regardless of the host's actual negotiated sample rate. This plan
 mirrors the sibling Reverb VST3 plugin's already-shipped fix for the identical
-problem (`packages/loopy_engine/vst3/reverb/processor.h`/`.cpp`, part 3 of the
+problem (`packages/segno_engine/vst3/reverb/processor.h`/`.cpp`, part 3 of the
 same umbrella plan) onto Delay.
 
 ## Problem Statement / Motivation
@@ -38,7 +38,7 @@ sample rate.
 Mirror Reverb's structure in the Delay processor, verbatim where the pattern
 applies:
 
-1. **`packages/loopy_engine/vst3/delay/processor.h`**
+1. **`packages/segno_engine/vst3/delay/processor.h`**
    - Add `setupProcessing(Steinberg::Vst::ProcessSetup&)` override declaration.
    - Add a `static int computeRingCapacity(double sampleRate)` public static
      method — same formula as Reverb's (`round(sampleRate)`, floored at 1).
@@ -53,7 +53,7 @@ applies:
      as `cap_`'s default/initial value before `setupProcessing()` first runs,
      matching how Reverb's header frames its own `cap_ = 48000` default.
 
-2. **`packages/loopy_engine/vst3/delay/processor.cpp`**
+2. **`packages/segno_engine/vst3/delay/processor.cpp`**
    - Remove the `le_fx_prepare(&fx_, 0, LE_FX_DELAY, kDelayCapFrames)` call
      from `initialize()` (keep `types_[0] = LE_FX_DELAY;` and
      `le_fx_defaults(...)` there, matching Reverb's `initialize()`).
@@ -69,7 +69,7 @@ applies:
      `cap_`.
    - `terminate()` is unchanged (already frees both `delay[0][0]`/`[1]`).
 
-3. **`packages/loopy_engine/vst3/delay/test_vst3_delay_wrapper.cpp`**
+3. **`packages/segno_engine/vst3/delay/test_vst3_delay_wrapper.cpp`**
    - Add a `setupProcessing48k(IAudioProcessor*)` helper, identical to
      Reverb's wrapper test, and call it in `test_processor_param_round_trip`
      before `processSilentBlock` (now needed since `initialize()` no longer
@@ -89,10 +89,10 @@ applies:
      fixed-48000 cap could never reach at 96 kHz since the ring itself would
      have looped/wrapped at half that index.
 
-4. **`packages/loopy_engine/vst3/test/test_delay_parity.cpp`**
+4. **`packages/segno_engine/vst3/test/test_delay_parity.cpp`**
    - Change `config.computeCap` from the lambda returning the fixed
-     `loopy_vst3_delay::Processor::kDelayCapFrames` literal to
-     `&loopy_vst3_delay::Processor::computeRingCapacity`, matching how
+     `segno_vst3_delay::Processor::kDelayCapFrames` literal to
+     `&segno_vst3_delay::Processor::computeRingCapacity`, matching how
      `test_reverb_parity.cpp` wires its own `computeCap`. Update the adjacent
      comment (currently states "Fixed regardless of sample rate (part 2) —
      not scaled like Reverb's (part 3's fix)") to reflect that Delay now
@@ -106,7 +106,7 @@ applies:
      not a real DSP bug, but a spurious divergence this plan must not
      introduce.
 
-5. **`packages/loopy_engine/vst3/test/host_harness.h`**
+5. **`packages/segno_engine/vst3/test/host_harness.h`**
    - Update the stale comment (lines ~107-116) that currently reads "Delay
      uses a fixed 48000 regardless of sr ... Reverb scales with sr" to state
      both plugins now scale ring capacity with the real sample rate via
@@ -144,27 +144,27 @@ applies:
 ## Success Criteria
 
 ```success-criteria
-GOAL: Loopy Delay VST3's delay-ring capacity scales with the host's negotiated sample rate, matching Reverb's already-shipped pattern, with no regression in existing wrapper/parity/GUID tests.
+GOAL: Segno Delay VST3's delay-ring capacity scales with the host's negotiated sample rate, matching Reverb's already-shipped pattern, with no regression in existing wrapper/parity/GUID tests.
 
 SUCCESS CRITERIA:
-- processor.h declares setupProcessing(), computeRingCapacity(), ringCapacityForTesting(), and a cap_ member | verify: grep -q "setupProcessing" packages/loopy_engine/vst3/delay/processor.h && grep -q "computeRingCapacity" packages/loopy_engine/vst3/delay/processor.h && grep -q "ringCapacityForTesting" packages/loopy_engine/vst3/delay/processor.h && grep -q "cap_" packages/loopy_engine/vst3/delay/processor.h
-- processor.cpp no longer prepares the ring in initialize() and uses cap_ (not kDelayCapFrames) in process() | verify: ! grep -q "le_fx_prepare(&fx_, 0, LE_FX_DELAY, kDelayCapFrames)" packages/loopy_engine/vst3/delay/processor.cpp && grep -q "fx_apply_chain(&fx_, sr, cap_" packages/loopy_engine/vst3/delay/processor.cpp
-- A 96kHz regression test exists in the delay wrapper test file and passes | verify: grep -q "96000" packages/loopy_engine/vst3/delay/test_vst3_delay_wrapper.cpp
-- test_delay_parity.cpp's computeCap references computeRingCapacity, not the fixed constant | verify: grep -q "computeRingCapacity" packages/loopy_engine/vst3/test/test_delay_parity.cpp && ! grep -q "kDelayCapFrames" packages/loopy_engine/vst3/test/test_delay_parity.cpp
-- Full VST3 CMake test suite (delay + reverb wrapper, all 7 plugins' parity/GUID tests) builds and passes on macOS | verify: manual 1) cd packages/loopy_engine/vst3 2) cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug 3) cmake --build build 4) ctest --test-dir build --output-on-failure 5) confirm all tests, especially vst3_delay_wrapper and vst3_delay_parity, report Passed
-- No unrelated files outside packages/loopy_engine/vst3/delay/, packages/loopy_engine/vst3/test/test_delay_parity.cpp, and packages/loopy_engine/vst3/test/host_harness.h are modified | verify: git diff --name-only | grep -v -E "^(packages/loopy_engine/vst3/delay/|packages/loopy_engine/vst3/test/test_delay_parity.cpp|packages/loopy_engine/vst3/test/host_harness.h|docs/brainstorm/|docs/plan/)" | wc -l | grep -qx 0
+- processor.h declares setupProcessing(), computeRingCapacity(), ringCapacityForTesting(), and a cap_ member | verify: grep -q "setupProcessing" packages/segno_engine/vst3/delay/processor.h && grep -q "computeRingCapacity" packages/segno_engine/vst3/delay/processor.h && grep -q "ringCapacityForTesting" packages/segno_engine/vst3/delay/processor.h && grep -q "cap_" packages/segno_engine/vst3/delay/processor.h
+- processor.cpp no longer prepares the ring in initialize() and uses cap_ (not kDelayCapFrames) in process() | verify: ! grep -q "le_fx_prepare(&fx_, 0, LE_FX_DELAY, kDelayCapFrames)" packages/segno_engine/vst3/delay/processor.cpp && grep -q "fx_apply_chain(&fx_, sr, cap_" packages/segno_engine/vst3/delay/processor.cpp
+- A 96kHz regression test exists in the delay wrapper test file and passes | verify: grep -q "96000" packages/segno_engine/vst3/delay/test_vst3_delay_wrapper.cpp
+- test_delay_parity.cpp's computeCap references computeRingCapacity, not the fixed constant | verify: grep -q "computeRingCapacity" packages/segno_engine/vst3/test/test_delay_parity.cpp && ! grep -q "kDelayCapFrames" packages/segno_engine/vst3/test/test_delay_parity.cpp
+- Full VST3 CMake test suite (delay + reverb wrapper, all 7 plugins' parity/GUID tests) builds and passes on macOS | verify: manual 1) cd packages/segno_engine/vst3 2) cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug 3) cmake --build build 4) ctest --test-dir build --output-on-failure 5) confirm all tests, especially vst3_delay_wrapper and vst3_delay_parity, report Passed
+- No unrelated files outside packages/segno_engine/vst3/delay/, packages/segno_engine/vst3/test/test_delay_parity.cpp, and packages/segno_engine/vst3/test/host_harness.h are modified | verify: git diff --name-only | grep -v -E "^(packages/segno_engine/vst3/delay/|packages/segno_engine/vst3/test/test_delay_parity.cpp|packages/segno_engine/vst3/test/host_harness.h|docs/brainstorm/|docs/plan/)" | wc -l | grep -qx 0
 
 NON-GOALS:
 - Changing engine_fx.c, engine.c, or any other VST3 plugin (Echo, Drive, Filter, Tremolo, Octaver).
 - Adding sample-accurate (per-sample) automation for the Time/Feedback/Mix parameters — out of scope, pre-existing D-SEAM block-rate limitation shared with every other VST3 wrapper in this repo.
 - Windows/Linux-specific work (parts 13/14) — this fix is portable C++ shared by all platforms' CMake targets, no OS-specific branch needed.
 
-VERIFICATION COMMAND: grep -q "setupProcessing" packages/loopy_engine/vst3/delay/processor.h && grep -q "computeRingCapacity" packages/loopy_engine/vst3/delay/processor.h && grep -q "ringCapacityForTesting" packages/loopy_engine/vst3/delay/processor.h && grep -q "cap_" packages/loopy_engine/vst3/delay/processor.h && ! grep -q "le_fx_prepare(&fx_, 0, LE_FX_DELAY, kDelayCapFrames)" packages/loopy_engine/vst3/delay/processor.cpp && grep -q "fx_apply_chain(&fx_, sr, cap_" packages/loopy_engine/vst3/delay/processor.cpp && grep -q "96000" packages/loopy_engine/vst3/delay/test_vst3_delay_wrapper.cpp && grep -q "computeRingCapacity" packages/loopy_engine/vst3/test/test_delay_parity.cpp && ! grep -q "kDelayCapFrames" packages/loopy_engine/vst3/test/test_delay_parity.cpp
+VERIFICATION COMMAND: grep -q "setupProcessing" packages/segno_engine/vst3/delay/processor.h && grep -q "computeRingCapacity" packages/segno_engine/vst3/delay/processor.h && grep -q "ringCapacityForTesting" packages/segno_engine/vst3/delay/processor.h && grep -q "cap_" packages/segno_engine/vst3/delay/processor.h && ! grep -q "le_fx_prepare(&fx_, 0, LE_FX_DELAY, kDelayCapFrames)" packages/segno_engine/vst3/delay/processor.cpp && grep -q "fx_apply_chain(&fx_, sr, cap_" packages/segno_engine/vst3/delay/processor.cpp && grep -q "96000" packages/segno_engine/vst3/delay/test_vst3_delay_wrapper.cpp && grep -q "computeRingCapacity" packages/segno_engine/vst3/test/test_delay_parity.cpp && ! grep -q "kDelayCapFrames" packages/segno_engine/vst3/test/test_delay_parity.cpp
 ```
 
 ## Success Metrics
 
-- `ctest --test-dir packages/loopy_engine/vst3/build` reports 100% pass,
+- `ctest --test-dir packages/segno_engine/vst3/build` reports 100% pass,
   including the new 96 kHz Delay regression test and the existing
   `vst3_delay_parity` / `vst3_reverb_parity` / `vst3_delay_wrapper` /
   `vst3_reverb_wrapper` suites (all sample rates in the existing
@@ -193,18 +193,18 @@ VERIFICATION COMMAND: grep -q "setupProcessing" packages/loopy_engine/vst3/delay
 
 ## References & Research
 
-- Proven pattern this mirrors: `packages/loopy_engine/vst3/reverb/processor.h`,
-  `packages/loopy_engine/vst3/reverb/processor.cpp`'s `setupProcessing()`
-  (lines ~33-49), `packages/loopy_engine/vst3/reverb/test_vst3_reverb_wrapper.cpp`'s
+- Proven pattern this mirrors: `packages/segno_engine/vst3/reverb/processor.h`,
+  `packages/segno_engine/vst3/reverb/processor.cpp`'s `setupProcessing()`
+  (lines ~33-49), `packages/segno_engine/vst3/reverb/test_vst3_reverb_wrapper.cpp`'s
   `test_reverb_stays_correct_at_96khz`.
-- Bug site: `packages/loopy_engine/vst3/delay/processor.h:45-46`
-  (`kDelayCapFrames`), `packages/loopy_engine/vst3/delay/processor.cpp:28,100`.
+- Bug site: `packages/segno_engine/vst3/delay/processor.h:45-46`
+  (`kDelayCapFrames`), `packages/segno_engine/vst3/delay/processor.cpp:28,100`.
   entry points: `test_vst3_delay_parity.cpp:38`, `test/host_harness.h:107-116`.
-- DSP ground truth: `packages/loopy_engine/src/core/engine_fx.c`'s `fx_delay`
+- DSP ground truth: `packages/segno_engine/src/core/engine_fx.c`'s `fx_delay`
   (line ~71), `fx_stereo_ring_prepare` (line ~799), `le_fx_prepare` (line
-  ~1006); `packages/loopy_engine/src/core/engine.c`'s
+  ~1006); `packages/segno_engine/src/core/engine.c`'s
   `fx_delay_frames = sample_rate` convention.
-- Build/test wiring: `packages/loopy_engine/vst3/CMakeLists.txt` (wrapper +
+- Build/test wiring: `packages/segno_engine/vst3/CMakeLists.txt` (wrapper +
   parity test target definitions, lines ~260-306).
 - Brainstorm doc:
   `docs/brainstorm/2026-07-13-fix-delay-vst3-samplerate-scaled-ring-brainstorm-doc.md`.

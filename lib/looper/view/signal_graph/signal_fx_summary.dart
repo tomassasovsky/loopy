@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/view/fx_editor/fx_block_chip.dart';
-import 'package:loopy/looper/view/signal_graph/signal_fx_chrome.dart';
-import 'package:loopy/looper/view/signal_graph/signal_style.dart';
-import 'package:loopy/theme/surface_theme.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
+import 'package:segno/looper/view/signal_graph/signal_fx_chrome.dart';
+import 'package:segno/looper/view/signal_graph/signal_style.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 /// The stomp marker for the chain at [address], read from the live remap —
 /// what [SignalFxSummary.stomp] wants (part 6b).

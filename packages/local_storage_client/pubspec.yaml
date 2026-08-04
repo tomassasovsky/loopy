@@ -1,6 +1,6 @@
 name: local_storage_client
 description: >-
-  Local key-value persistence for Loopy, backed by shared_preferences.
+  Local key-value persistence for Segno, backed by shared_preferences.
 version: 0.1.0
 publish_to: none
 

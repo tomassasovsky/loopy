@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:meta/meta.dart';
 
-/// Live WiFi association status from `loopy-wifi-ctl status`.
+/// Live WiFi association status from `segno-wifi-ctl status`.
 @immutable
 class WifiStatus extends Equatable {
   /// Creates a [WifiStatus].
@@ -53,7 +53,7 @@ class WifiStatus extends Equatable {
   List<Object?> get props => [supported, enabled, connected, ssid, ip, signal];
 }
 
-/// One scanned network from `loopy-wifi-ctl scan`.
+/// One scanned network from `segno-wifi-ctl scan`.
 @immutable
 class WifiNetwork extends Equatable {
   /// Creates a [WifiNetwork].

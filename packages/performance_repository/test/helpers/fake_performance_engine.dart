@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:loopy_engine/loopy_engine.dart';
+import 'package:segno_engine/segno_engine.dart';
 
 class _FakeLane {
   double volume = 1;

@@ -1,0 +1,205 @@
+#!/bin/sh
+# segno-bt-ctl — privileged Bluetooth helper the Flutter app drives.
+#
+# Verbs (stdout = compact JSON; detail on stderr):
+#   status                         {supported,powered,discoverable,advertising,alias,
+#                                   connected,device}
+#   scan                           [{name,address}, ...]  (timed discovery)
+#   power on|off                   {}  (Control Center tap toggle)
+#   discoverable on|off            {}
+#   advertise on|off               {}  (power + LE advertise / discoverable)
+#
+# Discovery and broadcasting only — no pair/connect. Status still reports the
+# first Connected peer (if any) so Control Center can show its name.
+set -eu
+
+ALIAS="${SEGNO_BT_ALIAS:-Segno}"
+SCAN_SECONDS="${SEGNO_BT_SCAN_SECONDS:-5}"
+STATUS_UNSUPPORTED='{"supported":false,"powered":false,"discoverable":false,"advertising":false,"alias":"","connected":false,"device":""}'
+
+log() { echo "segno-bt-ctl: $*" >&2; }
+
+json_escape() {
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+have_bt() {
+    command -v bluetoothctl >/dev/null 2>&1
+}
+
+bt() {
+    bluetoothctl "$@"
+}
+
+ensure_powered() {
+    bt power on >/dev/null 2>&1 || true
+    bt system-alias "$ALIAS" >/dev/null 2>&1 || true
+}
+
+# Prints "NAME" of the first connected peer (empty when none). Prefers
+# `bluetoothctl devices Connected` (BlueZ ≥5.65); falls back to `info`.
+first_connected_device() {
+    line=$(bt devices Connected 2>/dev/null | sed -n '/^Device /p' | head -n1 || true)
+    if [ -n "$line" ]; then
+        name=$(printf '%s\n' "$line" | cut -d' ' -f3-)
+        [ -n "$name" ] || name=$(printf '%s\n' "$line" | awk '{print $2}')
+        printf '%s' "$name"
+        return 0
+    fi
+    tmp=$(mktemp)
+    printf '%s\n' "$(bt devices 2>/dev/null || true)" >"$tmp"
+    while IFS= read -r dline; do
+        case "$dline" in
+            Device\ *) ;;
+            *) continue ;;
+        esac
+        address=$(printf '%s\n' "$dline" | awk '{print $2}')
+        [ -n "$address" ] || continue
+        info=$(bt info "$address" 2>/dev/null || true)
+        printf '%s\n' "$info" | grep -q 'Connected: yes' || continue
+        name=$(printf '%s\n' "$dline" | cut -d' ' -f3-)
+        [ -n "$name" ] || name="$address"
+        printf '%s' "$name"
+        rm -f "$tmp"
+        return 0
+    done <"$tmp"
+    rm -f "$tmp"
+    return 0
+}
+
+do_status() {
+    if ! have_bt; then
+        echo "$STATUS_UNSUPPORTED"
+        return 0
+    fi
+    # Start bluetoothd via systemd if present.
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl start bluetooth.service 2>/dev/null || true
+    fi
+    show=$(bt show 2>/dev/null || true)
+    if [ -z "$show" ]; then
+        echo "$STATUS_UNSUPPORTED"
+        return 0
+    fi
+    powered=false
+    discoverable=false
+    advertising=false
+    connected=false
+    alias=""
+    device=""
+    printf '%s\n' "$show" | grep -q 'Powered: yes' && powered=true
+    printf '%s\n' "$show" | grep -q 'Discoverable: yes' && discoverable=true
+    # "Advertising: yes" appears when LE advertising is active.
+    printf '%s\n' "$show" | grep -q 'Advertising: yes' && advertising=true
+    alias=$(printf '%s\n' "$show" | sed -n 's/^[[:space:]]*Alias: //p' | head -n1)
+    [ -n "$alias" ] || alias="$ALIAS"
+    device=$(first_connected_device)
+    [ -n "$device" ] && connected=true
+    printf '{"supported":true,"powered":%s,"discoverable":%s,"advertising":%s,"alias":"%s","connected":%s,"device":"%s"}\n' \
+        "$powered" "$discoverable" "$advertising" "$(json_escape "$alias")" \
+        "$connected" "$(json_escape "$device")"
+}
+
+do_scan() {
+    if ! have_bt; then
+        echo '[]'
+        return 1
+    fi
+    ensure_powered
+    # Clear prior discoveries for a clean list, then timed scan.
+    bt --timeout "$SCAN_SECONDS" scan on >/dev/null 2>&1 || true
+    devices=$(bt devices 2>/dev/null || true)
+    tmp=$(mktemp)
+    printf '%s\n' "$devices" | while IFS= read -r line; do
+        # "Device AA:BB:CC:DD:EE:FF Name here"
+        case "$line" in
+            Device\ *) ;;
+            *) continue ;;
+        esac
+        address=$(printf '%s\n' "$line" | awk '{print $2}')
+        name=$(printf '%s\n' "$line" | cut -d' ' -f3-)
+        [ -n "$address" ] || continue
+        [ -n "$name" ] || name="$address"
+        printf '{"name":"%s","address":"%s"}\n' \
+            "$(json_escape "$name")" "$(json_escape "$address")"
+    done >"$tmp"
+    first=1
+    printf '['
+    while IFS= read -r obj; do
+        [ -n "$obj" ] || continue
+        if [ "$first" -eq 1 ]; then
+            first=0
+        else
+            printf ','
+        fi
+        printf '%s' "$obj"
+    done <"$tmp"
+    printf ']\n'
+    rm -f "$tmp"
+}
+
+do_power() {
+    onoff=$1
+    case "$onoff" in on|off) ;; *) log "power needs on|off"; return 2 ;; esac
+    if [ "$onoff" = on ]; then
+        ensure_powered
+    else
+        bt advertise off >/dev/null 2>&1 || true
+        bt discoverable off >/dev/null 2>&1 || true
+        bt power off >/dev/null 2>&1 || true
+    fi
+    echo '{}'
+}
+
+do_discoverable() {
+    onoff=$1
+    case "$onoff" in on|off) ;; *) log "discoverable needs on|off"; return 2 ;; esac
+    ensure_powered
+    bt discoverable "$onoff" >/dev/null
+    if [ "$onoff" = on ]; then
+        bt discoverable-timeout 0 >/dev/null 2>&1 || true
+    fi
+    echo '{}'
+}
+
+do_advertise() {
+    onoff=$1
+    case "$onoff" in on|off) ;; *) log "advertise needs on|off"; return 2 ;; esac
+    ensure_powered
+    if [ "$onoff" = on ]; then
+        bt discoverable on >/dev/null
+        bt discoverable-timeout 0 >/dev/null 2>&1 || true
+        bt advertise on >/dev/null 2>&1 || true
+    else
+        bt advertise off >/dev/null 2>&1 || true
+        bt discoverable off >/dev/null 2>&1 || true
+    fi
+    echo '{}'
+}
+
+usage() {
+    log "usage: $0 status|scan|power on|off|discoverable on|off|advertise on|off"
+    exit 2
+}
+
+[ $# -ge 1 ] || usage
+verb=$1
+shift
+
+case "$verb" in
+    status) do_status ;;
+    scan) do_scan ;;
+    power)
+        [ $# -ge 1 ] || usage
+        do_power "$1"
+        ;;
+    discoverable)
+        [ $# -ge 1 ] || usage
+        do_discoverable "$1"
+        ;;
+    advertise)
+        [ $# -ge 1 ] || usage
+        do_advertise "$1"
+        ;;
+    *) usage ;;
+esac

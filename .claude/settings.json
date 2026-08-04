@@ -3,7 +3,7 @@
     "allow": [
       "Bash(dart analyze:*)",
       "Bash(dart format:*)",
-      "Bash(bash packages/loopy_engine/src/test/run_native_tests.sh:*)",
+      "Bash(bash packages/segno_engine/src/test/run_native_tests.sh:*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)"
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[build-test gotchas, re-injected after compaction] Dart tests: /Users/Tomas/development/flutter/bin/flutter test (bare flutter test / dart test are hook-blocked; very_good MCP test tool broken). Native engine tests: bash packages/loopy_engine/src/test/run_native_tests.sh. After touching src/loopy_engine_api.h: dart run ffigen --config ffigen.yaml && dart format lib/src/generated/loopy_engine_bindings.dart (from packages/loopy_engine). macOS run/build needs --flavor development -t lib/main_development.dart. Full list: docs/PROGRESS.md \"How to build / test\".'"
+            "command": "echo '[build-test gotchas, re-injected after compaction] Dart tests: /Users/Tomas/development/flutter/bin/flutter test (bare flutter test / dart test are hook-blocked; very_good MCP test tool broken). Native engine tests: bash packages/segno_engine/src/test/run_native_tests.sh. After touching src/segno_engine_api.h: dart run ffigen --config ffigen.yaml && dart format lib/src/generated/segno_engine_bindings.dart (from packages/segno_engine). macOS run/build needs --flavor development -t lib/main_development.dart. Full list: docs/PROGRESS.md \"How to build / test\".'"
           }
         ]
       }

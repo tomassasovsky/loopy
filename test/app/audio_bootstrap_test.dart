@@ -1,11 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/app/app.dart';
+import 'package:segno/app/app.dart';
 // Domain audio-config + effect types come from the looper_repository barrel
 // above; the engine-typed fixtures fed to the fake engine use the `le` prefix,
 // and settings owns its own AudioBackend via the `persisted` prefix.
-import 'package:loopy_engine/loopy_engine.dart'
+import 'package:segno_engine/segno_engine.dart'
     hide
         AudioBackend,
         AudioDevice,
@@ -22,7 +22,7 @@ import 'package:loopy_engine/loopy_engine.dart'
         TrackEffectType,
         decodeTrackEffects,
         encodeTrackEffects;
-import 'package:loopy_engine/loopy_engine.dart'
+import 'package:segno_engine/segno_engine.dart'
     as le
     show AudioDevice, EngineConfig, LatencyState, LoopbackInfo, LoopbackKind;
 import 'package:settings_repository/settings_repository.dart' hide AudioBackend;

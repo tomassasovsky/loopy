@@ -1,5 +1,5 @@
-name: loopy
-description: Loopy — a cross-platform desktop loopstation with a native low-latency audio engine
+name: segno
+description: Segno — a cross-platform desktop loopstation with a native low-latency audio engine
 version: 1.0.0+1
 publish_to: none
 license: GPL-3.0-or-later
@@ -70,11 +70,11 @@ dev_dependencies:
     sdk: flutter
   integration_test:
     sdk: flutter
-  loopy_engine:
-    path: packages/loopy_engine
   midi_client:
     path: packages/midi_client
   mocktail: ^1.0.5
+  segno_engine:
+    path: packages/segno_engine
   very_good_analysis: ^10.3.0
   wifi_client:
     path: packages/wifi_client

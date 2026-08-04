@@ -3,15 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/view/fx_editor/fx_scope.dart';
-import 'package:loopy/looper/view/signal_graph/plugin_browser.dart';
-import 'package:loopy/looper/view/signal_graph/signal_fx_chrome.dart';
-import 'package:loopy/looper/view/signal_graph/signal_fx_rack.dart';
-import 'package:loopy/looper/view/signal_graph/signal_style.dart';
-import 'package:loopy/theme/surface_theme.dart';
+import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/view/fx_editor/fx_scope.dart';
+import 'package:segno/looper/view/signal_graph/plugin_browser.dart';
+import 'package:segno/looper/view/signal_graph/signal_fx_chrome.dart';
+import 'package:segno/looper/view/signal_graph/signal_fx_rack.dart';
+import 'package:segno/looper/view/signal_graph/signal_style.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 /// The bottom **FX dock** on the Signal surface: edits one [scope]'s chain in
 /// place — a header naming the scope + its plain consequence, over the

@@ -18,7 +18,7 @@ Keep every install current with minimal user effort, safely, without losing save
 - Transports (appliance): **USB stick**, **LAN push**, **OTA pull from segno.aquiles.dev**.
 - **Desktop Windows + macOS auto-update is in scope** (Sparkle/WinSparkle).
 - Update URLs are **app-name-neutral** under `https://segno.aquiles.dev/updates/...`
-  (no `/loopy`; survives the later rename to "segno").
+  (no `/segno`; survives the later rename to "segno").
 - All updates are **signed**; clients refuse unsigned/mismatched artifacts.
 
 ## Scope notes
@@ -43,7 +43,7 @@ the desktop phases especially:
 - **Appliance partitions (wic):** `boot` (FAT: firmware + tryboot autoboot config + both
   slots' kernel/dtb/cmdline) · `rootfs.A` · `rootfs.B` · `data`. RAUC `system.conf` maps
   the two rootfs slots + tryboot backend. `/data` (ext4) is shared by both slots and holds
-  all Loopy user data.
+  all Segno user data.
 - **Desktop:** `auto_updater` points at `https://segno.aquiles.dev/updates/{macos,windows}/appcast.xml`;
   it downloads the signed build and installs on quit (macOS: Sparkle swaps the .app;
   Windows: runs the signed installer).
@@ -55,7 +55,7 @@ the desktop phases especially:
 ## Phases (each an independently-mergeable PR)
 
 ### Phase 0 — Appliance: persistent data partition + one-time migration  ← ship first
-- `data` partition in the wic; mount `/data`; repoint `loopy-kiosk-launch` HOME/XDG/Documents.
+- `data` partition in the wic; mount `/data`; repoint `segno-kiosk-launch` HOME/XDG/Documents.
 - One-time migration script (`deploy/rpi/migrate-data.sh`): rsync current
   `/root/{Documents,.config,.local}` off before the re-layout flash, restore onto `/data`
   after, with verification. Standalone value: reflash stops destroying data.

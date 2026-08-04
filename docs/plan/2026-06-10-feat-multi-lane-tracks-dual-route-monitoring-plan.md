@@ -80,7 +80,7 @@ Adopt the locked brainstorm decisions:
 
 ### Architecture
 
-**New engine data model** (`packages/loopy_engine/src/engine.c`):
+**New engine data model** (`packages/segno_engine/src/engine.c`):
 
 > **Review-applied simplifications (vs. first draft):** undo/redo stacks and the
 > shared `record_pos` move to `le_track` (one undo span / one phase-locked write
@@ -186,15 +186,15 @@ data migration.
 
 > **Phase boundaries revised after technical review.** The engine work splits
 > into two PRs at the FFI break (transport core vs. FX-relocation+monitor), and —
-> critically — **each engine PR regenerates `loopy_engine_bindings.dart` and
+> critically — **each engine PR regenerates `segno_engine_bindings.dart` and
 > stubs the new `NativeAudioEngine` setters as `throw UnimplementedError()`** so
 > `flutter test` stays green at every step. The original "update Dart only enough
 > to compile in Phase 3" left the engine PRs not actually green; this fixes that.
 
 #### PR 1: Engine multi-lane transport core — `feat/multilane-engine-core`
 
-Files: `packages/loopy_engine/src/engine.c`, `loopy_engine_api.h`,
-`src/test/test_engine_core.c`, regenerated `loopy_engine_bindings.dart`,
+Files: `packages/segno_engine/src/engine.c`, `segno_engine_api.h`,
+`src/test/test_engine_core.c`, regenerated `segno_engine_bindings.dart`,
 `native_audio_engine.dart` (stubs), the three fakes (compile-only).
 
 - Introduce `le_lane` with the **full target struct** (incl. `le_fx_state fx`
@@ -244,7 +244,7 @@ Files: same engine + tests + bindings/stubs.
 
 #### PR 3: Dart engine layer — `feat/multilane-dart-engine`
 
-Files: `packages/loopy_engine/lib/src/audio_engine.dart`,
+Files: `packages/segno_engine/lib/src/audio_engine.dart`,
 `native_audio_engine.dart` (fill in the real bodies, remove the stubs),
 `engine_snapshot.dart` (per-lane `lanes` array on `TrackSnapshot`),
 `track_effect.dart` (drop `stage` — model-wide: constructor/`toJson`/`==`/
@@ -348,7 +348,7 @@ Files: `lib/looper/view` (routing view), `lib/audio_setup/view`.
 - [ ] `dart analyze` clean across all touched packages; `flutter test` green at
       **every** PR — including the engine PRs (via bindings regen + stubs) —
       excluding the pre-existing foreign `big_picture_view_test` WIP failure.
-- [ ] Regenerated `loopy_engine_bindings.dart` is `dart format`-clean; its diff
+- [ ] Regenerated `segno_engine_bindings.dart` is `dart format`-clean; its diff
       is regeneration-only (no hand edits).
 - [ ] Golden tests updated for the reworked routing view (PR 5).
 - [ ] Each of the 5 PRs is independently-mergeable and green, in dependency order.
@@ -390,7 +390,7 @@ Files: `lib/looper/view` (routing view), `lib/audio_setup/view`.
   (`LE_MAX_LANES=8`), lazy-alloc + RT null-guard native tests, documented budget.
 - **R6 — Engine PR leaving the Dart build red.** The FFI surface breaks when
   `le_engine_set_track_fx`/the monitor-bus symbols change. *Mitigation:* **each
-  engine PR (PR 1, PR 2) regenerates `loopy_engine_bindings.dart` and stubs the
+  engine PR (PR 1, PR 2) regenerates `segno_engine_bindings.dart` and stubs the
   new `NativeAudioEngine` setters as `throw UnimplementedError()`**, with the
   fakes kept compiling, so `flutter test` is green at every step; PR 3 fills in
   the real bodies and removes the stubs.
@@ -419,13 +419,13 @@ own independently-green PR, in dependency order.
 
 ### Internal References
 
-- Track struct + transport: `packages/loopy_engine/src/engine.c:80` (`le_track`),
+- Track struct + transport: `packages/segno_engine/src/engine.c:80` (`le_track`),
   `:108` (`record_pos`), `:128` (`le_fx_state fx/mon_fx`).
-- Process loop (record/playback/monitor): `packages/loopy_engine/src/engine.c`
+- Process loop (record/playback/monitor): `packages/segno_engine/src/engine.c`
   (`le_engine_process`, monitor block ~`:1132`).
 - Effect DSP + chain: `engine.c` (`fx_apply_chain`, `fx_delay`, `fx_filter`,
-  `fx_tremolo`); model `packages/loopy_engine/lib/src/track_effect.dart`.
-- Caps: `loopy_engine_api.h` — `LE_MAX_TRACKS=8`, `LE_FX_MAX=8`,
+  `fx_tremolo`); model `packages/segno_engine/lib/src/track_effect.dart`.
+- Caps: `segno_engine_api.h` — `LE_MAX_TRACKS=8`, `LE_FX_MAX=8`,
   `LE_FX_PARAMS=3`, `LE_VIZ_POINTS=512`; `engine.c` — `LE_UNDO_SLOTS=8`,
   command codes 0–25 (next free 26).
 - Repository apply/remember: `packages/looper_repository/lib/src/looper_repository.dart`.

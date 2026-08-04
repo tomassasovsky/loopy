@@ -108,7 +108,7 @@ live. (Gate **persistence** rides on the bloc's `_settings` being non-null, as t
 event handler persists via `_settings?.saveOutputEnabled(...)`; the route must
 provide the bloc with its `SettingsRepository`, as the shell already does.)
 
-> **UI conventions (PROGRESS.md / `loopy-vgv-architecture-standards`):** new
+> **UI conventions (PROGRESS.md / `segno-vgv-architecture-standards`):** new
 > widgets use `LooperTheme` / `SurfaceTheme` `ThemeExtension` tokens — **no pixel
 > dimensions in widget constructor APIs**, extract real widget classes (not
 > `_buildX()` methods), `lib/common` can't import features. Reuse the

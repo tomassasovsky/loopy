@@ -1,6 +1,6 @@
 name: session_repository
 description: >-
-  Saves and restores Loopy sessions (.loopy bundles) and exports mixdown +
+  Saves and restores Segno sessions (.segno bundles) and exports mixdown +
   per-track WAV stems via the audio engine.
 version: 0.1.0
 publish_to: none
@@ -12,12 +12,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  loopy_engine:
-    path: ../loopy_engine
   meta: ^1.16.0
+  segno_engine:
+    path: ../segno_engine
   wav_codec:
     path: ../wav_codec
-
 dev_dependencies:
   flutter_test:
     sdk: flutter

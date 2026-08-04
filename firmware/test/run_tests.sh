@@ -2,8 +2,8 @@
 # run_tests.sh - builds and runs the pedal-protocol host contract test
 # (test_pedal_protocol.c) against BOTH in-repo protocol copies:
 #
-#   * firmware/loopy_pedal/pedal_protocol.{h,c}            (primary)
-#   * hardware/firmware/loopy_pedal_32u4/pedal_protocol.{h,c}  (32u4 mirror)
+#   * firmware/segno_pedal/pedal_protocol.{h,c}            (primary)
+#   * hardware/firmware/segno_pedal_32u4/pedal_protocol.{h,c}  (32u4 mirror)
 #
 # The two copies must stay byte-for-byte identical (each sketch #includes its
 # own local copy) -- this script is the drift gate [R9][R10]: it first diffs
@@ -16,8 +16,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 
-PRIMARY=firmware/loopy_pedal
-MIRROR=hardware/firmware/loopy_pedal_32u4
+PRIMARY=firmware/segno_pedal
+MIRROR=hardware/firmware/segno_pedal_32u4
 
 for f in pedal_protocol.h pedal_protocol.c; do
   if ! diff -u "$PRIMARY/$f" "$MIRROR/$f"; then

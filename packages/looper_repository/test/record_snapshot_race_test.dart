@@ -9,7 +9,7 @@ import 'package:looper_repository/looper_repository.dart';
 // drain timing observable; only it and the effect models come from the engine
 // package — every other name is the domain type from the looper_repository
 // barrel.
-import 'package:loopy_engine/loopy_engine.dart'
+import 'package:segno_engine/segno_engine.dart'
     show FxFingerprint, PumpedNativeEngine;
 
 /// The record-time snapshot race, pinned against the REAL native engine.
@@ -24,12 +24,12 @@ import 'package:loopy_engine/loopy_engine.dart'
 /// in between (the widest race window) and asserts the take's lane chain equals
 /// the monitored one after a single drain.
 ///
-/// Self-skips when `LOOPY_ENGINE_LIB` is unset; build it first:
-///   export LOOPY_ENGINE_LIB="$(bash packages/loopy_engine/tool/build_test_lib.sh)"
+/// Self-skips when `SEGNO_ENGINE_LIB` is unset; build it first:
+///   export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
 void main() {
-  final lib = Platform.environment['LOOPY_ENGINE_LIB'];
+  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
   final skip = lib == null || lib.isEmpty
-      ? 'LOOPY_ENGINE_LIB not set — run tool/build_test_lib.sh'
+      ? 'SEGNO_ENGINE_LIB not set — run tool/build_test_lib.sh'
       : null;
 
   late PumpedNativeEngine engine;

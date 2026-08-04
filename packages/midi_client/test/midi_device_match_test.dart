@@ -3,18 +3,18 @@ import 'package:midi_client/midi_client.dart';
 
 void main() {
   group('midiDeviceNameMatches', () {
-    const names = ['VAMP Loopstation'];
+    const names = ['Segno Loopstation'];
 
     test('matches the bare product string (CoreMIDI reports it verbatim)', () {
-      expect(midiDeviceNameMatches('VAMP Loopstation', names), isTrue);
+      expect(midiDeviceNameMatches('Segno Loopstation', names), isTrue);
     });
 
     test('matches an ALSA-decorated port label', () {
       // The console's backend appends the port, so equality would never hit.
-      expect(midiDeviceNameMatches('VAMP Loopstation MIDI 1', names), isTrue);
+      expect(midiDeviceNameMatches('Segno Loopstation MIDI 1', names), isTrue);
       expect(
         midiDeviceNameMatches(
-          'VAMP Loopstation:VAMP Loopstation MIDI 1 20:0',
+          'Segno Loopstation:Segno Loopstation MIDI 1 20:0',
           names,
         ),
         isTrue,
@@ -22,17 +22,17 @@ void main() {
     });
 
     test('is case-insensitive on both sides', () {
-      expect(midiDeviceNameMatches('vamp loopstation midi 1', names), isTrue);
+      expect(midiDeviceNameMatches('segno loopstation midi 1', names), isTrue);
       expect(
-        midiDeviceNameMatches('VAMP LOOPSTATION', const ['vamp loopstation']),
+        midiDeviceNameMatches('SEGNO LOOPSTATION', const ['segno loopstation']),
         isTrue,
       );
     });
 
     test('ignores surrounding whitespace on the product string', () {
       expect(
-        midiDeviceNameMatches('VAMP Loopstation', const [
-          '  VAMP Loopstation  ',
+        midiDeviceNameMatches('Segno Loopstation', const [
+          '  Segno Loopstation  ',
         ]),
         isTrue,
       );
@@ -51,11 +51,11 @@ void main() {
     group('multiple names', () {
       // A product rename ships new firmware, but pedals already in the field
       // keep advertising the old string until someone reflashes them.
-      const both = ['Segno', 'VAMP Loopstation'];
+      const both = ['Segno Console', 'Segno Loopstation'];
 
       test('matches a device advertising any name in the list', () {
-        expect(midiDeviceNameMatches('Segno MIDI 1', both), isTrue);
-        expect(midiDeviceNameMatches('VAMP Loopstation MIDI 1', both), isTrue);
+        expect(midiDeviceNameMatches('Segno Console MIDI 1', both), isTrue);
+        expect(midiDeviceNameMatches('Segno Loopstation MIDI 1', both), isTrue);
       });
 
       test('still rejects a device matching none of them', () {
@@ -68,7 +68,7 @@ void main() {
         expect(
           midiDeviceNameMatches('Launchpad Mini', const [
             '',
-            'VAMP Loopstation',
+            'Segno Loopstation',
           ]),
           isFalse,
         );
@@ -80,7 +80,7 @@ void main() {
     });
 
     test('an empty list matches nothing', () {
-      expect(midiDeviceNameMatches('VAMP Loopstation', const []), isFalse);
+      expect(midiDeviceNameMatches('Segno Loopstation', const []), isFalse);
     });
 
     test('an empty device name matches nothing', () {

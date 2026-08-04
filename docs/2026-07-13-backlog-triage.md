@@ -23,23 +23,23 @@ parent commits (a plain retarget went `CONFLICTING`). All 8 feature branches
 deleted. Local `master` in the main worktree left un-fast-forwarded (uncommitted
 `app_theme.dart` edit present) — `git pull` when ready.
 
-## BUILD — the VST3 "loopy-fx-vst3-plugins" 17-part series
+## BUILD — the VST3 "segno-fx-vst3-plugins" 17-part series
 
-**Important:** the umbrella plan docs (`2026-07-08-feat-loopy-fx-vst3-plugins-plan.md`,
+**Important:** the umbrella plan docs (`2026-07-08-feat-segno-fx-vst3-plugins-plan.md`,
 `2026-07-05-…-daw-export-plan.md`) are **not committed** to master — referenced by
 the PRs but never merged (gitignored or lived only on the now-deleted branches).
 The series map below was **reconstructed from git subjects + the breadcrumbs in
-`packages/loopy_engine/vst3/CMakeLists.txt`** (header comment + lines 26, 122).
+`packages/segno_engine/vst3/CMakeLists.txt`** (header comment + lines 26, 122).
 
-Architecture: plugins are real `.vst3` bundles under `packages/loopy_engine/vst3/<fx>/`
+Architecture: plugins are real `.vst3` bundles under `packages/segno_engine/vst3/<fx>/`
 (each = processor/controller/factory/ids + parity test), built by a standalone
 hand-rolled CMake against the vendored SDK (`third_party/vst3sdk`, 363 files).
 `packages/daw_export/` emits Ableton `.als` referencing them by class GUID.
 
 | Part | Scope | Status |
 |------|-------|--------|
-| 1 | `loopy_dsp_core` scaffold + VST3 SDK vendoring | ✅ done |
-| 2–3 | Loopy **Delay** (#138), **Reverb** (#139) | ✅ done |
+| 1 | `segno_dsp_core` scaffold + VST3 SDK vendoring | ✅ done |
+| 2–3 | Segno **Delay** (#138), **Reverb** (#139) | ✅ done |
 | 4 | golden-parity audio-diff harness (#140) | ✅ done |
 | 5–9 | **Echo/Drive/Filter/Tremolo/Octaver** (#141–#145) — completes all 7 built-in FX | ✅ done |
 | 10 | DAW export: real device chains in `.als` (#146) | ✅ done |
@@ -65,7 +65,7 @@ hand-rolled CMake against the vendored SDK (`third_party/vst3sdk`, 363 files).
 | # | Item | Verdict | Evidence |
 |---|------|---------|----------|
 | D1 | **`worktree-refactor+audio-engine-robustness`** | ✅ **DROPPED** (worktree + local + **remote** branch deleted; SHA `b6b0afb` if ever needed) | Verification **overturned** the earlier "cherry-pick the reliability wins" idea: master *already has the whole branch*. The `core/` refactor, `engine_process.c`, `engine_fx.c`, typed command union, FX vtable, and role interfaces are all present on master. So are every reliability follow-up — P1 xrun (`engine_snapshot.dart` `xrunCount`), P2 CI native-tests (`main.yaml:104` `native-tests` job), P3 ASIO recovery, P5 FX prepare/defaults vtable (`fx_*_prepare`/`fx_*_defaults`), P6 per-step limiter (`le_process_master_step`, extracted for unit-testing). Master reimplemented all 23 commits independently as cleaner PRs. Nothing unique remained. |
-| D2 | **`loopy-midi` worktree** (`feat/midi-device-selection`) | ✅ **DROPPED** (worktree + local branch removed) | Clean tree, 12 ahead / 161 behind — all pre-squash originals of merged work (#30, multi-lane, pedal docs via #35). The only doc deltas vs master were a cosmetic hyphenation of "real-time". Nothing to preserve. |
+| D2 | **`segno-midi` worktree** (`feat/midi-device-selection`) | ✅ **DROPPED** (worktree + local branch removed) | Clean tree, 12 ahead / 161 behind — all pre-squash originals of merged work (#30, multi-lane, pedal docs via #35). The only doc deltas vs master were a cosmetic hyphenation of "real-time". Nothing to preserve. |
 
 ## DEFER — relevant, not urgent (several hardware-gated)
 
@@ -98,7 +98,7 @@ hand-rolled CMake against the vendored SDK (`third_party/vst3sdk`, 363 files).
 3. **F4**: LED-gamma PR (quick, keeps pedal line moving).
 4. **D1**: decide the engine-refactor branch — recommend cherry-picking the
    reliability wins as small PRs.
-5. **D2**: drop the `loopy-midi` worktree.
+5. **D2**: drop the `segno-midi` worktree.
 6. **B1/B2**: scope VST3 parts 12–17 + cross-platform.
 7. Fix the stale accessibility line in `PROGRESS.md` (V1) whenever docs are touched.
 

@@ -370,4 +370,4 @@ gen-l10n`:
 - Theme token precedent: [`looper_theme.dart:83-93`](../../lib/theme/looper_theme.dart) (`meterColor`)
 - Settings toggle precedent: [`big_picture_settings_page.dart:125-141`](../../lib/looper/view/big_picture_settings_page.dart) (`_viewSection`)
 - App provider wiring: [`app.dart:113`](../../lib/app/view/app.dart) (`HighContrastCubit`)
-- `TrackState` enum: `packages/loopy_engine/lib/src/engine_snapshot.dart:42`
+- `TrackState` enum: `packages/segno_engine/lib/src/engine_snapshot.dart:42`

@@ -34,8 +34,8 @@ unchanged where behaviour is meant to be unchanged, every TU is clean under
 ## P1 — XRun / dropout detection
 
 **Problem.** `le_snapshot.xrun_count` is hardcoded to `0` and marked "reserved;
-xrun detection lands later" ([loopy_engine_api.h:335](../../packages/loopy_engine/src/core/loopy_engine_api.h),
-[engine_snapshot.dart:412](../../packages/loopy_engine/lib/src/engine_snapshot.dart)).
+xrun detection lands later" ([segno_engine_api.h:335](../../packages/segno_engine/src/core/segno_engine_api.h),
+[engine_snapshot.dart:412](../../packages/segno_engine/lib/src/engine_snapshot.dart)).
 The engine cannot currently report buffer under/overruns — the one signal that
 tells a performer (or a bug report) that audio actually glitched. For an engine
 whose whole contract is "the RT callback never stalls," not surfacing when the
@@ -74,7 +74,7 @@ them. The strongest correctness gate in the project (`run_native_tests.sh`,
 bit-identical golden) is manual-only.
 
 **Approach.**
-- Add a CI job that runs `bash packages/loopy_engine/src/test/run_native_tests.sh`
+- Add a CI job that runs `bash packages/segno_engine/src/test/run_native_tests.sh`
   on Linux (cheapest; the suite is device-free) — gates every engine change on
   "ALL PASSED".
 - Add a macOS job that at least *compiles* the plugin (`flutter build macos
@@ -91,7 +91,7 @@ fails the macOS job.
 ## P3 — ASIO device recovery
 
 **Problem.** The ASIO callback no-ops sample-rate change, reset, and hot-swap
-("Out of Scope", [win_asio_device.cpp:206,224](../../packages/loopy_engine/src/asio/win_asio_device.cpp)).
+("Out of Scope", [win_asio_device.cpp:206,224](../../packages/segno_engine/src/asio/win_asio_device.cpp)).
 If another app reconfigures the shared ASIO driver (sample rate, buffer size) or
 the device resets, the engine declines rather than recovering — on Windows, the
 primary target, that is a real "audio just stopped" failure mode.
@@ -118,8 +118,8 @@ unit-test. Gate behind the existing reconnect machinery to reuse tested paths.
 **Problem.** Loopback-input exclusion (so an interface's "Loopback"/"Loop 1/2"
 channels are never recorded/metered/monitored — they carry our own output) only
 works on macOS via Core Audio labels. Windows (ASIO) and Linux return an empty
-mask ([engine_platform.h:42](../../packages/loopy_engine/src/core/engine_platform.h),
-[engine_linux.c:260](../../packages/loopy_engine/src/platform/engine_linux.c)).
+mask ([engine_platform.h:42](../../packages/segno_engine/src/core/engine_platform.h),
+[engine_linux.c:260](../../packages/segno_engine/src/platform/engine_linux.c)).
 On those platforms a loopback channel inflates meters and can be recorded.
 
 **Approach.** The pure core already exists and is tested:
@@ -166,20 +166,20 @@ passes (add one if absent).
 Low-value individually; batch as convenient.
 
 - **Stream-to-disk for long loops** — loops are RAM-capped (~30 s default,
-  [engine.c:172](../../packages/loopy_engine/src/core/engine.c)). Real long-form
+  [engine.c:172](../../packages/segno_engine/src/core/engine.c)). Real long-form
   looping needs disk streaming. Largish; only if a user wants > a few minutes.
 - **Backend built-in loopback auto-routing** for the latency harness
-  ([loopy_engine_api.h:75](../../packages/loopy_engine/src/core/loopy_engine_api.h)).
+  ([segno_engine_api.h:75](../../packages/segno_engine/src/core/segno_engine_api.h)).
 - **MIDI input timestamp quantization** — `ts_us` is captured but unused
-  ([loopy_engine_api.h:749](../../packages/loopy_engine/src/core/loopy_engine_api.h));
+  ([segno_engine_api.h:749](../../packages/segno_engine/src/core/segno_engine_api.h));
   could quantize pedal hits to the loop grid.
 - **Dedicated lower-latency PSOLA buffer** — PSOLA currently reuses the PV
-  accumulator at PV latency ([engine_fx.c:349](../../packages/loopy_engine/src/core/engine_fx.c)).
+  accumulator at PV latency ([engine_fx.c:349](../../packages/segno_engine/src/core/engine_fx.c)).
 - **Per-step RT unit tests** — expose the S2 steps (`mix_tracks_frame`, …) via the
   `engine_internal.h` seam for isolated tests (overdub-feedback math, seam
   crossfade) beyond the current black-box golden coverage.
 - **Stale doc fix** — `le_config.backend` says "Accepted and ignored until the
-  ASIO backend lands" ([loopy_engine_api.h:246](../../packages/loopy_engine/src/core/loopy_engine_api.h));
+  ASIO backend lands" ([segno_engine_api.h:246](../../packages/segno_engine/src/core/segno_engine_api.h));
   it *is* honored (`engine.c:406` → `le_select_backend(config->backend)`). One-line.
 
 ## Recommended order

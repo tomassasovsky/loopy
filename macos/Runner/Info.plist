@@ -32,7 +32,7 @@
 	<key>NSHumanReadableCopyright</key>
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Loopy needs microphone and audio input access to record and loop audio.</string>
+	<string>Segno needs microphone and audio input access to record and loop audio.</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>

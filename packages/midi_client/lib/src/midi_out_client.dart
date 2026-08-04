@@ -2,11 +2,11 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
-import 'package:loopy_engine/loopy_engine_ffi.dart';
 import 'package:meta/meta.dart';
 import 'package:midi_client/src/midi_client_base.dart' show MidiException;
 import 'package:midi_client/src/midi_device.dart';
 import 'package:midi_client/src/native_library.dart';
+import 'package:segno_engine/segno_engine_ffi.dart';
 
 /// A thin, typed wrapper over the native `le_midi_out_*` output seam.
 ///
@@ -14,10 +14,10 @@ import 'package:midi_client/src/native_library.dart';
 /// handle (`le_midi_out`) and pushes raw bytes (short messages or complete
 /// SysEx) to one open destination. It has no callback and no ring — [send]
 /// hands the bytes straight to the OS. `bindings` may be injected (e.g. a
-/// `FakeLoopyEngineBindings`); when omitted the platform shared library is
+/// `FakeSegnoEngineBindings`); when omitted the platform shared library is
 /// opened, exactly like `MidiClient`.
 ///
-/// loopy uses this for the pedal's LED state frames and the loop-top pulse; the
+/// segno uses this for the pedal's LED state frames and the loop-top pulse; the
 /// higher-level `NativePedalTransport` (in `pedal_repository`) owns one and
 /// reuses `MidiClient`'s single capture for the inbound direction.
 class MidiOutClient {
@@ -25,8 +25,8 @@ class MidiOutClient {
   ///
   /// Throws a [MidiException] when the platform has no MIDI backend or the
   /// handle cannot be allocated.
-  MidiOutClient({LoopyEngineBindings? bindings})
-    : _bindings = bindings ?? LoopyEngineBindings(openLoopyEngineLibrary()) {
+  MidiOutClient({SegnoEngineBindings? bindings})
+    : _bindings = bindings ?? SegnoEngineBindings(openSegnoEngineLibrary()) {
     _handle = _bindings.le_midi_out_create();
     if (_handle == nullptr) {
       throw const MidiException('failed to allocate native MIDI output handle');
@@ -36,7 +36,7 @@ class MidiOutClient {
   /// Capacity of the enumeration buffer; ports beyond this are not reported.
   static const int _maxDevices = 64;
 
-  final LoopyEngineBindings _bindings;
+  final SegnoEngineBindings _bindings;
   late final Pointer<le_midi_out> _handle;
   bool _disposed = false;
 

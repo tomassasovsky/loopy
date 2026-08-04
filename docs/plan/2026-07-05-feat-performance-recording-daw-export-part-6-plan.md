@@ -81,7 +81,7 @@ support for `SessionCubit`), salvage detection, and a state stream the part
 - [ ] `packages/wav_codec/` — package scaffold, move `wav.dart` + tests;
       update `session_repository` imports + pubspec.
 - [ ] `packages/performance_repository/` — package scaffold (depends on
-      `loopy_engine`, `wav_codec`); models (`PerformanceSnapshot`,
+      `segno_engine`, `wav_codec`); models (`PerformanceSnapshot`,
       `PerformanceManifest`, `PerformanceState` stream); `arm/disarm/
       persistLiveLanes/disarmAndFinalize/findUnfinalized`; bundle assembly;
       slug helper.

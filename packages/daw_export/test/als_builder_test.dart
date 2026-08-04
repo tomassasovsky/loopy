@@ -137,7 +137,7 @@ void main() {
             DawTrack(
               name: 'Track 0',
               arrangementClip: DawClip(
-                fileRef: '/Users/someone/loopy/stems/wet/track0.wav',
+                fileRef: '/Users/someone/segno/stems/wet/track0.wav',
                 startSeconds: 0,
                 lengthSeconds: 4,
               ),
@@ -155,7 +155,7 @@ void main() {
           DawTrack(
             name: 'Track 0',
             arrangementClip: DawClip(
-              fileRef: r'C:\loopy\stems\wet\track0.wav',
+              fileRef: r'C:\segno\stems\wet\track0.wav',
               startSeconds: 0,
               lengthSeconds: 4,
             ),
@@ -597,7 +597,7 @@ void main() {
         );
         expect(
           xml,
-          contains('<Uid Value="${loopyVst3Plugins[kFxDelay]!.classId}"/>'),
+          contains('<Uid Value="${segnoVst3Plugins[kFxDelay]!.classId}"/>'),
         );
         // Delay's controller registers exactly 3 real parameters
         // (Time/Feedback/Mix) — the 4th, always-present padding slot
@@ -612,7 +612,7 @@ void main() {
     );
 
     test(
-      'a deviceChain effect whose type has no loopyVst3Plugins entry throws '
+      'a deviceChain effect whose type has no segnoVst3Plugins entry throws '
       '(signals the resolveDeviceChain invariant broke, not a skip case)',
       () {
         const project = DawProject(
@@ -697,9 +697,9 @@ void main() {
         );
         // Order-sensitive: Drive's Uid appears before Delay's, which
         // appears before Reverb's — not just "all three present somewhere."
-        final driveIndex = xml.indexOf(loopyVst3Plugins[kFxDrive]!.classId);
-        final delayIndex = xml.indexOf(loopyVst3Plugins[kFxDelay]!.classId);
-        final reverbIndex = xml.indexOf(loopyVst3Plugins[kFxReverb]!.classId);
+        final driveIndex = xml.indexOf(segnoVst3Plugins[kFxDrive]!.classId);
+        final delayIndex = xml.indexOf(segnoVst3Plugins[kFxDelay]!.classId);
+        final reverbIndex = xml.indexOf(segnoVst3Plugins[kFxReverb]!.classId);
         expect(driveIndex, greaterThan(-1));
         expect(delayIndex, greaterThan(driveIndex));
         expect(reverbIndex, greaterThan(delayIndex));

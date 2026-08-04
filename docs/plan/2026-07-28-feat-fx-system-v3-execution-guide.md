@@ -13,7 +13,7 @@ issue: 351
 > running session; they are chosen at session start, which is why each part
 > plan carries its recommendation in its own header.
 
-**Epic:** [#351](https://github.com/tomassasovsky/loopy/issues/351) ·
+**Epic:** [#351](https://github.com/tomassasovsky/segno/issues/351) ·
 **Plan index:** [2026-07-28-feat-fx-system-v3-plan.md](2026-07-28-feat-fx-system-v3-plan.md)
 
 ## How to start any part
@@ -39,7 +39,7 @@ unblocked too, but it is `blocked-verify` "at bench" — it needs the jack and
 an FS-6 in hand, and it consumes part 7's trigger shapes over the existing
 cable rather than adding a new control path.
 
-[#410](https://github.com/tomassasovsky/loopy/pull/410) — the #403
+[#410](https://github.com/tomassasovsky/segno/pull/410) — the #403
 press/long-press gesture-helper collapse this guide called for before 6b —
 is MERGED; 6b was rebased onto it.
 
@@ -55,7 +55,7 @@ never `frame.mode`, precisely because the wire mode is degraded in lockstep
 with the LED colour.
 
 Open items carried out of merged parts, neither blocking a new part:
-- [#389](https://github.com/tomassasovsky/loopy/issues/389) (`plan-gate`, from
+- [#389](https://github.com/tomassasovsky/segno/issues/389) (`plan-gate`, from
   3b) — a session load never writes the applied chains back to settings, so a
   cold boot after a load resurrects the previous session's **bus** chains and
   brings the Loop stage back **dry**. Needs a direction call on whether a
@@ -63,7 +63,7 @@ Open items carried out of merged parts, neither blocking a new part:
   surface is meant to show trustworthy post-restart state.
 - Part 2's [B4] A/B listen check — the human exit-bar item on the wet cache,
   which no CI job can stand in for.
-- [#405](https://github.com/tomassasovsky/loopy/issues/405) (`plan-gate`, from
+- [#405](https://github.com/tomassasovsky/segno/issues/405) (`plan-gate`, from
   5b) — part 5b's [A5] capture finalize was CUT from the part. Entering FX
   cancels every pending arm (so nothing can start a take the user cannot see),
   but a live capture survives into FX exactly as it does into Mute. Ending it
@@ -71,12 +71,12 @@ Open items carried out of merged parts, neither blocking a new part:
   loop-top finalize instead, and with the transport parked it starts a capture
   — plus a call on whether an off-grid cut is musically right at all. Not a 6b
   blocker.
-- [#402](https://github.com/tomassasovsky/loopy/issues/402)
+- [#402](https://github.com/tomassasovsky/segno/issues/402)
   (`blocked-verify`, from 5b) — the physical-pedal slice: mode cycle on
   hardware, FX LEDs on a v3 pedal, and a v2 pedal showing chain LEDs with the
   mode projected as mute. Everything in 5b is CI- and simulator-verified only.
-- [#403](https://github.com/tomassasovsky/loopy/issues/403) (`auto`, from 5b) —
-  MERGED as [#410](https://github.com/tomassasovsky/loopy/pull/410): undo, MODE
+- [#403](https://github.com/tomassasovsky/segno/issues/403) (`auto`, from 5b) —
+  MERGED as [#410](https://github.com/tomassasovsky/segno/pull/410): undo, MODE
   and Stop now share one `_HoldGesture`.
 
 | Part | Scope | Model / effort | Autonomy | Depends on | Status |
@@ -188,5 +188,5 @@ parts inherit:
 
 - A PR is mergeable only when **CI is green AND `/code-review` is clean**
   (`ready-to-merge` label). `/code-review` is human-triggered.
-- Docs PR [#367](https://github.com/tomassasovsky/loopy/pull/367) carries
+- Docs PR [#367](https://github.com/tomassasovsky/segno/pull/367) carries
   this guide + all plans; it must merge before part child-issues start.

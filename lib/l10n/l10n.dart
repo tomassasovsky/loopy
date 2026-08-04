@@ -1,8 +1,8 @@
 import 'package:flutter/widgets.dart';
-import 'package:loopy/l10n/gen/app_localizations.dart';
+import 'package:segno/l10n/gen/app_localizations.dart';
 
-export 'package:loopy/l10n/gen/app_localizations.dart';
-export 'package:loopy/l10n/localized.dart';
+export 'package:segno/l10n/gen/app_localizations.dart';
+export 'package:segno/l10n/localized.dart';
 
 extension AppLocalizationsX on BuildContext {
   AppLocalizations get l10n => AppLocalizations.of(this);

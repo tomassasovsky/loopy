@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/theme/theme.dart';
-import 'package:loopy/wifi/wifi_cubit.dart';
-import 'package:loopy/wifi/wifi_page.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/wifi/wifi_cubit.dart';
+import 'package:segno/wifi/wifi_page.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 class _FakeWifiClient implements WifiClient {

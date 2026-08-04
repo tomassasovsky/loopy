@@ -1,7 +1,7 @@
 import 'package:controller_repository/controller_repository.dart';
 import 'package:equatable/equatable.dart';
-import 'package:loopy/control/binding/fx_binding_target.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/binding/fx_binding_target.dart';
 
 /// [BindingBehavior] — toggle vs momentary — is re-exported from
 /// `controller_repository`, where part 7 moved it so a discrete MIDI CC and a

@@ -41,7 +41,7 @@ Key files:
   `PerformanceChains { laneChains, monitors, limiterEnabled = false,
   limiterCeiling = 0.99 }`. Note `PerformanceLaneChain.effects` /
   `PerformanceMonitorState.effects` hold **engine** `TrackEffect`s
-  (`package:loopy_engine`), not the domain hierarchy.
+  (`package:segno_engine`), not the domain hierarchy.
 - `lib/session/session_mapping.dart:13-36` — `chainsFromLooper(looper)`, the
   pattern to mirror: lanes from `looper.allLaneEffects()`, monitors from
   `looper.allMonitors().values` (every **configured** monitor, not just
@@ -49,7 +49,7 @@ Key files:
 - `packages/looper_repository/lib/src/looper_repository.dart:582` — the only
   limiter write: `..setLimiter(enabled: true)` inside `startEngine`, ceiling
   left at the engine default `0.99`
-  (`packages/loopy_engine/lib/src/audio_engine.dart:457`). The engine limiter
+  (`packages/segno_engine/lib/src/audio_engine.dart:457`). The engine limiter
   surface is **write-only** — snapshot read-back is not an option, so a
   repository-side cache is the only source of truth [R14].
 - `packages/looper_repository/lib/src/looper_repository.dart:1333` /
@@ -57,7 +57,7 @@ Key files:
 - `packages/looper_repository/lib/src/models/track_effect.dart:288,307` —
   `_trackEffectToEngine` / `_trackEffectFromEngine` are **library-private**;
   the public delegation surface is `encodeTrackEffects` (domain →
-  wire string, :335) and `loopy_engine`'s `decodeTrackEffects` (wire string →
+  wire string, :335) and `segno_engine`'s `decodeTrackEffects` (wire string →
   engine models). The wire codec is the declared single source of truth.
 - Call sites to wire:
   `lib/performance/cubit/performance_recorder_cubit.dart:201`
@@ -186,7 +186,7 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test packages
 ## Notes
 
 - **No native code in this part** — no ffigen regen / `dart format` churn
-  applies. If a build detour ever touches `loopy_engine`'s native surface,
+  applies. If a build detour ever touches `segno_engine`'s native surface,
   stop: that is out of scope here.
 - **Test runner gotchas:** invoke flutter by absolute path
   (`/Users/Tomas/development/flutter/bin/flutter`) — the very_good MCP test

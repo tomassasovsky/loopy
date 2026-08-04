@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/pedal/pedal.dart';
 import 'package:midi_client/midi_client.dart' show MidiDevice;
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/pedal/pedal.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/fake_key_value_store.dart';
@@ -114,9 +114,12 @@ void main() {
     });
 
     group('console auto-detect', () {
-      const pedalOut = MidiDevice(id: 'out-p', name: 'VAMP Loopstation MIDI 1');
+      const pedalOut = MidiDevice(
+        id: 'out-p',
+        name: 'Segno Loopstation MIDI 1',
+      );
       const otherOut = MidiDevice(id: 'out-x', name: 'Launchpad Mini');
-      const productNames = ['VAMP Loopstation'];
+      const productNames = ['Segno Loopstation'];
 
       PedalCubit buildAuto() => PedalCubit(
         pedal: pedal,
@@ -206,7 +209,10 @@ void main() {
           // ALSA renumbers clients across a replug; a console has no picker to
           // recover with, so the pin has to follow the name, not the id.
           transport.outputs = const [
-            MidiDevice(id: 'out-p-renumbered', name: 'VAMP Loopstation MIDI 1'),
+            MidiDevice(
+              id: 'out-p-renumbered',
+              name: 'Segno Loopstation MIDI 1',
+            ),
           ];
           cubit.reconnect();
 

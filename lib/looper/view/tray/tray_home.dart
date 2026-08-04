@@ -2,14 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/app/loopy_navigator.dart';
-import 'package:loopy/bluetooth/bluetooth_cubit.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/cubit/settings_tray_cubit.dart';
-import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
-import 'package:loopy/looper/view/tray/tray_brightness_slider.dart';
-import 'package:loopy/looper/view/tray/tray_tile.dart';
-import 'package:loopy/wifi/wifi_cubit.dart';
+import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/bluetooth/bluetooth_cubit.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/settings_tray_cubit.dart';
+import 'package:segno/looper/view/signal_graph/signal_graph.dart';
+import 'package:segno/looper/view/tray/tray_brightness_slider.dart';
+import 'package:segno/looper/view/tray/tray_tile.dart';
+import 'package:segno/wifi/wifi_cubit.dart';
 
 /// Home face: quick-access cards + brightness.
 ///
@@ -62,7 +62,7 @@ class TrayHome extends StatelessWidget {
         isOn: false,
         onTap: state.isNavigating
             ? null
-            : () => unawaited(_navigate(context, openLoopySettings)),
+            : () => unawaited(_navigate(context, openSegnoSettings)),
       ),
       TrayTile(
         key: const Key('settingsTray_signal'),
@@ -229,7 +229,7 @@ class _CardGrid extends StatelessWidget {
   }
 }
 
-/// Runs a tray nav-button push (`openLoopySettings` or `showSignalPage`,
+/// Runs a tray nav-button push (`openSegnoSettings` or `showSignalPage`,
 /// unchanged from the `S`/`G` keyboard shortcuts and desktop toolbar — both
 /// pick up the app-wide fade + scale-up transition from
 /// `AppTheme`'s `pageTransitionsTheme`). Closes the tray synchronously —

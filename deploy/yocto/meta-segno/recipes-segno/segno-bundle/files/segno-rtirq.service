@@ -1,0 +1,14 @@
+# Raise the USB sound-card IRQ thread to real-time (see /usr/bin/segno-rtirq).
+# Oneshot at boot; the xHCI IRQ thread is created when the controller probes
+# (well before multi-user), so it exists by the time this runs. RemainAfterExit
+# keeps the unit "active" for status. chrt comes from util-linux-chrt.
+[Unit]
+Description=Segno: raise USB sound-card IRQ threads to real-time
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/segno-rtirq
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

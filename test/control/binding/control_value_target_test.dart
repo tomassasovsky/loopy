@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/binding/control_value_target.dart';
+import 'package:segno/control/binding/control_value_target.dart';
 
 void main() {
   group('ControlValueTarget canonical strings', () {

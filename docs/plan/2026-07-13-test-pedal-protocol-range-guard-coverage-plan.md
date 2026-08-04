@@ -6,7 +6,7 @@ date: 2026-07-13
 
 ## test: cover pedal_decode_frame's out-of-range field rejection - Minimal
 
-`firmware/loopy_pedal/pedal_protocol.c`'s `pedal_decode_frame()` (~line 107-117)
+`firmware/segno_pedal/pedal_protocol.c`'s `pedal_decode_frame()` (~line 107-117)
 has four defensive range-check guards that reject an otherwise
 checksum-valid, correctly-framed message: an out-of-range `global_color`
 (`>= PEDAL_GLOBAL_COUNT`), `active_bank` (`> 1`), `armed_track`
@@ -29,8 +29,8 @@ SUCCESS CRITERIA:
 - test_malformed_frames_are_rejected() contains a CHECK asserting decode fails for an out-of-range active_bank | verify: grep -n "active_bank = 2" firmware/test/test_pedal_protocol.c
 - test_malformed_frames_are_rejected() contains a CHECK asserting decode fails for an out-of-range armed_track | verify: grep -n "armed_track = PEDAL_TRACK_COUNT" firmware/test/test_pedal_protocol.c
 - test_malformed_frames_are_rejected() contains a CHECK asserting decode fails for an out-of-range track_leds[i] | verify: grep -n "track_leds\[0\] = PEDAL_LED_COUNT" firmware/test/test_pedal_protocol.c
-- The host contract test builds cleanly and all checks (existing + new) pass | verify: cd firmware && gcc -std=c11 -Wall -I loopy_pedal test/test_pedal_protocol.c loopy_pedal/pedal_protocol.c -o /tmp/pedal_protocol_tests && cd .. && /tmp/pedal_protocol_tests | tail -1 | grep -q "ALL PASSED"
-- No production (non-test) firmware source changed | verify: git diff --name-only -- firmware/loopy_pedal | grep -q . && exit 1 || exit 0
+- The host contract test builds cleanly and all checks (existing + new) pass | verify: cd firmware && gcc -std=c11 -Wall -I segno_pedal test/test_pedal_protocol.c segno_pedal/pedal_protocol.c -o /tmp/pedal_protocol_tests && cd .. && /tmp/pedal_protocol_tests | tail -1 | grep -q "ALL PASSED"
+- No production (non-test) firmware source changed | verify: git diff --name-only -- firmware/segno_pedal | grep -q . && exit 1 || exit 0
 - No CI workflow files changed | verify: git diff --name-only -- .github | grep -q . && exit 1 || exit 0
 
 NON-GOALS:
@@ -38,12 +38,12 @@ NON-GOALS:
 - Wiring test_pedal_protocol.c into CI (handled by a separate, parallel effort).
 - Adding coverage for anything beyond these four specific range guards.
 
-VERIFICATION COMMAND: grep -n "global_color = PEDAL_GLOBAL_COUNT" firmware/test/test_pedal_protocol.c && grep -n "active_bank = 2" firmware/test/test_pedal_protocol.c && grep -n "armed_track = PEDAL_TRACK_COUNT" firmware/test/test_pedal_protocol.c && grep -n "track_leds\[0\] = PEDAL_LED_COUNT" firmware/test/test_pedal_protocol.c && (cd firmware && gcc -std=c11 -Wall -I loopy_pedal test/test_pedal_protocol.c loopy_pedal/pedal_protocol.c -o /tmp/pedal_protocol_tests && cd .. && /tmp/pedal_protocol_tests | tail -1 | grep -q "ALL PASSED")
+VERIFICATION COMMAND: grep -n "global_color = PEDAL_GLOBAL_COUNT" firmware/test/test_pedal_protocol.c && grep -n "active_bank = 2" firmware/test/test_pedal_protocol.c && grep -n "armed_track = PEDAL_TRACK_COUNT" firmware/test/test_pedal_protocol.c && grep -n "track_leds\[0\] = PEDAL_LED_COUNT" firmware/test/test_pedal_protocol.c && (cd firmware && gcc -std=c11 -Wall -I segno_pedal test/test_pedal_protocol.c segno_pedal/pedal_protocol.c -o /tmp/pedal_protocol_tests && cd .. && /tmp/pedal_protocol_tests | tail -1 | grep -q "ALL PASSED")
 ```
 
 ## Context
 
-- `firmware/loopy_pedal/pedal_protocol.h` defines the enums used for the
+- `firmware/segno_pedal/pedal_protocol.h` defines the enums used for the
   boundary values: `PEDAL_GLOBAL_COUNT = 5`, `PEDAL_TRACK_COUNT = 8`,
   `PEDAL_LED_COUNT = 3`. `active_bank`'s valid range (0 or 1) is a literal
   `bank > 1` check, not enum-backed.
@@ -122,7 +122,7 @@ Notes on the snippet above:
 ## References
 
 - Brainstorm doc: `docs/brainstorm/2026-07-13-test-pedal-protocol-range-guard-coverage-brainstorm-doc.md`
-- Guard logic under test: `firmware/loopy_pedal/pedal_protocol.c` lines 109-117
+- Guard logic under test: `firmware/segno_pedal/pedal_protocol.c` lines 109-117
 - Test file: `firmware/test/test_pedal_protocol.c`, function
   `test_malformed_frames_are_rejected()` at line 164
 - Build/run command: `firmware/README.md` lines 119-125

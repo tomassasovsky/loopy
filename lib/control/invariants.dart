@@ -1,4 +1,4 @@
-/// The control-surface invariant spec: loopy's LED / armed-set / cursor truth
+/// The control-surface invariant spec: segno's LED / armed-set / cursor truth
 /// rules, written ONCE and enforced twice — the sequence fuzzer
 /// (`test/fuzz/`) checks every predicate after each settled step against the
 /// REAL engine, and debug builds assert them on every frame projection
@@ -31,9 +31,9 @@
 library;
 
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/cubit/control_cubit.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/cubit/control_cubit.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
 
 /// Everything the spec predicates over: engine truth, the stored-intent
 /// overlay, and the projected wire frame.

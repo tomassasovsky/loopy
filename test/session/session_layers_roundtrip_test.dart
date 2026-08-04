@@ -8,8 +8,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/session/session_mapping.dart';
-import 'package:loopy_engine/loopy_engine.dart' show PumpedNativeEngine;
+import 'package:segno/session/session_mapping.dart';
+import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 import 'package:session_repository/session_repository.dart';
 
 /// End-to-end overdub-layer round-trip against the REAL native engine
@@ -21,12 +21,12 @@ import 'package:session_repository/session_repository.dart';
 /// Save-capture and load-apply go through the SAME bloc-layer mapping the
 /// SessionCubit uses (session_mapping.dart).
 ///
-/// Self-skips when `LOOPY_ENGINE_LIB` is unset:
-///   export LOOPY_ENGINE_LIB="$(bash packages/loopy_engine/tool/build_test_lib.sh)"
+/// Self-skips when `SEGNO_ENGINE_LIB` is unset:
+///   export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
 void main() {
-  final lib = Platform.environment['LOOPY_ENGINE_LIB'];
+  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
   final skip = lib == null || lib.isEmpty
-      ? 'LOOPY_ENGINE_LIB not set — run packages/loopy_engine/tool/build_test_lib.sh'
+      ? 'SEGNO_ENGINE_LIB not set — run packages/segno_engine/tool/build_test_lib.sh'
       : null;
 
   late PumpedNativeEngine engine;
@@ -50,7 +50,7 @@ void main() {
         ),
       );
     session = SessionRepository(engine: engine);
-    tempDir = Directory.systemTemp.createTempSync('loopy_layers_session');
+    tempDir = Directory.systemTemp.createTempSync('segno_layers_session');
     pumpDriver = Timer.periodic(poll, (_) => engine.pump(frames: 0));
   });
 

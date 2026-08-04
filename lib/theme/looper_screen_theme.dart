@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:loopy/theme/surface_theme.dart';
+import 'package:segno/theme/surface_theme.dart';
 
-/// Applies the VAMP overlay legend face to the main looper screen.
+/// Applies the Segno overlay legend face to the main looper screen.
 class LooperScreenTheme extends StatelessWidget {
   /// Creates a [LooperScreenTheme].
   const LooperScreenTheme({required this.child, super.key});

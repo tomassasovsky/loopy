@@ -1,5 +1,5 @@
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/audio_setup.dart' show MonitorState;
+import 'package:segno/audio_setup/audio_setup.dart' show MonitorState;
 
 /// The flattened, list-ready view-model for the Signal surface (D4/D12).
 ///

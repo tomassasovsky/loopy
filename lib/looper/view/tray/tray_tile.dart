@@ -1,8 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:loopy/theme/theme.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/theme/theme.dart';
 
 /// One quick-access card on the tray's home face: icon, label, and an
 /// optional status line.

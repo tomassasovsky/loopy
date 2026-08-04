@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/common/on_screen_keyboard/on_screen_keyboard.dart';
-import 'package:loopy/common/on_screen_keyboard/on_screen_keyboard_host.dart';
+import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
+import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
 
 import '../helpers/helpers.dart';
 

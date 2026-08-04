@@ -3,23 +3,23 @@ date: 2026-07-13
 topic: export-engineperformancecapture-barrel
 ---
 
-# Export EnginePerformanceCapture from loopy_engine barrel
+# Export EnginePerformanceCapture from segno_engine barrel
 
 ## What We're Building
 
-`packages/loopy_engine/lib/src/audio_engine.dart` defines `AudioEngine` as a
+`packages/segno_engine/lib/src/audio_engine.dart` defines `AudioEngine` as a
 composition of role-segregated interfaces, explicitly documented as enabling
 "a consumer can depend on the slice it needs ... instead of the whole
 surface." Every role interface in that `implements` clause is re-exported
-from the package barrel `lib/loopy_engine.dart` except one:
+from the package barrel `lib/segno_engine.dart` except one:
 `EnginePerformanceCapture` (perfArm/perfDisarm/renderBegin/renderPoll/
 renderTrackStatuses/renderCancel). Consumers who only need the
 performance-capture slice currently cannot import it through the public
-barrel and must reach into `package:loopy_engine/src/audio_engine.dart`,
+barrel and must reach into `package:segno_engine/src/audio_engine.dart`,
 which trips the repo's `implementation_imports` lint.
 
 The fix is to add `EnginePerformanceCapture` to the `show` list of the
-`export 'src/audio_engine.dart'` statement in `lib/loopy_engine.dart`,
+`export 'src/audio_engine.dart'` statement in `lib/segno_engine.dart`,
 keeping the list alphabetically ordered to match the existing convention.
 
 ## Why This Approach
@@ -27,7 +27,7 @@ keeping the list alphabetically ordered to match the existing convention.
 This is a single, mechanical, additive export fix — there is no alternative
 design worth weighing. The only decision point was verifying scope:
 
-- Re-read `lib/loopy_engine.dart` (current state, 61 lines) and confirmed the
+- Re-read `lib/segno_engine.dart` (current state, 61 lines) and confirmed the
   `src/audio_engine.dart` show-list is exactly: `AudioEngine, EffectsControl,
   EngineException, EngineLifecycle, EngineMetering, EnginePluginHosting,
   EngineResult, EngineRouting, LooperTransport, MasterBusControl,
@@ -55,9 +55,9 @@ to double check exact ordering at implementation time, not guess here).
   per the parallelized-fix process. Treated as the equivalent of an existing
   feature branch.
 - Decision 3: Verification = `dart analyze` (or `flutter analyze` per repo
-  convention/gotcha) on `packages/loopy_engine` cleanly passing, plus running
+  convention/gotcha) on `packages/segno_engine` cleanly passing, plus running
   the package's existing test suite, per the documented
-  `loopy-test-runner-gotcha` (very_good MCP test runner is broken for this
+  `segno-test-runner-gotcha` (very_good MCP test runner is broken for this
   repo; use the absolute flutter path directly instead).
 - Decision 4: Proceeding autonomously without interactive user dialogue,
   since this task is running as one of 21 parallelized, pre-verified fixes

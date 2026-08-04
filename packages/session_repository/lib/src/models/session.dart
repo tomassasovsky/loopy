@@ -1,5 +1,5 @@
-import 'package:loopy_engine/loopy_engine.dart';
 import 'package:meta/meta.dart';
+import 'package:segno_engine/segno_engine.dart';
 import 'package:session_repository/src/session_exception.dart';
 
 /// One captured audio buffer within a [SessionLane]: a single overdub layer,
@@ -452,9 +452,9 @@ class SessionMonitor {
       Object.hash(input, enabled, outputMask, volume, muted, encoded);
 }
 
-/// A saved Loopy session: the transport/tempo settings, the tracks, and (schema
+/// A saved Segno session: the transport/tempo settings, the tracks, and (schema
 /// v2+) the lane + monitor effect chains. Paired with per-lane, per-layer WAV
-/// files (schema v3) in a `.loopy` bundle directory.
+/// files (schema v3) in a `.segno` bundle directory.
 ///
 /// Schema v4 (`2026-07-22-feat-tempo-aware-looper-modes-plan.md`, decision
 /// D12) adds the Phase-A tempo grid + click + count-in fields below. Every

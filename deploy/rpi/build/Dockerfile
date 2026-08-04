@@ -1,8 +1,8 @@
-# Reproducible aarch64 Flutter GTK build image for the Loopy appliance bundle.
+# Reproducible aarch64 Flutter GTK build image for the Segno appliance bundle.
 # Build + run natively on an arm64 host/runner (Apple Silicon, ubuntu-24.04-arm):
-#   docker build -t loopy-arm64-build deploy/rpi/build
-#   docker run --rm -v "$PWD":/workspace loopy-arm64-build --dart-define=LOOPY_CONSOLE=true
-# The entrypoint (loopy-build.sh) runs `flutter build linux --release`; extra args
+#   docker build -t segno-arm64-build deploy/rpi/build
+#   docker run --rm -v "$PWD":/workspace segno-arm64-build --dart-define=SEGNO_CONSOLE=true
+# The entrypoint (segno-build.sh) runs `flutter build linux --release`; extra args
 # ("$@") are forwarded to it. Output lands in build/linux/arm64/release/bundle.
 FROM ubuntu:24.04
 
@@ -20,8 +20,8 @@ RUN git config --global --add safe.directory '*' \
     && flutter config --enable-linux-desktop \
     && flutter precache --linux
 
-COPY loopy-build.sh /usr/local/bin/loopy-build
-RUN chmod +x /usr/local/bin/loopy-build
+COPY segno-build.sh /usr/local/bin/segno-build
+RUN chmod +x /usr/local/bin/segno-build
 
 WORKDIR /workspace
-ENTRYPOINT ["/usr/local/bin/loopy-build"]
+ENTRYPOINT ["/usr/local/bin/segno-build"]

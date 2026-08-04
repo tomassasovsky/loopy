@@ -49,10 +49,10 @@ the established pattern for console-only behavior branches.
 
 **Firmware-ships-with-the-app is genuinely new work.** Nothing in the repo packages,
 versions, or flashes pedal firmware today — it's 100% manual `arduino-cli` per
-[hardware/firmware/loopy_pedal_32u4/README.md](../../hardware/firmware/loopy_pedal_32u4/README.md).
+[hardware/firmware/segno_pedal_32u4/README.md](../../hardware/firmware/segno_pedal_32u4/README.md).
 The appliance OTA system built this session (#304/#306, PR1-PR3b, merged) already has
 the shape this needs: a channel manifest, a signed/verified download, a privileged
-on-device helper (`loopy-update-ctl`) driving a PROGRESS-line protocol the Dart layer
+on-device helper (`segno-update-ctl`) driving a PROGRESS-line protocol the Dart layer
 consumes. The natural move is to extend that shape to cover a second artifact (a
 firmware `.hex`) rather than invent a parallel system.
 
@@ -71,7 +71,7 @@ firmware `.hex`) rather than invent a parallel system.
   reply, and carry it in the same channel manifest the app version now uses semver for.
   *Rationale:* one version scheme, one manifest, one place a device checks "am I current."
 
-- **Firmware download/flash follows the `loopy-update-ctl` shape, not a new system.**
+- **Firmware download/flash follows the `segno-update-ctl` shape, not a new system.**
   Extend the channel manifest with a sibling `pedalFirmware: {version, hex, sha256}`
   entry (the `.hex` is not part of the RAUC bundle — it targets USB-attached MCU
   flash, not the OS image), and add a new verb to the on-device privileged helper that
@@ -85,8 +85,8 @@ firmware `.hex`) rather than invent a parallel system.
   the equivalent sequence itself, then hands off to `avrdude` (new RDEPENDS on the
   Yocto image, alongside the existing `rauc`/`curl`/`jq`).
 
-- **Fix the protocol-version drift before building on top of it.** `firmware/loopy_pedal/pedal_protocol.h`
-  is on `PEDAL_PROTOCOL_VERSION_V2`; `hardware/firmware/loopy_pedal_32u4/pedal_protocol.h`
+- **Fix the protocol-version drift before building on top of it.** `firmware/segno_pedal/pedal_protocol.h`
+  is on `PEDAL_PROTOCOL_VERSION_V2`; `hardware/firmware/segno_pedal_32u4/pedal_protocol.h`
   — the copy that's actually flashed to the shipping board — is still hardcoded to
   `V1`. The 32U4 README documents a manual `diff` sync check; nothing enforces it in
   CI, and it has silently drifted. *Rationale:* shipping an OTA'd firmware built from a

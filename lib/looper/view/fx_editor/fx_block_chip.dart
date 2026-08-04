@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/view/signal_graph/signal_style.dart';
-import 'package:loopy/theme/surface_theme.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/view/signal_graph/signal_style.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 /// The display name for chain entry [effect] — a built-in type's label, or a
 /// hosted plugin's resolved name (its id, then a generic label, as fallbacks).

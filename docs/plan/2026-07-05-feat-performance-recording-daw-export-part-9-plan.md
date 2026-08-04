@@ -16,7 +16,7 @@ date: 2026-07-05
 
 New pure-Dart `daw_export` package that generates an **Ableton Live 12**
 `.als` set (gzipped XML, generated directly — no Ableton needed): one audio
-track per non-empty Loopy track + one per live-input stem; arrangement-view
+track per non-empty Segno track + one per live-input stem; arrangement-view
 clips at capture t=0 (full-length stems make placement trivial and
 sample-accurate); session-view loop clips per lane; **fixed 120 BPM, warp OFF
 on every clip** (D-TEMPO); **relative file references only** so the bundle
@@ -29,7 +29,7 @@ methodology.
 - **Own input model, no upstream imports:** `daw_export` defines
   `DawProject` / `DawTrack` / `DawClip` (+ `AutomationLane` in part 10) and
   consumes the documented `performance.json` + event-log formats — it never
-  imports `performance_repository` or `loopy_engine` (dependency-direction
+  imports `performance_repository` or `segno_engine` (dependency-direction
   rule). The app layer maps manifest → `DawProject` (part 11).
 - `.als` structure facts (research): gzipped XML; internal `Id`/`Pointee`
   references must stay consistent; `FileRef` paths drive the missing-file
@@ -54,7 +54,7 @@ methodology.
       (test).
 - [ ] Session-view slots: one loop clip per (track, lane) fixture entry
       (test).
-- [ ] Track layout: one audio track per non-empty Loopy track + one per
+- [ ] Track layout: one audio track per non-empty Segno track + one per
       live-input stem; empty tracks skipped (test).
 - [ ] Corpus committed (`packages/daw_export/test/corpus/`) with a README
       documenting the save-from-Live/diff methodology and the Live 12

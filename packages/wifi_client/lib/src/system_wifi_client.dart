@@ -5,10 +5,10 @@ import 'package:wifi_client/src/unsupported_wifi_client.dart';
 import 'package:wifi_client/src/wifi_client.dart';
 import 'package:wifi_client/src/wifi_models.dart';
 
-/// Production [WifiClient]: shells out to `/usr/bin/loopy-wifi-ctl`.
+/// Production [WifiClient]: shells out to `/usr/bin/segno-wifi-ctl`.
 class SystemWifiClient implements WifiClient {
   /// Creates a [SystemWifiClient].
-  const SystemWifiClient({this.helperPath = '/usr/bin/loopy-wifi-ctl'});
+  const SystemWifiClient({this.helperPath = '/usr/bin/segno-wifi-ctl'});
 
   /// Path to the WiFi helper.
   final String helperPath;

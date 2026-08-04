@@ -57,6 +57,6 @@ Recovery logic (auto-reselect/restart reacting to `device_present`) lives in a *
 ## References
 
 - Device-loss banner (touch-only today): [`big_picture_view.dart:438`](../../lib/looper/view/big_picture_view.dart)
-- Engine device-present detection: `packages/loopy_engine/src/core/engine_miniaudio.c` (`device_present`)
+- Engine device-present detection: `packages/segno_engine/src/core/engine_miniaudio.c` (`device_present`)
 - LED fault channel: Part 4
 - VGV standards: ThemeExtension `LooperTheme`, extracted widget classes, no logic in UI

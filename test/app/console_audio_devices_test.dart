@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/app/console_audio_devices.dart';
+import 'package:segno/app/console_audio_devices.dart';
 
 void main() {
   group('pickConsoleAudioDevices', () {

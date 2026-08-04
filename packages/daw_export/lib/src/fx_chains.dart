@@ -3,9 +3,9 @@ import 'dart:io';
 
 import 'package:daw_export/src/manifest_json.dart';
 
-/// Effect type codes matching `loopy_engine`'s `TrackEffectType`/native
+/// Effect type codes matching `segno_engine`'s `TrackEffectType`/native
 /// `le_fx_type` — reproduced here as this package's own constants (no
-/// `loopy_engine` import, own-input-model rule) purely to render a
+/// `segno_engine` import, own-input-model rule) purely to render a
 /// human-readable name; the manifest's `type` field is the only thing read.
 const Map<int, String> _kBuiltInEffectNames = {
   0: 'None',
@@ -19,10 +19,10 @@ const Map<int, String> _kBuiltInEffectNames = {
 };
 
 /// The `type` code a chain entry carrying a `plugin` key uses — matches
-/// `loopy_engine`'s `kPluginFxCode`.
+/// `segno_engine`'s `kPluginFxCode`.
 const int _kPluginTypeCode = 8;
 
-/// `PluginRef.format`'s codes (`loopy_engine`'s `PluginFormat`) — 0 = VST3,
+/// `PluginRef.format`'s codes (`segno_engine`'s `PluginFormat`) — 0 = VST3,
 /// 1 = CLAP, reproduced here for the same own-input-model reason.
 const Map<int, String> _kPluginFormatNames = {0: 'VST3', 1: 'CLAP'};
 

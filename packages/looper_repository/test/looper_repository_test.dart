@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 // The audio-config + effect types are domain types here (from the barrel); the
 // engine-typed fixtures fed to the fake engine use the `le` prefix.
-import 'package:loopy_engine/loopy_engine.dart'
+import 'package:segno_engine/segno_engine.dart'
     hide
         AudioBackend,
         AudioDevice,
@@ -23,7 +23,7 @@ import 'package:loopy_engine/loopy_engine.dart'
         TrackEffect,
         TrackEffectParam,
         TrackEffectType;
-import 'package:loopy_engine/loopy_engine.dart'
+import 'package:segno_engine/segno_engine.dart'
     as le
     show
         AudioDevice,

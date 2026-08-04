@@ -3,7 +3,7 @@
  * SysEx codec (pedal_protocol.c).
  *
  * It links the SAME translation unit the Arduino sketch #includes and asserts it
- * against the committed golden fixtures loopy's Dart codec generated
+ * against the committed golden fixtures segno's Dart codec generated
  * (packages/pedal_repository/test/fixtures/<name>.syx). For each fixture it:
  *   1. decodes the bytes -> pedal_frame (the firmware's inbound path), and
  *   2. re-encodes the frame and checks it reproduces the fixture byte-for-byte,
@@ -19,8 +19,8 @@
  * file against BOTH protocol copies and fails on any drift between them:
  *   bash firmware/test/run_tests.sh
  * Or by hand (repo root, so the default fixtures path resolves):
- *   gcc -std=c11 -I firmware/loopy_pedal \
- *     firmware/test/test_pedal_protocol.c firmware/loopy_pedal/pedal_protocol.c \
+ *   gcc -std=c11 -I firmware/segno_pedal \
+ *     firmware/test/test_pedal_protocol.c firmware/segno_pedal/pedal_protocol.c \
  *     -o pedal_protocol_tests && ./pedal_protocol_tests
  * Or pass the fixtures dir explicitly:
  *   ./pedal_protocol_tests packages/pedal_repository/test/fixtures

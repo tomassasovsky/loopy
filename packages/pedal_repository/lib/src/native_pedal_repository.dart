@@ -80,7 +80,7 @@ PedalTransport? _nativeTransport(
       FlutterErrorDetails(
         exception: error,
         stack: stackTrace,
-        library: 'loopy',
+        library: 'segno',
         context: ErrorDescription('creating the pedal output repository'),
       ),
     );

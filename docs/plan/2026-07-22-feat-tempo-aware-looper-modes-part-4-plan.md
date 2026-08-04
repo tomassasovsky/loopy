@@ -35,15 +35,15 @@ always stretch from original per-layer buffers at ratio
     with crossfade fallback); validate the D13 double-memory budget.
   - Manual-verified: the Sheeran has a **two-toggle model** (§5.9.5) — Sync
     Audio to Tempo (follow tempo, varispeed-style pitch shift) and Time
-    Stretch (pitch preserved) are independent. Spike decides whether loopy
+    Stretch (pitch preserved) are independent. Spike decides whether segno
     adds the cheap varispeed leg (resample) or ships pitch-preserved-only
     (current default; document as deviation if skipped).
-  - Harness home: `packages/loopy_engine/src/test/bench/` — **excluded from
+  - Harness home: `packages/segno_engine/src/test/bench/` — **excluded from
     `run_native_tests.sh`** (must not join the golden gate or rot untracked).
   - Confirms provisional manifest names (`syncAudioToTempo`,
     `originalTempoBpm`) per D12.
 - [ ] **D1 — vendor Signalsmith Stretch** (`autonomy:auto`)
-  - Into `packages/loopy_engine/src/stretch/` (MIT under repo GPLv3;
+  - Into `packages/segno_engine/src/stretch/` (MIT under repo GPLv3;
     precedent: ASIO/VST3 vendoring); wire into `src/CMakeLists.txt`, podspec
     forwarders, and `run_native_tests.sh` source globs; license notice.
 - [ ] **D2 — engine integration** (`autonomy:auto`)
@@ -64,20 +64,20 @@ always stretch from original per-layer buffers at ratio
 GOAL: Loops follow tempo changes 0.5x-2x pitch-preserved with intact undo layering; grid-off behavior unchanged.
 
 SUCCESS CRITERIA:
-- Existing suites unchanged; stretch integrity tests (undo layers, no compounding, clamps) pass | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- ASAN-clean (stretch buffers are significant new allocation) | verify: EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g" bash packages/loopy_engine/src/test/run_native_tests.sh
+- Existing suites unchanged; stretch integrity tests (undo layers, no compounding, clamps) pass | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- ASAN-clean (stretch buffers are significant new allocation) | verify: EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g" bash packages/segno_engine/src/test/run_native_tests.sh
 - Dart suites green with coverage gates | verify: /Users/Tomas/development/flutter/bin/flutter analyze && /Users/Tomas/development/flutter/bin/flutter test --coverage
 - D fields round-trip in the manifest | verify: /Users/Tomas/development/flutter/bin/flutter test packages/session_repository
 - Stretch quality at the chosen preset is acceptable on real material at 8 tracks | verify: manual 1. record 8-track session 2. sweep tempo 0.5x-2x 3. listen for artifacts/dropouts, watch xrun counter
 
 NON-GOALS: stretch during clock receive (part 5), varispeed (non-pitch-preserved), per-track independent stretch ratios beyond the session tempo.
 
-VERIFICATION COMMAND: bash packages/loopy_engine/src/test/run_native_tests.sh && /Users/Tomas/development/flutter/bin/flutter analyze && /Users/Tomas/development/flutter/bin/flutter test --coverage
+VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && /Users/Tomas/development/flutter/bin/flutter analyze && /Users/Tomas/development/flutter/bin/flutter test --coverage
 ```
 
 ## References
 
 Index plan (D6, D13); Signalsmith Stretch
 https://github.com/Signalsmith-Audio/signalsmith-stretch; vendoring precedent
-`packages/loopy_engine/src/asio/` + `src/host/`; layer/undo machinery
+`packages/segno_engine/src/asio/` + `src/host/`; layer/undo machinery
 `engine_private.h:346-372`, pool `LE_POOL_SLOTS`.

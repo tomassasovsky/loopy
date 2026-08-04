@@ -10,16 +10,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/common/console_mode.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/looper.dart';
-import 'package:loopy/performance/performance.dart';
-import 'package:loopy/session/session.dart';
-import 'package:loopy/theme/theme.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/common/console_mode.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/looper.dart';
+import 'package:segno/performance/performance.dart';
+import 'package:segno/session/session.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -44,13 +44,13 @@ Future<void> _loadFont(String family, List<String> paths) async {
 }
 
 /// Manual generator for the console main-window decal (the artwork on the 16"
-/// panel in the Fusion "VAMP console (populated)" doc). Renders [TracksView]
+/// panel in the Fusion "Segno console (populated)" doc). Renders [TracksView]
 /// exactly as the physical console shows it and captures a 1920x1080 golden.
 ///
 /// It only produces the CONSOLE layout when compiled with the flag on, so it is
 /// gated on [kConsoleMode]. Regenerate on the author's machine with:
 ///
-///   flutter test --tags screenshots --dart-define=LOOPY_CONSOLE=true \
+///   flutter test --tags screenshots --dart-define=SEGNO_CONSOLE=true \
 ///     --update-goldens test/screenshots/tracks_screenshots_test.dart
 void main() {
   const fontDir =
@@ -58,7 +58,7 @@ void main() {
   // Golden generators load the local SDK's Material fonts and compare against
   // macOS-rendered goldens, so they only run where those fonts exist (the
   // author's machine); everywhere else they skip. Additionally gated on
-  // console mode: without --dart-define=LOOPY_CONSOLE=true the layout would
+  // console mode: without --dart-define=SEGNO_CONSOLE=true the layout would
   // carry the desktop toolbar and not match the console decal.
   final hasScreenshotFonts = File('$fontDir/Roboto-Regular.ttf').existsSync();
 
@@ -185,7 +185,7 @@ void main() {
           status: EngineStatus(
             isConnected: true,
             devicePresent: true,
-            deviceName: 'VAMP',
+            deviceName: 'Segno',
             sampleRate: 48000,
             inputChannels: 2,
             outputChannels: 2,

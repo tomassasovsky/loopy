@@ -3,22 +3,22 @@ date: 2026-07-08
 topic: all-effects-vst3-plus-daw-export
 ---
 
-# All 7 Loopy Effects as VST3 Plugins + Real-Plugin `.als` Export
+# All 7 Segno Effects as VST3 Plugins + Real-Plugin `.als` Export
 
 ## What We're Building
 
-Extends the Loopy FX VST3 pilot (parts 2-4: Delay, Reverb, golden-parity
+Extends the Segno FX VST3 pilot (parts 2-4: Delay, Reverb, golden-parity
 harness) to all 7 built-in effect types — Drive, Filter, Delay, Tremolo,
 Octaver, Echo, Reverb — each shipped as its own real VST3 plugin, following
 the now-proven `AudioEffect`+`EditController` wrapper/CMake/golden-parity
 pattern. `daw_export`'s `.als` builder then gains the ability to export a
 track's actual effects chain as real-plugin device references (by permanent
-class GUID), so a project opened in Ableton Live with Loopy installed shows
+class GUID), so a project opened in Ableton Live with Segno installed shows
 the exact same effects that were played, as live/editable devices — not
 just baked-in audio.
 
 This supersedes the original part 5 plan
-(`docs/plan/2026-07-08-feat-loopy-fx-vst3-plugins-part-5-plan.md`), which
+(`docs/plan/2026-07-08-feat-segno-fx-vst3-plugins-part-5-plan.md`), which
 assumed a stock-Ableton-device approximation system (`_devicesXml`,
 `_delayDeviceXml`/`_reverbDeviceXml`) already existed in `als_builder.dart`
 to extend. It doesn't — the separate, parallel `performance-recording-daw-export`
@@ -35,7 +35,7 @@ Echo→Echo, Filter→Auto Filter, Drive→Overdrive, Tremolo→Auto Pan @ 0° p
 Octaver→Shifter/Pitch mode — all verified against the real Ableton Live 12
 device browser during this brainstorm), with the two already-built real VST3
 plugins (Delay, Reverb) as an alternate, higher-fidelity path selected by a
-`useLoopyPlugins` toggle.
+`useSegnoPlugins` toggle.
 
 **Reframed to**: since Delay/Reverb already proved the VST3-wrapper pattern
 is fast and mechanical to replicate (part 3 was essentially a copy-adapt of
@@ -48,7 +48,7 @@ chunk of the original scope: 7 stock-device corpus captures plus per-effect
 param-range translation guesswork (e.g. Drive's "Level" output-trim param
 has no analog on Ableton's Overdrive, which only exposes Dry/Wet).
 
-The fallback for recipients without Loopy installed (D-FALLBACK) simplifies
+The fallback for recipients without Segno installed (D-FALLBACK) simplifies
 to **today's existing behavior**: the wet-bounced audio, no device chain —
 already musically correct (the effect is baked into the audio) and requires
 zero new code, since that's exactly what `als_builder.dart` already does
@@ -58,8 +58,8 @@ before any of this work lands.
 system as originally scoped, layering real-plugin export as a preferred
 default on top. Rejected because it triples the corpus/research surface (9
 device shapes instead of 7) for marginal benefit — the approximations would
-rarely be used in practice (most Loopy users exporting to Ableton will have
-Loopy installed) and several are genuinely lossy in ways that could mislead
+rarely be used in practice (most Segno users exporting to Ableton will have
+Segno installed) and several are genuinely lossy in ways that could mislead
 a user into thinking they got an accurate device (Octaver especially).
 
 ## Key Decisions
@@ -68,21 +68,21 @@ a user into thinking they got an accurate device (Octaver especially).
   supersedes the umbrella's original D-SCOPE pilot boundary ("remaining 5
   effects are an explicit named follow-up"); this work *is* that follow-up.
 - **No stock-device approximation system.** The only export paths are (a)
-  real Loopy VST3 plugin device references, when the exporting/importing
-  workflow has Loopy's plugins available, and (b) today's existing
+  real Segno VST3 plugin device references, when the exporting/importing
+  workflow has Segno's plugins available, and (b) today's existing
   wet-bounce-only export, unchanged, as the sole fallback.
 - **One VST3 plugin per part**, matching parts 2/3's established
   granularity (5 new parts: Drive, Filter, Tremolo, Octaver, Echo), each
   reusing the proven wrapper/CMake/golden-parity-harness pattern rather than
   inventing a new one.
-- **Per-lane effects vs. per-track Ableton device chain**: a Loopy channel
+- **Per-lane effects vs. per-track Ableton device chain**: a Segno channel
   can have multiple lanes with independently different effects chains, but
   Ableton has exactly one device chain per track. Resolution: only export a
   device chain when every lane on a channel shares the identical effects
   chain; otherwise fall back to the existing wet-bounce/no-devices behavior
   for that whole track. Same "honest degrade" principle applied to two other
   edge cases:
-  - A chain containing a third-party hosted plugin (not one of Loopy's own
+  - A chain containing a third-party hosted plugin (not one of Segno's own
     effects) — out of scope per D-SCOPE, so the whole track falls back
     rather than emitting a chain silently missing a step.
   - Any effect entry we can't confidently represent (extension point for
@@ -99,7 +99,7 @@ a user into thinking they got an accurate device (Octaver especially).
   DSP, so this is not expected to be an audible regression).
 - **GUID/param corpus methodology unchanged**: reuse the existing "save from
   Live 12, diff the XML" process (`test/corpus/README.md`) for the 7
-  real-plugin device captures. Since all 7 are Loopy's own plugins sharing
+  real-plugin device captures. Since all 7 are Segno's own plugins sharing
   the same wrapper shape, the first capture likely reveals most of the
   `<VstPluginInfo>`-equivalent XML shape needed for the rest.
 
@@ -125,6 +125,6 @@ a user into thinking they got an accurate device (Octaver especially).
 - Order of the 5 new plugin parts (by kernel complexity, alphabetical, or
   something else) — pick during planning, not architecturally significant.
 - Whether this becomes a new umbrella plan (given it materially changes and
-  extends `2026-07-08-feat-loopy-fx-vst3-plugins-plan.md`'s own D-SCOPE and
+  extends `2026-07-08-feat-segno-fx-vst3-plugins-plan.md`'s own D-SCOPE and
   Part Sequence) or an amendment to the existing one — a planning-phase
   decision, not resolved here.

@@ -1,15 +1,15 @@
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/theme/theme.dart';
-import 'package:loopy/visualizer/performance_readout.dart';
-import 'package:loopy/visualizer/performance_readout_view.dart';
-import 'package:loopy/visualizer/waveform_window_args.dart';
-import 'package:loopy/visualizer/waveform_window_channel.dart';
-import 'package:loopy/visualizer/widgets/waveform_view.dart';
-import 'package:loopy/window/window_chrome.dart';
 import 'package:screen_retriever/screen_retriever.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/visualizer/performance_readout.dart';
+import 'package:segno/visualizer/performance_readout_view.dart';
+import 'package:segno/visualizer/waveform_window_args.dart';
+import 'package:segno/visualizer/waveform_window_channel.dart';
+import 'package:segno/visualizer/widgets/waveform_view.dart';
+import 'package:segno/window/window_chrome.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// Where the output-waveform window should sit: **full-bleed on a secondary
@@ -97,7 +97,7 @@ Future<void> runWaveformWindow(WindowController controller) async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final args = WaveformWindowArgs.parse(controller.arguments);
-  final title = args.title ?? 'Loopy — Output';
+  final title = args.title ?? 'Segno — Output';
   final frame = ValueNotifier<WaveformFrame>(
     (samples: Float32List(0), progress: 0, selectedTrack: ''),
   );
@@ -141,7 +141,7 @@ Future<void> runWaveformWindow(WindowController controller) async {
       .catchError((Object _) => null);
 
   await windowManager.ensureInitialized();
-  await configureLoopyDesktopWindow(title: title);
+  await configureSegnoDesktopWindow(title: title);
 
   // Full-bleed on a second monitor when there is one; otherwise the windowed
   // fallback. Two ordering rules make this land on the *second* display:
@@ -220,7 +220,7 @@ class WaveformWindowApp extends StatelessWidget {
       theme: AppTheme.neon,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: LoopyWindowChromeShell(
+      home: SegnoWindowChromeShell(
         title: title,
         body: Padding(
           padding: const EdgeInsets.all(16),

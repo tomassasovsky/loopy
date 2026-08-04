@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy_engine/loopy_engine.dart';
+import 'package:segno_engine/segno_engine.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:wav_codec/wav_codec.dart';
 
@@ -12,7 +12,7 @@ void main() {
   late Directory tempDir;
 
   setUp(() {
-    tempDir = Directory.systemTemp.createTempSync('loopy_session');
+    tempDir = Directory.systemTemp.createTempSync('segno_session');
   });
   tearDown(() => tempDir.deleteSync(recursive: true));
 
@@ -342,7 +342,7 @@ void main() {
       // track's own length round-trips independently rather than being
       // forced to a shared base/multiple relationship (Free mode's whole
       // point: "four un-synced, independently playing, free-form tracks",
-      // extended to loopy's 8).
+      // extended to segno's 8).
       const lengths = [5, 7, 9, 11, 13, 17, 19, 23];
       final source = FakeSessionEngine()..looperMode = LooperMode.free;
       for (final (channel, length) in lengths.indexed) {

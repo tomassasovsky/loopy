@@ -437,13 +437,6 @@ packages:
       relative: true
     source: path
     version: "0.1.0"
-  loopy_engine:
-    dependency: "direct dev"
-    description:
-      path: "packages/loopy_engine"
-      relative: true
-    source: path
-    version: "0.1.0"
   lsp_server_ce:
     dependency: transitive
     description:
@@ -767,6 +760,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.2.2"
+  segno_engine:
+    dependency: "direct dev"
+    description:
+      path: "packages/segno_engine"
+      relative: true
+    source: path
+    version: "0.1.0"
   session_repository:
     dependency: "direct main"
     description:

@@ -13,15 +13,15 @@
 # across >=5 reboots (the real Part 5 acceptance gate).
 set -eu
 
-MAIN="${LOOPY_MAIN_OUTPUT:-HDMI-A-1}"   # 16" main UI (BigPictureView)
-WAVE="${LOOPY_WAVE_OUTPUT:-HDMI-A-2}"   # 7" waveform window
+MAIN="${SEGNO_MAIN_OUTPUT:-HDMI-A-1}"   # 16" main UI (BigPictureView)
+WAVE="${SEGNO_WAVE_OUTPUT:-HDMI-A-2}"   # 7" waveform window
 
 # 16" ~1080p at scale 1; sits at the origin so it's the primary.
-wlr-randr --output "$MAIN" --on --pos 0,0 --scale "${LOOPY_MAIN_SCALE:-1}" \
+wlr-randr --output "$MAIN" --on --pos 0,0 --scale "${SEGNO_MAIN_SCALE:-1}" \
   || echo "pin-displays: could not configure $MAIN" >&2
 
 # 7" placed to the right of the 16". Scale up the low-DPI panel so the waveform
 # is legible (800x480 DSI -> scale 0.5; a 1080p 7" HDMI -> scale ~1.5). Tune per
 # panel after the Part-6 spike.
-wlr-randr --output "$WAVE" --on --pos 1920,0 --scale "${LOOPY_WAVE_SCALE:-1}" \
+wlr-randr --output "$WAVE" --on --pos 1920,0 --scale "${SEGNO_WAVE_SCALE:-1}" \
   || echo "pin-displays: could not configure $WAVE (single-display?)" >&2

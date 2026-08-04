@@ -33,7 +33,7 @@ Part 1 + Problem Statement), narrowed to the lane/monitor slice:
 
 - **No bypass exists today.** The only "off" for a built-in effect is deleting
   it (parameters lost). `fx_apply_chain` processes every slot unconditionally
-  (`packages/loopy_engine/src/core/engine_fx.c:978-999`); `le_fx_state` has no
+  (`packages/segno_engine/src/core/engine_fx.c:978-999`); `le_fx_state` has no
   enabled flag (`engine_private.h:196-216`). Pedal FX toggling is impossible
   today.
 - **Chain owners in scope:** `le_lane` (`engine_private.h:230-261`,
@@ -65,7 +65,7 @@ Part 1 + Problem Statement), narrowed to the lane/monitor slice:
 - **Fingerprint:** `le_fx_chain_fingerprint` + the lane/monitor entry points
   (`engine_snapshot.c:102-138`; `le_engine_lane_fx_fingerprint` at 125,
   `le_engine_monitor_fx_fingerprint` at 135). Dart mirror:
-  `packages/loopy_engine/lib/src/fx_fingerprint.dart` (`FxFingerprint`
+  `packages/segno_engine/lib/src/fx_fingerprint.dart` (`FxFingerprint`
   primitives) + `trackChainFingerprint` in
   `packages/looper_repository/lib/src/models/track_effect.dart:357`, proven in
   lockstep by
@@ -77,13 +77,13 @@ Part 1 + Problem Statement), narrowed to the lane/monitor slice:
   pushes lane FX through the ring (`engine_commands.c:691-698`). The
   `le_monitor_input` doc comment claiming "`le_engine_record` deep-copies"
   (`engine_private.h:272-273`) is stale and contradicts it.
-- **Dart engine API:** `AudioEngine` (`packages/loopy_engine/lib/src/audio_engine.dart`,
+- **Dart engine API:** `AudioEngine` (`packages/segno_engine/lib/src/audio_engine.dart`,
   existing `setLaneFx`/`setLaneFxParam` at 475/493, `setMonitorInputFx`/`...FxParam`
   at 543/556) + `NativeAudioEngine` + `MockAudioEngine`; ffigen config
-  `packages/loopy_engine/ffigen.yaml`, generated bindings in
-  `packages/loopy_engine/lib/src/generated/`.
-- **Native test gate:** `packages/loopy_engine/src/test/test_engine_core.c`,
-  runner `bash packages/loopy_engine/src/test/run_native_tests.sh` ("ALL
+  `packages/segno_engine/ffigen.yaml`, generated bindings in
+  `packages/segno_engine/lib/src/generated/`.
+- **Native test gate:** `packages/segno_engine/src/test/test_engine_core.c`,
+  runner `bash packages/segno_engine/src/test/run_native_tests.sh` ("ALL
   PASSED" twice).
 
 ### Pinned decisions (from the index — do not reopen)
@@ -128,7 +128,7 @@ Part 1 + Problem Statement), narrowed to the lane/monitor slice:
   NON-empty chain, and folds each entry's slot bit after its type. An empty
   chain keeps hashing to the FNV offset basis — semantically honest
   (chain-disabled empty ≡ enabled empty ≡ dry) and preserves the documented
-  empty-chain invariant (`loopy_engine_api.h:1627` comment,
+  empty-chain invariant (`segno_engine_api.h:1627` comment,
   `track_effect_test.dart:280`).
 
 ### Risks
@@ -204,10 +204,10 @@ Part 1 + Problem Statement), narrowed to the lane/monitor slice:
       enters `fx_apply_chain` so in-flight ramps can settle; only settled
       slots are skipped inside the chain (D-BITEXACT).
 
-### 4. API + setters (`loopy_engine_api.h`, `engine_commands.c`)
+### 4. API + setters (`segno_engine_api.h`, `engine_commands.c`)
 
 - [ ] Four new exports beside the existing FX setters
-      (`loopy_engine_api.h:1442-1508`):
+      (`segno_engine_api.h:1442-1508`):
       `le_engine_set_lane_fx_enabled(engine, channel, lane, index, enabled)`,
       `le_engine_set_lane_fx_chain_enabled(engine, channel, lane, enabled)`,
       `le_engine_set_monitor_input_fx_enabled(engine, input, index, enabled)`,
@@ -270,9 +270,9 @@ Part 1 + Problem Statement), narrowed to the lane/monitor slice:
       this task); `track_effect_test.dart:276-333` expectations reviewed —
       the empty-chain → offset-basis case must still hold (D-FPEMPTY).
 
-### 7. ffigen + Dart bindings (`packages/loopy_engine`)
+### 7. ffigen + Dart bindings (`packages/segno_engine`)
 
-- [ ] Regenerate bindings from `packages/loopy_engine/ffigen.yaml`, then
+- [ ] Regenerate bindings from `packages/segno_engine/ffigen.yaml`, then
       `dart format` the generated file (ffigen emits short-style → whole-file
       churn otherwise — documented gotcha).
 - [ ] `AudioEngine` interface gains `setLaneFxEnabled`,
@@ -281,7 +281,7 @@ Part 1 + Problem Statement), narrowed to the lane/monitor slice:
       `setLaneFxParam`, `audio_engine.dart:475-560`), with doc comments
       carrying the ramp + no-tail-spill + works-while-stopped contract;
       implement in `NativeAudioEngine`; record in `MockAudioEngine`.
-- [ ] `packages/loopy_engine` Dart tests cover the new API surface (mock
+- [ ] `packages/segno_engine` Dart tests cover the new API surface (mock
       recording + `pumped_native_engine_test.dart` smoke where it exercises
       setters today) so package coverage holds.
 - [ ] No `looper_repository` domain changes beyond the fingerprint mirror —
@@ -319,7 +319,7 @@ Part 1 + Problem Statement), narrowed to the lane/monitor slice:
 - [ ] **Fingerprint:** flipping a slot or chain flag changes
       `le_engine_lane_fx_fingerprint` / `..._monitor_fx_fingerprint`;
       empty chain still hashes to the offset basis (D-FPEMPTY).
-- [ ] Full suite: `bash packages/loopy_engine/src/test/run_native_tests.sh`
+- [ ] Full suite: `bash packages/segno_engine/src/test/run_native_tests.sh`
       → "ALL PASSED" twice.
 
 ## Success Criteria
@@ -328,13 +328,13 @@ Part 1 + Problem Statement), narrowed to the lane/monitor slice:
 GOAL: Every lane and monitor FX slot and chain can be atomically enabled/disabled, click-free (~5 ms ramp), with no tail spill, logged + replayable, fingerprinted in C/Dart lockstep — and default-enabled behavior is bit-identical to today's engine.
 
 SUCCESS CRITERIA:
-- Ramp continuity: mid-tone toggle produces no discontinuity above the 5 ms ramp spec, both flag levels, lane + monitor | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- Bit-exact passthrough: a settled disabled slot (and a disabled chain) renders memcmp-identical to no-FX; default flags render bit-identical to the pre-change engine | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- No tail spill on bypass [B7] + re-enable resets DSP state via le_fx_entry_reset | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- Direct-atomic setters work while stopped and return LE_OK; D-ENSEED type-change re-seed proven | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- Plog events 310-313 emitted with pinned payloads; perf_render lane replay flips wet at the logged frame [R3]; doc audit rows added | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- Fingerprint folds enabled bits (D-FPEMPTY order) and the Dart mirror agrees in the same PR [R4][R16] | verify: /Users/Tomas/development/flutter/bin/flutter test packages/looper_repository packages/loopy_engine
-- snapshot_track_fx renamed snapshot_lane_fx with all references [VGV]; ffigen regenerated + formatted, new Dart API on AudioEngine/Native/Mock | verify: /Users/Tomas/development/flutter/bin/flutter analyze packages/loopy_engine && bash packages/loopy_engine/src/test/run_native_tests.sh
+- Ramp continuity: mid-tone toggle produces no discontinuity above the 5 ms ramp spec, both flag levels, lane + monitor | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Bit-exact passthrough: a settled disabled slot (and a disabled chain) renders memcmp-identical to no-FX; default flags render bit-identical to the pre-change engine | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- No tail spill on bypass [B7] + re-enable resets DSP state via le_fx_entry_reset | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Direct-atomic setters work while stopped and return LE_OK; D-ENSEED type-change re-seed proven | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Plog events 310-313 emitted with pinned payloads; perf_render lane replay flips wet at the logged frame [R3]; doc audit rows added | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Fingerprint folds enabled bits (D-FPEMPTY order) and the Dart mirror agrees in the same PR [R4][R16] | verify: /Users/Tomas/development/flutter/bin/flutter test packages/looper_repository packages/segno_engine
+- snapshot_track_fx renamed snapshot_lane_fx with all references [VGV]; ffigen regenerated + formatted, new Dart API on AudioEngine/Native/Mock | verify: /Users/Tomas/development/flutter/bin/flutter analyze packages/segno_engine && bash packages/segno_engine/src/test/run_native_tests.sh
 
 NON-GOALS:
 - Track/master chain owners, the track stereo bus, the Master insert, D-MASTER / D-TRACKROUTE / D-MASTERCH (part 1b)
@@ -343,7 +343,7 @@ NON-GOALS:
 - UI power controls / _BypassToggle replacement (part 4)
 - Pedal FX mode and stomp bindings (parts 5-6)
 
-VERIFICATION COMMAND: bash packages/loopy_engine/src/test/run_native_tests.sh
+VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh
 ```
 
 ## Notes
@@ -357,7 +357,7 @@ VERIFICATION COMMAND: bash packages/loopy_engine/src/test/run_native_tests.sh
 - **Native test runner:** the very_good MCP test wrapper is broken for this
   repo — use the absolute flutter path
   (`/Users/Tomas/development/flutter/bin/flutter`) for Dart suites and
-  `bash packages/loopy_engine/src/test/run_native_tests.sh` for C. The engine
+  `bash packages/segno_engine/src/test/run_native_tests.sh` for C. The engine
   suite must print "ALL PASSED" twice (engine + MIDI).
 - **Before opening the PR:** check the cspell dictionary for any new tokens
   (e.g. `ENSEED`, `EFFBITS`, `FPEMPTY`, `plog` variants) and the semantic PR

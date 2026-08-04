@@ -9,9 +9,9 @@
 ///
 /// Case-insensitive **substring**, deliberately — the reported label is not the
 /// bare product string on every platform. CoreMIDI reports it verbatim
-/// (`VAMP Loopstation`), but ALSA (the floor console's backend) decorates it
-/// with the port: `VAMP Loopstation MIDI 1`, or
-/// `VAMP Loopstation:VAMP Loopstation MIDI 1 20:0`. An equality test would
+/// (`Segno Loopstation`), but ALSA (the floor console's backend) decorates it
+/// with the port: `Segno Loopstation MIDI 1`, or
+/// `Segno Loopstation:Segno Loopstation MIDI 1 20:0`. An equality test would
 /// match on macOS and silently never match on the one platform that needs it.
 ///
 /// Empty and whitespace-only entries never match. `contains('')` is true for

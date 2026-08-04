@@ -27,8 +27,8 @@ See umbrella **D-SCAN** (Windows paths), **D-WIN** (HWND ownership), **D-LICENSE
 ## Tasks
 
 - [ ] Wire vendored SDK include/build into
-  [windows/CMakeLists.txt](../../packages/loopy_engine/windows/CMakeLists.txt)
-  (enable the `LOOPY_ENABLE_PLUGINS` path).
+  [windows/CMakeLists.txt](../../packages/segno_engine/windows/CMakeLists.txt)
+  (enable the `SEGNO_ENABLE_PLUGINS` path).
 - [ ] VST3 scan: `%PROGRAMFILES%\Common Files\VST3`, `%LOCALAPPDATA%\Programs\Common\VST3`,
   app-local; `InitDll`/`GetPluginFactory` load. CLAP scan: `%COMMONPROGRAMFILES%\CLAP`,
   user path, `CLAP_PATH`.
@@ -37,15 +37,15 @@ See umbrella **D-SCAN** (Windows paths), **D-WIN** (HWND ownership), **D-LICENSE
   `IPlugFrame::resizeView` resizes the HWND. Physical-pixel coordinates.
 - [ ] Apply the D-WIN teardown rules (force-close on slot/session close + app-quit;
   zero leaked windows) on Windows.
-- [ ] Update [third_party/README.md](../../packages/loopy_engine/third_party/README.md)
+- [ ] Update [third_party/README.md](../../packages/segno_engine/third_party/README.md)
   / license docs: Windows build is GPLv3 (ASIO); MIT VST3/CLAP unchanged.
 
 ## File References
 
-- [windows/CMakeLists.txt](../../packages/loopy_engine/windows/CMakeLists.txt)
-- `packages/loopy_engine/src/host/scan_*.cpp`, `editor_win32.cpp`,
+- [windows/CMakeLists.txt](../../packages/segno_engine/windows/CMakeLists.txt)
+- `packages/segno_engine/src/host/scan_*.cpp`, `editor_win32.cpp`,
   `native_window_controller_win.cpp`
-- [third_party/README.md](../../packages/loopy_engine/third_party/README.md)
+- [third_party/README.md](../../packages/segno_engine/third_party/README.md)
 
 ## Acceptance Criteria
 

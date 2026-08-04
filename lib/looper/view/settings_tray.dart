@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/bluetooth/bluetooth_cubit.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/cubit/settings_tray_cubit.dart';
-import 'package:loopy/looper/view/tray/tray.dart';
-import 'package:loopy/theme/theme.dart';
-import 'package:loopy/wifi/wifi_cubit.dart';
+import 'package:segno/bluetooth/bluetooth_cubit.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/settings_tray_cubit.dart';
+import 'package:segno/looper/view/tray/tray.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/wifi/wifi_cubit.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 /// The console's slide-down quick-access tray (Control-Center style): a small

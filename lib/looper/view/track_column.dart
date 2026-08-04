@@ -2,17 +2,17 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/common/console_mode.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/cubit/tracks_cubit.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
-import 'package:loopy/looper/view/rename_track_dialog.dart';
-import 'package:loopy/looper/view/track_meters.dart';
-import 'package:loopy/looper/view/tracks_commands.dart';
-import 'package:loopy/theme/theme.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/common/console_mode.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/view/rename_track_dialog.dart';
+import 'package:segno/looper/view/track_meters.dart';
+import 'package:segno/looper/view/tracks_commands.dart';
+import 'package:segno/theme/theme.dart';
 
 /// One tall track column in the Tracks view: a header (channel number,
 /// loop-multiple badge, and undo/redo on the selected column), a tappable level
@@ -107,7 +107,7 @@ class TrackColumn extends StatelessWidget {
       letterSpacing: 1.5,
     );
     final nameText = Text(name, textAlign: TextAlign.center, style: nameStyle);
-    // Undo/Redo shortcut hints adapt to the host platform — Loopy targets
+    // Undo/Redo shortcut hints adapt to the host platform — Segno targets
     // Windows/Linux too, so this must not hardcode the macOS modifier.
     final isMac = defaultTargetPlatform == TargetPlatform.macOS;
     final undoShortcut = isMac ? '⌘Z' : 'Ctrl+Z';

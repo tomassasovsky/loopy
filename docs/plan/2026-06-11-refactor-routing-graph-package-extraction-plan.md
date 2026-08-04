@@ -25,7 +25,7 @@ consumed by two **monolithic** views (`lane_graph_view.dart` ~600 lines,
 terse constants (`chW`, `nodeW`), `// ====` ASCII section dividers, and many
 private widget-returning methods. None of this matches how this codebase is
 written: genuinely reusable code is a **path-dependency package under
-`packages/`** (like `looper_repository`, `loopy_engine`), and `lib/<feature>/
+`packages/`** (like `looper_repository`, `segno_engine`), and `lib/<feature>/
 view/` is **file-per-widget**.
 
 This plan does what the VGV plugin suite prescribes:
@@ -235,7 +235,7 @@ package suite green; goldens unchanged (regenerate only if intentional). Verify
 ### Package
 - [ ] `packages/routing_graph` exists; root pubspec has the path dep; consumers
       import the **barrel** only (no `src/` imports anywhere).
-- [ ] **Zero** `looper_repository` / `loopy_engine` imports under the package
+- [ ] **Zero** `looper_repository` / `segno_engine` imports under the package
       (`grep` clean); `flutter pub deps` shows flutter SDK only.
 - [ ] Package `analysis_options.yaml` includes `very_good_analysis` with **no**
       overrides; `flutter analyze` clean with `public_member_api_docs` satisfied

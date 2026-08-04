@@ -8,7 +8,7 @@ topic: windows-asio-doc-path-fix
 ## What We're Building
 
 `docs/WINDOWS_ASIO.md`'s "Where the code lives" section (lines ~121-153) links
-to flat `packages/loopy_engine/src/*.{c,cpp,h}` paths that no longer exist
+to flat `packages/segno_engine/src/*.{c,cpp,h}` paths that no longer exist
 after an engine `src/` reorganization into subdirectories
 (`core/`, `platform/`, `asio/`, `test/`). Every link in that section 404s
 against the current repo tree except the one pointing at
@@ -31,13 +31,13 @@ tree with `find` and `grep` (not just trusted from the issue report), since
 the issue itself warned that files may have moved again since it was written:
 
 ```
-packages/loopy_engine/src/core/engine_convert.c
-packages/loopy_engine/src/core/engine.c
-packages/loopy_engine/src/core/engine_devices.c
-packages/loopy_engine/src/test/test_engine_core.c
-packages/loopy_engine/src/platform/engine_windows.c
-packages/loopy_engine/src/asio/win_asio_device.{cpp,h}
-packages/loopy_engine/src/asio/win_asio_labels.{cpp,h}
+packages/segno_engine/src/core/engine_convert.c
+packages/segno_engine/src/core/engine.c
+packages/segno_engine/src/core/engine_devices.c
+packages/segno_engine/src/test/test_engine_core.c
+packages/segno_engine/src/platform/engine_windows.c
+packages/segno_engine/src/asio/win_asio_device.{cpp,h}
+packages/segno_engine/src/asio/win_asio_labels.{cpp,h}
 ```
 
 One detail beyond what the issue report described: the report says

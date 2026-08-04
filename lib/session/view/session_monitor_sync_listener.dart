@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/audio_setup/audio_setup.dart';
-import 'package:loopy/session/cubit/session_cubit.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/session/cubit/session_cubit.dart';
 
 /// Bridges a session load back to the [MonitorCubit].
 ///

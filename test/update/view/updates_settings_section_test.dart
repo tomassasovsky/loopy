@@ -2,9 +2,9 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/update/cubit/update_cubit.dart';
-import 'package:loopy/update/view/updates_settings_section.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/update/cubit/update_cubit.dart';
+import 'package:segno/update/view/updates_settings_section.dart';
 import 'package:update_repository/update_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -13,7 +13,7 @@ class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit {}
 
 UpdateManifest _manifest() => UpdateManifest(
   version: Version.parse('0.2.0'),
-  bundle: 'loopy-appliance-0.2.0.raucb',
+  bundle: 'segno-appliance-0.2.0.raucb',
   channel: 'experimental',
   notes: 'wide splash',
   size: 131803622,

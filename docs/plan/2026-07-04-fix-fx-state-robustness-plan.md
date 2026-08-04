@@ -54,7 +54,7 @@ See the brainstorm doc for the full store table and evidence. Key code:
       session A's leftovers can never play under session B.
 - [ ] Device reconnect / engine restart after a session load replays the
       LOADED state, not pre-load caches.
-- [ ] Record a take through a monitor chain → restart loopy → the lane plays
+- [ ] Record a take through a monitor chain → restart segno → the lane plays
       back and displays the take's chain (persisted at snapshot-copy time).
 - [ ] Legacy (v1) session bundles still load (no chains → explicitly cleared
       chains, not leftovers).
@@ -129,16 +129,16 @@ See the brainstorm doc for the full store table and evidence. Key code:
 `packages/looper_repository/lib/src/looper_repository.dart`,
 `lib/session/cubit/session_cubit.dart`, `lib/looper/view/looper_page.dart`,
 `lib/looper/bloc/looper_bloc.dart`, `lib/app/audio_bootstrap.dart`,
-`packages/loopy_engine/src/core/{engine_snapshot.c,loopy_engine_api.h}` (+
+`packages/segno_engine/src/core/{engine_snapshot.c,segno_engine_api.h}` (+
 ffigen regen + `dart format`), signal-graph FX row widgets (F5 states),
 `test/fuzz/control_sequence_fuzz_test.dart` + new `test/fuzz` FX corpus,
 mirrored test files throughout.
 
 ## Verification
 
-1. Native suite: `bash packages/loopy_engine/src/test/run_native_tests.sh`.
+1. Native suite: `bash packages/segno_engine/src/test/run_native_tests.sh`.
 2. `flutter test` + `flutter test packages/...` (looper, session) + coverage.
-3. Fuzz: `export LOOPY_ENGINE_LIB="$(bash packages/loopy_engine/tool/build_test_lib.sh)"`,
+3. Fuzz: `export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"`,
    `flutter test --tags fuzz` (+ one extended fresh-seed sweep).
 4. Manual: stage FX → save → clear-all → load → listen + inspect; record a
    take through a monitor chain → restart → listen; load session B over

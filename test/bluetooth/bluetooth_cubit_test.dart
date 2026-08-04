@@ -1,7 +1,7 @@
 import 'package:bloc_test/bloc_test.dart';
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/bluetooth/bluetooth_cubit.dart';
+import 'package:segno/bluetooth/bluetooth_cubit.dart';
 
 class _FakeBluetoothClient implements BluetoothClient {
   _FakeBluetoothClient({
@@ -15,7 +15,7 @@ class _FakeBluetoothClient implements BluetoothClient {
              powered: true,
              discoverable: false,
              advertising: false,
-             alias: 'Loopy',
+             alias: 'Segno',
            ),
        devices = List.of(devices ?? const []);
 

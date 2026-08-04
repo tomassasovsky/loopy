@@ -3,11 +3,11 @@ date: 2026-07-13
 topic: fix-echo-vst3-samplerate-scaled-ring
 ---
 
-# Fix: Loopy Echo VST3 delay-ring capacity doesn't scale with host sample rate
+# Fix: Segno Echo VST3 delay-ring capacity doesn't scale with host sample rate
 
 ## What We're Building
 
-`packages/loopy_engine/vst3/echo/processor.h` hardcodes
+`packages/segno_engine/vst3/echo/processor.h` hardcodes
 `static constexpr int kEchoCapFrames = 48000;` and the Echo processor has no
 `setupProcessing()` override, so the delay-ring capacity never adapts to the
 host's negotiated sample rate. `fx_echo`'s normalized "Time" parameter maps
@@ -17,7 +17,7 @@ than 48 kHz the plugin's actual max echo time diverges from the live engine
 value at a different sample rate — e.g. at 96 kHz max delay time is 0.5 s
 instead of 1 s; at 44.1 kHz it's ~1.088 s instead of 1 s.
 
-The sibling Reverb VST3 plugin (`packages/loopy_engine/vst3/reverb/`) already
+The sibling Reverb VST3 plugin (`packages/segno_engine/vst3/reverb/`) already
 solves exactly this problem: it has a `setupProcessing()` override, a `cap_`
 member recomputed from `processSetup.sampleRate`, a public static
 `computeRingCapacity(double sampleRate)` helper, and a
@@ -104,9 +104,9 @@ Two alternatives were considered and rejected:
   reallocate-on-rate-change regression test (the latter specifically
   exercising the free-both-channels branch, the Echo/Delay-specific risk
   Reverb's single-buffer test can't cover). Wired into
-  `CMakeLists.txt` via `loopy_vst3_add_wrapper_test(echo)`.
+  `CMakeLists.txt` via `segno_vst3_add_wrapper_test(echo)`.
 - **Update `vst3/test/test_echo_parity.cpp`'s `computeCap` lambda** from the
-  fixed `kEchoCapFrames` literal to `&loopy_vst3_echo::Processor::computeRingCapacity`,
+  fixed `kEchoCapFrames` literal to `&segno_vst3_echo::Processor::computeRingCapacity`,
   matching how `test_reverb_parity.cpp` already wires its own `computeCap`.
   This is required for the golden-parity harness to keep passing at
   non-48kHz rates in its existing `{44100, 48000, 88200, 96000}` sweep — once

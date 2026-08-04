@@ -7,7 +7,7 @@ topic: vst3-host-single-component-self-connect
 
 ## What We're Building
 
-In `Vst3Host::loadImpl` (`packages/loopy_engine/src/host/host_vst3.cpp`, ~line 682-705),
+In `Vst3Host::loadImpl` (`packages/segno_engine/src/host/host_vst3.cpp`, ~line 682-705),
 `connectComponentAndController()` is called unconditionally whenever `controller_` is
 non-null. For a single-component plugin — where the edit controller is obtained via
 `component_->queryInterface(IEditController::iid, ...)` on the *same* underlying object
@@ -63,7 +63,7 @@ it's the smallest possible change that removes the divergence from the SDK's own
   teardown is a no-op for those fields — verified by reading the existing code, no
   follow-up change needed there.
 - **No behavior change for any plugin currently in this repo's test suite.** Verified by
-  grepping `packages/loopy_engine/vst3/` (tremolo, echo, drive, filter, delay, octaver,
+  grepping `packages/segno_engine/vst3/` (tremolo, echo, drive, filter, delay, octaver,
   reverb — all the repo's own plugins) for `getControllerClassId` and `IConnectionPoint`:
   none of them implement either, meaning every one of them is single-component and none
   of them implement `IConnectionPoint` on themselves. So today this call is already a

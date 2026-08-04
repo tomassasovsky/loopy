@@ -4,19 +4,19 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/cubit/tracks_cubit.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
-import 'package:loopy/looper/view/track_meters.dart';
-import 'package:loopy/looper/view/tracks_view.dart';
-import 'package:loopy/pedal/cubit/pedal_cubit.dart';
-import 'package:loopy/pedal/view/pedal_plate.dart';
-import 'package:loopy/theme/theme.dart';
-import 'package:loopy/visualizer/widgets/waveform_view.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/view/track_meters.dart';
+import 'package:segno/looper/view/tracks_view.dart';
+import 'package:segno/pedal/cubit/pedal_cubit.dart';
+import 'package:segno/pedal/view/pedal_plate.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/visualizer/widgets/waveform_view.dart';
 
-/// The on-screen pedal simulator: a replica of the VAMP top plate — the two
+/// The on-screen pedal simulator: a replica of the Segno top plate — the two
 /// screen apertures (a 7" waveform on the left, the main [TracksView] on
 /// the right), the encoder + activity ring, and the footswitches, laid out to
 /// scale from the 3D model. It drives the **real** `PedalCubit` (through

@@ -7,10 +7,10 @@ date: 2026-07-13
 ## PumpedNativeEngine.pump() sizes I/O buffers by frames only, ignoring channel count - Minimal
 
 `PumpedNativeEngine.pump()` in
-`packages/loopy_engine/lib/src/native_audio_engine.dart` allocates its native
+`packages/segno_engine/lib/src/native_audio_engine.dart` allocates its native
 scratch buffers as `calloc<Float>(frames == 0 ? 1 : frames)` for both input
 and output, then passes them to `_bindings.le_engine_process`. The native
-block processor (`packages/loopy_engine/src/core/engine_process.c`) reads and
+block processor (`packages/segno_engine/src/core/engine_process.c`) reads and
 writes both buffers **interleaved** across the engine's configured channel
 counts (`ch_in`/`ch_out`, sourced from `e->in_channels`/`e->out_channels`,
 which `PumpedNativeEngine.start()` sets verbatim from
@@ -19,7 +19,7 @@ which `PumpedNativeEngine.start()` sets verbatim from
 with `N > 0` makes native code read/write `N * 2` floats against Dart buffers
 sized for only `N` floats each — a native heap overflow with no Dart-side
 error. This is currently latent: the one in-repo 2-channel caller
-(`packages/loopy_engine/test/pumped_native_engine_test.dart`,
+(`packages/segno_engine/test/pumped_native_engine_test.dart`,
 `'importTrackLane restores multiple lanes...'`) only ever calls
 `pump(frames: 0)`, which touches zero elements regardless of channel count.
 
@@ -38,25 +38,25 @@ a new test that pumps real frames (not just frames: 0) against a 2-channel
 engine and checks correct recorded/exported sample values.
 
 SUCCESS CRITERIA:
-- pump()'s inPtr allocation uses frames * _inputChannels (not frames alone) | verify: grep -n "calloc<Float>(frames == 0 ? _inputChannels : frames \* _inputChannels)" packages/loopy_engine/lib/src/native_audio_engine.dart
-- pump()'s outPtr allocation uses frames * _outputChannels (not frames alone) | verify: grep -n "calloc<Float>(frames == 0 ? _outputChannels : frames \* _outputChannels)" packages/loopy_engine/lib/src/native_audio_engine.dart
-- PumpedNativeEngine.start() tracks the configured channel counts | verify: grep -n "_inputChannels =" packages/loopy_engine/lib/src/native_audio_engine.dart && grep -n "_outputChannels =" packages/loopy_engine/lib/src/native_audio_engine.dart
-- Package analyzes clean (no new lints/errors) | verify: cd packages/loopy_engine && /Users/Tomas/development/flutter/bin/flutter analyze --no-fatal-infos lib/src/native_audio_engine.dart test/pumped_native_engine_test.dart
-- New multi-channel pump test exists and passes against the real native engine | verify: cd packages/loopy_engine && LOOPY_ENGINE_LIB="$(bash tool/build_test_lib.sh)" /Users/Tomas/development/flutter/bin/flutter test --tags fuzz test/pumped_native_engine_test.dart
-- Full existing fuzz-tagged pump suite still passes (no regression) | verify: cd packages/loopy_engine && LOOPY_ENGINE_LIB="$(bash tool/build_test_lib.sh)" /Users/Tomas/development/flutter/bin/flutter test --tags fuzz test/pumped_native_engine_test.dart
+- pump()'s inPtr allocation uses frames * _inputChannels (not frames alone) | verify: grep -n "calloc<Float>(frames == 0 ? _inputChannels : frames \* _inputChannels)" packages/segno_engine/lib/src/native_audio_engine.dart
+- pump()'s outPtr allocation uses frames * _outputChannels (not frames alone) | verify: grep -n "calloc<Float>(frames == 0 ? _outputChannels : frames \* _outputChannels)" packages/segno_engine/lib/src/native_audio_engine.dart
+- PumpedNativeEngine.start() tracks the configured channel counts | verify: grep -n "_inputChannels =" packages/segno_engine/lib/src/native_audio_engine.dart && grep -n "_outputChannels =" packages/segno_engine/lib/src/native_audio_engine.dart
+- Package analyzes clean (no new lints/errors) | verify: cd packages/segno_engine && /Users/Tomas/development/flutter/bin/flutter analyze --no-fatal-infos lib/src/native_audio_engine.dart test/pumped_native_engine_test.dart
+- New multi-channel pump test exists and passes against the real native engine | verify: cd packages/segno_engine && SEGNO_ENGINE_LIB="$(bash tool/build_test_lib.sh)" /Users/Tomas/development/flutter/bin/flutter test --tags fuzz test/pumped_native_engine_test.dart
+- Full existing fuzz-tagged pump suite still passes (no regression) | verify: cd packages/segno_engine && SEGNO_ENGINE_LIB="$(bash tool/build_test_lib.sh)" /Users/Tomas/development/flutter/bin/flutter test --tags fuzz test/pumped_native_engine_test.dart
 
 NON-GOALS:
 - Changing pump()'s public signature (still `void pump({int frames = 512, double input = 0})`) — no per-channel input injection or output readback added.
 - Adding a mono-only guard/assertion in start() — would regress the existing 2-channel importTrackLane test.
 - Adding ASAN/sanitizer build flags to tool/build_test_lib.sh — out of scope for this Dart-side fix; the new test proves functional correctness, not instrumented memory-safety.
-- Any change outside packages/loopy_engine/lib/src/native_audio_engine.dart and packages/loopy_engine/test/pumped_native_engine_test.dart (this is 1 of 21 parallelized single-issue fixes; other agents own other findings in the same repo).
+- Any change outside packages/segno_engine/lib/src/native_audio_engine.dart and packages/segno_engine/test/pumped_native_engine_test.dart (this is 1 of 21 parallelized single-issue fixes; other agents own other findings in the same repo).
 
-VERIFICATION COMMAND: cd packages/loopy_engine && /Users/Tomas/development/flutter/bin/flutter analyze --no-fatal-infos lib/src/native_audio_engine.dart test/pumped_native_engine_test.dart && LOOPY_ENGINE_LIB="$(bash tool/build_test_lib.sh)" /Users/Tomas/development/flutter/bin/flutter test --tags fuzz test/pumped_native_engine_test.dart
+VERIFICATION COMMAND: cd packages/segno_engine && /Users/Tomas/development/flutter/bin/flutter analyze --no-fatal-infos lib/src/native_audio_engine.dart test/pumped_native_engine_test.dart && SEGNO_ENGINE_LIB="$(bash tool/build_test_lib.sh)" /Users/Tomas/development/flutter/bin/flutter test --tags fuzz test/pumped_native_engine_test.dart
 ```
 
 ## Context
 
-- File: `packages/loopy_engine/lib/src/native_audio_engine.dart`
+- File: `packages/segno_engine/lib/src/native_audio_engine.dart`
   - `PumpedNativeEngine` class starts at line ~1185.
   - Existing `int _sampleRate = 48000;` field at line ~1192 — the new
     `_inputChannels`/`_outputChannels` fields follow the same pattern.
@@ -84,14 +84,14 @@ VERIFICATION COMMAND: cd packages/loopy_engine && /Users/Tomas/development/flutt
       }
     }
     ```
-- Native contract confirmed in `packages/loopy_engine/src/core/loopy_engine_api.h`
+- Native contract confirmed in `packages/segno_engine/src/core/segno_engine_api.h`
   (doc comment on `le_engine_process`: "records/mixes `frames` frames from
   `input` (interleaved f32, ...) into `output`") and
-  `packages/loopy_engine/src/core/engine_process.c` (`ch_in`/`ch_out` derived
+  `packages/segno_engine/src/core/engine_process.c` (`ch_in`/`ch_out` derived
   from `e->in_channels`/`e->out_channels`, used as the interleave stride
   throughout, e.g. `in[f * ch_in + c]`, `out[f * ch_out + c]`).
-- Test file: `packages/loopy_engine/test/pumped_native_engine_test.dart`
-  - `@Tags(['fuzz'])`, self-skips unless `LOOPY_ENGINE_LIB` env var is set.
+- Test file: `packages/segno_engine/test/pumped_native_engine_test.dart`
+  - `@Tags(['fuzz'])`, self-skips unless `SEGNO_ENGINE_LIB` env var is set.
   - The existing 2-channel test (`'importTrackLane restores multiple lanes
     through the real FFI'`, ~line 108) is the reference config to reuse
     (`sampleRate: 48000, inputChannels: 2, outputChannels: 2, maxLoopFrames:
@@ -248,8 +248,8 @@ allocator.
 ## References
 
 - Brainstorm: `docs/brainstorm/2026-07-13-pumped-native-engine-multichannel-pump-brainstorm-doc.md`
-- `packages/loopy_engine/lib/src/native_audio_engine.dart` (pump, start, PumpedNativeEngine)
-- `packages/loopy_engine/src/core/engine_process.c` (le_engine_process interleave contract)
-- `packages/loopy_engine/src/core/loopy_engine_api.h` (le_engine_process doc comment)
-- `packages/loopy_engine/test/pumped_native_engine_test.dart` (existing test suite, styles to mirror)
-- `packages/loopy_engine/tool/build_test_lib.sh` (native test-lib build script, no sanitizers)
+- `packages/segno_engine/lib/src/native_audio_engine.dart` (pump, start, PumpedNativeEngine)
+- `packages/segno_engine/src/core/engine_process.c` (le_engine_process interleave contract)
+- `packages/segno_engine/src/core/segno_engine_api.h` (le_engine_process doc comment)
+- `packages/segno_engine/test/pumped_native_engine_test.dart` (existing test suite, styles to mirror)
+- `packages/segno_engine/tool/build_test_lib.sh` (native test-lib build script, no sanitizers)

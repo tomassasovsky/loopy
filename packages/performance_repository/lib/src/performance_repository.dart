@@ -3,13 +3,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:loopy_engine/loopy_engine.dart';
 import 'package:performance_repository/src/models/performance_chains.dart';
 import 'package:performance_repository/src/models/performance_manifest.dart';
 import 'package:performance_repository/src/models/unfinalized_capture.dart';
 import 'package:performance_repository/src/performance_capture_status.dart';
 import 'package:performance_repository/src/performance_exception.dart';
 import 'package:performance_repository/src/performance_slug.dart';
+import 'package:segno_engine/segno_engine.dart';
 import 'package:wav_codec/wav_codec.dart';
 
 /// Owns the performance-recording capture lifecycle end-to-end.

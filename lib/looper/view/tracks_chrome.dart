@@ -3,18 +3,18 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/app/loopy_navigator.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
-import 'package:loopy/looper/view/shortcuts_help_sheet.dart';
-import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
-import 'package:loopy/performance/performance.dart';
-import 'package:loopy/session/session.dart';
-import 'package:loopy/theme/theme.dart';
-import 'package:loopy/window/window_chrome.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/view/shortcuts_help_sheet.dart';
+import 'package:segno/looper/view/signal_graph/signal_graph.dart';
+import 'package:segno/performance/performance.dart';
+import 'package:segno/session/session.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/window/window_chrome.dart';
 
 /// The Tracks top bar: mode + bank controls on the left, and the global
 /// transport / navigation actions on the right. Presentational — the enabled
@@ -95,7 +95,7 @@ class TracksToolbar extends StatelessWidget {
           onPressed: transportEnabled ? onClearAll : null,
         ),
         // Fullscreen — desktop only, mirroring `F`.
-        if (loopySupportsDesktopWindowing)
+        if (segnoSupportsDesktopWindowing)
           IconButton(
             key: const Key('tracks_fullscreen'),
             tooltip: l10n.fullscreenTooltip,
@@ -103,7 +103,7 @@ class TracksToolbar extends StatelessWidget {
             iconSize: 20,
             color: toolbarIconColor,
             icon: const Icon(Icons.fullscreen),
-            onPressed: () => unawaited(toggleLoopyFullScreen()),
+            onPressed: () => unawaited(toggleSegnoFullScreen()),
           ),
         IconButton(
           key: const Key('tracks_openSignal'),
@@ -123,7 +123,7 @@ class TracksToolbar extends StatelessWidget {
           iconSize: 20,
           color: toolbarIconColor,
           icon: const Icon(Icons.settings_outlined),
-          onPressed: () => unawaited(openLoopySettings()),
+          onPressed: () => unawaited(openSegnoSettings()),
         ),
         // Opens the keyboard-shortcut legend — the primary discoverability
         // affordance for the surface's ~15 shortcuts, also reachable by `?`.
@@ -159,7 +159,7 @@ class AudioNotRunningBanner extends StatelessWidget {
       child: InkWell(
         key: const Key('tracks_audioNotRunning'),
         borderRadius: BorderRadius.circular(10),
-        onTap: () => unawaited(openLoopySettings()),
+        onTap: () => unawaited(openSegnoSettings()),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
@@ -178,7 +178,7 @@ class AudioNotRunningBanner extends StatelessWidget {
 
 /// The session area in the top bar: the current session name (or "Unsaved")
 /// beside a folder button that opens the **Sessions** popup — the single place
-/// to save / load / manage sessions and export (Loopy-Pro-style). The popup
+/// to save / load / manage sessions and export (Segno-Pro-style). The popup
 /// surfaces its own actions; save/load/export outcomes still flow through the
 /// view's [BlocListener] (a live-region SnackBar).
 class SessionMenu extends StatelessWidget {

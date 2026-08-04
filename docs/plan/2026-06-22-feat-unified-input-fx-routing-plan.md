@@ -89,7 +89,7 @@ Output ── per-lane bitmask only           Output ── per-lane bitmask + s
 ### Architecture
 
 Strict VGV layering is preserved: presentation → bloc → repository → data
-(native engine via FFI). The `loopy_engine` dependency stays **transitive** —
+(native engine via FFI). The `segno_engine` dependency stays **transitive** —
 `lib/` never imports it; the app composes via `LooperRepository.withNativeEngine`
 (verified). Every change threads through the same seams the multi-lane rework
 used.
@@ -98,7 +98,7 @@ used.
 lib/audio_setup/  MonitorCubit (Map<int,InputMonitor>)  ── collapses to single-chain InputMonitor
 lib/looper/       LooperBloc lane events                ── + output-gate event
 packages/looper_repository/  LooperRepository           ── single-chain monitor setters; record-snapshot; setOutputEnabled
-packages/loopy_engine/       AudioEngine + native C      ── snapshot-on-record; LE_CMD_SET_OUTPUT_ENABLED
+packages/segno_engine/       AudioEngine + native C      ── snapshot-on-record; LE_CMD_SET_OUTPUT_ENABLED
 packages/settings_repository/ SettingsRepository         ── output_enabled.$out key; v3 migration helpers
 lib/app/          monitor_migration.dart                 ── v3 fold step (single chain)
 ```
@@ -181,20 +181,20 @@ discipline — #14 shipped RED until its Dart PR).
 **Goal:** the native engine snapshots the live monitor chain onto a lane on
 record, and the per-input monitor is a single chain.
 
-- Native (`packages/loopy_engine/src/core/`):
+- Native (`packages/segno_engine/src/core/`):
   - Collapse the per-input monitor from N lanes to a **single chain**: retire
     `LE_CMD_SET_MONITOR_LANE_*` (output/volume/mute/fx/fx_count flat-indexed by
     `input*LE_MAX_LANES+lane`) in favour of single-chain
     `LE_CMD_SET_MONITOR_INPUT_FX` / `…_FX_COUNT` / `…_OUTPUT` / `…_VOLUME` /
-    `…_MUTE` keyed by input only. ([src/core/loopy_engine_api.h](../../packages/loopy_engine/src/core/loopy_engine_api.h), `src/core/engine_commands.c`)
+    `…_MUTE` keyed by input only. ([src/core/segno_engine_api.h](../../packages/segno_engine/src/core/segno_engine_api.h), `src/core/engine_commands.c`)
   - On record finalize, **deep-copy the input's monitor FX chain onto the
     recording lane's `fx`** (types + params, no shared pointer → D3), on the
     **control thread**, before publishing. Buffer stays clean.
 - FFI: regenerate bindings (`dart run ffigen` + `dart format`, per PROGRESS.md
-  gotcha), update [packages/loopy_engine/lib/src/native_audio_engine.dart](../../packages/loopy_engine/lib/src/native_audio_engine.dart)
+  gotcha), update [packages/segno_engine/lib/src/native_audio_engine.dart](../../packages/segno_engine/lib/src/native_audio_engine.dart)
   and the `AudioEngine` interface.
 - Tests (native, deterministic — the real safety net),
-  `packages/loopy_engine/src/test/test_engine_core.c`:
+  `packages/segno_engine/src/test/test_engine_core.c`:
   - `test_monitor_single_chain`
   - `test_record_snapshots_input_fx`
   - `test_snapshot_is_independent_of_later_input_edits` (D3)
@@ -480,7 +480,7 @@ superseded multi-lane monitor UI is removed.
 - Monitor state: [monitor_cubit.dart](../../lib/audio_setup/cubit/monitor_cubit.dart) (restore ~:270)
 - Migration precedent (v1/v2): [monitor_migration.dart:23](../../lib/app/monitor_migration.dart); tests in [test/app/monitor_migration_test.dart](../../test/app/monitor_migration_test.dart)
 - Graph `excluded` render precedent: [routing_graph.dart:38](../../lib/looper/view/tracks_routing_graph/routing_graph.dart), [graph_node.dart:55](../../lib/looper/view/tracks_routing_graph/graph_node.dart)
-- Engine API + commands: [loopy_engine_api.h](../../packages/loopy_engine/src/core/loopy_engine_api.h), `src/core/engine_commands.c`
+- Engine API + commands: [segno_engine_api.h](../../packages/segno_engine/src/core/segno_engine_api.h), `src/core/engine_commands.c`
 - Persistence: [settings_repository.dart](../../packages/settings_repository/lib/src/settings_repository.dart)
 - Bootstrap reapply: [audio_bootstrap.dart](../../lib/app/audio_bootstrap.dart)
 - Build/test gotchas: [docs/PROGRESS.md](../PROGRESS.md) ("How to build / test")

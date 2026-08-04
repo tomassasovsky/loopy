@@ -16,7 +16,7 @@ import 'package:looper_repository/src/models/track.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
 import 'package:looper_repository/src/plugin_catalog.dart';
-import 'package:loopy_engine/loopy_engine.dart'
+import 'package:segno_engine/segno_engine.dart'
     hide
         AudioBackend,
         AudioDevice,
@@ -34,7 +34,7 @@ import 'package:loopy_engine/loopy_engine.dart'
         TrackEffectParam,
         TrackEffectType;
 
-/// Builds the production [AudioEngine] backed by the native loopy engine.
+/// Builds the production [AudioEngine] backed by the native segno engine.
 ///
 /// Lets the composition root obtain an engine without naming or importing the
 /// engine package's concrete types: the returned value is held as the

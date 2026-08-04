@@ -2,7 +2,7 @@ import 'package:controller_repository/controller_repository.dart';
 import 'package:pedal_repository/src/pedal_button.dart';
 import 'package:pedal_repository/src/pedal_codec.dart';
 
-/// Whether [input] is the Loopy pedal talking its own protocol — one of the
+/// Whether [input] is the Segno pedal talking its own protocol — one of the
 /// fixed footswitch notes ([PedalButtonNote]) or the relative encoder CC
 /// ([PedalCodec.encoderCc]).
 ///

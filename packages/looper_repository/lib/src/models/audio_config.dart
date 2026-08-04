@@ -1,5 +1,5 @@
 import 'package:equatable/equatable.dart';
-import 'package:loopy_engine/loopy_engine.dart' as engine;
+import 'package:segno_engine/segno_engine.dart' as engine;
 
 /// Which device backend the engine should open. Domain mirror of the engine's
 /// `AudioBackend`; on Windows the engine forces [asio], [miniaudio] is the

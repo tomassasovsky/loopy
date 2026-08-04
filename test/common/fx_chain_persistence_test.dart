@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/common/fx_chain_persistence.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/common/fx_chain_persistence.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';

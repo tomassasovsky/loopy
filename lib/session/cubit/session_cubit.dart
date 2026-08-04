@@ -1,8 +1,8 @@
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/session/session_mapping.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/session/session_mapping.dart';
 import 'package:session_repository/session_repository.dart';
 
 part 'session_state.dart';

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/update/appliance/appliance_env.dart';
-import 'package:loopy/update/appliance/appliance_platform_backend.dart';
+import 'package:segno/update/appliance/appliance_env.dart';
+import 'package:segno/update/appliance/appliance_platform_backend.dart';
 import 'package:update_repository/update_repository.dart';
 
 class _FakeEnv implements ApplianceEnv {
@@ -72,11 +72,11 @@ class _FakeEnv implements ApplianceEnv {
   }
 }
 
-const _version = '/etc/loopy/build-version';
-const _channel = '/etc/loopy/update-channel';
-const _channelOverride = '/data/loopy/update-channel';
+const _version = '/etc/segno/build-version';
+const _channel = '/etc/segno/update-channel';
+const _channelOverride = '/data/segno/update-channel';
 const _staged = '/data/.ota-staged-version';
-const _helper = '/usr/bin/loopy-update-ctl';
+const _helper = '/usr/bin/segno-update-ctl';
 
 AppliancePlatformBackend backend(ApplianceEnv env) =>
     AppliancePlatformBackend(env: env);
@@ -245,8 +245,8 @@ void main() {
 }
 
 void _pedalFirmwareStagingTests() {
-  const version = '/etc/loopy/build-version';
-  const helper = '/usr/bin/loopy-update-ctl';
+  const version = '/etc/segno/build-version';
+  const helper = '/usr/bin/segno-update-ctl';
 
   UpdateManifest manifest({PedalFirmwareManifest? firmware}) => UpdateManifest(
     version: Version.parse('0.3.0'),
@@ -256,14 +256,14 @@ void _pedalFirmwareStagingTests() {
 
   PedalFirmwareManifest firmware() => PedalFirmwareManifest(
     version: Version.parse('0.3.0'),
-    hex: 'loopy-pedal-0.3.0.hex',
+    hex: 'segno-pedal-0.3.0.hex',
   );
 
   group('downloadAndStage with pedal firmware', () {
     // Staging runs inside the image being replaced, so a flash started here
     // would run the OUTGOING flasher — which is why a flash-pedal fix could
     // never apply on the update carrying it (#444). The published firmware is
-    // now flashed after the reboot by loopy-pedal-flash.service, so a manifest
+    // now flashed after the reboot by segno-pedal-flash.service, so a manifest
     // that advertises firmware must stage exactly like one that does not.
     test('stages identically whether or not firmware is published', () async {
       final withFirmware = _FakeEnv(files: {version: '0.2.0\n', helper: ''});

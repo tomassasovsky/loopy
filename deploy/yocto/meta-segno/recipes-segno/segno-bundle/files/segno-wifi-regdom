@@ -1,0 +1,60 @@
+#!/bin/sh
+# Set the WiFi regulatory domain before NetworkManager starts.
+#
+# Without this the kernel sits at the world domain (country 00), where
+# 5170-5250 MHz is PASSIVE-SCAN — the interface may listen but not initiate.
+# A 5 GHz AP on ch 36-48 is therefore visible in a scan and will even
+# associate, and then the EAPOL exchange never gets out and wpa_supplicant
+# gives up 10s later with "Authentication ... timed out". NetworkManager, on a
+# headless console with no secret agent, reports that as `no-secrets` — so the
+# symptom presents as a forgotten password rather than a regulatory one.
+#
+# The country IE from the AP does arrive, but only *after* association, which
+# is already too late, and it is dropped again on disconnect.
+#
+# This cannot be done in NetworkManager's config: `[device] wifi.country` is
+# not a NetworkManager property. It was there and silently did nothing.
+#
+# See https://github.com/tomassasovsky/segno/issues/459
+set -eu
+
+COUNTRY_FILE="${SEGNO_WIFI_COUNTRY_FILE:-/data/segno/wifi-country}"
+DEFAULT_FILE="${SEGNO_WIFI_COUNTRY_DEFAULT_FILE:-/etc/segno/wifi-country}"
+IW="${SEGNO_IW:-iw}"
+REGDB="${SEGNO_REGDB:-/lib/firmware/regulatory.db}"
+
+log() { echo "segno-wifi-regdom: $*" >&2; }
+
+read_country() {
+    for f in "$COUNTRY_FILE" "$DEFAULT_FILE"; do
+        [ -f "$f" ] || continue
+        value=$(tr -d '[:space:]' <"$f" 2>/dev/null || true)
+        [ -n "$value" ] || continue
+        printf '%s\n' "$value" | tr '[:lower:]' '[:upper:]'
+        return 0
+    done
+    return 1
+}
+
+if ! country=$(read_country); then
+    # Nothing configured is not a failure: the kernel keeps the world domain,
+    # which is exactly the behaviour every build before this one had.
+    log "no country configured; leaving the regulatory domain alone"
+    exit 0
+fi
+
+# `iw reg set` takes anything and fails obscurely. Reject early and say why.
+case "$country" in
+    [A-Z][A-Z]) ;;
+    *) log "ignoring invalid country '$country' (want a 2-letter code)"; exit 0 ;;
+esac
+
+# Kernels that require a signed regdb silently refuse the hint without it, and
+# the failure looks identical to not having run at all.
+[ -e "$REGDB" ] || log "warning: $REGDB missing; the kernel may refuse $country"
+
+if ! "$IW" reg set "$country"; then
+    log "failed to set the regulatory domain to $country"
+    exit 1
+fi
+log "regulatory domain set to $country"

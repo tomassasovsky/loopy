@@ -17,7 +17,7 @@ buttons; swipe up or tap the scrim to dismiss.
 
 Tray contents:
 
-- **Settings** — opens the existing `SettingsPage` via `openLoopySettings()`
+- **Settings** — opens the existing `SettingsPage` via `openSegnoSettings()`
   (same destination as the `S` key / toolbar button)
 - **Signal/FX graph** — opens the existing graph page via
   `showSignalPage(context)` (same destination as the `G` key / toolbar button)
@@ -70,9 +70,9 @@ of the screen" question:
   mounts there. No extra gating logic is needed to keep the tray off the
   simulator plate.
 - **There is exactly one `Navigator` in the whole app**, keyed by
-  `loopyNavigatorKey` and installed once at
-  [app.dart:622](../../lib/app/view/app.dart#L622). `openLoopySettings()`
-  (via `loopyNavigatorKey.currentState`) and `showSignalPage(context)` (via
+  `segnoNavigatorKey` and installed once at
+  [app.dart:622](../../lib/app/view/app.dart#L622). `openSegnoSettings()`
+  (via `segnoNavigatorKey.currentState`) and `showSignalPage(context)` (via
   `Navigator.of(context)`) push onto the **same** navigator, just reached two
   different ways. Confirmed by grepping the whole `lib/` tree for a second
   `Navigator(...)`/`navigatorKey:` — there is none. This means either push
@@ -115,7 +115,7 @@ class SettingsTrayState extends Equatable {
 
   /// True from the instant a tray nav button is tapped until the pushed
   /// route pops — guards against a rapid double-tap double-pushing
-  /// `showSignalPage` (which, unlike `openLoopySettings`, has no re-entrancy
+  /// `showSignalPage` (which, unlike `openSegnoSettings`, has no re-entrancy
   /// guard of its own).
   final bool isNavigating;
 
@@ -174,7 +174,7 @@ toolbar already use — no new navigation logic:
 ```dart
 onSettingsTap: () async {
   final cubit = context.read<SettingsTrayCubit>()..close()..beginNavigating();
-  await openLoopySettings();
+  await openSegnoSettings();
   if (!context.mounted) return;
   cubit.endNavigating();
 },
@@ -188,13 +188,13 @@ untouched.
 
 ## Technical Considerations
 
-- **Architecture impact**: additive only. No change to `openLoopySettings()`,
+- **Architecture impact**: additive only. No change to `openSegnoSettings()`,
   `showSignalPage()`, `TracksCommands`, or the keyboard-shortcut path — both
   keep their exact current bindings and behavior.
 - **Gesture conflicts**: `TrackColumn` has no scrollable and no vertical-drag
   gesture of its own (only tap + `onLongPress` on the meter bar), so there is
   no fight with existing content gestures. The existing
-  `onSecondaryTapUp -> openLoopySettings` `GestureDetector`
+  `onSecondaryTapUp -> openSegnoSettings` `GestureDetector`
   ([tracks_view.dart:96-99](../../lib/looper/view/tracks_view.dart#L96)) is
   untouched — it wraps the `Scaffold`; the tray's own `Stack` sits as a sibling
   layer above it.
@@ -220,7 +220,7 @@ GOAL: A working, tested slide-down settings tray on TracksView: drag-to-open/clo
 SUCCESS CRITERIA:
 - SettingsTrayCubit exists with open/close/toggle/dragTo/settleFromDrag/beginNavigating/endNavigating/setBrightness, covered by bloc_test cases for every transition and the 50% distance-threshold settle rule | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/cubit/settings_tray_cubit_test.dart
 - The tray widget renders the handle, scrim, Settings/Signal/WiFi/Bluetooth/Tuner buttons, and brightness slider, and a widget test drives open-via-tap, open-via-drag-past-threshold, and close-via-scrim-tap | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view/settings_tray_test.dart
-- Tapping the Settings or Signal/FX button closes the tray synchronously (before the push resolves) and calls the existing openLoopySettings()/showSignalPage() functions unchanged | verify: manual 1) run the app 2) open the tray 3) tap Settings 4) confirm SettingsPage opens and the tray is closed underneath 5) back out 6) confirm tray stays closed 7) repeat for the Signal/FX button
+- Tapping the Settings or Signal/FX button closes the tray synchronously (before the push resolves) and calls the existing openSegnoSettings()/showSignalPage() functions unchanged | verify: manual 1) run the app 2) open the tray 3) tap Settings 4) confirm SettingsPage opens and the tray is closed underneath 5) back out 6) confirm tray stays closed 7) repeat for the Signal/FX button
 - Rapid double-tap on the Signal/FX tray button does not push the signal page twice | verify: manual 1) open the tray 2) double-tap the Signal/FX button quickly 3) back out once and confirm only a single graph page was pushed (no doubled back-stack)
 - Reduced-motion (MediaQuery.disableAnimationsOf) collapses the tray's settle and scrim animations to Duration.zero | verify: manual 1) enable "reduce motion" in the OS accessibility settings 2) run the app 3) open/close the tray via tap and via drag-release 4) confirm no animated transition plays, only instant state changes
 - Existing keyboard shortcuts (S, G) and the desktop toolbar's Settings/Signal buttons are unchanged | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view/tracks_commands_test.dart test/looper/view/tracks_chrome_test.dart
@@ -278,7 +278,7 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test test/loo
   sub-widgets like `TracksToolbar`, not a screen container)
 - Keyboard shortcuts: [tracks_commands.dart:178-185](../../lib/looper/view/tracks_commands.dart#L178)
 - Navigation functions to reuse unchanged:
-  [loopy_navigator.dart:15-27](../../lib/app/loopy_navigator.dart#L15) (`openLoopySettings`),
+  [segno_navigator.dart:15-27](../../lib/app/segno_navigator.dart#L15) (`openSegnoSettings`),
   [signal_list_view.dart:31-79](../../lib/looper/view/signal_graph/signal_list_view.dart#L31) (`showSignalPage`)
 - Single-Navigator confirmation: [app.dart:622](../../lib/app/view/app.dart#L622)
 - Cubit convention examples: [tracks_cubit.dart](../../lib/looper/cubit/tracks_cubit.dart) /

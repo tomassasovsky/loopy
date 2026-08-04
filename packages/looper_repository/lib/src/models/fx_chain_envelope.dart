@@ -46,7 +46,7 @@ class FxChainMeta extends Equatable {
 /// manifests (`SessionLaneChain.encoded` stays an opaque string; its content
 /// is this), clear-restore snapshots, and the track/master stages.
 ///
-/// Owned by `looper_repository` and WRAPPING `loopy_engine`'s entries codec:
+/// Owned by `looper_repository` and WRAPPING `segno_engine`'s entries codec:
 /// [entries] persist exactly as the engine serializer writes them, and the
 /// engine never consumes [chainEnabled] or [meta].
 class FxChainEnvelope extends Equatable {

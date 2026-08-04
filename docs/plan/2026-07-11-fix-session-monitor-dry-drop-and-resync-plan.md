@@ -51,7 +51,7 @@ on the next edit (`_pushEffects` rebuilds the whole engine chain), so old FX "re
 rebuild-style edit (adding an FX) wipes them. Persisted settings also drift from what was loaded.
 
 > The native engine fully resets all monitors on every `start()`
-> ([engine.c:371](../../packages/loopy_engine/src/core/engine.c)), so this is **not** a
+> ([engine.c:371](../../packages/segno_engine/src/core/engine.c)), so this is **not** a
 > startup/restart leak — it is purely the load-time split-brain. The occasional "on opening the
 > program" flavor is most likely separate ASIO device-timing and is **out of scope** here (tracked as
 > a follow-up).
@@ -212,7 +212,7 @@ BlocListener<SessionCubit, SessionState>(
 | File | Test |
 |------|------|
 | `packages/looper_repository/test/looper_repository_test.dart` | New `allMonitors()` tests: returns enabled **dry** monitors; omits pure-default inputs; includes FX/mute/volume/output-varied inputs. **Migrate** the existing `allMonitorEffects()` test (~:2687) onto `allMonitors()` |
-| `test/session/session_fx_roundtrip_test.dart` | Extend round-trip: stage an **enabled dry** monitor on a second input (no FX) alongside the existing FX monitor; assert `monitorEnabled` + routing survive save→clear→load (fuzz-tagged, self-skips without `LOOPY_ENGINE_LIB`) |
+| `test/session/session_fx_roundtrip_test.dart` | Extend round-trip: stage an **enabled dry** monitor on a second input (no FX) alongside the existing FX monitor; assert `monitorEnabled` + routing survive save→clear→load (fuzz-tagged, self-skips without `SEGNO_ENGINE_LIB`) |
 | `test/session/cubit/session_cubit_test.dart` | **Regression guard (critical):** add `when(looper.allMonitors).thenReturn(const {})` to the shared `setUp` — the save tests (`saveAs`/`save`, ~:166/:212/:445) now call `allMonitors()` and would throw on a mock without that stub |
 | `test/audio_setup/cubit/monitor_cubit_test.dart` | `syncFromRepository()` re-projects repo monitors into state, persists **all five** fields, and resets **all five** persisted fields for inputs dropped since the last state |
 | `test/app/…` (widget test) | Bridge: pump the shell, drive a `loaded` `SessionState`, assert `MonitorCubit` state re-projects. (Not `session_cubit_test` — the wire lives in the widget tree.) |

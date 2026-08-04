@@ -1,19 +1,19 @@
 ---
-title: Fix Loopy Echo VST3 delay-ring capacity to scale with host sample rate
+title: Fix Segno Echo VST3 delay-ring capacity to scale with host sample rate
 type: fix
 date: 2026-07-13
 ---
 
-## Fix Loopy Echo VST3 delay-ring capacity to scale with host sample rate - Standard
+## Fix Segno Echo VST3 delay-ring capacity to scale with host sample rate - Standard
 
 ## Overview
 
-`packages/loopy_engine/vst3/echo/processor.h` hardcodes
+`packages/segno_engine/vst3/echo/processor.h` hardcodes
 `static constexpr int kEchoCapFrames = 48000;` and the Echo processor never
 overrides `setupProcessing()`, so the delay-ring capacity is fixed at 48000
 frames regardless of the host's actual negotiated sample rate. This plan
 mirrors the sibling Reverb VST3 plugin's already-shipped fix for the
-identical problem (`packages/loopy_engine/vst3/reverb/processor.h`/`.cpp`)
+identical problem (`packages/segno_engine/vst3/reverb/processor.h`/`.cpp`)
 onto Echo, adapted for Echo's per-channel ring allocation (shared with
 Delay's `fx_stereo_ring_prepare`, not Reverb's single packed buffer).
 
@@ -40,7 +40,7 @@ sample rate.
 Mirror Reverb's structure in the Echo processor, adapted for the
 per-channel ring Echo shares with Delay:
 
-1. **`packages/loopy_engine/vst3/echo/processor.h`**
+1. **`packages/segno_engine/vst3/echo/processor.h`**
    - Add `setupProcessing(Steinberg::Vst::ProcessSetup&)` override
      declaration.
    - Add a `static int computeRingCapacity(double sampleRate)` public static
@@ -57,7 +57,7 @@ per-channel ring Echo shares with Delay:
      default/initial value before `setupProcessing()` first runs, matching
      how Reverb's header frames its own `cap_ = 48000` default.
 
-2. **`packages/loopy_engine/vst3/echo/processor.cpp`**
+2. **`packages/segno_engine/vst3/echo/processor.cpp`**
    - Remove the `le_fx_prepare(&fx_, 0, LE_FX_ECHO, kEchoCapFrames)` call
      from `initialize()` (keep `types_[0] = LE_FX_ECHO;` and
      `le_fx_defaults(...)` there, matching Reverb's `initialize()`).
@@ -73,7 +73,7 @@ per-channel ring Echo shares with Delay:
      `cap_`.
    - `terminate()` is unchanged (already frees both `delay[0][0]`/`[1]`).
 
-3. **`packages/loopy_engine/vst3/echo/test_vst3_echo_wrapper.cpp` (new file)**
+3. **`packages/segno_engine/vst3/echo/test_vst3_echo_wrapper.cpp` (new file)**
    - Echo currently has no wrapper test file (only `test_vst3_echo_ids.cpp`
      exists), unlike Delay/Reverb. Create one with the same baseline
      coverage those two establish, using Echo's own engine defaults
@@ -103,14 +103,14 @@ per-channel ring Echo shares with Delay:
      the regression test for the free/reallocate branch (`if (newCap !=
      cap_)`) itself, including both channels being freed, which no
      single-`setupProcessing()`-call test can exercise.
-   - Register in `CMakeLists.txt` via `loopy_vst3_add_wrapper_test(echo)`
+   - Register in `CMakeLists.txt` via `segno_vst3_add_wrapper_test(echo)`
      and update the adjacent "Wrapper-level tests exist only for Delay
      (part 2) and Reverb (part 3)" comment to include Echo.
 
-4. **`packages/loopy_engine/vst3/test/test_echo_parity.cpp`**
+4. **`packages/segno_engine/vst3/test/test_echo_parity.cpp`**
    - Change `config.computeCap` from the lambda returning the fixed
-     `loopy_vst3_echo::Processor::kEchoCapFrames` literal to
-     `&loopy_vst3_echo::Processor::computeRingCapacity`, matching how
+     `segno_vst3_echo::Processor::kEchoCapFrames` literal to
+     `&segno_vst3_echo::Processor::computeRingCapacity`, matching how
      `test_reverb_parity.cpp` wires its own `computeCap`. Update the
      adjacent comment (currently states "Fixed regardless of sample rate,
      matching Delay's ring sizing") to reflect that Echo now scales, like
@@ -124,7 +124,7 @@ per-channel ring Echo shares with Delay:
      not a real DSP bug, but a spurious divergence this plan must not
      introduce.
 
-5. **`packages/loopy_engine/vst3/test/host_harness.h`**
+5. **`packages/segno_engine/vst3/test/host_harness.h`**
    - Update the comment (lines ~107-116) describing which plugins scale
      their ring capacity with sample rate, to state that Reverb and Echo
      both scale via their own `computeRingCapacity` while Delay remains
@@ -164,27 +164,27 @@ per-channel ring Echo shares with Delay:
 ## Success Criteria
 
 ```success-criteria
-GOAL: Loopy Echo VST3's delay-ring capacity scales with the host's negotiated sample rate, matching Reverb's already-shipped pattern, with no regression in existing GUID/parity tests.
+GOAL: Segno Echo VST3's delay-ring capacity scales with the host's negotiated sample rate, matching Reverb's already-shipped pattern, with no regression in existing GUID/parity tests.
 
 SUCCESS CRITERIA:
-- processor.h declares setupProcessing(), computeRingCapacity(), ringCapacityForTesting(), and a cap_ member | verify: grep -q "setupProcessing" packages/loopy_engine/vst3/echo/processor.h && grep -q "computeRingCapacity" packages/loopy_engine/vst3/echo/processor.h && grep -q "ringCapacityForTesting" packages/loopy_engine/vst3/echo/processor.h && grep -q "cap_" packages/loopy_engine/vst3/echo/processor.h
-- processor.cpp no longer prepares the ring in initialize() and uses cap_ (not kEchoCapFrames) in process() | verify: ! grep -q "le_fx_prepare(&fx_, 0, LE_FX_ECHO, kEchoCapFrames)" packages/loopy_engine/vst3/echo/processor.cpp && grep -q "fx_apply_chain(&fx_, sr, cap_" packages/loopy_engine/vst3/echo/processor.cpp
-- A new echo wrapper test file exists with a 96kHz regression test and is wired into CMake | verify: grep -q "96000" packages/loopy_engine/vst3/echo/test_vst3_echo_wrapper.cpp && grep -q "loopy_vst3_add_wrapper_test(echo)" packages/loopy_engine/vst3/CMakeLists.txt
-- test_echo_parity.cpp's computeCap references computeRingCapacity, not the fixed constant | verify: grep -q "computeRingCapacity" packages/loopy_engine/vst3/test/test_echo_parity.cpp && ! grep -q "kEchoCapFrames" packages/loopy_engine/vst3/test/test_echo_parity.cpp
-- Full VST3 CMake test suite (echo + delay + reverb wrapper, all 7 plugins' parity/GUID tests) builds and passes on macOS | verify: manual 1) cd packages/loopy_engine/vst3 2) cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug 3) cmake --build build 4) ctest --test-dir build --output-on-failure 5) confirm all tests, especially vst3_echo_wrapper and vst3_echo_parity, report Passed
-- No unrelated files outside packages/loopy_engine/vst3/echo/, packages/loopy_engine/vst3/CMakeLists.txt, packages/loopy_engine/vst3/test/test_echo_parity.cpp, and packages/loopy_engine/vst3/test/host_harness.h are modified | verify: git diff --name-only | grep -v -E "^(packages/loopy_engine/vst3/echo/|packages/loopy_engine/vst3/CMakeLists.txt|packages/loopy_engine/vst3/test/test_echo_parity.cpp|packages/loopy_engine/vst3/test/host_harness.h|docs/brainstorm/|docs/plan/|\.github/cspell\.json)" | wc -l | grep -qx 0
+- processor.h declares setupProcessing(), computeRingCapacity(), ringCapacityForTesting(), and a cap_ member | verify: grep -q "setupProcessing" packages/segno_engine/vst3/echo/processor.h && grep -q "computeRingCapacity" packages/segno_engine/vst3/echo/processor.h && grep -q "ringCapacityForTesting" packages/segno_engine/vst3/echo/processor.h && grep -q "cap_" packages/segno_engine/vst3/echo/processor.h
+- processor.cpp no longer prepares the ring in initialize() and uses cap_ (not kEchoCapFrames) in process() | verify: ! grep -q "le_fx_prepare(&fx_, 0, LE_FX_ECHO, kEchoCapFrames)" packages/segno_engine/vst3/echo/processor.cpp && grep -q "fx_apply_chain(&fx_, sr, cap_" packages/segno_engine/vst3/echo/processor.cpp
+- A new echo wrapper test file exists with a 96kHz regression test and is wired into CMake | verify: grep -q "96000" packages/segno_engine/vst3/echo/test_vst3_echo_wrapper.cpp && grep -q "segno_vst3_add_wrapper_test(echo)" packages/segno_engine/vst3/CMakeLists.txt
+- test_echo_parity.cpp's computeCap references computeRingCapacity, not the fixed constant | verify: grep -q "computeRingCapacity" packages/segno_engine/vst3/test/test_echo_parity.cpp && ! grep -q "kEchoCapFrames" packages/segno_engine/vst3/test/test_echo_parity.cpp
+- Full VST3 CMake test suite (echo + delay + reverb wrapper, all 7 plugins' parity/GUID tests) builds and passes on macOS | verify: manual 1) cd packages/segno_engine/vst3 2) cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug 3) cmake --build build 4) ctest --test-dir build --output-on-failure 5) confirm all tests, especially vst3_echo_wrapper and vst3_echo_parity, report Passed
+- No unrelated files outside packages/segno_engine/vst3/echo/, packages/segno_engine/vst3/CMakeLists.txt, packages/segno_engine/vst3/test/test_echo_parity.cpp, and packages/segno_engine/vst3/test/host_harness.h are modified | verify: git diff --name-only | grep -v -E "^(packages/segno_engine/vst3/echo/|packages/segno_engine/vst3/CMakeLists.txt|packages/segno_engine/vst3/test/test_echo_parity.cpp|packages/segno_engine/vst3/test/host_harness.h|docs/brainstorm/|docs/plan/|\.github/cspell\.json)" | wc -l | grep -qx 0
 
 NON-GOALS:
 - Changing engine_fx.c, engine.c, delay/, or any other VST3 plugin (Drive, Filter, Tremolo, Octaver).
 - Adding sample-accurate (per-sample) automation for the Time/Feedback/Mix parameters — out of scope, pre-existing D-SEAM block-rate limitation shared with every other VST3 wrapper in this repo.
 - Windows/Linux-specific work — this fix is portable C++ shared by all platforms' CMake targets, no OS-specific branch needed.
 
-VERIFICATION COMMAND: grep -q "setupProcessing" packages/loopy_engine/vst3/echo/processor.h && grep -q "computeRingCapacity" packages/loopy_engine/vst3/echo/processor.h && grep -q "ringCapacityForTesting" packages/loopy_engine/vst3/echo/processor.h && grep -q "cap_" packages/loopy_engine/vst3/echo/processor.h && ! grep -q "le_fx_prepare(&fx_, 0, LE_FX_ECHO, kEchoCapFrames)" packages/loopy_engine/vst3/echo/processor.cpp && grep -q "fx_apply_chain(&fx_, sr, cap_" packages/loopy_engine/vst3/echo/processor.cpp && grep -q "96000" packages/loopy_engine/vst3/echo/test_vst3_echo_wrapper.cpp && grep -q "loopy_vst3_add_wrapper_test(echo)" packages/loopy_engine/vst3/CMakeLists.txt && grep -q "computeRingCapacity" packages/loopy_engine/vst3/test/test_echo_parity.cpp && ! grep -q "kEchoCapFrames" packages/loopy_engine/vst3/test/test_echo_parity.cpp
+VERIFICATION COMMAND: grep -q "setupProcessing" packages/segno_engine/vst3/echo/processor.h && grep -q "computeRingCapacity" packages/segno_engine/vst3/echo/processor.h && grep -q "ringCapacityForTesting" packages/segno_engine/vst3/echo/processor.h && grep -q "cap_" packages/segno_engine/vst3/echo/processor.h && ! grep -q "le_fx_prepare(&fx_, 0, LE_FX_ECHO, kEchoCapFrames)" packages/segno_engine/vst3/echo/processor.cpp && grep -q "fx_apply_chain(&fx_, sr, cap_" packages/segno_engine/vst3/echo/processor.cpp && grep -q "96000" packages/segno_engine/vst3/echo/test_vst3_echo_wrapper.cpp && grep -q "segno_vst3_add_wrapper_test(echo)" packages/segno_engine/vst3/CMakeLists.txt && grep -q "computeRingCapacity" packages/segno_engine/vst3/test/test_echo_parity.cpp && ! grep -q "kEchoCapFrames" packages/segno_engine/vst3/test/test_echo_parity.cpp
 ```
 
 ## Success Metrics
 
-- `ctest --test-dir packages/loopy_engine/vst3/build` reports 100% pass,
+- `ctest --test-dir packages/segno_engine/vst3/build` reports 100% pass,
   including the new 96 kHz Echo regression test and the existing
   `vst3_echo_parity` / `vst3_reverb_parity` / `vst3_reverb_wrapper` suites
   (all sample rates in the existing `{44100, 48000, 88200, 96000}` sweep).
@@ -212,18 +212,18 @@ VERIFICATION COMMAND: grep -q "setupProcessing" packages/loopy_engine/vst3/echo/
 
 ## References & Research
 
-- Proven pattern this mirrors: `packages/loopy_engine/vst3/reverb/processor.h`,
-  `packages/loopy_engine/vst3/reverb/processor.cpp`'s `setupProcessing()`,
-  `packages/loopy_engine/vst3/reverb/test_vst3_reverb_wrapper.cpp`'s
+- Proven pattern this mirrors: `packages/segno_engine/vst3/reverb/processor.h`,
+  `packages/segno_engine/vst3/reverb/processor.cpp`'s `setupProcessing()`,
+  `packages/segno_engine/vst3/reverb/test_vst3_reverb_wrapper.cpp`'s
   `test_reverb_stays_correct_at_96khz`.
-- Bug site: `packages/loopy_engine/vst3/echo/processor.h` (`kEchoCapFrames`),
-  `packages/loopy_engine/vst3/echo/processor.cpp` (`initialize()`,
+- Bug site: `packages/segno_engine/vst3/echo/processor.h` (`kEchoCapFrames`),
+  `packages/segno_engine/vst3/echo/processor.cpp` (`initialize()`,
   `process()`). Entry point: `vst3/test/test_echo_parity.cpp`.
-- DSP ground truth: `packages/loopy_engine/src/core/engine_fx.c`'s
+- DSP ground truth: `packages/segno_engine/src/core/engine_fx.c`'s
   `fx_echo`, `fx_stereo_ring_prepare`, `le_fx_prepare`;
-  `packages/loopy_engine/src/core/engine.c`'s `fx_delay_frames =
+  `packages/segno_engine/src/core/engine.c`'s `fx_delay_frames =
   sample_rate` convention.
-- Build/test wiring: `packages/loopy_engine/vst3/CMakeLists.txt` (wrapper +
+- Build/test wiring: `packages/segno_engine/vst3/CMakeLists.txt` (wrapper +
   parity test target definitions).
 - Brainstorm doc:
   `docs/brainstorm/2026-07-13-fix-echo-vst3-samplerate-scaled-ring-brainstorm-doc.md`.

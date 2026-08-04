@@ -1,4 +1,4 @@
-// Loopy floor-console WS2812 LED driver — RP2040 firmware.
+// Segno floor-console WS2812 LED driver — RP2040 firmware.
 //
 // Offloads the hard-real-time WS2812 timing from the Raspberry Pi. Receives
 // compact transport-state frames from the Pi over UART (115200 8N1 on Serial1),

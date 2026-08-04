@@ -5,7 +5,7 @@
 import 'dart:ffi';
 import 'dart:io';
 
-/// Opens the bundled `loopy_engine` native library for the current platform.
+/// Opens the bundled `segno_engine` native library for the current platform.
 ///
 /// Shared by every MIDI FFI wrapper in this package (`MidiClient` for input,
 /// `MidiOutClient` for output): the MIDI symbols (`le_midi_*` / `le_midi_out_*`)
@@ -13,10 +13,10 @@ import 'dart:io';
 /// they live in the process's global namespace (static-linked into the Runner),
 /// so [DynamicLibrary.process] resolves them; on Linux/Windows the engine is a
 /// separate shared library opened by name.
-DynamicLibrary openLoopyEngineLibrary() {
+DynamicLibrary openSegnoEngineLibrary() {
   if (Platform.isMacOS || Platform.isIOS) {
     return DynamicLibrary.process();
   }
-  if (Platform.isWindows) return DynamicLibrary.open('loopy_engine.dll');
-  return DynamicLibrary.open('libloopy_engine.so');
+  if (Platform.isWindows) return DynamicLibrary.open('segno_engine.dll');
+  return DynamicLibrary.open('libsegno_engine.so');
 }

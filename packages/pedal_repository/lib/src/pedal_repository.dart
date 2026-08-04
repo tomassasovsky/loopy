@@ -10,7 +10,7 @@ import 'package:pedal_repository/src/simulator_pedal_transport.dart'
 
 /// The binding state of the pedal output link.
 ///
-/// Binding is driven by the output port opening — loopy's 3-byte input capture
+/// Binding is driven by the output port opening — segno's 3-byte input capture
 /// cannot deliver the pedal's SysEx identity *reply*, so there is no
 /// reply-based auto-detect or inbound version negotiation in v1 (both are
 /// deferred until the input seam grows a SysEx-capable path).

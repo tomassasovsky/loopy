@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/cubit/tracks_cubit.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 
 /// Shows a dialog to rename track [channel] (current name [current]) and
 /// persists the result through [cubit]. Shared by the Tracks grid and the

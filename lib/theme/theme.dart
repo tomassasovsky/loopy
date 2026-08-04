@@ -1,4 +1,4 @@
-/// Loopy theming: the two `ThemeData` variants and the `LooperTheme`
+/// Segno theming: the two `ThemeData` variants and the `LooperTheme`
 /// design-token extension.
 library;
 

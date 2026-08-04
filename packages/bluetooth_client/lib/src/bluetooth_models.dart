@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:meta/meta.dart';
 
-/// Adapter status from `loopy-bt-ctl status`.
+/// Adapter status from `segno-bt-ctl status`.
 @immutable
 class BluetoothStatus extends Equatable {
   /// Creates a [BluetoothStatus].
@@ -47,7 +47,7 @@ class BluetoothStatus extends Equatable {
   /// LE advertising active.
   final bool advertising;
 
-  /// Adapter alias (e.g. "Loopy").
+  /// Adapter alias (e.g. "Segno").
   final String alias;
 
   /// Whether at least one peer is Connected.
@@ -68,7 +68,7 @@ class BluetoothStatus extends Equatable {
   ];
 }
 
-/// One discovered device from `loopy-bt-ctl scan`.
+/// One discovered device from `segno-bt-ctl scan`.
 @immutable
 class BluetoothDevice extends Equatable {
   /// Creates a [BluetoothDevice].

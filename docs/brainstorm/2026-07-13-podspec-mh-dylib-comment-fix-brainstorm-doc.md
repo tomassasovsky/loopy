@@ -1,16 +1,16 @@
-# Brainstorm: Fix inaccurate MACH_O_TYPE=mh_dylib comment in loopy_engine.podspec
+# Brainstorm: Fix inaccurate MACH_O_TYPE=mh_dylib comment in segno_engine.podspec
 
 Date: 2026-07-13
 Status: autonomous fix (1 of 21 parallelized code-review fixes across isolated worktrees; no live user for this run — proceeding on documented assumptions per task instructions)
 
 ## Problem
 
-`packages/loopy_engine/macos/loopy_engine.podspec` (lines ~33-39) explains the
+`packages/segno_engine/macos/segno_engine.podspec` (lines ~33-39) explains the
 `MACH_O_TYPE => 'mh_dylib'` setting with a comment claiming FFI symbols are
-"resolved at runtime via `DynamicLibrary.open('loopy_engine.framework/loopy_engine')`".
+"resolved at runtime via `DynamicLibrary.open('segno_engine.framework/segno_engine')`".
 
 That is not how the Dart layer works. `_openLibrary()` in
-`packages/loopy_engine/lib/src/native_audio_engine.dart` always returns
+`packages/segno_engine/lib/src/native_audio_engine.dart` always returns
 `DynamicLibrary.process()` on macOS/iOS:
 
 ```dart
@@ -20,7 +20,7 @@ if (Platform.isMacOS || Platform.isIOS) {
 ```
 
 with its own comment stating "there is no standalone library file to open".
-A repo-wide grep for the literal string `loopy_engine.framework` (excluding
+A repo-wide grep for the literal string `segno_engine.framework` (excluding
 worktrees/build) confirms the podspec comment is the only place this path-based
 `DynamicLibrary.open` claim appears — it doesn't reflect any real code path.
 

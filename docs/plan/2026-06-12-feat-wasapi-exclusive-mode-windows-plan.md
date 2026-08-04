@@ -14,7 +14,7 @@ with OS sample-rate conversion disabled (`wasapi.noAutoConvertSRC`), so audio
 bypasses the Windows audio engine/mixer entirely — native format, no resampling,
 low latency. This is the MIT-clean path to "full control" (ASIO-as-a-backend was
 rejected: miniaudio has no ASIO backend and the SDK is GPLv3; ASIO stays
-label-read-only behind the existing opt-in `LOOPY_ENABLE_ASIO` flag).
+label-read-only behind the existing opt-in `SEGNO_ENABLE_ASIO` flag).
 
 Exclusive access is **opt-in per the user** via a toggle in audio setup,
 **defaulted ON on Windows** (OFF on macOS/Linux to preserve today's behavior),
@@ -27,7 +27,7 @@ UI reflects reality rather than just intent.
 ## Problem Statement
 
 The engine currently opens the device in miniaudio's **default shared mode** —
-[engine.c:1761](packages/loopy_engine/src/engine.c) `ma_device_config_init(ma_device_type_duplex)`
+[engine.c:1761](packages/segno_engine/src/engine.c) `ma_device_config_init(ma_device_type_duplex)`
 with no `shareMode` set. On Windows that means:
 
 - Audio is mixed/resampled by the Windows audio engine → added latency and
@@ -81,7 +81,7 @@ settings) → Presentation (cubit/UI)**.
 
 ### Layer 1 — Native engine (C)
 
-**1a. `le_config` gains an intent flag** — [loopy_engine_api.h](packages/loopy_engine/src/loopy_engine_api.h):
+**1a. `le_config` gains an intent flag** — [segno_engine_api.h](packages/segno_engine/src/segno_engine_api.h):
 
 ```c
 typedef struct le_config {
@@ -103,7 +103,7 @@ typedef struct le_config {
 ```
 
 **1c. Device open applies exclusive + fallback** —
-[engine.c:1761](packages/loopy_engine/src/engine.c) `le_engine_start`:
+[engine.c:1761](packages/segno_engine/src/engine.c) `le_engine_start`:
 
 - After building `cfg`, when `config->exclusive`:
   ```c
@@ -131,11 +131,11 @@ typedef struct le_config {
   > miniaudio note (header, ~line 8683): exclusive init does **not** auto-fall-back;
   > the caller must reinitialize with shared. The retry above is that.
 - Publish the negotiated mode alongside the other post-init `store_i32` calls
-  (near [engine.c:1843](packages/loopy_engine/src/engine.c)) into a new atomic
+  (near [engine.c:1843](packages/segno_engine/src/engine.c)) into a new atomic
   `engine->a_exclusive_active`, read out in `le_engine_get_snapshot`
-  ([engine.c:1925](packages/loopy_engine/src/engine.c)) → `out->exclusive_active`.
+  ([engine.c:1925](packages/segno_engine/src/engine.c)) → `out->exclusive_active`.
 - Add the `a_exclusive_active` atomic field to `struct le_engine`
-  ([engine_private.h](packages/loopy_engine/src/engine_private.h)) and initialize
+  ([engine_private.h](packages/segno_engine/src/engine_private.h)) and initialize
   it in `le_engine_configure`/reset paths to 0.
 
 **1d. Factor the only new C *logic* into a pure, testable helper.** Everything
@@ -153,11 +153,11 @@ typedef enum { LE_SHARE_DONE_EXCLUSIVE, LE_SHARE_RETRY_SHARED,
 le_share_decision le_decide_share_fallback(int requested_exclusive,
                                            int first_init_ok);
 ```
-Declared in [engine_internal.h](packages/loopy_engine/src/engine_internal.h),
+Declared in [engine_internal.h](packages/segno_engine/src/engine_internal.h),
 defined in engine.c, and used by `le_engine_start` to drive the retry + set
 `exclusive_active`.
 
-**Native tests** — [test_engine_core.c](packages/loopy_engine/src/test/test_engine_core.c):
+**Native tests** — [test_engine_core.c](packages/segno_engine/src/test/test_engine_core.c):
 - `test_decide_share_fallback`: the full truth table — requested+ok →
   DONE_EXCLUSIVE; requested+fail → RETRY_SHARED; not-requested → DONE_SHARED.
   This is the real safety net for the fallback path.
@@ -173,24 +173,24 @@ Regenerate after the `le_config` / `le_snapshot` change, per the repo gotcha
 ([PROGRESS.md](docs/PROGRESS.md)):
 
 ```sh
-cd packages/loopy_engine
+cd packages/segno_engine
 dart run ffigen --config ffigen.yaml
-dart format lib/src/generated/loopy_engine_bindings.dart   # required: tall style
+dart format lib/src/generated/segno_engine_bindings.dart   # required: tall style
 ```
 
 Verify the generated `le_config` and `le_snapshot` structs expose
 `exclusive` / `exclusive_active` and the diff is field-scoped (no whole-file churn).
-Run the loopy_engine analyzer/tests **right after regen, before touching the Dart
+Run the segno_engine analyzer/tests **right after regen, before touching the Dart
 wrappers**, so a struct-layout surprise surfaces at the FFI boundary rather than
 three layers up.
 
-### Layer 3 — Dart engine layer (loopy_engine)
+### Layer 3 — Dart engine layer (segno_engine)
 
-**3a. `EngineConfig`** — [engine_config.dart](packages/loopy_engine/lib/src/engine_config.dart):
+**3a. `EngineConfig`** — [engine_config.dart](packages/segno_engine/lib/src/engine_config.dart):
 add `final bool exclusive` (default `false`), wire it into the constructor,
 `writeTo` (`ptr.ref.exclusive = exclusive ? 1 : 0`), `==`, `hashCode`, `toString`.
 
-**3b. `EngineSnapshot`** — [engine_snapshot.dart](packages/loopy_engine/lib/src/engine_snapshot.dart):
+**3b. `EngineSnapshot`** — [engine_snapshot.dart](packages/segno_engine/lib/src/engine_snapshot.dart):
 add `final bool exclusiveActive` in **all four** sites (missing any breaks
 compile or equality):
 1. primary constructor: `this.exclusiveActive = false`
@@ -198,7 +198,7 @@ compile or equality):
 3. `EngineSnapshot.fromNative`: `exclusiveActive: native.exclusive_active != 0`
 4. `props`
 
-**3c. `MockAudioEngine`** — [mock_audio_engine.dart](packages/loopy_engine/lib/src/mock_audio_engine.dart):
+**3c. `MockAudioEngine`** — [mock_audio_engine.dart](packages/segno_engine/lib/src/mock_audio_engine.dart):
 **deterministic rule:** the mock always "succeeds" — its snapshot reports
 `exclusiveActive == config.exclusive` (echo intent). This keeps mock/dev runs
 predictable. **The fallback-display path (intent ON, reality OFF) is therefore
@@ -207,7 +207,7 @@ constructing an `EngineStatus(exclusiveActive: false)` with `exclusive: true`
 (see Layer 6c tests), rather than expecting the mock to simulate a refusal.
 
 **Tests:** unit-test `EngineConfig` (new field in equality/writeTo) and
-`EngineSnapshot.fromNative` (the new mapping) in the loopy_engine package tests.
+`EngineSnapshot.fromNative` (the new mapping) in the segno_engine package tests.
 
 ### Layer 4 — Repository + persistence (Domain)
 
@@ -390,7 +390,7 @@ optional with a safe default; update every equality/serialization surface:
 - Re-running the latency measurement automatically on every mode change (the
   status shows the negotiated mode; an explicit re-measure remains user-driven).
 - CoreAudio "hog mode" on macOS / any exclusive concept on Linux.
-- ASIO as an audio backend (remains label-read-only behind `LOOPY_ENABLE_ASIO`).
+- ASIO as an audio backend (remains label-read-only behind `SEGNO_ENABLE_ASIO`).
 
 ## Risk Analysis & Mitigation
 
@@ -412,11 +412,11 @@ optional with a safe default; update every equality/serialization surface:
 
 ## References
 
-- Device open (shared today): [engine.c:1761](packages/loopy_engine/src/engine.c)
-- Snapshot publish/read: [engine.c:1843](packages/loopy_engine/src/engine.c), [engine.c:1925](packages/loopy_engine/src/engine.c)
-- `le_config` / `le_snapshot`: [loopy_engine_api.h:189](packages/loopy_engine/src/loopy_engine_api.h), [loopy_engine_api.h:268](packages/loopy_engine/src/loopy_engine_api.h)
-- `EngineConfig`: [engine_config.dart](packages/loopy_engine/lib/src/engine_config.dart)
-- `EngineSnapshot.fromNative`: [engine_snapshot.dart:345](packages/loopy_engine/lib/src/engine_snapshot.dart)
+- Device open (shared today): [engine.c:1761](packages/segno_engine/src/engine.c)
+- Snapshot publish/read: [engine.c:1843](packages/segno_engine/src/engine.c), [engine.c:1925](packages/segno_engine/src/engine.c)
+- `le_config` / `le_snapshot`: [segno_engine_api.h:189](packages/segno_engine/src/segno_engine_api.h), [segno_engine_api.h:268](packages/segno_engine/src/segno_engine_api.h)
+- `EngineConfig`: [engine_config.dart](packages/segno_engine/lib/src/engine_config.dart)
+- `EngineSnapshot.fromNative`: [engine_snapshot.dart:345](packages/segno_engine/lib/src/engine_snapshot.dart)
 - `EngineStatus`: [engine_status.dart](packages/looper_repository/lib/src/models/engine_status.dart)
 - Repo builds status: [looper_repository.dart:293](packages/looper_repository/lib/src/looper_repository.dart)
 - `StoredAudioConfig` + save/load: [settings_repository.dart:7](packages/settings_repository/lib/src/settings_repository.dart)

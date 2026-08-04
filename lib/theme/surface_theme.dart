@@ -120,7 +120,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// their instrument-panel character (bundled under `assets/fonts/`).
   static const String displayFont = 'Space Grotesk';
 
-  /// Bold Helvetica legend face from the VAMP printed overlay — pedal silk
+  /// Bold Helvetica legend face from the Segno printed overlay — pedal silk
   /// labels and the main looper screen.
   static const String legendFont = 'Helvetica';
 

@@ -19,7 +19,7 @@ date: 2026-06-26
 
 ## Overview
 
-Build a standalone, rugged **Raspberry Pi 5 floor console** variant of Loopy: a tilted enclosure with a 16″ touchscreen (main UI), a 7″ waveform display, foot controls (footswitches + rotary encoder + WS2812 LED ring/strip), and a USB class-compliant audio interface. The unit boots straight into the existing Loopy Flutter Linux app in kiosk mode — no laptop, no separate pedal, no USB-MIDI bridge.
+Build a standalone, rugged **Raspberry Pi 5 floor console** variant of Segno: a tilted enclosure with a 16″ touchscreen (main UI), a 7″ waveform display, foot controls (footswitches + rotary encoder + WS2812 LED ring/strip), and a USB class-compliant audio interface. The unit boots straight into the existing Segno Flutter Linux app in kiosk mode — no laptop, no separate pedal, no USB-MIDI bridge.
 
 The headline finding from the codebase review holds up under verification: **this is mostly an integration job, not a rewrite.** The audio engine, MIDI stack, every BLoC, the entire UI, and the theme system are **unchanged**. The genuinely new software is one `gpio_client` package, a Pi-specific `ControllerMapping`, a kiosk/dual-display launcher, an ARM64 CI job, and the LED-driver firmware + Pi-side LED channel. The two heaviest non-app chunks are the **enclosure** and **kiosk/dual-display boot integration** — both larger than a single line implies.
 
@@ -27,11 +27,11 @@ This plan is **deliberately large and must be split** into independently mergeab
 
 ## Problem Statement
 
-Loopy today runs as a desktop/laptop app, optionally driven by an ATmega32U4 USB-MIDI pedal (PR [#85](https://github.com/tomassasovsky/loopy/pull/85)). For live performers this means carrying a laptop, a separate pedal, and a USB-MIDI bridge, and trusting a general-purpose OS not to misbehave on stage. There is no self-contained, stomp-it-and-go instrument.
+Segno today runs as a desktop/laptop app, optionally driven by an ATmega32U4 USB-MIDI pedal (PR [#85](https://github.com/tomassasovsky/segno/pull/85)). For live performers this means carrying a laptop, a separate pedal, and a USB-MIDI bridge, and trusting a general-purpose OS not to misbehave on stage. There is no self-contained, stomp-it-and-go instrument.
 
 The codebase is unusually ready for one:
 
-- Loopy's **Linux build is a first-class, CI-green target** ([`.github/workflows/main.yaml`](../../.github/workflows/main.yaml) `build-linux`) running the exact PipeWire→JACK→ALSA path Pi OS uses ([`docs/RUNNING_ON_LINUX.md`](../../docs/RUNNING_ON_LINUX.md)).
+- Segno's **Linux build is a first-class, CI-green target** ([`.github/workflows/main.yaml`](../../.github/workflows/main.yaml) `build-linux`) running the exact PipeWire→JACK→ALSA path Pi OS uses ([`docs/RUNNING_ON_LINUX.md`](../../docs/RUNNING_ON_LINUX.md)).
 - The waveform **already renders to a second OS window** purpose-built for a second physical display ([`WaveformWindowService`](../../lib/visualizer/waveform_window_service.dart:29) via `desktop_multi_window`, ~30 fps).
 - The control layer **already exposes a `ControllerSourceKind.gpio` seam** literally labeled "Raspberry Pi GPIO pin edge" ([`controller_input.dart:12`](../../packages/controller_repository/lib/src/controller_input.dart)), with the full `RawControllerInput → ControllerMapping.resolve() → ControllerEvent → LooperBloc` pipeline already implemented and **already unit-tested with a fake GPIO source** ([`controller_repository_test.dart`](../../packages/controller_repository/test/controller_repository_test.dart)).
 
@@ -39,7 +39,7 @@ What's missing is the native GPIO driver, the appliance integration, and the har
 
 ## Proposed Solution
 
-A second **product line**, not a replacement. The 32U4 USB-MIDI pedal (PR [#85](https://github.com/tomassasovsky/loopy/pull/85)) stays valid for "laptop + pedal" users; the Pi console is a standalone unit that shares ~95% of the app/engine.
+A second **product line**, not a replacement. The 32U4 USB-MIDI pedal (PR [#85](https://github.com/tomassasovsky/segno/pull/85)) stays valid for "laptop + pedal" users; the Pi console is a standalone unit that shares ~95% of the app/engine.
 
 Five software/firmware workstreams + one hardware workstream, each mapping to one or more PRs:
 
@@ -69,7 +69,7 @@ flowchart LR
         D7["7″ waveform"]
     end
 
-    subgraph PI["Raspberry Pi 5 — Loopy Linux app"]
+    subgraph PI["Raspberry Pi 5 — Segno Linux app"]
         GPIO["gpio_client<br/>(NEW: libgpiod FFI)<br/>ControllerSource"]
         LEDOUT["LED output channel<br/>(NEW: SPI/UART)"]
         CR["ControllerRepository<br/>(unchanged)"]
@@ -114,8 +114,8 @@ GPIO pin edge
 
 - `GpioControllerSource implements ControllerSource` ([`controller_source.dart:7`](../../packages/controller_repository/lib/src/controller_source.dart)) — owns a broadcast `StreamController<RawControllerInput>`, exposes `Stream<RawControllerInput> get inputs`, and `Future<void> dispose()`.
 - **Leading-edge per-trigger debounce**, copied from [`midi_controller_source.dart`](../../packages/midi_client/lib/src/midi_controller_source.dart) (map of `(kind,id) → last emit µs`; emit only if `now - last >= debounceUs`). Matches the deferred footswitch-debounce memory note (leading-edge for low latency).
-- **`pushForTest()`** (`@visibleForTesting`) + a `FakeGpioBindings` test helper, mirroring `midi_client`'s `FakeLoopyEngineBindings`.
-- Wired in [`run_loopy.dart:65`](../../lib/app/run_loopy.dart) alongside the MIDI source: `ControllerRepository(sources: [?midiSource, ?gpioSource])` via a `createNativeGpioSource()` factory that returns `null` off-Pi.
+- **`pushForTest()`** (`@visibleForTesting`) + a `FakeGpioBindings` test helper, mirroring `midi_client`'s `FakeSegnoEngineBindings`.
+- Wired in [`run_segno.dart:65`](../../lib/app/run_segno.dart) alongside the MIDI source: `ControllerRepository(sources: [?midiSource, ?gpioSource])` via a `createNativeGpioSource()` factory that returns `null` off-Pi.
 
 **Encoder gap (must be resolved in Phase 2):** `ControllerMapping.resolve()` returns `null` for anything that isn't a press ([`controller_mapping.dart:67`](../../packages/controller_repository/lib/src/controller_mapping.dart)), and `RawControllerInput` has no signed/relative value. Footswitches fit; a **rotary encoder's relative +1/−1 detents do not**. Two options, decided in Phase 2:
 - **(A) Encoder = config-only / non-performance** — simplest; encoder press emits a normal `gpio` press, rotation is consumed only by touch-replaceable surfaces (or unused in v1). No pipeline change.
@@ -124,7 +124,7 @@ GPIO pin edge
 
 **LED path** is deliberately *isolated from the audio path and the Pi's weak real-time timing*. The Pi computes LED state from `LooperState` and pushes compact frames to a dedicated MCU that runs FastLED-grade WS2812 timing. A **boot-time handshake** confirms the driver is alive (flow-analysis gap: silent dark LEDs otherwise).
 
-**Audio is zero-code-change.** The engine already enumerates, selects, and auto-JACK-pins a chosen USB interface ([`engine_devices.c`](../../packages/loopy_engine/src/core/engine_devices.c), [`engine_linux.c:156`](../../packages/loopy_engine/src/platform/engine_linux.c)) and forces `PIPEWIRE_QUANTUM` ([`engine_linux.c:224`](../../packages/loopy_engine/src/platform/engine_linux.c)). Run the interface at **48 kHz** for full channel count and **Pro Audio** profile per [`docs/RUNNING_ON_LINUX.md`](../../docs/RUNNING_ON_LINUX.md).
+**Audio is zero-code-change.** The engine already enumerates, selects, and auto-JACK-pins a chosen USB interface ([`engine_devices.c`](../../packages/segno_engine/src/core/engine_devices.c), [`engine_linux.c:156`](../../packages/segno_engine/src/platform/engine_linux.c)) and forces `PIPEWIRE_QUANTUM` ([`engine_linux.c:224`](../../packages/segno_engine/src/platform/engine_linux.c)). Run the interface at **48 kHz** for full channel count and **Pro Audio** profile per [`docs/RUNNING_ON_LINUX.md`](../../docs/RUNNING_ON_LINUX.md).
 
 ### Implementation Phases
 
@@ -134,7 +134,7 @@ Each phase ≈ one mergeable PR (large ones noted for further splitting). Phases
 
 - **Tasks**
   - Add `build-linux-arm64` job to [`.github/workflows/main.yaml`](../../.github/workflows/main.yaml) mirroring `build-linux` (GTK deps), using `FLUTTER_TARGET_PLATFORM_SYSROOT` (the root [`linux/CMakeLists.txt:20`](../../linux/CMakeLists.txt) already honors it) or an ARM runner. Compile-only (no audio in CI).
-  - On-device spike: boot Pi OS, run a hand-built ARM64 Loopy Linux bundle, confirm Skia renderer ([`linux/runner/main.cc:15`](../../linux/runner/main.cc)) + Material icons.
+  - On-device spike: boot Pi OS, run a hand-built ARM64 Segno Linux bundle, confirm Skia renderer ([`linux/runner/main.cc:15`](../../linux/runner/main.cc)) + Material icons.
   - Spike: **kiosk target decision** — GTK-on-Wayland vs `flutter-pi`. ⚠️ `desktop_multi_window`/`window_manager` assume GTK; if `flutter-pi` breaks the second window, GTK wins. **This decision can invalidate the entire dual-display flow — resolve here, first.**
 - **Deliverables:** green ARM64 CI job; a short `docs/RUNNING_ON_RPI.md` bring-up note; kiosk-target decision recorded.
 - **Success criteria:** ARM64 bundle launches full-screen on the Pi with correct icons; second waveform window opens on the chosen compositor.
@@ -146,7 +146,7 @@ Each phase ≈ one mergeable PR (large ones noted for further splitting). Phases
   - Scaffold `packages/gpio_client` mirroring [`packages/midi_client`](../../packages/midi_client) (barrel export, `lib/src/`, `test/helpers/`, pubspec depending on `controller_repository`, `ffi`, `flutter`, `meta`).
   - `GpioControllerSource implements ControllerSource` — libgpiod FFI; footswitch lines = one GPIO each (pull-up + leading-edge debounce). Emit `RawControllerInput(kind: gpio, id: pin, value: 0|1)`.
   - **`ControllerMapping.gpioDefaults()`** factory (new) in [`controller_mapping.dart`](../../packages/controller_repository/lib/src/controller_mapping.dart) — today `defaults()` is **MIDI-CC only** (`controller_mapping.dart:35`), so a Pi build must seed a GPIO map or footswitches are dead on first boot.
-  - `createNativeGpioSource()` factory (returns `null` off-Pi) wired into [`run_loopy.dart:65`](../../lib/app/run_loopy.dart): `sources: [?midiSource, ?gpioSource]`.
+  - `createNativeGpioSource()` factory (returns `null` off-Pi) wired into [`run_segno.dart:65`](../../lib/app/run_segno.dart): `sources: [?midiSource, ?gpioSource]`.
   - Tests: `gpio_controller_source_test.dart` (parsing, debounce, stream emission via `pushForTest()`), `FakeGpioBindings` helper, `gpioDefaults()` mapping test.
 - **Deliverables:** `gpio_client` package; GPIO default mapping; wiring.
 - **Success criteria:** on the Pi, stomping a footswitch triggers the mapped transport action end-to-end; ≥90% package coverage; first boot has working footswitches with zero config.
@@ -210,9 +210,9 @@ Each phase ≈ one mergeable PR (large ones noted for further splitting). Phases
   - **GPIO input protection:** Pi GPIO is **3.3 V, not 5 V-tolerant** — series resistors / clamping on footswitch + encoder lines (longer internal runs, ESD, contact bounce).
   - **Power & thermals:** single supply budgeted for Pi 5 + two screens + USB interface + LED driver; confirm active cooling prevents throttle under sustained load.
   - **Displays:** spike **7″ HDMI vs official DSI** (HDMI = uniform bus + clean second-window mapping but uses the 2nd micro-HDMI; DSI frees an HDMI port but is 800×480 + needs DSI compositor mapping — resolution matters little for a waveform).
-  - **BOM + shopping list:** mirror [`hardware/loopy_pedal_shopping_list.md`](../../hardware/loopy_pedal_shopping_list.md) (Argentina-sourced) → new `hardware/loopy_console_shopping_list.md`. Include touchscreen 16″, 7″ display, Pi 5 + cooler, USB interface (Scarlett-class), footswitches, EC11 encoder, WS2812 ring + strip, driver MCU, protection passives, PSU, enclosure materials.
+  - **BOM + shopping list:** mirror [`hardware/segno_pedal_shopping_list.md`](../../hardware/segno_pedal_shopping_list.md) (Argentina-sourced) → new `hardware/segno_console_shopping_list.md`. Include touchscreen 16″, 7″ display, Pi 5 + cooler, USB interface (Scarlett-class), footswitches, EC11 encoder, WS2812 ring + strip, driver MCU, protection passives, PSU, enclosure materials.
   - **On-hardware gates:** re-run the **≤10 ms round-trip latency** target on the chosen USB interface + Pi 5 + PipeWire quantum; ≥2 h thermal soak under audio + dual-display + GPU load in the closed enclosure (no throttle, no xrun regression).
-- **Deliverables:** enclosure design + fab files; protection circuit; power/thermal budget; `hardware/loopy_console_shopping_list.md`; spike results; latency + soak reports.
+- **Deliverables:** enclosure design + fab files; protection circuit; power/thermal budget; `hardware/segno_console_shopping_list.md`; spike results; latency + soak reports.
 - **Success criteria:** assembled unit passes latency gate and 2 h soak; no pin damage from miswire test; stompable panel survives stage abuse.
 - **Effort:** XL.
 
@@ -307,7 +307,7 @@ Each phase ≈ one mergeable PR (large ones noted for further splitting). Phases
 ## Documentation Plan
 
 - New `docs/RUNNING_ON_RPI.md` (bring-up, kiosk, dual-display, audio, recovery, update).
-- New `hardware/loopy_console_shopping_list.md` (BOM, Argentina-sourced, mirroring the pedal list).
+- New `hardware/segno_console_shopping_list.md` (BOM, Argentina-sourced, mirroring the pedal list).
 - Update `docs/PROGRESS.md` with the console workstream + status.
 - Firmware README in `hardware/`/`firmware/` for the LED driver + protocol.
 
@@ -320,20 +320,20 @@ Each phase ≈ one mergeable PR (large ones noted for further splitting). Phases
 - MIDI source template: [`packages/midi_client/lib/src/midi_controller_source.dart`](../../packages/midi_client/lib/src/midi_controller_source.dart)
 - Mapping (MIDI-CC default — needs `gpioDefaults()`): [`packages/controller_repository/lib/src/controller_mapping.dart:35`](../../packages/controller_repository/lib/src/controller_mapping.dart)
 - Pipeline → bloc: [`controller_repository.dart:49`](../../packages/controller_repository/lib/src/controller_repository.dart), [`looper_bloc.dart:370`](../../lib/looper/bloc/looper_bloc.dart)
-- Source wiring: [`lib/app/run_loopy.dart:65`](../../lib/app/run_loopy.dart)
+- Source wiring: [`lib/app/run_segno.dart:65`](../../lib/app/run_segno.dart)
 - Waveform second window: [`lib/visualizer/waveform_window_service.dart:29`](../../lib/visualizer/waveform_window_service.dart)
 - Main UI: [`lib/looper/view/big_picture_view.dart:26`](../../lib/looper/view/big_picture_view.dart); device-loss banner: [`big_picture_view.dart:438`](../../lib/looper/view/big_picture_view.dart)
 - Settings surfaces (touch): [`big_picture_settings_page.dart`](../../lib/looper/view/big_picture_settings_page.dart), [`signal_list_view.dart`](../../lib/looper/view/signal_graph/signal_list_view.dart)
 - Linux runner (Skia force): [`linux/runner/main.cc:15`](../../linux/runner/main.cc); cross-build sysroot: [`linux/CMakeLists.txt:20`](../../linux/CMakeLists.txt)
-- Audio engine (no changes): [`engine_devices.c`](../../packages/loopy_engine/src/core/engine_devices.c), [`engine_linux.c:156`](../../packages/loopy_engine/src/platform/engine_linux.c)
+- Audio engine (no changes): [`engine_devices.c`](../../packages/segno_engine/src/core/engine_devices.c), [`engine_linux.c:156`](../../packages/segno_engine/src/platform/engine_linux.c)
 - CI: [`.github/workflows/main.yaml`](../../.github/workflows/main.yaml) (`build-linux`, no ARM64)
 - Audio setup: [`docs/RUNNING_ON_LINUX.md`](../../docs/RUNNING_ON_LINUX.md)
-- Pedal BOM template: [`hardware/loopy_pedal_shopping_list.md`](../../hardware/loopy_pedal_shopping_list.md)
+- Pedal BOM template: [`hardware/segno_pedal_shopping_list.md`](../../hardware/segno_pedal_shopping_list.md)
 
 ### Related Work
 
 - Source brainstorm: [`docs/brainstorm/2026-06-26-raspberry-pi-console-brainstorm-doc.md`](../brainstorm/2026-06-26-raspberry-pi-console-brainstorm-doc.md)
-- 32U4 USB-MIDI pedal (parallel variant): PR [#85](https://github.com/tomassasovsky/loopy/pull/85)
+- 32U4 USB-MIDI pedal (parallel variant): PR [#85](https://github.com/tomassasovsky/segno/pull/85)
 - Windows/Linux native parity (prior big native effort, plan style): [`docs/plan/2026-06-11-feat-windows-linux-native-plan.md`](2026-06-11-feat-windows-linux-native-plan.md)
 - Looper pedal firmware/protocol (firmware plan style): [`docs/plan/2026-06-14-feat-looper-pedal-protocol-firmware-plan.md`](2026-06-14-feat-looper-pedal-protocol-firmware-plan.md)
 

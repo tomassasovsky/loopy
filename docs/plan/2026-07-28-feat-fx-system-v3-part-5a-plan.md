@@ -28,7 +28,7 @@ codec is a host-compiled contract test, no board required.
   firmware-version setting** gates encoding [R6]. #331 also owns getting new
   firmware onto physical pedals (OTA) — including the physical 32u4 pedal,
   whose in-repo protocol copy is drifted to v1-only today
-  (`hardware/firmware/loopy_pedal_32u4/pedal_protocol.h:24`,
+  (`hardware/firmware/segno_pedal_32u4/pedal_protocol.h:24`,
   `PEDAL_PROTOCOL_VERSION 0x01`); without that sync even today's v2 frames
   dark the physical pedal [R6]. This part de-drifts the *in-repo* copy (the
   diff-gate requires it); flashing the device rides #331.
@@ -57,16 +57,16 @@ Key files (all paths repo-relative):
   currently use the codec default version implicitly.
 - `packages/pedal_repository/lib/src/pedal_state_frame.dart:8,23` —
   `PedalTrackLed` / `GlobalColor` enums (wire-indexed).
-- `firmware/loopy_pedal/pedal_protocol.{h,c}` — primary firmware protocol
+- `firmware/segno_pedal/pedal_protocol.{h,c}` — primary firmware protocol
   copy (v1+v2 today; `PEDAL_FRAME_MAX_BYTES 32` at `pedal_protocol.h:51`,
   `pedal_is_identity_request` at `:149`).
-- `hardware/firmware/loopy_pedal_32u4/pedal_protocol.{h,c}` — the second,
+- `hardware/firmware/segno_pedal_32u4/pedal_protocol.{h,c}` — the second,
   **drifted (v1-only)** protocol copy.
-- `firmware/loopy_pedal/loopy_pedal.ino` — MODE LED is strip index 12
+- `firmware/segno_pedal/segno_pedal.ino` — MODE LED is strip index 12
   (`kModeLed`, `:36`), today a "global transport-activity color"; the
   performance-armed state BLINKS it red (D-PEDAL, `:241,319-332`) — that
   precedence must survive. 12-LED loop-position ring (`renderRing()`).
-- `hardware/firmware/loopy_pedal_32u4/loopy_pedal_32u4.ino` — 16-LED
+- `hardware/firmware/segno_pedal_32u4/segno_pedal_32u4.ino` — 16-LED
   NeoPixel ring on D15 + 7-LED indicator strip on D16
   `[mode, Tr1..Tr4, clear, bank]` (`:16-18,53`).
 - `firmware/test/test_pedal_protocol.c` — host-compiled contract test; links
@@ -83,7 +83,7 @@ Key files (all paths repo-relative):
 - `.github/workflows/main.yaml:137-142` — CI currently inlines the gcc
   contract-test line inside the `native-tests` job.
 - `firmware/README.md:136-146` — frame-size documentation ("State frame
-  (loopy → pedal), 26 bytes").
+  (segno → pedal), 26 bytes").
 - `lib/pedal/view/pedal_settings_section.dart` — home for the manual
   firmware-version setting row. `lib/control/control_projection.dart:82`
   (`projectFrame`) is app-side and belongs to part 5b — cited only to mark
@@ -156,21 +156,21 @@ Constraints lifted from the epic index (pinned — do not change):
 
 ### Firmware (both trees)
 
-- [ ] Mirror the v3 codec in `firmware/loopy_pedal/pedal_protocol.{h,c}`:
+- [ ] Mirror the v3 codec in `firmware/segno_pedal/pedal_protocol.{h,c}`:
       accept v1/v2/v3 inbound, decode the 2-bit mode, bump
       `PEDAL_PROTOCOL_VERSION`; identity reply reports the new version (the
       value #331's discovery will read).
-- [ ] **De-drift `hardware/firmware/loopy_pedal_32u4/pedal_protocol.{h,c}`**:
+- [ ] **De-drift `hardware/firmware/segno_pedal_32u4/pedal_protocol.{h,c}`**:
       bring it to the same v3 source as the primary copy (it is v1-only
       today). In-repo sync only; flashing the physical pedal rides #331's OTA
       flow [R6].
-- [ ] **MODE LED tri-state [A1]** in `loopy_pedal.ino` (index 12, `kModeLed`)
-      and `loopy_pedal_32u4.ino` (indicator strip index 0): distinct
+- [ ] **MODE LED tri-state [A1]** in `segno_pedal.ino` (index 12, `kModeLed`)
+      and `segno_pedal_32u4.ino` (indicator strip index 0): distinct
       rec/mute/fx colors driven by the decoded mode; the performance-armed
-      red BLINK keeps precedence (D-PEDAL, `loopy_pedal.ino:241,319-332`).
+      red BLINK keeps precedence (D-PEDAL, `segno_pedal.ino:241,319-332`).
 - [ ] **Ring mode colors [A1]**: fold the active mode into the ring color
-      scheme in both trees (12-LED ring in `loopy_pedal`, 16-LED NeoPixel
-      ring in `loopy_pedal_32u4`) so the mode is legible from across a stage.
+      scheme in both trees (12-LED ring in `segno_pedal`, 16-LED NeoPixel
+      ring in `segno_pedal_32u4`) so the mode is legible from across a stage.
 - [ ] **Track-LED rendering stays verbatim — no mode branch in either tree**
       [R8][A3]; add the color-table entry for any new `PedalTrackLed`
       value(s) only.
@@ -180,8 +180,8 @@ Constraints lifted from the epic index (pinned — do not change):
 - [ ] Create **`firmware/test/run_tests.sh`** wrapping the documented gcc
       line from the `test_pedal_protocol.c` header (repo-root cwd so the
       default fixtures path resolves). The script builds + runs the contract
-      test **against both protocol copies** (`-I firmware/loopy_pedal` and
-      `-I hardware/firmware/loopy_pedal_32u4` builds) — this is the
+      test **against both protocol copies** (`-I firmware/segno_pedal` and
+      `-I hardware/firmware/segno_pedal_32u4` builds) — this is the
       diff-gate: drift fails the run [R9][R10]. Optionally also byte-diff the
       copies for a clearer failure message.
 - [ ] CI: replace the inlined gcc step (`.github/workflows/main.yaml:137-142`)
@@ -234,7 +234,7 @@ NON-GOALS:
 - Automatic version discovery transport (SysEx-capable inbound path), OTA, and flashing the physical 32u4 pedal: #331.
 - Pedal remap/momentary bindings: part 6.
 - Physical pedal validation: part 5's blocked-verify checklist slice (#203 pattern).
-- Engine/FFI changes: parts 1-3 own the engine; this part touches no loopy_engine surface.
+- Engine/FFI changes: parts 1-3 own the engine; this part touches no segno_engine surface.
 
 VERIFICATION COMMAND: bash firmware/test/run_tests.sh && /Users/Tomas/development/flutter/bin/flutter test packages/pedal_repository
 ```
@@ -242,7 +242,7 @@ VERIFICATION COMMAND: bash firmware/test/run_tests.sh && /Users/Tomas/developmen
 ## Notes
 
 - **No ffigen here**: the firmware C is host-compiled contract code, not an
-  FFI binding — nothing regenerates. If any `loopy_engine` surface is touched
+  FFI binding — nothing regenerates. If any `segno_engine` surface is touched
   (it should not be), the ffigen regen + `dart format` rule applies (ffigen
   emits short-style and churns whole files otherwise).
 - **Before opening the PR**: check the cspell dictionary (new vocabulary from
@@ -262,6 +262,6 @@ VERIFICATION COMMAND: bash firmware/test/run_tests.sh && /Users/Tomas/developmen
 - **Do not** let `encodeFrame`'s default `targetVersion` drift to v3 in a
   refactor — the unknown ⇒ v2 rule is load-bearing for un-reflashed pedals
   [R6]; a test should pin the resolved default.
-- The 32u4 protocol de-drift touches `hardware/firmware/loopy_pedal_32u4/`
+- The 32u4 protocol de-drift touches `hardware/firmware/segno_pedal_32u4/`
   only in the protocol files + minimal `.ino` decode/indicator changes; the
   board pinmap and LED wiring there are user-verified — do not "fix" them.

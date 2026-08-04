@@ -10,7 +10,7 @@ parent-plan: 2026-07-28-feat-fx-system-v3-plan.md
 
 ## Overview
 
-Add a stereo TRS jack to the Loopy pedal so an expression pedal or an
+Add a stereo TRS jack to the Segno pedal so an expression pedal or an
 FS-6-style dual footswitch can drive the FX system: the pedal reads the jack
 on a single ADC pin, decodes it via a resistor ladder, and emits absolute
 MIDI CCs on the existing USB cable that part 7's continuous and discrete
@@ -40,7 +40,7 @@ is at the USB end):
   `main_board.py:102-103`); both are also committed to the ISP header
   (SCK/MOSI, `main_board.py:273-274`).
 - `A2` → encoder push switch net `ENC_SW` (`main_board.py:106`) — **declared
-  but never read by firmware**: `firmware/loopy_pedal/loopy_pedal.ino:58`
+  but never read by firmware**: `firmware/segno_pedal/segno_pedal.ino:58`
   ("the push switch on A2 is unused in v1"; see also `:45`).
 - `A3` → LED-rail power sense divider (`main_board.py:107-114`).
 
@@ -61,13 +61,13 @@ Rejected alternatives (lifted from the epic's alternatives table):
 Key files:
 
 - `hardware/kicad/main_board.py` — PCB generator (the rework target)
-- `firmware/loopy_pedal/loopy_pedal.ino` — pedal firmware (ADC + decode +
+- `firmware/segno_pedal/segno_pedal.ino` — pedal firmware (ADC + decode +
   CC emit + config)
-- `firmware/loopy_pedal/pedal_protocol.{h,c}` + `firmware/test/` — protocol
+- `firmware/segno_pedal/pedal_protocol.{h,c}` + `firmware/test/` — protocol
   copies and contract-test runner (`firmware/test/run_tests.sh`, created in
   part 5); firmware changes here must keep it green
-- `hardware/loopy_pedal_pcb_design.md`, `hardware/loopy_pedal_pcb_tht_plan.md`,
-  `hardware/loopy_pedal_shopping_list.md` — hardware docs to update
+- `hardware/segno_pedal_pcb_design.md`, `hardware/segno_pedal_pcb_tht_plan.md`,
+  `hardware/segno_pedal_shopping_list.md` — hardware docs to update
 - Part 7's learn hygiene [B8] ignores the pedal's own protocol traffic (note
   range + relative encoder CC) — the TRS CC numbers must fall **outside**
   that ignored set or they can never be learned
@@ -87,7 +87,7 @@ Constraints carried from the epic:
 ### PCB rework (`hardware/kicad/main_board.py`)
 
 - [ ] Cut the `ENC_SW` net from A2 (`main_board.py:106`) — the encoder push
-      switch is never read in firmware (`loopy_pedal.ino:58`); leave every
+      switch is never read in firmware (`segno_pedal.ino:58`); leave every
       other pad→signal mapping untouched (pinmap is user-verified [R7])
 - [ ] Add a stereo TRS jack footprint + nets: sleeve → GND; tip/ring into a
       resistor-ladder network feeding **A2 only**, powered ratiometrically
@@ -98,16 +98,16 @@ Constraints carried from the epic:
       mono-TS-inserted (ring shorted to sleeve) vs. nothing plugged.
       Document the window table in the hardware docs
 - [ ] Regenerate board outputs; DRC clean; update
-      `hardware/loopy_pedal_pcb_design.md`,
-      `hardware/loopy_pedal_pcb_tht_plan.md`, and
-      `hardware/loopy_pedal_shopping_list.md` (jack + ladder resistor values)
+      `hardware/segno_pedal_pcb_design.md`,
+      `hardware/segno_pedal_pcb_tht_plan.md`, and
+      `hardware/segno_pedal_shopping_list.md` (jack + ladder resistor values)
 - [ ] If bench testing shows the single-pin ladder cannot reliably separate
       expression from FS-6 states, fall back to the listed alternatives
       (drop DIN MIDI IN on D0 to free a pin, or I/O expander / respin) —
       **stop and relabel the child issue `plan-gate` before pursuing a
       respin**
 
-### Firmware (`firmware/loopy_pedal/`)
+### Firmware (`firmware/segno_pedal/`)
 
 - [ ] ADC sampling on A2 with filtering + hysteresis; extract the ladder
       decode into a host-compilable C unit so decode logic gets coverage in

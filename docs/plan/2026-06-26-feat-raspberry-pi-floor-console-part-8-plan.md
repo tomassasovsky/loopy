@@ -28,12 +28,12 @@ The two heaviest non-app chunks are the enclosure and the boot integration; this
 - [ ] **GPIO input protection:** series resistors / clamping on footswitch + encoder lines (3.3 V discipline) so a miswire/transient can't kill a Pi pin.
 - [ ] **Power & thermals:** single-supply budget for Pi 5 + two screens + USB interface + LED driver; confirm active cooling prevents throttle under sustained load.
 - [ ] **Display spike:** 7″ HDMI vs official DSI (HDMI = uniform bus + clean second-window mapping but uses the 2nd micro-HDMI; DSI frees an HDMI port but is 800×480 + needs DSI compositor mapping; resolution matters little for a waveform). Feeds Part 5's per-display scale.
-- [ ] **BOM + shopping list:** new `hardware/loopy_console_shopping_list.md` mirroring [`hardware/loopy_pedal_shopping_list.md`](../../hardware/loopy_pedal_shopping_list.md) (Argentina-sourced): 16″ touchscreen, 7″ display, Pi 5 + active cooler, USB interface (Scarlett-class), footswitches, EC11 encoder, WS2812 ring + strip, LED-driver MCU, protection passives, PSU, enclosure materials.
+- [ ] **BOM + shopping list:** new `hardware/segno_console_shopping_list.md` mirroring [`hardware/segno_pedal_shopping_list.md`](../../hardware/segno_pedal_shopping_list.md) (Argentina-sourced): 16″ touchscreen, 7″ display, Pi 5 + active cooler, USB interface (Scarlett-class), footswitches, EC11 encoder, WS2812 ring + strip, LED-driver MCU, protection passives, PSU, enclosure materials.
 - [ ] **On-hardware gates:** re-run the **≤10 ms round-trip latency** target on the chosen USB interface + Pi 5 + PipeWire quantum (run at 48 kHz / Pro Audio profile per [`docs/RUNNING_ON_LINUX.md`](../../docs/RUNNING_ON_LINUX.md)); **≥2 h thermal soak** under audio + dual-display + GPU load in the closed enclosure.
 
 ### Mock files
 
-- `hardware/loopy_console_shopping_list.md` (new — BOM)
+- `hardware/segno_console_shopping_list.md` (new — BOM)
 - `hardware/console/` (new — enclosure design + fab files + protection circuit)
 - `docs/RUNNING_ON_RPI.md` (modified — latency + soak results, display-spike outcome)
 
@@ -67,6 +67,6 @@ The two heaviest non-app chunks are the enclosure and the boot integration; this
 
 ## References
 
-- Pedal BOM template: [`hardware/loopy_pedal_shopping_list.md`](../../hardware/loopy_pedal_shopping_list.md)
+- Pedal BOM template: [`hardware/segno_pedal_shopping_list.md`](../../hardware/segno_pedal_shopping_list.md)
 - Audio setup (48 kHz / Pro Audio / PIPEWIRE_QUANTUM): [`docs/RUNNING_ON_LINUX.md`](../../docs/RUNNING_ON_LINUX.md)
 - Latency gate context: [umbrella plan](2026-06-26-feat-raspberry-pi-floor-console-plan.md)

@@ -1,5 +1,5 @@
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/l10n/gen/app_localizations.dart';
+import 'package:segno/l10n/gen/app_localizations.dart';
 
 /// Localized labels for engine enums and formatted values.
 extension EngineLocalizations on AppLocalizations {

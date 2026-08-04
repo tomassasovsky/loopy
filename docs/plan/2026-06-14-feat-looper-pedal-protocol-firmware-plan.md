@@ -1,10 +1,10 @@
 ---
-title: "feat: bidirectional MIDI looper pedal — loopy-owned state + firmware rewrite"
+title: "feat: bidirectional MIDI looper pedal — segno-owned state + firmware rewrite"
 type: feat
 date: 2026-06-14
 ---
 
-## feat: bidirectional MIDI looper pedal — loopy-owned state + firmware rewrite — Extensive
+## feat: bidirectional MIDI looper pedal — segno-owned state + firmware rewrite — Extensive
 
 > Source brainstorm: [docs/brainstorm/2026-06-14-looper-pedal-firmware-protocol-brainstorm-doc.md](../brainstorm/2026-06-14-looper-pedal-firmware-protocol-brainstorm-doc.md).
 > **Stacks on** the native MIDI device-selection plan
@@ -15,30 +15,30 @@ date: 2026-06-14
 
 ## Overview
 
-Make loopy the **single source of truth** for the physical Arduino looper pedal. loopy
+Make segno the **single source of truth** for the physical Arduino looper pedal. segno
 holds all looper/pedal state, receives raw button/encoder events from the pedal, runs the
 behavior state machine, and pushes a compact **SysEx state frame** back; the **rewritten**
 firmware is a **pure thin client** that renders LEDs only from those frames and never keeps
 looper state. This eliminates today's two-sources-of-truth drift (firmware `State[]` +
 app). The pedal auto-binds via a **SysEx identity handshake**; control behavior is
-**configurable in loopy** (no reflashing).
+**configurable in segno** (no reflashing).
 
 ## Problem Statement
 
 The existing firmware ([the old Arduino sketch]) owns a full `State[]` machine
 (`E/R/O/P/M`), tracks selected track / mode / banks / volumes locally, persists volumes in
 EEPROM, and blindly fires Mobius note numbers. The app and the pedal therefore each model
-looper state and drift apart. The user wants one source of truth (loopy) and the pedal
+looper state and drift apart. The user wants one source of truth (segno) and the pedal
 reduced to input + display, with a **full firmware rewrite**.
 
 Constraints discovered in research:
 - **No master output gain in the engine.** Only per-track/lane volume exists
-  ([loopy_engine_api.h:459](../../packages/loopy_engine/src/loopy_engine_api.h)). The
+  ([segno_engine_api.h:459](../../packages/segno_engine/src/segno_engine_api.h)). The
   encoder's "master volume" needs a new global post-mix gain (FFI + C). **Prerequisite for
   the encoder feature only** — the behavioral core (record/play/stop/mute/bank) does not
   depend on it, so it does not block the rest of the build.
 - **The record command is a cycling toggle, not discrete primitives.** `le_engine_record`
-  ([loopy_engine_api.h:86,453](../../packages/loopy_engine/src/loopy_engine_api.h)) is one
+  ([segno_engine_api.h:86,453](../../packages/segno_engine/src/segno_engine_api.h)) is one
   command: idle→record→finalize→overdub; the repository exposes only
   `record/stopTrack/play/clear/undo/redo`. The pedal's behaviors ("finish this loop **and**
   start recording another," "finish recording **then** mute," "Rec→Play **finalizes**")
@@ -58,7 +58,7 @@ Constraints discovered in research:
 
 ## Proposed Solution
 
-A dedicated, bidirectional **pedal module** in loopy (VGV layered), reusing the native MIDI
+A dedicated, bidirectional **pedal module** in segno (VGV layered), reusing the native MIDI
 transport and adding output:
 
 - **Engine:** a global **master output gain** (FFI `le_engine_set_master_gain` + snapshot
@@ -66,7 +66,7 @@ transport and adding output:
 - **Native MIDI output seam:** `le_midi_out_*` (send + SysEx) on CoreMIDI / ALSA seq /
   WinMM, mirroring the input seam's open/close discipline.
 - **`packages/pedal_repository/`** (data layer): the **protocol** — identity handshake,
-  decode inbound Notes/CC → `PedalEvent`, encode loopy state → versioned, checksummed,
+  decode inbound Notes/CC → `PedalEvent`, encode segno state → versioned, checksummed,
   7-bit-packed **SysEx state frame** + a **loop-top pulse**; a `PedalTransport` seam
   (FFI-free for tests) and `NativePedalTransport`.
 - **`lib/pedal/` feature:** `PedalCubit` — the mode/armed-track/bank state machine + the
@@ -103,7 +103,7 @@ Pedal renders LEDs from the last good frame; ring interpolates between loop-top 
 ```
 
 **Layering (VGV):** FFI is sealed in the data layer — `NativePedalTransport` is the only
-class touching `LoopyEngineBindings`; `PedalRepository` exposes a `PedalTransport` seam; the
+class touching `SegnoEngineBindings`; `PedalRepository` exposes a `PedalTransport` seam; the
 `PedalCubit` only sees `PedalRepository` + `LooperRepository` + `SettingsRepository`. The
 generic `controller_repository` path is untouched.
 
@@ -133,14 +133,14 @@ firmware/                                # Arduino UNO sketch (thin client) + 16
 ### SysEx protocol (versioned, checksummed, 7-bit)
 
 - **Manufacturer id `0x7D`** (non-commercial). **MIDI channel** configurable (default 1).
-- **Identity handshake:** loopy broadcasts the Universal Identity Request `F0 7E 7F 06 01
+- **Identity handshake:** segno broadcasts the Universal Identity Request `F0 7E 7F 06 01
   F7`; the pedal replies `F0 7E <id> 06 02 7D <fam_lo> <fam_hi> <member×2> <rev×4> F7` with a
-  fixed family signature loopy recognizes; loopy auto-binds (deterministic tiebreak:
+  fixed family signature segno recognizes; segno auto-binds (deterministic tiebreak:
   persisted id, else first valid reply). A protocol **version** byte is carried for forward
   compatibility but does **not** gate streaming in v1 (firmware is co-released in-repo): on a
-  version mismatch loopy logs/toasts a warning and still streams. (The refuse-and-prompt flow
+  version mismatch segno logs/toasts a warning and still streams. (The refuse-and-prompt flow
   is deferred to if/when firmware ships separately.)
-- **State frame (loopy→pedal):** `F0 7D <ver> <type=STATE> <payload(7-bit packed)> <checksum>
+- **State frame (segno→pedal):** `F0 7D <ver> <type=STATE> <payload(7-bit packed)> <checksum>
   F7`. Payload: global color/state · per-track LED for **all 8 tracks** (so bank switch
   renders with no round-trip) · active bank · armed track · mode · loop length (µs) ·
   clear/fade-active flag · `isGoodbye` (set only on the shutdown blank frame — see *Goodbye*).
@@ -151,12 +151,12 @@ firmware/                                # Arduino UNO sketch (thin client) + 16
 - **Loop-top pulse:** a **single-byte real-time message** (`Start 0xFA` at each loop top) —
   survives the FastLED interrupt gap far better than multi-byte SysEx; the pedal interpolates
   the ring spin locally from loop length between pulses (1 revolution = 1 loop).
-- **Goodbye:** loopy sends a `.blank()` frame (`isGoodbye=1`, all LEDs off) on shutdown so
+- **Goodbye:** segno sends a `.blank()` frame (`isGoodbye=1`, all LEDs off) on shutdown so
   the pedal darkens (USB may stay powered after the app quits).
-- **Events (pedal→loopy):** one fixed **Note per button** (NoteOn=press, NoteOff=release);
-  **relative CC** for the encoder. loopy times tap/long-press/double-tap.
+- **Events (pedal→segno):** one fixed **Note per button** (NoteOn=press, NoteOff=release);
+  **relative CC** for the encoder. segno times tap/long-press/double-tap.
 
-### Behavior state machine (loopy)
+### Behavior state machine (segno)
 
 **Arming:** exactly one track is **armed** at a time (default **Track 1** on a clean/reset
 pedal). Recording only ever starts on the armed track, and only via **Rec/Play** (or the
@@ -222,7 +222,7 @@ risk; see Risks.)*
 #### PR0: Engine master output gain
 - New global post-mix gain — `LE_CMD_SET_MASTER_GAIN`, `le_engine_set_master_gain(engine,
   float)`, a `master_gain` snapshot field, applied in the final mix in
-  [engine.c](../../packages/loopy_engine/src/engine.c); ffigen regen; Dart
+  [engine.c](../../packages/segno_engine/src/engine.c); ffigen regen; Dart
   `LooperRepository.setMasterGain` (re-applied on engine restart like other desired-state).
   Native test for the gain math.
 - **Independent;** only the PR4 encoder path depends on it (not the behavioral core).
@@ -293,7 +293,7 @@ risk; see Risks.)*
   [lib/l10n/arb/](../../lib/l10n/arb/) (bind-status labels, "update firmware" warning,
   setting labels) — a hard project gate.
 - **Wiring**: construct `PedalRepository` + `PedalCubit` in
-  [run_loopy.dart](../../lib/app/run_loopy.dart), provide via `RepositoryProvider`/
+  [run_segno.dart](../../lib/app/run_segno.dart), provide via `RepositoryProvider`/
   `BlocProvider`; waveform sub-window opens no pedal; auto-bind on launch.
 - **Depends on** PR0 (encoder), PR1 (so `selectBank` has no dead `enabled` guard), PR3b.
 - Tests: `bloc_test` for the full behavior table (flat parameterised list, not nested),
@@ -307,7 +307,7 @@ risk; see Risks.)*
   interpolation from loop length + `Start 0xFA` pulse; **poll MIDI immediately before every
   `FastLED.show()`** (and chunk if needed) to avoid dropped bytes; send Notes (press/release)
   + relative CC; reply to the identity handshake; contact debounce (~10 ms); startup
-  animation on loopy's hello frame.
+  animation on segno's hello frame.
 - **Contract-test harness:** factor the SysEx parser/encoder into a plain C/C++ TU the
   sketch `#include`s, and a **host-compiled** unit test that links that TU and asserts
   against PR3a's **golden fixtures** — runs in CI like the existing mingw native suite
@@ -381,15 +381,15 @@ risk; see Risks.)*
 ### Quality Gates
 - [ ] Native suite ALL PASSED (master-gain + any MIDI-out unit bits).
 - [ ] `flutter analyze` clean; `dart format` clean; new packages ≥ 90% coverage.
-- [ ] `flutter test` green; codec golden fixtures pass on both loopy and firmware sides.
+- [ ] `flutter test` green; codec golden fixtures pass on both segno and firmware sides.
 - [ ] `flutter build windows|linux|macos --debug` compile; firmware compiles (arduino-cli).
 - [ ] Manual per-OS smoke: plug pedal → auto-bind → record/overdub/play/stop/undo/clear,
       bank, mute, master volume, ring sync, replug.
 
 ## Success Metrics
 
-A performer plugs the pedal, it auto-binds, and every footswitch/encoder action drives loopy
-hands-free with LEDs that always reflect loopy's true state — with zero firmware-side state
+A performer plugs the pedal, it auto-binds, and every footswitch/encoder action drives segno
+hands-free with LEDs that always reflect segno's true state — with zero firmware-side state
 and zero looper regressions when no pedal is present.
 
 ## Dependencies & Prerequisites
@@ -414,7 +414,7 @@ and zero looper regressions when no pedal is present.
   until the fade completes.
 - **Handshake false-positives / two pedals** → strict signature match; deterministic single
   bind; manual override. (Version is warn-only in v1, not a gate.)
-- **Protocol drift loopy↔firmware** → shared golden SysEx fixtures both sides test against.
+- **Protocol drift segno↔firmware** → shared golden SysEx fixtures both sides test against.
 
 ## Future Considerations
 
@@ -424,20 +424,20 @@ richer clear-effect curves; MIDI **output** LED feedback variants.
 
 ## Documentation Plan
 
-`firmware/README.md` (flashing + pin/LED map + protocol); a `docs/` loopy↔pedal **protocol
+`firmware/README.md` (flashing + pin/LED map + protocol); a `docs/` segno↔pedal **protocol
 spec** (frame layout, identity handshake, 7-bit packing, checksum, version) as the shared
 contract; README feature entry; CHANGELOG.
 
 ## References & Research
 
 ### Internal
-- Engine surface: [loopy_engine_api.h](../../packages/loopy_engine/src/loopy_engine_api.h)
+- Engine surface: [segno_engine_api.h](../../packages/segno_engine/src/segno_engine_api.h)
   (`le_track_state`, `le_snapshot`, per-track volume @459, command codes), `engine.c`
 - Looper commands/state: [looper_repository.dart](../../packages/looper_repository/lib/src/looper_repository.dart)
   (record/stopTrack/play/clear/undo/redo/setVolume/setMute @429-456; `_project`/`_poll`/`_superviseDevice`)
 - Banks: [bank_cubit.dart](../../lib/looper/cubit/bank_cubit.dart) / bank_state.dart
 - Controller pipeline (untouched): [controller_repository.dart](../../packages/controller_repository/lib/src/controller_repository.dart)
-- Wiring: [run_loopy.dart](../../lib/app/run_loopy.dart), [app.dart](../../lib/app/view/app.dart),
+- Wiring: [run_segno.dart](../../lib/app/run_segno.dart), [app.dart](../../lib/app/view/app.dart),
   [looper_bloc.dart](../../lib/looper/bloc/looper_bloc.dart)
 - Settings: [settings_repository.dart](../../packages/settings_repository/lib/src/settings_repository.dart)
 - Dependency plan: [native MIDI device selection](./2026-06-14-feat-native-midi-device-selection-plan.md)
@@ -455,7 +455,7 @@ contract; README feature entry; CHANGELOG.
 ### Related Work
 - Brainstorm: [looper-pedal-firmware-protocol](../brainstorm/2026-06-14-looper-pedal-firmware-protocol-brainstorm-doc.md)
 - Stacked feature: [native USB MIDI device selection](./2026-06-14-feat-native-midi-device-selection-plan.md)
-- Prior native/controller PRs: [#27](https://github.com/tomassasovsky/loopy/pull/27), [#28](https://github.com/tomassasovsky/loopy/pull/28), [#29](https://github.com/tomassasovsky/loopy/pull/29)
+- Prior native/controller PRs: [#27](https://github.com/tomassasovsky/segno/pull/27), [#28](https://github.com/tomassasovsky/segno/pull/28), [#29](https://github.com/tomassasovsky/segno/pull/29)
 
 ## Open Questions (confirm before / during build)
 

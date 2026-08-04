@@ -57,7 +57,7 @@ class PedalFirmwareManifest {
   /// The pedal wire-protocol version this firmware speaks (`0` => unknown).
   ///
   /// Distinct from [version]: the release version answers "is there something
-  /// newer to flash", while this answers "what may loopy encode at once it is
+  /// newer to flash", while this answers "what may segno encode at once it is
   /// flashed" — the knob `PedalRepository.firmwareProtocolVersion` gates.
   final int protocolVersion;
 

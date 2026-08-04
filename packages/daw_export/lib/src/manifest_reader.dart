@@ -10,14 +10,14 @@ import 'package:daw_export/src/manifest_json.dart';
 /// Reads a finalized performance-recording capture directory's
 /// `performance.json` (docs/design/performance-manifest-format.md) and
 /// `events.log` (docs/design/performance-event-log-format.md) directly — no
-/// import of `performance_repository`/`loopy_engine`, matching this
+/// import of `performance_repository`/`segno_engine`, matching this
 /// package's own-input-model rule — into a [DawProject] whose clips
 /// reference the capture's already-rendered stems (`stems/wet/`, falling
 /// back to `stems/dry/` for a channel whose wet render failed or hasn't run)
 /// and per-lane loop exports (`loops/`), and whose tracks carry automation
 /// lanes reconstructed from the raw logged volume/mute gestures (part 10).
 ///
-/// Part 10 additionally resolves each channel's real Loopy VST3 device
+/// Part 10 additionally resolves each channel's real Segno VST3 device
 /// chain from its captured lanes' `armSnapshot`-only `effects`
 /// ([resolveDeviceChain], D-CHAIN-SOURCE) and, when a non-empty chain
 /// resolves, prefers the `stems/dry/` stem over `stems/wet/` for that

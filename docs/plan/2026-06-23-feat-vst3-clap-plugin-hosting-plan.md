@@ -30,7 +30,7 @@ source_brainstorm: docs/brainstorm/2026-06-23-vst3-clap-plugin-hosting-brainstor
 
 ## Overview
 
-Make Loopy **host third-party VST3 and CLAP audio-effect plugins** as entries in
+Make Segno **host third-party VST3 and CLAP audio-effect plugins** as entries in
 the existing per-lane and per-input FX chains. A hosted plugin appears as just
 another effect "type" alongside the built-in DSP kernels (drive, filter, delay,
 reverb…), slotting into the engine's existing `le_fx_vtable` as a new
@@ -43,7 +43,7 @@ Targets **all three platforms** (macOS, Windows, Linux) and **both formats** beh
 one format-agnostic host abstraction, but is **sequenced macOS-first** because that
 is the only production-validated platform.
 
-**Out of scope (explicit):** exporting Loopy's engine *as* a plugin (the inverse
+**Out of scope (explicit):** exporting Segno's engine *as* a plugin (the inverse
 direction) is a separate, later brainstorm. So are instrument plugins, multi-bus /
 sidechain topologies, MIDI-driven plugins, and out-of-process sandboxing (named as
 a future hardening phase, not MVP).
@@ -59,9 +59,9 @@ a future hardening phase, not MVP).
 ## Problem Statement / Motivation
 
 The engine was designed for this from day one — both the FX vtable
-([engine_fx.c:904](../../packages/loopy_engine/src/core/engine_fx.c)) and the
+([engine_fx.c:904](../../packages/segno_engine/src/core/engine_fx.c)) and the
 `le_fx_type` enum
-([loopy_engine_api.h:169](../../packages/loopy_engine/src/core/loopy_engine_api.h))
+([segno_engine_api.h:169](../../packages/segno_engine/src/core/segno_engine_api.h))
 carry comments stating a hosted VST3/CLAP plugin can "later slot in as just another
 row whose `process` calls the plugin host." VST3 relicensed to **MIT** (VST 3.8,
 Oct 2025) and CLAP is **MIT**, so neither blocks the MIT engine core.
@@ -70,14 +70,14 @@ But the current model assumes every FX slot is a **stateless 4-float pure functi
 the audio thread can null-guard and reset for free:
 
 - `LE_FX_PARAMS` is hardcoded to **4 normalized floats** per slot
-  ([loopy_engine_api.h:167](../../packages/loopy_engine/src/core/loopy_engine_api.h)).
+  ([segno_engine_api.h:167](../../packages/segno_engine/src/core/segno_engine_api.h)).
   Real plugins expose arbitrary param counts, plain (non-normalized) ranges, and an
   **opaque state blob** beyond exposed params.
 - `TrackEffect` is `{type, List<double> params}` with **no place for opaque state,
   plugin identity, or a variable-length param list**
   ([track_effect.dart:117](../../packages/looper_repository/lib/src/models/track_effect.dart)).
 - Type changes reset DSP state cheaply on the audio thread
-  ([engine_process.c](../../packages/loopy_engine/src/core/engine_process.c)); a
+  ([engine_process.c](../../packages/segno_engine/src/core/engine_process.c)); a
   plugin **cannot** be created/destroyed/`prepare`d on the audio callback.
 - `fromCode` silently falls back to `none`
   ([track_effect.dart:84](../../packages/looper_repository/lib/src/models/track_effect.dart))
@@ -113,10 +113,10 @@ flowchart TB
         Model["TrackEffect (+ pluginRef, state blob,\nvariable params)"]
         Catalog["PluginCatalog\n(descriptors, cache)"]
     end
-    subgraph EngineDart["loopy_engine (Dart FFI)"]
+    subgraph EngineDart["segno_engine (Dart FFI)"]
         FFI["NativeAudioEngine\n(le_plugin_* bindings)"]
     end
-    subgraph Native["loopy_engine native (C / C++)"]
+    subgraph Native["segno_engine native (C / C++)"]
         ABI["le_plugin_* C ABI"]
         Host["IPluginHost (C++)\nformat-agnostic"]
         VST3["VST3 backend"]
@@ -144,7 +144,7 @@ One format-agnostic interface with per-format backends, behind a C ABI so Dart F
 and the C engine never see C++ types:
 
 ```cpp
-// packages/loopy_engine/src/host/plugin_host.h  (C++ internal)
+// packages/segno_engine/src/host/plugin_host.h  (C++ internal)
 struct PluginDescriptor { std::string id, name, vendor; PluginFormat fmt; std::string path; };
 struct ParamInfo { uint32_t id; std::string name, unit; double min, max, def;
                    int32_t stepCount; uint32_t flags; };
@@ -183,7 +183,7 @@ per-slot call takes a concrete **opaque `le_plugin_slot*` handle** returned when
 plugin is loaded into a slot. This resolves the addressing question up front (review
 finding C1/VGV) so ffigen binds clean signatures and dependent PRs inherit a stable
 ABI. New header section in
-[loopy_engine_api.h](../../packages/loopy_engine/src/core/loopy_engine_api.h):
+[segno_engine_api.h](../../packages/segno_engine/src/core/segno_engine_api.h):
 
 ```c
 /* ---- Scanning (main thread; runs on a dedicated scan thread, see below) ---- */
@@ -298,14 +298,14 @@ NEEDED" items.
 | **D-WIN** | Native window ownership | Host owns a **top-level OS window** (NSWindow / HWND / X11), *not* embedded in the Flutter tree (sidesteps the child-window limitation PROGRESS.md flags). Closing the owning **slot / lane / track / session** force-closes its editor; **app quit** closes all editors. Removing a plugin whose editor is open force-closes the window first. |
 | **D-SCAN** | Scanning | **Async** control-thread scan with progress + cancel; **never** blocks the audio callback. Results cached keyed by **(path, mtime, size)** so a reinstalled/updated plugin re-scans; cache invalidated on app-version bump. A single broken plugin is caught per-candidate (try + timeout) → a "failed to scan" entry, **not** an aborted scan. (Out-of-process scan isolation is a named follow-up if in-process crashes prove common.) |
 | **D-BUS** | Topology guard | MVP accepts **stereo-in/stereo-out effect** plugins only; **mono→stereo** is adapted (duplicate L→R). Instruments (no audio-in), multi-bus, and sidechain plugins are **rejected at insert** with a localized message; no partial slot is created. |
-| **D-LICENSE** | Vendoring posture | Vendor VST3 SDK (MIT, 3.8+) + CLAP headers (MIT) under `third_party/`. Both MIT → clean for the MIT engine core. Windows is **already GPLv3** via the vendored ASIO SDK ([third_party/asiosdk](../../packages/loopy_engine/third_party)); VST3/CLAP being MIT **does not worsen** that — documented in `third_party/README.md`. |
+| **D-LICENSE** | Vendoring posture | Vendor VST3 SDK (MIT, 3.8+) + CLAP headers (MIT) under `third_party/`. Both MIT → clean for the MIT engine core. Windows is **already GPLv3** via the vendored ASIO SDK ([third_party/asiosdk](../../packages/segno_engine/third_party)); VST3/CLAP being MIT **does not worsen** that — documented in `third_party/README.md`. |
 
 ## Data Model
 
 `TrackEffect` becomes a **sealed hierarchy** — `BuiltInEffect` (the current
 `{type, params:[4]}`) and `PluginEffect` (plugin ref + variable params + opaque
 blob) — in **both** the engine model
-([track_effect.dart](../../packages/loopy_engine/lib/src/track_effect.dart)) and the
+([track_effect.dart](../../packages/segno_engine/lib/src/track_effect.dart)) and the
 repository mirror
 ([models/track_effect.dart](../../packages/looper_repository/lib/src/models/track_effect.dart)).
 This avoids a half-null god-object (review finding: prefer sealed over nullable
@@ -368,7 +368,7 @@ source of truth — repository delegates to it):
 ```
 
 Files that change for the model:
-[track_effect.dart](../../packages/loopy_engine/lib/src/track_effect.dart) (engine
+[track_effect.dart](../../packages/segno_engine/lib/src/track_effect.dart) (engine
 serializer + new `LE_FX_PLUGIN` code),
 [models/track_effect.dart](../../packages/looper_repository/lib/src/models/track_effect.dart)
 (domain mirror + plugin ref/state; `fromCode` must **not** silent-drop plugin codes),
@@ -396,13 +396,13 @@ plugins (params are a `uint32 id` with a *plain* range). This feature adds:
   in widgets (VGV).
 - **Engine boundary is the `AudioEngine` interface, not `NativeAudioEngine`
   directly.** The boundary is `abstract interface class AudioEngine`
-  ([audio_engine.dart](../../packages/loopy_engine/lib/src/audio_engine.dart)) split
+  ([audio_engine.dart](../../packages/segno_engine/lib/src/audio_engine.dart)) split
   into capability interfaces (`EngineLifecycle`/`EngineRouting`/…) with
   `NativeAudioEngine` and **`MockAudioEngine`** implementations. Plugin calls land on
   a **new `EnginePluginHosting` capability interface**, mirroring that segregation.
 - **`MockAudioEngine` parity is mandatory.** Every `le_plugin_*` capability must be
   stubbed in
-  [mock_audio_engine.dart](../../packages/loopy_engine/lib/src/mock_audio_engine.dart)
+  [mock_audio_engine.dart](../../packages/segno_engine/lib/src/mock_audio_engine.dart)
   with deterministic fakes (fixed scan list, fake param enumeration, no-op editor) or
   `flutter test` goes red app-wide. This is per-PR, not deferred.
 - **Localized strings (ARB, en + es).** New user-facing keys: `pluginScanProgress`
@@ -444,7 +444,7 @@ files by `/plan-technical-review`.
 
 > **Future hardening (separate brainstorm, not this stack):** out-of-process
 > sandbox (architecture B), stall watchdog, out-of-process scan isolation,
-> exporting Loopy *as* a plugin.
+> exporting Segno *as* a plugin.
 
 ## Edge Cases
 
@@ -549,7 +549,7 @@ vs macOS bundle scan; GPLv3-on-Windows posture unchanged by MIT VST3/CLAP
 
 | Risk | Mitigation |
 |------|-----------|
-| In-process plugin crash takes down Loopy | Documented (D-RT); autosave-on-crash + out-of-process sandbox are named follow-ups. |
+| In-process plugin crash takes down Segno | Documented (D-RT); autosave-on-crash + out-of-process sandbox are named follow-ups. |
 | Audio-thread stall desyncs master clock | Documented blast radius; sanitize bounds *value* corruption; watchdog deferred. |
 | SDK build wiring (SPM macOS, CMake Win/Linux) churn | PR1 isolates vendoring + build; header-only/glob patterns per existing engine layout; `dart format` after ffigen. |
 | Linux GUI embedding least standardized; many plugins ship no Linux build | PR7 confirms expectations first; X11 only, Wayland editors unsupported with a message; missing-build → placeholder. |
@@ -558,7 +558,7 @@ vs macOS bundle scan; GPLv3-on-Windows posture unchanged by MIT VST3/CLAP
 
 ## Out of Scope
 
-- Exporting Loopy's engine **as** a VST3/CLAP plugin (inverse direction) — separate
+- Exporting Segno's engine **as** a VST3/CLAP plugin (inverse direction) — separate
   brainstorm.
 - Instrument plugins, MIDI-driven plugins, multi-bus / sidechain topologies.
 - Out-of-process sandboxing (architecture B), stall watchdog, out-of-process scan
@@ -569,13 +569,13 @@ vs macOS bundle scan; GPLv3-on-Windows posture unchanged by MIT VST3/CLAP
 ## References
 
 - Brainstorm: [2026-06-23-vst3-clap-plugin-hosting-brainstorm-doc.md](../brainstorm/2026-06-23-vst3-clap-plugin-hosting-brainstorm-doc.md)
-- Engine FX vtable: [engine_fx.c:904](../../packages/loopy_engine/src/core/engine_fx.c), `fx_apply_chain` (stereo) :951
-- `le_fx_type` / `LE_FX_PARAMS`: [loopy_engine_api.h:167](../../packages/loopy_engine/src/core/loopy_engine_api.h)
-- FX commands (lane/monitor): [loopy_engine_api.h:100](../../packages/loopy_engine/src/core/loopy_engine_api.h) (`LE_CMD_SET_LANE_FX` …)
+- Engine FX vtable: [engine_fx.c:904](../../packages/segno_engine/src/core/engine_fx.c), `fx_apply_chain` (stereo) :951
+- `le_fx_type` / `LE_FX_PARAMS`: [segno_engine_api.h:167](../../packages/segno_engine/src/core/segno_engine_api.h)
+- FX commands (lane/monitor): [segno_engine_api.h:100](../../packages/segno_engine/src/core/segno_engine_api.h) (`LE_CMD_SET_LANE_FX` …)
 - Domain model: [track_effect.dart](../../packages/looper_repository/lib/src/models/track_effect.dart)
 - Dry-recording snapshot hotspot: [looper_repository.dart:511](../../packages/looper_repository/lib/src/looper_repository.dart) (`_snapshotMonitorChainsOntoLanes`)
 - UI: [signal_fx_rack.dart](../../lib/looper/view/signal_graph/signal_fx_rack.dart)
-- Vendoring posture: [third_party/README.md](../../packages/loopy_engine/third_party/README.md) (ASIO ⇒ Windows GPLv3 today)
+- Vendoring posture: [third_party/README.md](../../packages/segno_engine/third_party/README.md) (ASIO ⇒ Windows GPLv3 today)
 - PROGRESS plugin-ready note: [PROGRESS.md:284](../PROGRESS.md)
 - VST3 SDK (MIT, 3.8 Oct 2025): IPluginFactory2 / `kVstAudioEffectClass`, IComponent / IAudioProcessor / IEditController, IParameterChanges, IPlugView (`kPlatformTypeNSView`/`HWND`/`X11EmbedWindowID`), IComponent get/setState.
 - CLAP (MIT): `clap_entry` / `clap_plugin_factory`, `clap_plugin_params` (event-based set via `clap_input_events`), `clap_plugin_gui` (`set_parent` embed vs `set_transient` floating), `clap_plugin_state`.

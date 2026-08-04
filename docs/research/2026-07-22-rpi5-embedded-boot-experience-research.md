@@ -1,8 +1,8 @@
-# Running Loopy as an embedded appliance on a Raspberry Pi 5
+# Running Segno as an embedded appliance on a Raspberry Pi 5
 
 **Research spike — 2026-07-22.** Goal: turn the Pi 5 floor-console into a true
 appliance — **fast boot, a Flutter splash animation, and no desktop ever
-appearing at any point**, just Loopy. This builds on the floor-console software
+appearing at any point**, just Segno. This builds on the floor-console software
 already shipped (PRs #86–#93: GTK-on-Wayland + labwc + systemd kiosk, dual
 display pinning, power-cut resilience). It does **not** revisit those decisions;
 it fills the three gaps they left open: the *boot experience*.
@@ -159,7 +159,7 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
 ```
 
 Result: firmware → Plymouth splash → (kernel/systemd/labwc all happen *behind*
-the splash) → Loopy's first frame is drawn → Plymouth quits → the in-app splash
+the splash) → Segno's first frame is drawn → Plymouth quits → the in-app splash
 animation is already on screen. **No black gap, no grey compositor flash, no
 desktop, ever.** If the Plymouth splash's final image and the Flutter splash's
 first frame share the same logo + background colour, the transition reads as one
@@ -330,7 +330,7 @@ to get it on an embedded stack, best first:
    (labwc/weston owns DRM and exposes both outputs), or as its own compositor with
    `-DBUILD_COMPOSITOR=ON`.
    - **State sharing gets *simpler*, not harder.** Both views live in one
-     ivi-homescreen process, so they share the single loaded `libloopy_engine.so`
+     ivi-homescreen process, so they share the single loaded `libsegno_engine.so`
      and its process-global engine state. The waveform view's isolate can **pull
      frames directly from the engine via FFI** (`readWaveform()`) instead of
      today's push-over-method-channel from the main window. That deletes the
@@ -362,9 +362,9 @@ today — treat ivi multi-view as the concrete path.
 
 **Audio on a pure-ALSA image: not a risk — arguably better.** Confirmed in-code:
 miniaudio compiles all backends (no `MA_NO_*` for devices,
-[`miniaudio_impl.c:10`](../../packages/loopy_engine/src/miniaudio/miniaudio_impl.c)),
+[`miniaudio_impl.c:10`](../../packages/segno_engine/src/miniaudio/miniaudio_impl.c)),
 Linux hands it an ordered list `{jack, pulseaudio, alsa}`
-([`engine_linux.c:213`](../../packages/loopy_engine/src/platform/engine_linux.c))
+([`engine_linux.c:213`](../../packages/segno_engine/src/platform/engine_linux.c))
 and takes the first that initializes — with no JACK/Pulse present it **degrades
 cleanly to ALSA**. The JACK port-pinning / monitor-skip logic no-ops off the JACK
 backend (`engine_linux.c:157`), and the PipeWire-quantum poking is best-effort
@@ -398,14 +398,14 @@ Nothing here rewrites the shipped kiosk; it adds the boot-experience layer:
 - **`deploy/rpi/boot/config.txt` + `cmdline.txt` fragments** (or a documented
   patch) with the §2.1 flags. These are image-level, so ship them as
   copy-in fragments + README steps, like the existing systemd/labwc files.
-- **`deploy/rpi/plymouth/`** — a Loopy theme (static PNG matching the Flutter
+- **`deploy/rpi/plymouth/`** — a Segno theme (static PNG matching the Flutter
   splash's first frame, or a scripted animation) + install steps + the "don't
   quit Plymouth until the app is up" ordering (a drop-in that neutralises the
   default `plymouth-quit-wait` or orders it after the kiosk).
 - **Runner change** — add the `plymouth quit --retain-splash` spawn to
   `first_frame_cb` in `my_application.cc` (guard it so it's a no-op when
   Plymouth isn't running, e.g. on a dev desktop — check exit status / gate on an
-  env var like `LOOPY_KIOSK=1` so `flutter run` on a laptop is unaffected).
+  env var like `SEGNO_KIOSK=1` so `flutter run` on a laptop is unaffected).
 - **In-app splash screen** — an animated splash route shown until the engine is
   ready, wired to the existing `audio_bootstrap` / `AudioRecoveryCubit` "ready"
   signal. Themed with `LooperTheme` tokens (no pixel literals — VGV standard).
@@ -425,14 +425,14 @@ Nothing here rewrites the shipped kiosk; it adds the boot-experience layer:
    commitment; **if Tier 3, then 3a (GTK, keep the separate waveform window) vs
    3b (ivi-homescreen, reuse `WaveformView` in-app)** — recommend 3b (§4.3).
 1. **NVMe vs microSD** for the shipping unit — cost/BOM + enclosure vs a real
-   boot-time and durability win. Affects `hardware/loopy_console_shopping_list.md`.
+   boot-time and durability win. Affects `hardware/segno_console_shopping_list.md`.
 2. **Plymouth splash: static or scripted-animated?** Static already gets a
    flash-free result; animated is pure branding polish.
 3. **How much service-trimming** — a fully offline appliance boots fastest but
    loses in-field updates/SSH. Recommend keeping WiFi+SSH but disabling the
    *wait-online* and the obvious dead weight (§4.3), i.e. fast boot without
    painting ourselves into an un-updatable corner.
-4. **Splash art** — needs a Loopy mark / animation (shared by Plymouth + the
+4. **Splash art** — needs a Segno mark / animation (shared by Plymouth + the
    Flutter splash so the handoff is invisible).
 
 ## 7. Suggested phasing (if this becomes a plan)

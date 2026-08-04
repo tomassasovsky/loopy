@@ -1,0 +1,68 @@
+#!/bin/sh
+# Commit the booted slot, once the app has proved it actually works.
+#
+# A RAUC tryboot is provisional: if nothing marks the slot good, the next
+# reboot rolls back. meta-rauc ships rauc-mark-good.service for this, but its
+# ConditionKernelCommandLine wants a `rauc.slot` argument that the Raspberry Pi
+# tryboot backend never sets — so it is skipped on every boot ("no trigger
+# condition checks were met") and every update silently reverts. Observed live:
+# updated, rebooted, set up Wi-Fi, rebooted again, and the console came back on
+# the previous version.
+#
+# The gate is deliberately not "did we boot" — that is exactly the state a
+# black-screen image would also reach. segno.service restarts forever on
+# failure (Restart=always), so a crash-looping app looks active if you only
+# glance once. What cannot be faked is staying up: active now, and the same
+# restart count a minute later.
+#
+# Refusing to mark is a real decision, not an error path — it means the next
+# reboot rolls back, which is the whole point of A/B.
+#
+# See https://github.com/tomassasovsky/segno/issues/307
+set -eu
+
+SYSTEMCTL="${SEGNO_SYSTEMCTL:-systemctl}"
+RAUC="${SEGNO_RAUC:-rauc}"
+UNIT="${SEGNO_MARK_GOOD_UNIT:-segno.service}"
+# How long to wait for the app to come up at all, and how long it then has to
+# stay up. The window is a trade: too short and a slow first boot commits a
+# broken image, too long and a user who reboots quickly loses the update they
+# just installed.
+WAIT_SECS="${SEGNO_MARK_GOOD_WAIT_SECS:-180}"
+STABLE_SECS="${SEGNO_MARK_GOOD_STABLE_SECS:-45}"
+
+log() { echo "segno-mark-good: $*" >&2; }
+
+restarts() {
+    "$SYSTEMCTL" show -p NRestarts --value "$UNIT" 2>/dev/null || echo ""
+}
+
+waited=0
+while ! "$SYSTEMCTL" is-active --quiet "$UNIT"; do
+    if [ "$waited" -ge "$WAIT_SECS" ]; then
+        log "$UNIT never came up within ${WAIT_SECS}s; leaving the slot uncommitted"
+        exit 1
+    fi
+    sleep 2
+    waited=$((waited + 2))
+done
+
+before=$(restarts)
+sleep "$STABLE_SECS"
+
+if ! "$SYSTEMCTL" is-active --quiet "$UNIT"; then
+    log "$UNIT stopped during the health window; leaving the slot uncommitted"
+    exit 1
+fi
+
+after=$(restarts)
+if [ "$before" != "$after" ]; then
+    log "$UNIT restarted during the health window ($before -> $after); leaving the slot uncommitted"
+    exit 1
+fi
+
+if ! "$RAUC" status mark-good booted; then
+    log "rauc refused to mark the booted slot good"
+    exit 1
+fi
+log "booted slot committed after ${STABLE_SECS}s of a healthy $UNIT"

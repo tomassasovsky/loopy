@@ -12,7 +12,7 @@ branch: feat/windows-linux-native
 ## Summary
 
 Split the platform-specific C currently interleaved inside the ~3,200-line
-[`packages/loopy_engine/src/engine.c`](../../packages/loopy_engine/src/engine.c)
+[`packages/segno_engine/src/engine.c`](../../packages/segno_engine/src/engine.c)
 into **per-OS translation units** — `engine_linux.c`, `engine_apple.c`,
 `engine_windows.c` — each implementing a small, fixed set of **seam functions**
 (`le_platform_*`) that the portable core calls at well-defined lifecycle points.
@@ -32,7 +32,7 @@ can list all three sources unconditionally.
 > #if defined(__linux__)
 >   /* … real Linux bodies … */
 > #else
->   typedef int loopy_engine_linux_tu_unused; /* keep the TU non-empty */
+>   typedef int segno_engine_linux_tu_unused; /* keep the TU non-empty */
 > #endif
 > ```
 > No `.c` in `src/` currently uses a whole-file platform guard (`loop_clock.c`,
@@ -75,7 +75,7 @@ next two features).
 | Windows owner (future) | `engine_windows.c` is the landing spot for ASIO opt-in — no hot-file churn. |
 | macOS owner | CoreAudio label logic moves to `engine_apple.c`; podspec gets one forwarder. |
 | Linux owner | JACK/PipeWire cluster moves to `engine_linux.c`; helpers become file-local. |
-| Dart / app layer | **Zero impact** — FFI surface (`loopy_engine_api.h`), loader, ffigen untouched. |
+| Dart / app layer | **Zero impact** — FFI surface (`segno_engine_api.h`), loader, ffigen untouched. |
 | CI | No new jobs — existing `build-windows` / `build-linux` compile-guards cover the new TUs. |
 
 ## Research findings
@@ -84,20 +84,20 @@ next two features).
 
 | Lines | Cluster | Seam it becomes |
 |-------|---------|-----------------|
-| [32–38](../../packages/loopy_engine/src/engine.c#L32) | `__APPLE__` CoreAudio/CoreFoundation includes | move into `engine_apple.c` |
-| [40–46](../../packages/loopy_engine/src/engine.c#L40) | `__linux__` `<dlfcn.h>` + `le_pipewire_force_quantum` fwd-decl | move into `engine_linux.c` |
-| [1913–1971](../../packages/loopy_engine/src/engine.c#L1913) | `__APPLE__` `le_macos_input_device` + `le_macos_excluded_mask` | `le_platform_excluded_input_mask` (Apple body) |
-| [1978–1984](../../packages/loopy_engine/src/engine.c#L1976) | `le_compute_excluded_input_mask` dispatch | replaced by `le_platform_excluded_input_mask` call |
-| [2051–2053](../../packages/loopy_engine/src/engine.c#L2051) | `__linux__` quantum restore in `le_engine_destroy` | `le_platform_on_engine_teardown` |
-| [2057–2241](../../packages/loopy_engine/src/engine.c#L2057) | `__linux__` JACK/quantum cluster (`le_pipewire_force_quantum`, `le_trailing_int`, `le_jack_device_name`, `le_jack_rewire`, `le_jack_pin_to_device`, dlfcn typedefs) | `le_platform_after_device_start` + file-local statics |
-| [2285–2317](../../packages/loopy_engine/src/engine.c#L2285) | `__linux__` backend array + PIPEWIRE_QUANTUM/`setenv`/force-quantum | `le_platform_backends` + `le_platform_before_context_init` |
-| [2402–2406](../../packages/loopy_engine/src/engine.c#L2402) | `__linux__` `le_jack_pin_to_device` call in `le_engine_start` | `le_platform_after_device_start` call |
-| [2421–2425](../../packages/loopy_engine/src/engine.c#L2421) | `__linux__` quantum restore in `le_engine_stop` | `le_platform_on_engine_teardown` |
+| [32–38](../../packages/segno_engine/src/engine.c#L32) | `__APPLE__` CoreAudio/CoreFoundation includes | move into `engine_apple.c` |
+| [40–46](../../packages/segno_engine/src/engine.c#L40) | `__linux__` `<dlfcn.h>` + `le_pipewire_force_quantum` fwd-decl | move into `engine_linux.c` |
+| [1913–1971](../../packages/segno_engine/src/engine.c#L1913) | `__APPLE__` `le_macos_input_device` + `le_macos_excluded_mask` | `le_platform_excluded_input_mask` (Apple body) |
+| [1978–1984](../../packages/segno_engine/src/engine.c#L1976) | `le_compute_excluded_input_mask` dispatch | replaced by `le_platform_excluded_input_mask` call |
+| [2051–2053](../../packages/segno_engine/src/engine.c#L2051) | `__linux__` quantum restore in `le_engine_destroy` | `le_platform_on_engine_teardown` |
+| [2057–2241](../../packages/segno_engine/src/engine.c#L2057) | `__linux__` JACK/quantum cluster (`le_pipewire_force_quantum`, `le_trailing_int`, `le_jack_device_name`, `le_jack_rewire`, `le_jack_pin_to_device`, dlfcn typedefs) | `le_platform_after_device_start` + file-local statics |
+| [2285–2317](../../packages/segno_engine/src/engine.c#L2285) | `__linux__` backend array + PIPEWIRE_QUANTUM/`setenv`/force-quantum | `le_platform_backends` + `le_platform_before_context_init` |
+| [2402–2406](../../packages/segno_engine/src/engine.c#L2402) | `__linux__` `le_jack_pin_to_device` call in `le_engine_start` | `le_platform_after_device_start` call |
+| [2421–2425](../../packages/segno_engine/src/engine.c#L2421) | `__linux__` quantum restore in `le_engine_stop` | `le_platform_on_engine_teardown` |
 
 Verify clean at the end with:
 ```bash
 grep -nE '#if defined\((__APPLE__|__linux__|_WIN32)\)' \
-  packages/loopy_engine/src/engine.c
+  packages/segno_engine/src/engine.c
 # expect: no output — both #include-selection guards (L32, L40) move out too
 ```
 
@@ -108,9 +108,9 @@ reachable from `engine_linux.c` via the **private header** `engine_private.h`:
 
 | Symbol | Current location | How it's shared |
 |--------|------------------|-----------|
-| `struct le_engine` | [engine.c:186](../../packages/loopy_engine/src/engine.c#L186) | full struct definition **moves** into `engine_private.h` (JACK pin hook touches `engine->context.backend`, `engine->device.jack.*`, `engine->in/out_channels`, `engine->a_in/out_channels`) |
-| `enumerate_devices` | [engine.c:1825](../../packages/loopy_engine/src/engine.c#L1825) | **promoted** to externally-linked: declared in `engine_private.h`, defined only in `engine.c` (used by `le_jack_device_name`) |
-| `store_i32` / `load_i32` | [engine.c:341/344](../../packages/loopy_engine/src/engine.c#L341) | **moved as `static inline`** into `engine_private.h` (trivial `atomic_*_explicit(…, memory_order_relaxed)` wrappers — no need to add an externally-linked symbol; removed from `engine.c`) |
+| `struct le_engine` | [engine.c:186](../../packages/segno_engine/src/engine.c#L186) | full struct definition **moves** into `engine_private.h` (JACK pin hook touches `engine->context.backend`, `engine->device.jack.*`, `engine->in/out_channels`, `engine->a_in/out_channels`) |
+| `enumerate_devices` | [engine.c:1825](../../packages/segno_engine/src/engine.c#L1825) | **promoted** to externally-linked: declared in `engine_private.h`, defined only in `engine.c` (used by `le_jack_device_name`) |
+| `store_i32` / `load_i32` | [engine.c:341/344](../../packages/segno_engine/src/engine.c#L341) | **moved as `static inline`** into `engine_private.h` (trivial `atomic_*_explicit(…, memory_order_relaxed)` wrappers — no need to add an externally-linked symbol; removed from `engine.c`) |
 
 This leaves `enumerate_devices` as the **only** symbol promoted to external linkage
 (the one genuine cross-TU function call), shrinking the shared-symbol surface and
@@ -118,13 +118,13 @@ removing any double-definition risk for the two atomic accessors.
 
 ### Build-system facts (confirmed)
 
-- **CMake** ([src/CMakeLists.txt:8](../../packages/loopy_engine/src/CMakeLists.txt#L8))
-  drives Linux + Windows via `add_library(loopy_engine SHARED …)`; `linux/` and
+- **CMake** ([src/CMakeLists.txt:8](../../packages/segno_engine/src/CMakeLists.txt#L8))
+  drives Linux + Windows via `add_library(segno_engine SHARED …)`; `linux/` and
   `windows/` plugin CMakes `add_subdirectory` it. Add the three TUs to the source
   list. (The whole-file-`#if` empty-TU pattern is **new** here — no existing `.c`
   uses it; see the C-standard note in the Summary for the required dummy
   declaration in each inactive branch.)
-- **macOS CocoaPods** — `macos/loopy_engine.podspec` uses
+- **macOS CocoaPods** — `macos/segno_engine.podspec` uses
   `s.source_files = 'Classes/**/*'` (glob). Today `macos/Classes/` has `engine.c`,
   `lockfree_ring.c`, `loop_clock.c`, `miniaudio_impl.c` forwarders that
   `#include "../../src/<file>.c"`. Add **one** forwarder
@@ -134,7 +134,7 @@ removing any double-definition risk for the two atomic accessors.
   still the honest name (gated on `__APPLE__`, covers a future iOS target), but
   there is **no iOS forwarder to add now** (resolved open question).
 - **Native test harness** — built by the documented `clang`/`cc` command in
-  [test/test_engine_core.c:8–14](../../packages/loopy_engine/src/test/test_engine_core.c#L8),
+  [test/test_engine_core.c:8–14](../../packages/segno_engine/src/test/test_engine_core.c#L8),
   which lists the engine sources explicitly. **No Makefile / no CI job** builds it
   — it's a manual dev command. Its source list must gain the three per-OS TUs so
   the seam symbols resolve at link time. Keep the `-std=c11` strictness note (the
@@ -150,7 +150,7 @@ removing any double-definition risk for the two atomic accessors.
 ### Conventions observed in the codebase
 
 - Forwarder TUs carry a header comment explaining the CocoaPods include indirection
-  (see [macos/Classes/engine.c](../../packages/loopy_engine/macos/Classes/engine.c)).
+  (see [macos/Classes/engine.c](../../packages/segno_engine/macos/Classes/engine.c)).
   New forwarders should match.
 - Source files open with a block comment describing the file's role (see
   `engine_internal.h`, `test_engine_core.c`). New TUs/headers follow suit.
@@ -168,8 +168,8 @@ only one providing symbols).
 ```c
 /* engine_platform.h — lifecycle hooks the portable core calls; implemented
  * once per OS in engine_<os>.c. Most are no-ops on most platforms. */
-#ifndef LOOPY_ENGINE_PLATFORM_H
-#define LOOPY_ENGINE_PLATFORM_H
+#ifndef SEGNO_ENGINE_PLATFORM_H
+#define SEGNO_ENGINE_PLATFORM_H
 
 #include <stdint.h>
 #include "miniaudio.h"        /* ma_backend, ma_uint32 */
@@ -196,7 +196,7 @@ void le_platform_on_engine_teardown(void);
  * le_compute_excluded_input_mask dispatch. */
 uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count);
 
-#endif /* LOOPY_ENGINE_PLATFORM_H */
+#endif /* SEGNO_ENGINE_PLATFORM_H */
 ```
 
 ### Seam → implementation mapping
@@ -236,16 +236,16 @@ already test-facing) and is used by `engine_apple.c`.
 
 ### Step 1 — Carve the private header (`engine_private.h`)
 
-**Files:** new `packages/loopy_engine/src/engine_private.h`; edit `engine.c`.
+**Files:** new `packages/segno_engine/src/engine_private.h`; edit `engine.c`.
 
 - [ ] Create `engine_private.h` with a header comment ("cross-TU internals — the
   full `struct le_engine` and shared helpers; NOT the FFI surface and NOT the
   test surface").
-- [ ] Move `struct le_engine` ([engine.c:186](../../packages/loopy_engine/src/engine.c#L186))
+- [ ] Move `struct le_engine` ([engine.c:186](../../packages/segno_engine/src/engine.c#L186))
   into it. **`engine_private.h` must be self-contained and idempotent** (header
   guard + its own includes) — other TUs include it, so it cannot rely on each
   `.c`'s inclusion order. It includes the headers the struct's field types need:
-  `loopy_engine_api.h` (the opaque `le_engine` typedef + `le_config`,
+  `segno_engine_api.h` (the opaque `le_engine` typedef + `le_config`,
   `LE_MAX_CHANNELS`), `miniaudio.h`, `lockfree_ring.h`, `loop_clock.h`. (`<stdatomic.h>`
   arrives transitively via `lockfree_ring.h` — `engine.c` does not include it
   directly — but include it explicitly here since the struct holds `atomic_*` fields.)
@@ -267,18 +267,18 @@ already test-facing) and is used by `engine_apple.c`.
 - [ ] In `engine.c`, define the 5 `le_platform_*` functions wrapping the **existing**
   `#if` blocks verbatim (still guarded by `#if defined(__linux__)` / `__APPLE__`).
 - [ ] Replace the inline conditionals at the call sites with seam calls:
-  - `le_engine_start`: backend selection at [~L2285](../../packages/loopy_engine/src/engine.c#L2285)
+  - `le_engine_start`: backend selection at [~L2285](../../packages/segno_engine/src/engine.c#L2285)
     → `le_platform_backends(&p_backends, &backend_count)` + `le_platform_before_context_init(config)`
     (the env/quantum block) before `ma_context_init`.
-  - `le_engine_start`: JACK pin at [~L2402](../../packages/loopy_engine/src/engine.c#L2402)
+  - `le_engine_start`: JACK pin at [~L2402](../../packages/segno_engine/src/engine.c#L2402)
     → `le_platform_after_device_start(engine, config)` after `ma_device_start`.
-  - `le_engine_stop`: quantum restore [~L2421](../../packages/loopy_engine/src/engine.c#L2421)
+  - `le_engine_stop`: quantum restore [~L2421](../../packages/segno_engine/src/engine.c#L2421)
     → `le_platform_on_engine_teardown()`.
-  - `le_engine_destroy`: quantum restore [~L2051](../../packages/loopy_engine/src/engine.c#L2051)
+  - `le_engine_destroy`: quantum restore [~L2051](../../packages/segno_engine/src/engine.c#L2051)
     → `le_platform_on_engine_teardown()`.
-  - `le_compute_excluded_input_mask` [~L1976](../../packages/loopy_engine/src/engine.c#L1976)
+  - `le_compute_excluded_input_mask` [~L1976](../../packages/segno_engine/src/engine.c#L1976)
     → delete it; call `le_platform_excluded_input_mask(capture_uid, neg_in)`
-    directly at [~L2391](../../packages/loopy_engine/src/engine.c#L2391).
+    directly at [~L2391](../../packages/segno_engine/src/engine.c#L2391).
 - [ ] `#include "engine_platform.h"` in `engine.c`.
 - [ ] **Pure refactor; tests green.** This is the end of PR1.
 
@@ -293,17 +293,17 @@ already test-facing) and is used by `engine_apple.c`.
 
 ### Step 3 — Extract Apple (`engine_apple.c`)
 
-**Files:** new `packages/loopy_engine/src/engine_apple.c`; new
-`packages/loopy_engine/macos/Classes/engine_apple.c` (forwarder); edit `engine.c`
+**Files:** new `packages/segno_engine/src/engine_apple.c`; new
+`packages/segno_engine/macos/Classes/engine_apple.c` (forwarder); edit `engine.c`
 (remove the now-moved Apple bodies).
 
 - [ ] Create `engine_apple.c`, wrapped whole in `#if defined(__APPLE__)` … `#else`
-  `typedef int loopy_engine_apple_tu_unused;` `#endif` (non-empty TU on every
+  `typedef int segno_engine_apple_tu_unused;` `#endif` (non-empty TU on every
   platform — see the C-standard note in the Summary). Header comment describing
   the file's role.
-- [ ] Move the CoreAudio/CoreFoundation includes ([L32–38](../../packages/loopy_engine/src/engine.c#L32)),
+- [ ] Move the CoreAudio/CoreFoundation includes ([L32–38](../../packages/segno_engine/src/engine.c#L32)),
   `le_macos_input_device`, and `le_macos_excluded_mask`
-  ([L1913–1971](../../packages/loopy_engine/src/engine.c#L1913)) into it as
+  ([L1913–1971](../../packages/segno_engine/src/engine.c#L1913)) into it as
   file-local statics.
 - [ ] Implement all 5 seam functions: `le_platform_excluded_input_mask` →
   `le_macos_excluded_mask`; the other four are no-ops.
@@ -323,11 +323,11 @@ already test-facing) and is used by `engine_apple.c`.
 
 ### Step 4 — Extract Linux (`engine_linux.c`)
 
-**Files:** new `packages/loopy_engine/src/engine_linux.c`; edit `engine.c`
+**Files:** new `packages/segno_engine/src/engine_linux.c`; edit `engine.c`
 (remove moved Linux bodies), `src/CMakeLists.txt`.
 
 - [ ] Create `engine_linux.c`, wrapped whole in `#if defined(__linux__)` … `#else`
-  `typedef int loopy_engine_linux_tu_unused;` `#endif` (non-empty TU on every
+  `typedef int segno_engine_linux_tu_unused;` `#endif` (non-empty TU on every
   platform — see the C-standard note in the Summary). Header comment.
 - [ ] Move into it as file-local statics: `<dlfcn.h>` include, the `extern int
   setenv(...)` declaration, `le_pipewire_force_quantum`, `le_trailing_int`,
@@ -336,7 +336,7 @@ already test-facing) and is used by `engine_apple.c`.
 - [ ] Implement all 5 seam functions:
   - `le_platform_backends` → publish `k_backends` (count 3).
   - `le_platform_before_context_init` → `setenv("PIPEWIRE_QUANTUM", …)` +
-    `le_pipewire_force_quantum(q_frames)` (the [L2300–2313](../../packages/loopy_engine/src/engine.c#L2300) block).
+    `le_pipewire_force_quantum(q_frames)` (the [L2300–2313](../../packages/segno_engine/src/engine.c#L2300) block).
   - `le_platform_after_device_start` → `le_jack_pin_to_device(engine, config)`.
   - `le_platform_on_engine_teardown` → `le_pipewire_force_quantum(0)`.
   - `le_platform_excluded_input_mask` → `return 0`.
@@ -345,14 +345,14 @@ already test-facing) and is used by `engine_apple.c`.
 - [ ] **Update the native test build command now, not in step 6** — but only with
   the TUs that already exist. The `le_platform_*` symbols leave `engine.c` in this
   step, so the manual link command in
-  [test/test_engine_core.c:8–14](../../packages/loopy_engine/src/test/test_engine_core.c#L8)
+  [test/test_engine_core.c:8–14](../../packages/segno_engine/src/test/test_engine_core.c#L8)
   must already list `engine_linux.c engine_apple.c` (both created by step 3/4) or
   the native suite fails to link from here onward. `engine_windows.c` is added to
   the command in step 5 when it exists.
   (On the Linux dev box `engine_apple.c` links as a dummy TU — harmless; only
   `engine_linux.c` actually provides the seam symbols there.)
 - [ ] **Add a Linux build-command variant to the file comment.** The existing
-  command at [test/test_engine_core.c:8–14](../../packages/loopy_engine/src/test/test_engine_core.c#L8)
+  command at [test/test_engine_core.c:8–14](../../packages/segno_engine/src/test/test_engine_core.c#L8)
   is explicitly `Build & run (macOS):` and hardcodes `-framework CoreAudio
   -framework AudioToolbox -framework AudioUnit -framework CoreFoundation` — which
   do not exist on Linux. Since this refactor is verified on the Fedora dev box,
@@ -363,7 +363,7 @@ already test-facing) and is used by `engine_apple.c`.
 - [ ] **Defer the CMake source-list edit to step 5.** `flutter build linux`
   configures CMake against files that must exist on disk, and `engine_windows.c`
   is not created until step 5. Adding all three TUs to
-  [`add_library(loopy_engine SHARED …)`](../../packages/loopy_engine/src/CMakeLists.txt#L8)
+  [`add_library(segno_engine SHARED …)`](../../packages/segno_engine/src/CMakeLists.txt#L8)
   in one commit *after* step 5 avoids an intermediate state where CMake references
   a not-yet-created file.
 - [ ] **Verify on the Fedora / PipeWire / Clarett+ box** — the same end-to-end
@@ -372,11 +372,11 @@ already test-facing) and is used by `engine_apple.c`.
 
 ### Step 5 — Stub Windows (`engine_windows.c`)
 
-**Files:** new `packages/loopy_engine/src/engine_windows.c`; edit
+**Files:** new `packages/segno_engine/src/engine_windows.c`; edit
 `src/CMakeLists.txt`; edit `src/test/test_engine_core.c`.
 
 - [ ] Create `engine_windows.c`, wrapped whole in `#if defined(_WIN32)` … `#else`
-  `typedef int loopy_engine_windows_tu_unused;` `#endif` (non-empty TU on every
+  `typedef int segno_engine_windows_tu_unused;` `#endif` (non-empty TU on every
   platform — see the C-standard note in the Summary).
 - [ ] All-no-op seam bodies (`le_platform_backends` → `NULL, 0`; the rest empty;
   `le_platform_excluded_input_mask` → `return 0`).
@@ -385,10 +385,10 @@ already test-facing) and is used by `engine_apple.c`.
   / its plan).
 - [ ] Now that all three TUs exist on disk, add
   `engine_linux.c engine_apple.c engine_windows.c` to
-  [`add_library(loopy_engine SHARED …)`](../../packages/loopy_engine/src/CMakeLists.txt#L8)
+  [`add_library(segno_engine SHARED …)`](../../packages/segno_engine/src/CMakeLists.txt#L8)
   in a single commit (deferred from step 4 to avoid referencing a missing file).
 - [ ] Add `engine_windows.c` to the native test build command in
-  [test/test_engine_core.c:8–14](../../packages/loopy_engine/src/test/test_engine_core.c#L8),
+  [test/test_engine_core.c:8–14](../../packages/segno_engine/src/test/test_engine_core.c#L8),
   completing the three-TU source list begun in step 4.
 - [ ] Existing `build-windows` CI compile-guard confirms it links — no new CI.
 
@@ -405,15 +405,15 @@ already test-facing) and is used by `engine_apple.c`.
 
 | Path | Action |
 |------|--------|
-| `packages/loopy_engine/src/engine_private.h` | **new** — `struct le_engine` (moved) + `enumerate_devices` decl (defined in `engine.c`) + `store_i32`/`load_i32` `static inline` definitions |
-| `packages/loopy_engine/src/engine_platform.h` | **new** — the 5-function seam interface |
-| `packages/loopy_engine/src/engine_linux.c` | **new** — JACK/PipeWire cluster + Linux seam bodies (`#if __linux__`) |
-| `packages/loopy_engine/src/engine_apple.c` | **new** — CoreAudio labels + Apple seam bodies (`#if __APPLE__`) |
-| `packages/loopy_engine/src/engine_windows.c` | **new** — all-no-op stub + ASIO TODO (`#if _WIN32`) |
-| `packages/loopy_engine/macos/Classes/engine_apple.c` | **new** — CocoaPods forwarder |
-| `packages/loopy_engine/src/engine.c` | **edit** — remove platform `#if`; call the seam; un-`static` 3 helpers |
-| `packages/loopy_engine/src/CMakeLists.txt` | **edit** — add the 3 TUs to the library sources |
-| `packages/loopy_engine/src/test/test_engine_core.c` | **edit** — add the 3 TUs to the documented build command |
+| `packages/segno_engine/src/engine_private.h` | **new** — `struct le_engine` (moved) + `enumerate_devices` decl (defined in `engine.c`) + `store_i32`/`load_i32` `static inline` definitions |
+| `packages/segno_engine/src/engine_platform.h` | **new** — the 5-function seam interface |
+| `packages/segno_engine/src/engine_linux.c` | **new** — JACK/PipeWire cluster + Linux seam bodies (`#if __linux__`) |
+| `packages/segno_engine/src/engine_apple.c` | **new** — CoreAudio labels + Apple seam bodies (`#if __APPLE__`) |
+| `packages/segno_engine/src/engine_windows.c` | **new** — all-no-op stub + ASIO TODO (`#if _WIN32`) |
+| `packages/segno_engine/macos/Classes/engine_apple.c` | **new** — CocoaPods forwarder |
+| `packages/segno_engine/src/engine.c` | **edit** — remove platform `#if`; call the seam; un-`static` 3 helpers |
+| `packages/segno_engine/src/CMakeLists.txt` | **edit** — add the 3 TUs to the library sources |
+| `packages/segno_engine/src/test/test_engine_core.c` | **edit** — add the 3 TUs to the documented build command |
 
 ## PR strategy
 
@@ -436,19 +436,19 @@ Run at the end of **every** step (1–6); the refactor must stay green throughou
 
 ### Native core tests (dev box)
 ```bash
-cd packages/loopy_engine
+cd packages/segno_engine
 clang -std=c11 -I src -I src/miniaudio \
   src/test/test_engine_core.c src/engine.c src/lockfree_ring.c \
   src/loop_clock.c src/miniaudio_impl.c \
   $EXTRA_TUS \          # src/engine_linux.c src/engine_apple.c added in step 4; src/engine_windows.c in step 5
-  -lpthread -lm -o /tmp/loopy_core_tests   # + CoreAudio frameworks on macOS
-/tmp/loopy_core_tests
+  -lpthread -lm -o /tmp/segno_core_tests   # + CoreAudio frameworks on macOS
+/tmp/segno_core_tests
 # expect: all pass, 0 failures
 ```
 
 ### Dart unit tests
 ```bash
-cd packages/loopy_engine && flutter test
+cd packages/segno_engine && flutter test
 # engine_config_test, engine_snapshot_test, loopback_info_test, track_effect_test, … all green
 ```
 
@@ -473,7 +473,7 @@ flutter build windows --debug --target lib/main_development.dart   # exercises e
 ### Core-is-clean gate (step 6)
 ```bash
 grep -nE '#if defined\((__APPLE__|__linux__|_WIN32)\)' \
-  packages/loopy_engine/src/engine.c   # expect: no output
+  packages/segno_engine/src/engine.c   # expect: no output
 ```
 
 ## Acceptance criteria
@@ -491,7 +491,7 @@ grep -nE '#if defined\((__APPLE__|__linux__|_WIN32)\)' \
   guard; a dummy `typedef` in the `#else`) — no `-Wempty-translation-unit`.
 - [ ] CMake builds the 3 TUs; macOS podspec picks up `engine_apple.c` via the
   `Classes/**/*` glob; the native test command lists the 3 TUs.
-- [ ] FFI surface (`loopy_engine_api.h`), Dart loader, and ffigen output unchanged
+- [ ] FFI surface (`segno_engine_api.h`), Dart loader, and ffigen output unchanged
   (no regen needed).
 - [ ] Native tests, Dart tests, and `flutter build linux`/`windows` all green.
 - [ ] Linux end-to-end checks pass on the Clarett+ box; macOS loopback exclusion
@@ -504,7 +504,7 @@ grep -nE '#if defined\((__APPLE__|__linux__|_WIN32)\)' \
 |------|-----------|
 | `struct le_engine` field-type includes missing in `engine_private.h` → compile errors | Mirror the includes already at the top of `engine.c`; build after step 1 before touching anything else. |
 | `enumerate_devices` defined twice (un-`static` + header) | Declare in header, **define** only in `engine.c`; do not also define in a TU. `store_i32`/`load_i32` are `static inline` in the header (no external symbol → no double-definition risk). |
-| Empty-TU pattern (fully `#if`'d-out TU is UB in ISO C / warns under `-Wempty-translation-unit`, and the native test command uses strict `-std=c11`) | Each per-OS TU adds a single dummy declaration in its inactive `#else` branch (`typedef int loopy_engine_<os>_tu_unused;`) so it is never a genuinely empty TU. This is a **new** pattern — `loop_clock.c` is *not* precedent (it has no platform guard). |
+| Empty-TU pattern (fully `#if`'d-out TU is UB in ISO C / warns under `-Wempty-translation-unit`, and the native test command uses strict `-std=c11`) | Each per-OS TU adds a single dummy declaration in its inactive `#else` branch (`typedef int segno_engine_<os>_tu_unused;`) so it is never a genuinely empty TU. This is a **new** pattern — `loop_clock.c` is *not* precedent (it has no platform guard). |
 | macOS not buildable locally (no `ios/`, Linux dev box) | macOS step (3) gated behind the platform owner's verification; CI has no macOS job, so don't claim macOS-green without the owner. |
 | `le_label_is_loopback` visibility from `engine_apple.c` | It's declared in `engine_internal.h` (test-facing) and stays defined in `engine.c`; `engine_apple.c` includes that header. |
 | Quantum/JACK behavior subtly changes during the move | Step 2 wraps existing blocks verbatim (no edits); steps 3–5 are cut/paste only. Linux end-to-end checks catch regressions. |

@@ -60,7 +60,7 @@ A `PedalTransport` that **decorates an inner transport** (native, or
 `NoopPedalTransport` on the mock/no-MIDI flavor) and adds a synthetic on-screen
 pedal:
 
-- **Constant id:** `const kSimulatorOutputId = 'loopy-sim'`, name "On-screen pedal".
+- **Constant id:** `const kSimulatorOutputId = 'segno-sim'`, name "On-screen pedal".
 - **`enumerateOutputs()`** → `[...inner.enumerateOutputs() where id != kSimulatorOutputId, simDevice]`.
   The sim device is **always present** and any real device colliding with the
   reserved id is dropped, so the 2 s hotplug `reconnect()` poll can never make
@@ -100,7 +100,7 @@ tests decorate a `FakePedalTransport`/`NoopPedalTransport`.
   `({PedalRepository repo, SimulatorPedalTransport sim})`: builds the native
   inner transport (or `NoopPedalTransport`) and wraps it in
   `SimulatorPedalTransport`.
-- `run_loopy.dart` builds the record and threads both into `App` (an optional
+- `run_segno.dart` builds the record and threads both into `App` (an optional
   `SimulatorPedalTransport? pedalSimulator`, symmetric with the existing optional
   `PedalRepository? pedalRepository`).
 - `app.dart` provides `Provider<SimulatorPedalTransport>` next to the
@@ -111,7 +111,7 @@ tests decorate a `FakePedalTransport`/`NoopPedalTransport`.
 
 ### `PedalFaceplate` view (`lib/pedal/view`)
 
-A stylized VAMP-style faceplate hosted as a **collapsible panel in the main
+A stylized Segno-style faceplate hosted as a **collapsible panel in the main
 looper window**, shown only when
 `context.watch<PedalCubit>().state.boundOutputId == kSimulatorOutputId` (the
 mount is the sole gate — inbound is not gated by bind, so `press`/`turn` must be
@@ -183,7 +183,7 @@ tokens to `SurfaceTheme` (`ledOff`, `ledGreen`, `ledRed`, `ledAmber`, `ledBlue`,
   sibling): `createSimAwarePedalRepository` returning the
   `({PedalRepository repo, SimulatorPedalTransport sim})` record;
   `createNativePedalRepository` unchanged.
-- [ ] `lib/app/run_loopy.dart`: build the record (native inner; `NoopPedalTransport`
+- [ ] `lib/app/run_segno.dart`: build the record (native inner; `NoopPedalTransport`
   on mock/no-MIDI) and thread `repo` + `sim` into `App`.
 - [ ] `lib/app/view/app.dart`: optional `SimulatorPedalTransport? pedalSimulator`
   param + `Provider<SimulatorPedalTransport>` (Noop-wrapped fallback when null).
@@ -236,7 +236,7 @@ tokens to `SurfaceTheme` (`ledOff`, `ledGreen`, `ledRed`, `ledAmber`, `ledBlue`,
   global color, bank + loop-length readouts; a freshly bound sim shows a dark
   idle plate, never empty. All colors from theme tokens (incl. high-contrast).
 - [ ] The sim device is **always** enumerated (hotplug poll never unbinds it); a
-  real device cannot masquerade as `loopy-sim`.
+  real device cannot masquerade as `segno-sim`.
 - [ ] No stuck notes: `releaseAll` on unmount/deactivate; UNDO can't leave the
   cubit's undo timer hanging on pointer leave/cancel.
 - [ ] LED meaning available non-visually (Semantics) + every control keyboard-
@@ -272,7 +272,7 @@ tokens to `SurfaceTheme` (`ledOff`, `ledGreen`, `ledRed`, `ledAmber`, `ledBlue`,
 - `packages/pedal_repository/lib/pedal_repository.dart` (export)
 - `packages/pedal_repository/lib/src/native_pedal_repository.dart` (add
   `createSimAwarePedalRepository`)
-- `lib/app/run_loopy.dart` (build record + thread the sim)
+- `lib/app/run_segno.dart` (build record + thread the sim)
 - `lib/app/view/app.dart` (provide `SimulatorPedalTransport`)
 - `lib/theme/surface_theme.dart` (LED/ring tokens + resolver)
 - `lib/l10n/arb/*.arb` (labels + a11y strings)

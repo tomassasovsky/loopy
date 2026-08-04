@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:loopy/common/console_mode.dart';
-import 'package:loopy/common/on_screen_keyboard/on_screen_keyboard.dart';
+import 'package:segno/common/console_mode.dart';
+import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 
 /// Wraps the app and supplies an on-screen keyboard whenever a text field takes
 /// focus on a build that has no physical one.

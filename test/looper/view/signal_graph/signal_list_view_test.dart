@@ -5,10 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/view/signal_graph/signal_list_view.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/view/signal_graph/signal_list_view.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../../helpers/helpers.dart';

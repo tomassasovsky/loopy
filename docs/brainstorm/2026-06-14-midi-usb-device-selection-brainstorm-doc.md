@@ -3,11 +3,11 @@ date: 2026-06-14
 topic: midi-usb-device-selection
 ---
 
-# MIDI USB Device Selection — Convert loopy into a Foot Pedal
+# MIDI USB Device Selection — Convert segno into a Foot Pedal
 
 ## What We're Building
 
-Let the user pick a **USB MIDI input device** (typically a foot controller) so loopy
+Let the user pick a **USB MIDI input device** (typically a foot controller) so segno
 can be driven hands-free like a looper pedal — stomp to record / overdub / stop /
 undo on a track. The MIDI device is **enumerated, selected, and captured natively**
 (per-OS backends behind the FFI boundary, mirroring the existing audio-device
@@ -23,7 +23,7 @@ persistence.** No change to the looper-action semantics is needed.
 
 ## Why This Approach
 
-The decisive finding is that loopy already separates *controller input* from *looper
+The decisive finding is that segno already separates *controller input* from *looper
 action* via `controller_repository`. That makes "MIDI device selection" a matter of
 (a) producing `RawControllerInput` events from a real USB MIDI device and (b) giving
 the user a way to choose which device.
@@ -70,7 +70,7 @@ parallel `le_enumerate_midi_inputs` → `MidiDevice` → picker → cubit → pe
 
 - **All three desktop platforms in v1.** CoreMIDI (macOS), ALSA (Linux), and a
   Windows MIDI backend, each as a per-OS seam mirroring `engine_windows.c` /
-  `engine_linux.c` / `engine_apple.c`. *Rationale:* loopy targets macOS/Windows/Linux;
+  `engine_linux.c` / `engine_apple.c`. *Rationale:* segno targets macOS/Windows/Linux;
   ship parity rather than stubbing platforms.
 
 - **Persist + auto-reconnect + hotplug.** Remember the chosen device, reconnect on

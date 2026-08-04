@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:loopy/appliance/software_brightness.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/theme/theme.dart';
+import 'package:segno/appliance/software_brightness.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/theme/theme.dart';
 
 /// The brightness control, Control-Center style: a tall bar, built by
 /// rotating a plain [Slider] a quarter turn — `RotatedBox` rotates

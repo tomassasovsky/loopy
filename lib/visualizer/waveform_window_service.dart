@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
-import 'package:loopy/visualizer/performance_readout.dart';
-import 'package:loopy/visualizer/waveform_window_args.dart';
-import 'package:loopy/visualizer/waveform_window_channel.dart';
+import 'package:segno/visualizer/performance_readout.dart';
+import 'package:segno/visualizer/waveform_window_args.dart';
+import 'package:segno/visualizer/waveform_window_channel.dart';
 
 /// Manages the secondary output-waveform window: opening/closing it and pushing
 /// waveform frames to it. Injected into the app so tests use a no-op.
@@ -18,7 +18,7 @@ abstract interface class WaveformWindowService {
   /// Returns `true` once the window is ready, or `false` if it failed to signal
   /// readiness within the timeout — so the caller can surface the failure
   /// instead of degrading silently.
-  Future<bool> open({String title = 'Loopy — Output'});
+  Future<bool> open({String title = 'Segno — Output'});
 
   /// Closes the waveform window (idempotent).
   Future<void> close();
@@ -79,7 +79,7 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
   }
 
   @override
-  Future<bool> open({String title = 'Loopy — Output'}) async {
+  Future<bool> open({String title = 'Segno — Output'}) async {
     if (_controller != null) return true;
     await closeOrphanWindows();
     await _ensureMainChannelRegistered();
@@ -152,7 +152,7 @@ class NoopWaveformWindowService implements WaveformWindowService {
   bool get isOpen => false;
 
   @override
-  Future<bool> open({String title = 'Loopy — Output'}) async => true;
+  Future<bool> open({String title = 'Segno — Output'}) async => true;
 
   @override
   Future<void> close() async {}

@@ -2,11 +2,11 @@ import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/pedal/pedal.dart';
-import 'package:loopy/session/session.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/pedal/pedal.dart';
+import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 

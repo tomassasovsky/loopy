@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# aarch64 Linux build image for the Loopy floor-console bundle.
+# aarch64 Linux build image for the Segno floor-console bundle.
 #
 # The dev machine is a Mac, which cannot produce a Linux release bundle, so the
 # build runs in this arm64 container instead. It mirrors the CI arm64 recipe
@@ -41,7 +41,7 @@ RUN git config --global --add safe.directory '*' \
 # In-container build orchestration. Kept inline (heredoc) rather than a third
 # file so the tooling stays exactly two files: this Dockerfile + the wrapper.
 # Args passed after the image name reach flutter build as "$@" (passthrough).
-RUN cat > /usr/local/bin/loopy-build <<'SCRIPT'
+RUN cat > /usr/local/bin/segno-build <<'SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -53,7 +53,7 @@ flutter pub get
 echo "==> CI-parity debug smoke: flutter build linux --debug (main_development)"
 flutter build linux --debug --target lib/main_development.dart
 
-# The real deliverable: the release bundle. LOOPY_CONSOLE defaults on via the
+# The real deliverable: the release bundle. SEGNO_CONSOLE defaults on via the
 # wrapper; extra args ("$@") are forwarded verbatim so callers can override.
 echo "==> Release bundle: flutter build linux --release (main_production) $*"
 flutter build linux --release --target lib/main_production.dart "$@"
@@ -68,7 +68,7 @@ if [ -n "${HOST_UID:-}" ] && [ -n "${HOST_GID:-}" ]; then
   chown -R "$HOST_UID:$HOST_GID" /workspace 2>/dev/null || true
 fi
 SCRIPT
-RUN chmod +x /usr/local/bin/loopy-build
+RUN chmod +x /usr/local/bin/segno-build
 
 WORKDIR /workspace
-ENTRYPOINT ["/usr/local/bin/loopy-build"]
+ENTRYPOINT ["/usr/local/bin/segno-build"]

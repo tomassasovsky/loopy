@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:loopy/theme/theme.dart';
+import 'package:segno/theme/theme.dart';
 
 /// Paints a mirrored, centered loop waveform from peak [samples] (index 0 =
 /// loop start, each in `0..1`) with a white playhead bar at [progress]

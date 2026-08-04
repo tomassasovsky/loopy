@@ -5,12 +5,12 @@ import 'dart:io';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:midi_client/midi_client.dart' show MidiDevice;
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -185,7 +185,7 @@ void main() {
         return EngineResult.ok;
       });
 
-      tempDir = Directory.systemTemp.createTempSync('loopy_control_cubit');
+      tempDir = Directory.systemTemp.createTempSync('segno_control_cubit');
       clock = DateTime(2026, 7, 6, 14, 30, 15);
       performance = PerformanceRepository(
         engine: FakeAudioEngine(),

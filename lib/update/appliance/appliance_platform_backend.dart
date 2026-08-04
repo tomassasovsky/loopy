@@ -1,17 +1,17 @@
 import 'dart:convert';
 
-import 'package:loopy/update/appliance/appliance_env.dart';
-import 'package:loopy/update/appliance/system_appliance_env.dart';
+import 'package:segno/update/appliance/appliance_env.dart';
+import 'package:segno/update/appliance/system_appliance_env.dart';
 import 'package:update_repository/update_repository.dart';
 
 /// The Raspberry Pi appliance update backend. Reads the running semantic
 /// version and channel from marker files, fetches the channel manifest over
 /// HTTPS, and delegates the privileged download/stage and reboot to the
-/// `loopy-update-ctl` helper (via the injected [ApplianceEnv]).
+/// `segno-update-ctl` helper (via the injected [ApplianceEnv]).
 ///
 /// Channel resolution (same order as the shell helpers):
 ///   1. [channelOverrideFile] on `/data` (user toggle; survives OS updates)
-///   2. [channelFile] baked into the image (`/etc/loopy/update-channel`)
+///   2. [channelFile] baked into the image (`/etc/segno/update-channel`)
 ///   3. `production`
 ///
 /// [isSupported] additionally requires the helper to be present, so on a build
@@ -23,11 +23,11 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
   AppliancePlatformBackend({
     ApplianceEnv? env,
     this.baseUrl = 'https://segno.aquiles.dev/updates/appliance',
-    this.versionFile = '/etc/loopy/build-version',
-    this.channelFile = '/etc/loopy/update-channel',
-    this.channelOverrideFile = '/data/loopy/update-channel',
+    this.versionFile = '/etc/segno/build-version',
+    this.channelFile = '/etc/segno/update-channel',
+    this.channelOverrideFile = '/data/segno/update-channel',
     this.stagedFile = '/data/.ota-staged-version',
-    this.helperPath = '/usr/bin/loopy-update-ctl',
+    this.helperPath = '/usr/bin/segno-update-ctl',
   }) : _env = env ?? const SystemApplianceEnv();
 
   final ApplianceEnv _env;
@@ -111,7 +111,7 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
   /// Stages the OS bundle. Pedal firmware is deliberately **not** flashed here.
   ///
   /// This method runs inside the image being replaced, so flashing from it ran
-  /// the outgoing `loopy-update-ctl` — a fix to `flash-pedal` could never apply
+  /// the outgoing `segno-update-ctl` — a fix to `flash-pedal` could never apply
   /// on the update that delivered it, and every such fix shipped its own bug
   /// one last time on every device (#444). The flash now happens on the next
   /// start of the app, through [pendingPedalFirmware] and [flashPedalFirmware],

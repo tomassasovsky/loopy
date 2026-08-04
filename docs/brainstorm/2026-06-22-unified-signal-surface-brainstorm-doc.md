@@ -42,7 +42,7 @@ one idea across three node-and-wire surfaces:
   that is now much simpler.
 
 The user is **not** rejecting the graph metaphor (they explicitly like the graph —
-see `loopy-ui-literal-graph`). The problem is *fragmentation and redundancy*, not
+see `segno-ui-literal-graph`). The problem is *fragmentation and redundancy*, not
 the visual idea.
 
 ## Goals

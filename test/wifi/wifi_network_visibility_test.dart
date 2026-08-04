@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/wifi/wifi_cubit.dart';
-import 'package:loopy/wifi/wifi_network_visibility.dart';
+import 'package:segno/wifi/wifi_cubit.dart';
+import 'package:segno/wifi/wifi_network_visibility.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 void main() {

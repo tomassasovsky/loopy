@@ -31,7 +31,7 @@
     ],
     "kicad_version": "10.0.4",
     "schematic_parity": [],
-    "source": "loopy_led_strip.kicad_pcb",
+    "source": "segno_led_strip.kicad_pcb",
     "unconnected_items": [],
     "violations": []
 }

@@ -79,5 +79,5 @@ LooperState → Pi LED-output channel → [wire frame] → SPI/UART → driver M
 ## References
 
 - Hybrid-controls rationale: [umbrella plan](2026-06-26-feat-raspberry-pi-floor-console-plan.md) + [brainstorm](../brainstorm/2026-06-26-raspberry-pi-console-brainstorm-doc.md)
-- Existing 32U4 pedal (LED path candidate to reuse): PR [#85](https://github.com/tomassasovsky/loopy/pull/85)
+- Existing 32U4 pedal (LED path candidate to reuse): PR [#85](https://github.com/tomassasovsky/segno/pull/85)
 - Footswitch debounce / leading-edge note: see umbrella plan

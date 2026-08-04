@@ -1,5 +1,5 @@
 import 'package:equatable/equatable.dart';
-import 'package:loopy_engine/loopy_engine.dart' as engine;
+import 'package:segno_engine/segno_engine.dart' as engine;
 
 /// The format a hosted plugin was discovered in. Domain mirror of the engine's
 /// `PluginFormat`.

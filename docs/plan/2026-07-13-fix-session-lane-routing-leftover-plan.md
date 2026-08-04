@@ -21,7 +21,7 @@ count/inputs** (e.g. 2 lanes on inputs 0+1) instead of a fresh single default la
   _laneOutput/_laneVolume/_laneMute` (`:825-829`) — which fixes the *restart replay*
   and the cache-reading record path, but never resets the **live engine**.
 - Native `clear` does **not** reset lane state: `handle_clear`
-  (`packages/loopy_engine/src/core/engine_process.c:495-526`) and `le_engine_clear`
+  (`packages/segno_engine/src/core/engine_process.c:495-526`) and `le_engine_clear`
   (`engine_commands.c:563+`) reset audio/state/length/mutes but leave `lane_count`
   and per-lane input/output intact.
 - `applySession` has an explicit leftover-reset for **chains** (`:936-944`) and
@@ -80,7 +80,7 @@ team decides clear *should* reset lane structure.
 2. **`setLaneCount` `_intendRunning` guard** (`:1111`) vs the unconditional
    input/output/vol/mute setters — keep the reset consistent with that.
 3. **Fuzzer invariant.** Run the control-sequence fuzzer (`flutter test --tags fuzz`
-   with `LOOPY_ENGINE_LIB` built) — it enforces `cache == engine`. Add a new action:
+   with `SEGNO_ENGINE_LIB` built) — it enforces `cache == engine`. Add a new action:
    *set lane routing/count on a track → apply a session that omits it → record into it*.
 
 ## Tasks

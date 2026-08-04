@@ -1,10 +1,10 @@
 import 'dart:ffi';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy_engine/loopy_engine_ffi.dart';
 import 'package:midi_client/midi_client.dart';
+import 'package:segno_engine/segno_engine_ffi.dart';
 
-import 'helpers/fake_loopy_engine_bindings.dart';
+import 'helpers/fake_segno_engine_bindings.dart';
 
 /// A dummy native callback pointer; the fake records it but never invokes it.
 final le_midi_event_cb _dummyCb =
@@ -13,7 +13,7 @@ final le_midi_event_cb _dummyCb =
 void main() {
   group('MidiClient', () {
     test('throws when the native handle cannot be allocated', () {
-      final bindings = FakeLoopyEngineBindings(createReturnsNull: true);
+      final bindings = FakeSegnoEngineBindings(createReturnsNull: true);
       expect(
         () => MidiClient(bindings: bindings),
         throwsA(isA<MidiException>()),
@@ -21,7 +21,7 @@ void main() {
     });
 
     test('allocates a handle on construction', () {
-      final bindings = FakeLoopyEngineBindings();
+      final bindings = FakeSegnoEngineBindings();
       final client = MidiClient(bindings: bindings)..dispose();
       expect(bindings.calls, ['create', 'destroy']);
       expect(client.isDisposed, isTrue);
@@ -29,7 +29,7 @@ void main() {
 
     group('enumerate', () {
       test('projects native ports into MidiDevices', () {
-        final bindings = FakeLoopyEngineBindings(
+        final bindings = FakeSegnoEngineBindings(
           devices: const [
             MidiDevice(id: 'uid-1', name: 'Foot Controller', isDefault: true),
             MidiDevice(id: 'uid-2', name: 'Keystep'),
@@ -45,7 +45,7 @@ void main() {
       });
 
       test('returns an empty list when there are no ports', () {
-        final client = MidiClient(bindings: FakeLoopyEngineBindings());
+        final client = MidiClient(bindings: FakeSegnoEngineBindings());
         addTearDown(client.dispose);
         expect(client.enumerate(), isEmpty);
       });
@@ -53,7 +53,7 @@ void main() {
 
     group('open', () {
       test('passes the id and callback through and returns the code', () {
-        final bindings = FakeLoopyEngineBindings();
+        final bindings = FakeSegnoEngineBindings();
         final client = MidiClient(bindings: bindings);
         addTearDown(client.dispose);
 
@@ -66,7 +66,7 @@ void main() {
       });
 
       test('surfaces a non-zero failure code (e.g. device in use)', () {
-        final bindings = FakeLoopyEngineBindings(openResult: 3);
+        final bindings = FakeSegnoEngineBindings(openResult: 3);
         final client = MidiClient(bindings: bindings);
         addTearDown(client.dispose);
 
@@ -75,7 +75,7 @@ void main() {
     });
 
     test('close delegates to the native handle', () {
-      final bindings = FakeLoopyEngineBindings();
+      final bindings = FakeSegnoEngineBindings();
       final client = MidiClient(bindings: bindings);
       addTearDown(client.dispose);
 
@@ -84,7 +84,7 @@ void main() {
     });
 
     test('dispose is idempotent', () {
-      final bindings = FakeLoopyEngineBindings();
+      final bindings = FakeSegnoEngineBindings();
       MidiClient(bindings: bindings)
         ..dispose()
         ..dispose();
@@ -92,7 +92,7 @@ void main() {
     });
 
     test('throws after dispose', () {
-      final client = MidiClient(bindings: FakeLoopyEngineBindings())..dispose();
+      final client = MidiClient(bindings: FakeSegnoEngineBindings())..dispose();
       expect(client.enumerate, throwsA(isA<MidiException>()));
       expect(client.close, throwsA(isA<MidiException>()));
     });
