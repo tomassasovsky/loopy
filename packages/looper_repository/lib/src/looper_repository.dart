@@ -1195,6 +1195,14 @@ class LooperRepository {
   /// caches as well as the engine, so a device restart / reconnect replays the
   /// LOADED session by construction, never a pre-load cache.
   ///
+  /// **The caller owns writing settings back.** This method updates the engine
+  /// and the caches only; it never touches the boot-restore keys. A session
+  /// load is therefore not complete until whichever layer owns settings
+  /// persistence re-writes them from the enumerations below ([allLaneChains] /
+  /// [allTrackChains] / [masterChainEnvelope] / [allMonitors]). Left silent,
+  /// that asymmetry shipped twice — a cold boot restored the pre-load rig — so
+  /// state it here rather than leaving the caller to discover it.
+  ///
   /// Order: clear every track via [clear] (which forgets remembered lane
   /// mutes), await the engine settling to empty, reset every per-track
   /// SETTING that survives a clear by design (length preset, One Shot) plus

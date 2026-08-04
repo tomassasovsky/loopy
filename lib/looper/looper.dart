@@ -13,6 +13,7 @@ export 'cubit/tracks_cubit.dart';
 export 'model/interaction_mode.dart';
 export 'view/looper_mode_section.dart';
 export 'view/looper_page.dart';
+export 'view/session_persistence_sync_listener.dart';
 export 'view/settings_page.dart';
 export 'view/signal_graph/signal_graph.dart';
 export 'view/tempo_settings_section.dart';
