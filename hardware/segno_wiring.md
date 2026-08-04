@@ -73,7 +73,7 @@ more than that buck can give, so they get a **separate, external high-current bu
 | Load | Rail | Typical | Peak |
 |---|---|---|---|
 | Pro Micro + footswitches | board buck | 0.05 A | 0.05 A |
-| WS2812 indicators (7) + ring (12) = 19 | board buck | 0.2 A | 1.1 A (all white) |
+| WS2812 indicators (10, #366) + ring (12) = 22 | board buck | 0.25 A | 1.3 A (all white) |
 | Raspberry Pi (Pi 5 under load) | **external buck** | 1.0 A | 2.4 A |
 | 7" + 16" touchscreens | **external buck** | 1.5 A | 3.0 A |
 | Pro Micro + 2× touch via the Pi's USB hat | external buck (via Pi) | 0.1 A | 0.2 A |
@@ -95,8 +95,10 @@ Unchanged from the standalone pedal design (`segno_pedal_pcb_design.md`):
 
 - **Footswitches** — D3..D12, each a 2-pin JST-XH header with hardware RC debounce,
   one per pedal (10 total: REC/PLAY, STOP, UNDO, MODE, TRACK1–4, CLEAR, BANK).
-- **Indicator LEDs** — D2 → 7× WS2812 on the main board (330 Ω series). Index 0 Mode,
-  1–4 Track1–4, 5 Clear, 6 Bank.
+- **Indicator LEDs** — D2 → WS2812 chain (330 Ω series). The manufactured V1
+  board + firmware carry `indicatorLeds[7]` (index 0 Mode, 1–4 Track1–4, 5 Clear,
+  6 Bank); the console design now has a pill above EVERY pedal (10, issue #366) —
+  widening the chain + index map to 10 is an open firmware/board follow-up.
 - **Ring + encoder** — A3 → ring data (via a 74AHCT125 buffer) and A0/A1/A2 → EC11,
   all over **one 8-pin cable** to the ring board (12× WS2812 ring + encoder).
 - **MIDI** — DIN-5 IN through an H11L1 optocoupler (breaks ground loops); DIN-5 OUT

@@ -74,6 +74,11 @@ return, no index reordering**.
 > One `FastLED.show()` updates both. Split the current `g_leds[19]` into
 > `indicatorLeds[7]` (mode / tracks / clear / bank) + `ringLeds[12]`, each indexed
 > from 0. (No chain re-ordering needed — simpler than the single-chain plan.)
+>
+> **#366 note:** the Segno console design now puts an LED pill above EVERY pedal
+> (10 indicators, adding REC/PLAY · STOP · UNDO). Widening `indicatorLeds[7]` →
+> `[10]` + the index map is an open follow-up; this doc still describes the
+> manufactured V1 board contract.
 
 Data integrity: **330 Ω** series at each data pin; a **74AHCT125** buffer on the
 **ring** data line **before the cable** (clean 5 V over the ribbon); **1000 µF**
