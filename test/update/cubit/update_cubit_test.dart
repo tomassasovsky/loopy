@@ -1,7 +1,7 @@
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/update/cubit/update_cubit.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:update_repository/update_repository.dart';
 
@@ -13,7 +13,7 @@ final _v1 = Version.parse('0.1.0');
 final _v2Number = Version.parse('0.2.0');
 final _v2 = UpdateManifest(
   version: _v2Number,
-  bundle: 'loopy-appliance-0.2.0.raucb',
+  bundle: 'segno-appliance-0.2.0.raucb',
   sha256: 's',
   channel: 'experimental',
 );

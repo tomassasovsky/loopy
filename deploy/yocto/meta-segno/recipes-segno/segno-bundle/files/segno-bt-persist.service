@@ -1,0 +1,15 @@
+[Unit]
+Description=Segno: BlueZ pairings on /data (survive OTA)
+DefaultDependencies=no
+Requires=data.mount
+After=data.mount
+Before=bluetooth.service
+ConditionPathExists=/data
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/segno-bt-persist
+
+[Install]
+WantedBy=bluetooth.service multi-user.target

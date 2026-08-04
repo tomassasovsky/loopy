@@ -1,57 +1,37 @@
 {
-  "fill-specializations" : [
+  "fill": {
+    "solid": "extended-gray:0.00000,1.00000"
+  },
+  "groups": [
     {
-      "value" : "automatic"
-    },
-    {
-      "appearance" : "dark",
-      "value" : "automatic"
-    }
-  ],
-  "groups" : [
-    {
-      "blur-material" : 0.5,
-      "layers" : [
+      "blur-material": 0.5,
+      "layers": [
         {
-          "fill-specializations" : [
-            {
-              "appearance" : "dark",
-              "value" : {
-                "solid" : "extended-gray:1.00000,1.00000"
-              }
-            },
-            {
-              "appearance" : "tinted",
-              "value" : {
-                "solid" : "extended-gray:1.00000,1.00000"
-              }
-            }
-          ],
-          "glass" : false,
-          "image-name" : "Logo.svg",
-          "name" : "Logo",
-          "position" : {
-            "scale" : 1.8,
-            "translation-in-points" : [
+          "glass": false,
+          "image-name": "Logo.svg",
+          "name": "Logo",
+          "position": {
+            "scale": 1.35,
+            "translation-in-points": [
               0,
               0
             ]
           }
         }
       ],
-      "lighting" : "individual",
-      "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.5
+      "lighting": "individual",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.35
       },
-      "specular" : true,
-      "translucency" : {
-        "enabled" : true,
-        "value" : 0.5
+      "specular": true,
+      "translucency": {
+        "enabled": true,
+        "value": 0.35
       }
     }
   ],
-  "supported-platforms" : {
-    "squares" : "shared"
+  "supported-platforms": {
+    "squares": "shared"
   }
 }

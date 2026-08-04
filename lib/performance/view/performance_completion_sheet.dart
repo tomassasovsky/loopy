@@ -3,10 +3,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/performance/cubit/performance_recorder_cubit.dart';
-import 'package:loopy/performance/view/export_device_chain_summary.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
+import 'package:segno/performance/view/export_device_chain_summary.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Shows the [PerformanceCompletionSheet] for the live

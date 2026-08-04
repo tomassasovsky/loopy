@@ -8,7 +8,7 @@ issue: 442
 ## feat(console): console UI redesign — Extensive
 
 > Source brainstorm: [docs/brainstorm/2026-08-02-console-ui-fx-v3-redesign-brainstorm-doc.md](../brainstorm/2026-08-02-console-ui-fx-v3-redesign-brainstorm-doc.md)
-> Issue: [#442](https://github.com/tomassasovsky/loopy/issues/442) (epic)
+> Issue: [#442](https://github.com/tomassasovsky/segno/issues/442) (epic)
 > Autonomy: `autonomy:plan-gate` — direction approved in-session (drawer rail, rack scope, inheritance semantics, FX-mode default, `auto` semantics); this plan is the review artifact.
 > Build convention: split each part below into its own `-part-N-plan.md` before `/build`ing it; `/build` targets a part, never this index. Once a part file exists it is canonical — the index's bullets are source material to lift, not a second copy to maintain. Each part gets its own child issue with `stage:*`/`autonomy:*` labels; every part checks the cspell dictionary + semantic PR title before opening its PR, and every part that touches UI regenerates the author-only screenshot goldens under `test/screenshots/`.
 
@@ -137,7 +137,7 @@ them, they do not revisit them.
   native engine, which is a different kind of work from a UI redesign and does
   not belong in this epic's critical path. Placement answer: **rail
   destination, not a full-screen takeover** — the drawer is already
-  near-fullscreen, so Sheeran's takeover buys nothing loopy does not already
+  near-fullscreen, so Sheeran's takeover buys nothing segno does not already
   have; the input-mute side effect is communicated in the panel instead.
   Tracked separately (see Follow-ups).
 - **D7 — The 7″ readout stays rigid while the drawer is open.** No per-panel

@@ -2,8 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 // The domain envelope codec, prefixed — this file's chain fixtures otherwise
 // use the engine-typed models + serializer directly.
 import 'package:looper_repository/looper_repository.dart' as looper;
-import 'package:loopy/app/monitor_migration.dart';
-import 'package:loopy_engine/loopy_engine.dart';
+import 'package:segno/app/monitor_migration.dart';
+import 'package:segno_engine/segno_engine.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';

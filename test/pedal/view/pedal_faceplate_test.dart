@@ -5,13 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/pedal/pedal.dart';
-import 'package:loopy/theme/surface_theme.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/pedal/pedal.dart';
+import 'package:segno/theme/surface_theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/fake_audio_engine.dart';

@@ -3,12 +3,12 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/audio_setup.dart';
-import 'package:loopy/looper/looper.dart';
-import 'package:loopy/session/session.dart';
-import 'package:loopy_engine/loopy_engine.dart'
+import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/looper/looper.dart';
+import 'package:segno/session/session.dart';
+import 'package:segno_engine/segno_engine.dart'
     show EngineSnapshot, TrackSnapshot;
-import 'package:loopy_engine/loopy_engine.dart' as le show LatencyState;
+import 'package:segno_engine/segno_engine.dart' as le show LatencyState;
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';

@@ -40,7 +40,7 @@ Two coupled concerns surfaced as an explicit gate before any param/persist code:
 
 ### Dart (model — engine first, repository mirror second)
 - [ ] Convert engine `TrackEffect`
-  ([track_effect.dart](../../packages/loopy_engine/lib/src/track_effect.dart)) to a
+  ([track_effect.dart](../../packages/segno_engine/lib/src/track_effect.dart)) to a
   sealed hierarchy `BuiltInEffect | PluginEffect`; `PluginEffect` carries
   `PluginRef(format, id, version)`. Update encode/decode to **dual-decode** (built-in
   unchanged; plugin entry by `type==LE_FX_PLUGIN`+`plugin` key) — no envelope.
@@ -60,9 +60,9 @@ Two coupled concerns surfaced as an explicit gate before any param/persist code:
 
 ## File References
 
-- [track_effect.dart](../../packages/loopy_engine/lib/src/track_effect.dart) (engine model — first)
+- [track_effect.dart](../../packages/segno_engine/lib/src/track_effect.dart) (engine model — first)
 - [models/track_effect.dart](../../packages/looper_repository/lib/src/models/track_effect.dart) (repo mirror — second)
-- `packages/loopy_engine/src/host/*` (topology check)
+- `packages/segno_engine/src/host/*` (topology check)
 - [app_en.arb](../../lib/l10n/arb/app_en.arb), [app_es.arb](../../lib/l10n/arb/app_es.arb)
 
 ## Acceptance Criteria

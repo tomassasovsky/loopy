@@ -11,7 +11,7 @@ void main() {
 
     setUp(() {
       transport = FakePedalTransport(
-        outputs: const [MidiDevice(id: 'pedal-out', name: 'Loopy Pedal')],
+        outputs: const [MidiDevice(id: 'pedal-out', name: 'Segno Pedal')],
       );
       repo = PedalRepository(
         transport,

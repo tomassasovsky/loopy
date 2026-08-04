@@ -1,6 +1,6 @@
 name: settings_repository
 description: >-
-  Persists Loopy settings (per-device latency calibration) via a key-value
+  Persists Segno settings (per-device latency calibration) via a key-value
   store.
 version: 0.1.0
 publish_to: none

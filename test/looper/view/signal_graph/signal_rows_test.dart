@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/audio_setup.dart' show MonitorState;
-import 'package:loopy/looper/view/signal_graph/signal_rows.dart';
+import 'package:segno/audio_setup/audio_setup.dart' show MonitorState;
+import 'package:segno/looper/view/signal_graph/signal_rows.dart';
 
 void main() {
   group('SignalRows.from', () {

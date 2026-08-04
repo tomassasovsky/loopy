@@ -1,10 +1,10 @@
 import 'package:daw_export/daw_export.dart';
 import 'package:flutter/material.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/theme/surface_theme.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 /// A per-track export summary on the performance-completion sheet (part
-/// 11): for each exported track, whether it carried a live, editable Loopy
+/// 11): for each exported track, whether it carried a live, editable Segno
 /// VST3 device chain or bounced (wet) audio, and — only when it bounced
 /// *because* effects existed but couldn't be honestly represented as one
 /// (umbrella D-CHAIN-FALLBACK) — the specific reason. A track with no

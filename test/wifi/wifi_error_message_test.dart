@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/wifi/wifi_error_message.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/wifi/wifi_error_message.dart';
 
 void main() {
   late AppLocalizations l10n;
@@ -14,7 +14,7 @@ void main() {
     expect(
       wifiErrorMessage(
         l10n,
-        'loopy-wifi-ctl: authentication failed for network 0 (wrong password?)',
+        'segno-wifi-ctl: authentication failed for network 0 (wrong password?)',
       ),
       l10n.wifiConnectFailedPassword,
     );
@@ -24,7 +24,7 @@ void main() {
     expect(
       wifiErrorMessage(
         l10n,
-        'loopy-wifi-ctl: timed out waiting for association (state=ASSOCIATED)',
+        'segno-wifi-ctl: timed out waiting for association (state=ASSOCIATED)',
       ),
       l10n.wifiConnectFailedTimeout,
     );
@@ -34,7 +34,7 @@ void main() {
     expect(
       wifiErrorMessage(
         l10n,
-        'ProcessException: loopy-wifi-ctl failed',
+        'ProcessException: segno-wifi-ctl failed',
       ),
       l10n.wifiConnectFailedGeneric,
     );

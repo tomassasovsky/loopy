@@ -24,7 +24,7 @@ is never interrupted.
 
 ## Architecture
 
-Loopy is VGV-layered: `bloc` + `RepositoryProvider` DI, `packages/*_repository`,
+Segno is VGV-layered: `bloc` + `RepositoryProvider` DI, `packages/*_repository`,
 `shared_preferences` behind a `KeyValueStore`. The update feature mirrors those.
 
 ### Shared core — `packages/update_repository/` (pure Dart)
@@ -61,7 +61,7 @@ Methods: `check()`, `startDownload()`, `applyAndRestart()`,
 - **Startup banner** (`lib/app/view/app.dart`): new `_showUpdateBanner` using the
   existing `_messengerKey` `ScaffoldMessenger` (same pattern as
   `_showAudioRecoveryBanner`), triggered once via a `BlocListener<UpdateCubit,…>`
-  when `available && !dismissed`. "Update…" → `openLoopySettings()` (lands on the
+  when `available && !dismissed`. "Update…" → `openSegnoSettings()` (lands on the
   Updates section); "Not now" → `cubit.dismiss(version)`.
 - **Restart guard**: "Restart to apply" checks the looper/session state and
   warns/disables while recording or a non-empty session is loaded.
@@ -69,12 +69,12 @@ Methods: `check()`, `startDownload()`, `applyAndRestart()`,
 
 ### App→OS boundary
 - **Appliance**: keep all privileged RAUC work in the **systemd service**, not in
-  Dart. Refactor `loopy-ota-check` into two verbs: `check` (read-only; the app can
+  Dart. Refactor `segno-ota-check` into two verbs: `check` (read-only; the app can
   call this itself over HTTP, no privilege) and `install <version>`
   (download+stage). The app requests an install by launching a root oneshot
-  (`loopy-ota-install@<v>.service`) through a **narrow polkit/sudoers rule** for
+  (`segno-ota-install@<v>.service`) through a **narrow polkit/sudoers rule** for
   the kiosk user, and polls a status file for progress; it reads
-  `/run/loopy-update-pending` + `/data/.ota-staged-version` for staged state, and
+  `/run/segno-update-pending` + `/data/.ota-staged-version` for staged state, and
   triggers reboot via logind (same polkit rule). No setuid, no in-Dart D-Bus.
   Convert the current auto-timer into an **opt-in check-only** unit (governed by
   the app's toggle) — no more silent auto-staging.
@@ -92,8 +92,8 @@ Methods: `check()`, `startDownload()`, `applyAndRestart()`,
    `autonomy:merge-gate`.
 2. **UI** — Settings → Updates section + startup banner + restart guard + l10n,
    wired to a fake backend. `autonomy:merge-gate`.
-3. **Appliance backend** — `AppliancePlatformBackend`; `loopy-ota-check` split
-   into check/install; `loopy-ota-install@.service` + polkit/sudoers rule (Yocto);
+3. **Appliance backend** — `AppliancePlatformBackend`; `segno-ota-check` split
+   into check/install; `segno-ota-install@.service` + polkit/sudoers rule (Yocto);
    timer → opt-in check-only. `autonomy:blocked-verify` (device).
 4. **Desktop backend** — `auto_updater` + `DesktopPlatformBackend` + appcast
    publishing. `autonomy:merge-gate` (signing is a hard prerequisite: macOS
@@ -108,4 +108,4 @@ Methods: `check()`, `startDownload()`, `applyAndRestart()`,
   #309 (per-slot SSH keys) so a committed update is truly hands-off.
 - Phase 4 is gated on the Apple/Windows signing identities (out of our control).
 - No new state-management lib; no `go_router`; `package_info_plus` is added only
-  for desktop's self-version (Pi reads `/etc/loopy/build-version`).
+  for desktop's self-version (Pi reads `/etc/segno/build-version`).

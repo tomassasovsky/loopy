@@ -1,10 +1,10 @@
-# Loopy Floor Console — hardware design
+# Segno Floor Console — hardware design
 
 Hardware for the standalone Pi 5 floor console: the power/thermal budget and
 the enclosure. The BOM is
-[`hardware/loopy_console_shopping_list.md`](../loopy_console_shopping_list.md).
+[`hardware/segno_console_shopping_list.md`](../segno_console_shopping_list.md).
 Footswitches and the encoder connect through the USB-MIDI pedal board
-(`loopy_pedal_main`) — the Pi reads no controls directly. The status LEDs
+(`segno_pedal_main`) — the Pi reads no controls directly. The status LEDs
 (WS2812 ring + strip) are designed to be driven by the RP2040 LED driver over
 UART ([`firmware/led_driver`](../../firmware/led_driver/README.md)); the
 firmware exists, but the Pi-side sender was removed in PR #98 and must be

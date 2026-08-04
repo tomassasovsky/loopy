@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/audio_setup/audio_setup.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/session/cubit/session_cubit.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/session/cubit/session_cubit.dart';
 
 /// Re-projects and re-persists a loaded session's FX rig, across all four FX
 /// stages — the canonical explanation of why a session load needs a caller at

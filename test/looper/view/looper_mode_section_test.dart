@@ -5,13 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/looper.dart';
-import 'package:loopy/theme/theme.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/looper.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';

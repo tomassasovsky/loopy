@@ -1,4 +1,4 @@
-/// Persists Loopy settings (per-device latency calibration, audio config, UI).
+/// Persists Segno settings (per-device latency calibration, audio config, UI).
 library;
 
 export 'package:local_storage_client/local_storage_client.dart'

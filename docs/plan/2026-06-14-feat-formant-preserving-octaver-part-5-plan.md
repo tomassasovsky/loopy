@@ -26,20 +26,20 @@ record-offset PR.
 The octaver runs on **monitor lanes** (live input monitoring), and the phase
 vocoder adds ~21 ms. The existing latency harness measures only device loopback
 and feeds the **record** offset
-([loopy_engine_api.h:45,335,520](../../packages/loopy_engine/src/loopy_engine_api.h));
+([segno_engine_api.h:45,335,520](../../packages/segno_engine/src/segno_engine_api.h));
 nothing models per-effect latency. A performer monitoring through a PV octaver has
 no way to know why they feel lag, or that PSOLA is the low-latency choice.
 
 ## Proposed Solution
 
 > **B4 — this is a real public-surface (ABI + ffigen) change, not a "reuse."** The
-> snapshot struct (`le_engine_snapshot`, ~loopy_engine_api.h:320–346) carries only
+> snapshot struct (`le_engine_snapshot`, ~segno_engine_api.h:320–346) carries only
 > measurement-latency fields today; there is **no** per-effect latency field to
 > reuse. Specify it to the same rigor as the param-width change.
 
 ### Native
 
-- **`loopy_engine_api.h`**: add a concrete field to the published snapshot, e.g.
+- **`segno_engine_api.h`**: add a concrete field to the published snapshot, e.g.
   `int32_t fx_added_latency_frames;` (units: **frames**, matching
   `record_offset_frames`; the Dart side converts to ms with the sample rate).
   Document semantics: the **maximum** added latency across active effects in any
@@ -49,7 +49,7 @@ no way to know why they feel lag, or that PSOLA is the low-latency choice.
   written on the **control thread** when an octaver's `mode`/type changes (latency
   depends on the active mode — `LE_PV_N` for PV, ~`period` for PSOLA), and folded
   into the snapshot in the existing snapshot-build path. Audio thread only reads.
-- **ffigen**: regenerate `loopy_engine_bindings.dart` for the new field.
+- **ffigen**: regenerate `segno_engine_bindings.dart` for the new field.
 
 ### Dart / UI
 
@@ -66,11 +66,11 @@ no way to know why they feel lag, or that PSOLA is the low-latency choice.
 
 ## Implementation Order
 
-1. `loopy_engine_api.h`: add `fx_added_latency_frames` to the snapshot; document
+1. `segno_engine_api.h`: add `fx_added_latency_frames` to the snapshot; document
    units/semantics.
 2. `engine.c`: backing atomic; write on octaver mode/type change; populate in the
    snapshot-build path.
-3. ffigen regenerate `loopy_engine_bindings.dart`.
+3. ffigen regenerate `segno_engine_bindings.dart`.
 4. Flutter: read + convert + render the localized hint; l10n keys (template ARB
    first, N4).
 5. Tests below. Gates: native `ALL PASSED`, `flutter analyze`, `flutter test`,
@@ -109,6 +109,6 @@ no way to know why they feel lag, or that PSOLA is the low-latency choice.
 
 - Latency surface: `le_latency_state` / `measured_latency_ms` /
   `record_offset_frames`
-  ([loopy_engine_api.h:45,335,520](../../packages/loopy_engine/src/loopy_engine_api.h)).
+  ([segno_engine_api.h:45,335,520](../../packages/segno_engine/src/segno_engine_api.h)).
 - `le_octaver_latency`: [part 3](./2026-06-14-feat-formant-preserving-octaver-part-3-plan.md).
 - D3 (latency policy), H2 (monitor latency): [umbrella](./2026-06-14-feat-formant-preserving-octaver-plan.md).

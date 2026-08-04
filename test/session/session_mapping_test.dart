@@ -2,14 +2,14 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/session/session_mapping.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:segno/session/session_mapping.dart';
 // The chains a performance arm records cross the boundary as ENGINE models
 // (the manifest embeds them as canonical JSON), so the assertions on them name
 // the engine types under an `le` prefix — everything else here is domain.
-import 'package:loopy_engine/loopy_engine.dart'
+import 'package:segno_engine/segno_engine.dart'
     as le
     show BuiltInEffect, PluginEffect, PluginFormat, TrackEffectType;
-import 'package:mocktail/mocktail.dart';
 import 'package:session_repository/session_repository.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}

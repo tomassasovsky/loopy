@@ -7,7 +7,7 @@ topic: test-pedal-protocol-range-guard-coverage
 
 ## What We're Building
 
-`pedal_decode_frame()` (firmware/loopy_pedal/pedal_protocol.c, ~line 107-117) has
+`pedal_decode_frame()` (firmware/segno_pedal/pedal_protocol.c, ~line 107-117) has
 four defensive range checks that reject an otherwise checksum-valid frame:
 `global_color >= PEDAL_GLOBAL_COUNT`, `active_bank > 1`,
 `armed_track >= PEDAL_TRACK_COUNT`, and any `track_leds[i] >= PEDAL_LED_COUNT`.

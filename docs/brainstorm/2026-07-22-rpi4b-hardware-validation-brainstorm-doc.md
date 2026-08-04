@@ -56,7 +56,7 @@ no measured latency/thermal numbers (those are deferred to real Pi 5 hardware).
   the waveform second window on the other (TV = stand-in 7″), via
   `desktop_multi_window` under labwc, with `pin-displays.sh` mapping each by
   connector name.
-- **How (kiosk-first):** set `LOOPY_MAIN_OUTPUT` / `LOOPY_WAVE_OUTPUT` in
+- **How (kiosk-first):** set `SEGNO_MAIN_OUTPUT` / `SEGNO_WAVE_OUTPUT` in
   `pin-displays.sh` to the Pi 4's actual connectors (list with `wlr-randr` —
   expect `HDMI-A-1` / `HDMI-A-2`), tune `--scale` per panel, boot the kiosk.
 - **Pass:** main UI fills the monitor, live waveform fills the TV, mapping is
@@ -106,7 +106,7 @@ no measured latency/thermal numbers (those are deferred to real Pi 5 hardware).
 
 ### First-run device setup (a kiosk-first wrinkle to resolve in the plan)
 
-The kiosk bundle builds with `--dart-define=LOOPY_CONSOLE=true`, which hides the
+The kiosk bundle builds with `--dart-define=SEGNO_CONSOLE=true`, which hides the
 **tracks transport chrome** (pedals own it) — but the audio/MIDI **device-selection
 settings** must remain reachable so a first boot can pin the interface + pedal;
 `tryAutoStartEngine` then auto-starts them on later boots. If the only path to
@@ -117,7 +117,7 @@ console kiosk.
 
 ## VST3 plugins on the Pi build options (documented answer — not tested this pass)
 
-**The host is fine; the plugins are the ceiling.** Loopy's VST3/CLAP hosting stack
+**The host is fine; the plugins are the ceiling.** Segno's VST3/CLAP hosting stack
 (shipped, incl. the Linux port; MIT VST3 SDK; repo is GPLv3) is our own C++ and
 **cross-compiles to `linux-aarch64` like the rest of the engine**. The hard limit
 is that a VST3 is **native per-architecture code**: only plugins built for
@@ -132,7 +132,7 @@ Per build option, the differences are about the **plugin editor GUI** and
 - **Tier 2 (Pi OS / GTK-on-labwc):** host runs; aarch64 VST3s load. A plugin's
   native **editor window** on Linux is an X11/embedded surface, so under Wayland
   (labwc) editor GUIs need **XWayland**. **Headless / parameter-only** hosting
-  (drive plugin params from Loopy's own knob UI, no native plugin GUI) works
+  (drive plugin params from Segno's own knob UI, no native plugin GUI) works
   without it. **Pi 4 headroom is tight** — a couple of light effects are fine;
   heavy DSP (convolution, big reverbs) will struggle. Pi 5 is more comfortable
   (the RPi doc already flags plugin hosting as where Pi 4 headroom runs out).
@@ -168,7 +168,7 @@ three goals pass — but out of scope for this hardware pass.
 ## Open Questions (for planning)
 
 1. **Console-mode device setup:** exact in-kiosk path to reach Audio/MIDI device
-   selection in a `LOOPY_CONSOLE` build, or prescribe a first-run non-console
+   selection in a `SEGNO_CONSOLE` build, or prescribe a first-run non-console
    launch to pin devices. (Blocks goals 2 & 3 on first boot.)
 2. **Pedal LED feedback path:** confirm app→pedal **MIDI-out LED** feedback is
    wired end-to-end (not just switches-in) against the pedal firmware +
@@ -183,7 +183,7 @@ three goals pass — but out of scope for this hardware pass.
    libgtk-3-dev, libasound2-dev, clang, cmake, …), producing
    `build/linux/arm64/release/bundle`, then `scp` to the Pi. **Plan deliverable: a
    containerized aarch64 build script** (none exists in the repo yet). Release
-   build, `--dart-define=LOOPY_CONSOLE=true` for the kiosk bundle.
+   build, `--dart-define=SEGNO_CONSOLE=true` for the kiosk bundle.
 5. **Connector naming stability** on the Pi 4's two micro-HDMI ports across reboots
    (the output-swap race `pin-displays.sh` guards) — verify with the monitor+TV.
 6. **Audio interface — RESOLVED: Focusrite (Clarett/Scarlett).** The best-trodden

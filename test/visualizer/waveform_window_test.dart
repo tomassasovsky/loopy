@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/visualizer/waveform_window.dart';
-import 'package:loopy/visualizer/waveform_window_args.dart';
+import 'package:segno/visualizer/waveform_window.dart';
+import 'package:segno/visualizer/waveform_window_args.dart';
 
 void main() {
   group('waveformWindowPlacement', () {

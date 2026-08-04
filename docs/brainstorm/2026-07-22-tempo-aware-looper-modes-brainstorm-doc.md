@@ -7,7 +7,7 @@ topic: tempo-aware-looper-modes
 
 ## What We're Building
 
-A tempo-aware rework of the engine and app that brings loopy to feature parity
+A tempo-aware rework of the engine and app that brings segno to feature parity
 with the Sheeran Looper X's tempo system: BPM (30–300) + time signature, a
 synthesized click with count-in, tap tempo, musical (beat/bar) quantization,
 and the Sheeran's **five looper modes** — Multi, Sync, Song, Band, Free — plus
@@ -35,16 +35,16 @@ Three delivery shapes were considered:
   a grid to quantize against; it orders dependencies backwards.
 
 Mode semantics follow the Sheeran exactly rather than redefining Free mode to
-mean "today's loopy": today's behavior is structurally Multi (one master loop,
+mean "today's segno": today's behavior is structurally Multi (one master loop,
 phase-locked tracks), while Sheeran Free mode (four un-synced,
-independent-length tracks) is a genuinely new engine capability loopy gains.
+independent-length tracks) is a genuinely new engine capability segno gains.
 
 ## Key Decisions
 
 - **Full parity scope**: core grid + MIDI clock send + MIDI clock receive +
   Track Length presets + time-stretch are all in scope. Nothing from the
   Sheeran tempo system is dropped.
-- **8 tracks, one primary**: modes govern all 8 loopy tracks (banks stay
+- **8 tracks, one primary**: modes govern all 8 segno tracks (banks stay
   presentation-only). Sync/Band designate a single engine-wide primary track
   (crown, Wave-view style). No change to `LE_MAX_TRACKS`.
 - **Today's workflow = Multi with grid off**: the bit-identical guarantee
@@ -57,7 +57,7 @@ independent-length tracks) is a genuinely new engine capability loopy gains.
 - **Phase order**: A) core grid in Multi (resurrect + modernize the deleted
   tempo stack from `2f0513a`: click synthesis, count-in, tap tempo, beat/bar
   quantize arming, loop↔tempo sync); B) five modes incl. primary-track sync
-  and Free's independent clocks; C) MIDI clock send (loopy as master), then
+  and Free's independent clocks; C) MIDI clock send (segno as master), then
   receive (slave, with drift correction and per-mode downbeat arming per
   Sheeran §6.2.1); D) time-stretch, vendoring the MIT-licensed Signalsmith
   Stretch library (repo is GPLv3 — compatible).
@@ -81,7 +81,7 @@ independent-length tracks) is a genuinely new engine capability loopy gains.
   master clock with per-track free-running offsets — decide in planning
   (affects perf-recording timeline and the viz tap).
 - **Time signature scope**: Sheeran supports 15 signatures (2/4…15/8); the
-  old loopy stack hard-coded 4/4. Full list from day one, or 4/4 + common
+  old segno stack hard-coded 4/4. Full list from day one, or 4/4 + common
   signatures first?
 - **Time-stretch RT budget**: Signalsmith Stretch quality presets vs. CPU on
   the audio thread across 8 tracks × lanes — needs a spike before Phase D is
@@ -92,4 +92,4 @@ independent-length tracks) is a genuinely new engine capability loopy gains.
 - **DAW export**: once BPM exists, `.als` export should emit real tempo +
   bar-aligned clips — in-scope for Phase A or a follow-up?
 - **Quantize UI granularity**: Sheeran offers 1 bar / 1/2 / 1/4 / 1/8 / 1/16
-  note; old loopy had beat/bar only. Adopt the Sheeran list.
+  note; old segno had beat/bar only. Adopt the Sheeran list.

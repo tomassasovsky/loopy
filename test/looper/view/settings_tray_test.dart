@@ -7,16 +7,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/cubit/settings_tray_cubit.dart';
-import 'package:loopy/looper/cubit/tracks_cubit.dart';
-import 'package:loopy/looper/view/settings_tray.dart';
-import 'package:loopy/looper/view/tray/tray_navigation_rail.dart';
-import 'package:loopy/theme/theme.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/settings_tray_cubit.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/view/settings_tray.dart';
+import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
@@ -618,9 +618,9 @@ void main() {
       'tapping Signal closes the tray, pushes the Signal surface once, '
       'holds isNavigating while the page is open, and clears it once the '
       "page pops — the guard's actual motivating scenario (showSignalPage "
-      'has no re-entrancy guard of its own, unlike openLoopySettings)',
+      'has no re-entrancy guard of its own, unlike openSegnoSettings)',
       (tester) async {
-        // Unlike Settings (openLoopySettings no-ops safely with no navigator
+        // Unlike Settings (openSegnoSettings no-ops safely with no navigator
         // wired), showSignalPage pushes onto THIS test's own Navigator via
         // Navigator.of(context) — so a real push needs the providers it
         // reads from context, matching signal_list_view_test.dart's setup.

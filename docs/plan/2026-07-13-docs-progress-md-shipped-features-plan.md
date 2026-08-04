@@ -14,7 +14,7 @@ item from Roadmap -> Done ... this is how progress survives across
 sessions"). That mandate has drifted for three shipped feature areas —
 **performance recording** (12-part plan, PRs through #136), **DAW export**
 (`daw_export` package, PRs #132/#133/#146), and **VST3 plugins** (both
-third-party plugin *hosting*, and Loopy's own effects shipped *as* VST3
+third-party plugin *hosting*, and Segno's own effects shipped *as* VST3
 plugins for DAWs, PRs #137-#162 and beyond) — plus general test-count drift
 in packages that already had entries. This plan brings `docs/PROGRESS.md`
 current against `git log` and the actual `packages/` tree, and corrects one
@@ -62,7 +62,7 @@ tally):
      packages, recorder UI/app state, pedal-firmware arm/disarm parity (MODE
      tap-vs-hold); and the `daw_export` package turning a capture into an
      Ableton Live 12 `.als` project (audio tracks, session/arrangement clips,
-     volume + mute automation envelopes, and real Loopy VST3 device chains
+     volume + mute automation envelopes, and real Segno VST3 device chains
      embedded when a track's per-lane effects resolve cleanly, wet-bounce
      stem as the sole fallback).
    - **First**, in place: correct the existing "Effects chain" bullet's stale
@@ -71,7 +71,7 @@ tally):
      lifecycle, dynamic parameter UI, native editor windows), with Linux
      (X11) hosting the one remaining gap.
    - **Then, one new bullet** (matching the rest of Done's one-bullet-per-
-     feature density — no (a)/(b) sub-structure): Loopy's own built-in
+     feature density — no (a)/(b) sub-structure): Segno's own built-in
      effects shipped *as* installable VST3 plugins for third-party DAWs — 7
      native macOS plugins (Delay, Reverb, Echo, Drive, Filter, Tremolo,
      Octaver), a golden-parity audio-diff harness, a portable CMake + CTest
@@ -91,7 +91,7 @@ tally):
    - New: `wav_codec` 5, `daw_export` 79, `performance_repository` 56,
      `pedal_repository` 116, `midi_device_repository` 22, `routing_graph` 45.
    - Refreshed: `controller_repository` 18 (was 14), `settings_repository`
-     65 (was 63), `session_repository` 57 (was 17), `loopy_engine` (dart-level;
+     65 (was 63), `session_repository` 57 (was 17), `segno_engine` (dart-level;
      the doc's old "plugin" label) 138 with ~7 skipped (was "plugin 38"),
      `app` 737 with ~13 skipped excl. screenshots-tagged goldens (was 358).
    - Unchanged: `local_storage_client` 1.
@@ -141,7 +141,7 @@ recording, DAW export, VST3 plugins/hosting) in its Architecture, Done,
 Roadmap, and Test-counts sections, with no other file touched.
 
 SUCCESS CRITERIA:
-- All 13 packages/* directories are named in the Architecture section | verify: for p in loopy_engine controller_repository looper_repository settings_repository local_storage_client daw_export midi_client midi_device_repository pedal_repository performance_repository routing_graph session_repository wav_codec; do grep -q "$p" docs/PROGRESS.md || { echo "MISSING $p"; exit 1; }; done
+- All 13 packages/* directories are named in the Architecture section | verify: for p in segno_engine controller_repository looper_repository settings_repository local_storage_client daw_export midi_client midi_device_repository pedal_repository performance_repository routing_graph session_repository wav_codec; do grep -q "$p" docs/PROGRESS.md || { echo "MISSING $p"; exit 1; }; done
 - Done section mentions performance recording | verify: grep -qi "performance recording" docs/PROGRESS.md
 - Done section mentions DAW export / .als | verify: grep -qi "daw_export\|\.als" docs/PROGRESS.md
 - Done section mentions the shipped VST3 FX plugins (Delay/Reverb/Echo/Drive/Filter/Tremolo/Octaver) | verify: grep -qi "octaver" docs/PROGRESS.md
@@ -156,13 +156,13 @@ NON-GOALS:
 - Any source code, test, or non-PROGRESS.md doc change.
 - Reconciling the two plans' inconsistent internal part-numbering schemes.
 
-VERIFICATION COMMAND: for p in loopy_engine controller_repository looper_repository settings_repository local_storage_client daw_export midi_client midi_device_repository pedal_repository performance_repository routing_graph session_repository wav_codec; do grep -q "$p" docs/PROGRESS.md || exit 1; done && grep -qi "performance recording" docs/PROGRESS.md && grep -qi "daw_export\|\.als" docs/PROGRESS.md && grep -qi "octaver" docs/PROGRESS.md && ! grep -q "it remains a gated follow-up (needs the SDK vendored to compile" docs/PROGRESS.md && for p in wav_codec daw_export performance_repository pedal_repository midi_device_repository routing_graph; do grep -q "$p" docs/PROGRESS.md || exit 1; done && test "$(git diff --name-only)" = "docs/PROGRESS.md"
+VERIFICATION COMMAND: for p in segno_engine controller_repository looper_repository settings_repository local_storage_client daw_export midi_client midi_device_repository pedal_repository performance_repository routing_graph session_repository wav_codec; do grep -q "$p" docs/PROGRESS.md || exit 1; done && grep -qi "performance recording" docs/PROGRESS.md && grep -qi "daw_export\|\.als" docs/PROGRESS.md && grep -qi "octaver" docs/PROGRESS.md && ! grep -q "it remains a gated follow-up (needs the SDK vendored to compile" docs/PROGRESS.md && for p in wav_codec daw_export performance_repository pedal_repository midi_device_repository routing_graph; do grep -q "$p" docs/PROGRESS.md || exit 1; done && test "$(git diff --name-only)" = "docs/PROGRESS.md"
 ```
 
 ## Success Metrics
 
 - A cold session reading only `docs/PROGRESS.md` can correctly answer "does
-  Loopy have performance recording / DAW export / VST3 plugin support?" for
+  Segno have performance recording / DAW export / VST3 plugin support?" for
   all three, with no contradictions between bullets.
 - `docs/PROGRESS.md`'s package tree and `ls packages/` agree on package
   existence.
@@ -193,6 +193,6 @@ VERIFICATION COMMAND: for p in loopy_engine controller_repository looper_reposit
   (#159), `1df2715` (#160, Windows), `87085e3` (#161, Linux), `659090d`
   (#162), `f3f5b76` (#167, parts 15-17 brainstorm).
 - Package contents verified directly: `packages/daw_export/lib/src/`,
-  `packages/performance_repository/lib/src/`, `packages/loopy_engine/vst3/`.
+  `packages/performance_repository/lib/src/`, `packages/segno_engine/vst3/`.
 - Test counts re-run this session (all green) — see Proposed Solution §4 for
   the exact per-package numbers.

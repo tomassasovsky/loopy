@@ -5,7 +5,7 @@ import 'package:path_provider/path_provider.dart';
 /// composition root so it can enumerate, save, rename, and delete named
 /// sessions.
 ///
-/// The legacy single `loopy_session/` bundle (if a previous version wrote one)
+/// The legacy single `segno_session/` bundle (if a previous version wrote one)
 /// is a sibling of this root, so it is never enumerated as a named session.
 Future<String> defaultSessionsRoot() async {
   final dir = await getApplicationDocumentsDirectory();

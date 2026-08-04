@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:loopy/l10n/l10n.dart';
+import 'package:segno/l10n/l10n.dart';
 
 /// Maps raw helper / [ProcessException] text to a short operator-facing string.
 String wifiErrorMessage(AppLocalizations l10n, String? raw) {
@@ -16,7 +16,7 @@ String wifiErrorMessage(AppLocalizations l10n, String? raw) {
   if (lower.contains('timed out waiting') || lower.contains('took too long')) {
     return l10n.wifiConnectFailedTimeout;
   }
-  if (lower.contains('loopy-wifi-ctl') ||
+  if (lower.contains('segno-wifi-ctl') ||
       lower.contains('processexception') ||
       lower.contains('connection failed')) {
     return l10n.wifiConnectFailedGeneric;

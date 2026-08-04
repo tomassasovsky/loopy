@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/cubit/tempo_cubit.dart';
-import 'package:loopy/setup/setup_surface.dart';
-import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/tempo_cubit.dart';
+import 'package:segno/setup/setup_surface.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 /// The click's own gain-stage ceiling — matches the engine's `LE_MAX_GAIN`
 /// (2.0, +6.02 dB headroom above unity), the same ceiling every other volume

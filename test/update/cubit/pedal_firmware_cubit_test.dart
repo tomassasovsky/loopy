@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/update/cubit/pedal_firmware_cubit.dart';
+import 'package:segno/update/cubit/pedal_firmware_cubit.dart';
 import 'package:update_repository/update_repository.dart';
 
 class _FakeBackend implements PlatformUpdateBackend {

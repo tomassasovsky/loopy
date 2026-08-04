@@ -1,4 +1,4 @@
-/// Owns the performance-recording capture lifecycle for Loopy: arming and
+/// Owns the performance-recording capture lifecycle for Segno: arming and
 /// disarming the audio engine, snapshotting settled lanes and monitor/master
 /// state, finalizing raw PCM to WAV, and assembling the
 /// `{documents}/exports/<slug>/` bundle.

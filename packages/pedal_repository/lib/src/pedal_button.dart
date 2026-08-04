@@ -2,7 +2,7 @@
 ///
 /// Each button maps to one fixed MIDI note number (see [PedalButtonNote]); the
 /// pedal fires NoteOn on press and NoteOff (or NoteOn velocity 0) on release.
-/// loopy times tap / long-press / double-tap from the press/release pair.
+/// segno times tap / long-press / double-tap from the press/release pair.
 ///
 /// The note assignment is part of the wire contract shared with the firmware —
 /// do not renumber existing entries.
@@ -13,7 +13,7 @@ enum PedalButton {
   /// Stop footswitch.
   stop,
 
-  /// Undo footswitch (long-press = redo, derived in loopy).
+  /// Undo footswitch (long-press = redo, derived in segno).
   undo,
 
   /// Mode footswitch — toggles the pedal between Rec and Play behavior.
@@ -41,7 +41,7 @@ enum PedalButton {
 /// The fixed MIDI note number assigned to each [PedalButton].
 ///
 /// This table is the inbound half of the pedal protocol contract: the firmware
-/// sends these notes, loopy decodes them. Numbers are stable; appending a new
+/// sends these notes, segno decodes them. Numbers are stable; appending a new
 /// button must use the next free note rather than reshuffling.
 extension PedalButtonNote on PedalButton {
   /// The MIDI note number this button transmits.

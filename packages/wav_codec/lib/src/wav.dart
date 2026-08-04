@@ -25,7 +25,7 @@ class WavData {
   int get frames => channels > 0 ? samples.length ~/ channels : 0;
 }
 
-/// Minimal 32-bit IEEE-float WAV codec — the lossless format Loopy stores its
+/// Minimal 32-bit IEEE-float WAV codec — the lossless format Segno stores its
 /// loop stems and mixdowns in. Bytes are written/read little-endian regardless
 /// of host endianness, so files are portable across desktop targets.
 abstract final class WavCodec {

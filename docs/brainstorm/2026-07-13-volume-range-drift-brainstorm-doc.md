@@ -8,7 +8,7 @@ topic: volume-range-drift
 ## What We're Building
 
 A docs-and-test-fidelity fix, not a behavior change to the native engine. The
-native engine (`packages/loopy_engine/src/core/engine_process.c`) has always
+native engine (`packages/segno_engine/src/core/engine_process.c`) has always
 clamped track volume (`LE_CMD_SET_VOLUME`), lane volume
 (`LE_CMD_SET_LANE_VOLUME`), and monitor-input volume
 (`LE_CMD_SET_MONITOR_INPUT_VOLUME`) to `0..LE_MAX_GAIN` (2.0, +6.02 dB) — this
@@ -21,7 +21,7 @@ Dart/C layer never caught up with that reality:
    1.5 reads back 1.0 from the mock but 1.5 from the real engine.
 2. Dart-side doc comments (`audio_engine.dart`, `engine_snapshot.dart`) claim
    `0..1` for lane/track volume.
-3. The C header itself (`loopy_engine_api.h`) is internally inconsistent —
+3. The C header itself (`segno_engine_api.h`) is internally inconsistent —
    some comments correctly reference `LE_MAX_GAIN`, others near the
    lane-volume and monitor-volume setters/enum entries still say `0..1`.
 
@@ -63,7 +63,7 @@ suggested:
   `LE_CMD_SET_VOLUME` (`arg_f = 0..1` at line 94 of the header).
 - A Dart-side constant for the ceiling already exists and needs no new
   definition: `LE_MAX_GAIN` is emitted by ffigen into
-  `packages/loopy_engine/lib/src/generated/loopy_engine_bindings.dart`
+  `packages/segno_engine/lib/src/generated/segno_engine_bindings.dart`
   (`const double LE_MAX_GAIN = 2.0;`), and `mock_audio_engine.dart` already
   imports that generated file and already references a sibling constant
   (`LE_MAX_TRACKS`) directly from it. Using `LE_MAX_GAIN` the same way is
@@ -83,12 +83,12 @@ suggested:
   Touching them would be scope creep and would risk introducing new drift.
 - **Doc comments to correct** (say `0..LE_MAX_GAIN (2.0, +6dB)` or similar
   instead of `0..1`):
-  - `packages/loopy_engine/lib/src/audio_engine.dart`:
+  - `packages/segno_engine/lib/src/audio_engine.dart`:
     `EngineRouting.setLaneVolume` (~line 214),
     `MonitorControl.setMonitorInputVolume` (~line 332).
-  - `packages/loopy_engine/lib/src/engine_snapshot.dart`:
+  - `packages/segno_engine/lib/src/engine_snapshot.dart`:
     `LaneSnapshot.volume` (~line 114), `TrackSnapshot.volume` (~line 226).
-  - `packages/loopy_engine/src/core/loopy_engine_api.h`:
+  - `packages/segno_engine/src/core/segno_engine_api.h`:
     `LE_CMD_SET_VOLUME` enum comment (~line 94),
     `LE_CMD_SET_LANE_VOLUME` enum comment (~lines 124-126),
     `LE_CMD_SET_MONITOR_INPUT_VOLUME` enum comment (~lines 151-152),
@@ -97,7 +97,7 @@ suggested:
     `le_engine_set_lane_volume` function comment (~line 825),
     `le_engine_set_monitor_input_volume` function comment (~lines 948-949).
 - **Add a regression test** in
-  `packages/loopy_engine/test/mock_audio_engine_test.dart`, mirroring the
+  `packages/segno_engine/test/mock_audio_engine_test.dart`, mirroring the
   existing "master gain defaults to unity, clamps, and surfaces in the
   snapshot" test's style/literal-value convention (that test uses literal
   numbers, not a named constant, so the new test follows suit): verify

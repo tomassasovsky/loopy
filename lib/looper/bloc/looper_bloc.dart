@@ -4,7 +4,7 @@ import 'package:bloc/bloc.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/common/fx_chain_persistence.dart';
+import 'package:segno/common/fx_chain_persistence.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'looper_event.dart';

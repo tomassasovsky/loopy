@@ -60,7 +60,7 @@ Approaches considered:
   sequences); the overlay cubit keeps layering clean (intent stays in the
   presentation layer, truth stays in the repository).
 
-This also matches the codebase's own stated principle — "loopy is the single
+This also matches the codebase's own stated principle — "segno is the single
 source of truth" (pedal firmware brainstorm 2026-06-14: state that lives in
 two places drifts; the pedal became a pure thin client for exactly this
 reason). This refactor applies the same medicine one layer up: the cubits
@@ -114,7 +114,7 @@ become thin clients of the repository.
   (and a deterministic input generator) through a test-only FFI surface so
   Dart tests pump the engine synchronously, exactly like the C tests do.
   Fallback if FFI-in-`flutter test` proves painful on CI: run the fuzz suite
-  under `dart test` in `packages/loopy_engine` — CI already has a dedicated
+  under `dart test` in `packages/segno_engine` — CI already has a dedicated
   native-tests job (`.github/workflows/main.yaml`, `run_native_tests.sh` on
   ubuntu) that builds the engine, a natural home for it.
 - **Invariants are the spec, written once**: e.g. `EMPTY ⟹ dark LED ∧ not
@@ -154,7 +154,7 @@ become thin clients of the repository.
   exactly should Rec/Play resume — the last-played subset (`parkedResume`) or
   all content tracks? Needs a UX decision in planning.
 - **Engine pump surface**: add `le_engine_process` to the public FFI header
-  guarded as test-only, or a separate `loopy_engine_test` dylib target?
+  guarded as test-only, or a separate `segno_engine_test` dylib target?
   (Planning question — affects bindings regen.)
 - **Fuzzer time model**: fixed frames-per-step vs random block sizes
   (including 0-frame pumps to hit drain/queued-undo windows) — likely both,

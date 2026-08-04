@@ -18,16 +18,16 @@ by a C round-trip harness, entirely without FFI/Dart. Part 3 wires it to Dart.
 ## Background — the layer model (verified)
 
 - An overdub layer is a **full pre-pass image** of the loop, stored in a lane
-  `pool[]` slot ([engine_private.h:255](packages/loopy_engine/src/core/engine_private.h#L255)).
+  `pool[]` slot ([engine_private.h:255](packages/segno_engine/src/core/engine_private.h#L255)).
   A lane's complete state is the ordered buffer set
   `undo_stack[0..undo_count)` → `a_live` → `redo_stack[0..redo_count)`.
 - The undo/redo stacks are **track-owned and shared across lanes in lockstep** —
   the same pool slot index names the snapshot in every lane
-  ([engine_private.h:247](packages/loopy_engine/src/core/engine_private.h#L247)).
+  ([engine_private.h:247](packages/segno_engine/src/core/engine_private.h#L247)).
 - `undo_count`/`redo_count` are already published as `a_undo_depth`/`a_redo_depth`
-  ([:313](packages/loopy_engine/src/core/engine_private.h#L313)) — **no new
+  ([:313](packages/segno_engine/src/core/engine_private.h#L313)) — **no new
   count-query FFI is needed** (part 3's Dart side reads them off the snapshot).
-- `LE_POOL_SLOTS == 256` ([:57](packages/loopy_engine/src/core/engine_private.h#L57))
+- `LE_POOL_SLOTS == 256` ([:57](packages/segno_engine/src/core/engine_private.h#L57))
   caps total layers; live rigs evict the oldest past the cap.
 
 ## Design — symmetric export/import (no monolithic struct)
@@ -42,7 +42,7 @@ lanes→layers→PCM FFI struct.
       `ordinal` walks `undo_stack[0..undo_count)` → `a_live` →
       `redo_stack[0..redo_count)`. Copies that pool slot's buffer + returns its
       frame count. Control-thread only; track not capturing (same safety as
-      [`le_engine_export_track_lane`](packages/loopy_engine/src/core/engine_session.c#L37)).
+      [`le_engine_export_track_lane`](packages/segno_engine/src/core/engine_session.c#L37)).
       Caller learns the ordinal range from the existing `a_undo_depth`/`a_redo_depth`.
 
 ### Import (scratch-build, atomic publish — R4)

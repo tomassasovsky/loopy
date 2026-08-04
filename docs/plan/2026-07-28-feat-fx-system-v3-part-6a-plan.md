@@ -33,7 +33,7 @@ builds on it.
     `PedalCubit.state.boundOutputId == kSimulatorOutputId` (lines 99–102) —
     otherwise it renders `mainScreen ?? TracksView` full-screen.
   - `_TopPlate` (line 132): mm-to-px layout via `LayoutBuilder` scale against
-    the VAMP faceplate constants (`_fpW`/`_fpV` etc., lines 25–48); takes
+    the Segno faceplate constants (`_fpW`/`_fpV` etc., lines 25–48); takes
     `sim`, `frame`, `l10n`, `mainScreen`, `waveformScreen`.
   - `_Footswitch` (line 603): already takes `onPress` (wired to `sim.press`),
     `led`, `channel` — the natural presentational seam.

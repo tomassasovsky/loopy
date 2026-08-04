@@ -1,6 +1,6 @@
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/binding/fx_binding_target.dart';
-import 'package:loopy/control/binding/fx_chain_lookup.dart';
+import 'package:segno/control/binding/fx_binding_target.dart';
+import 'package:segno/control/binding/fx_chain_lookup.dart';
 
 /// Resolves a typed [FxBindingTarget] against the live rig — the app-side
 /// half of the binding model (VGV).

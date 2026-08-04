@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/looper/view/signal_graph/signal_fx_rack.dart';
-import 'package:loopy/looper/view/signal_graph/signal_knob.dart';
-import 'package:loopy/theme/surface_theme.dart';
+import 'package:segno/looper/view/signal_graph/signal_fx_rack.dart';
+import 'package:segno/looper/view/signal_graph/signal_knob.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 import '../../../helpers/helpers.dart';
 

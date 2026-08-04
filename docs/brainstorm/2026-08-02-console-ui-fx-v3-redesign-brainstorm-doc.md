@@ -22,7 +22,7 @@ chains. The pedal keeps its predictable built-in modes and gains one fully
 user-defined **Custom** mode.
 
 Inspiration: the Sheeran Looper X (manual v1.0.0), which solves several of these
-problems on a single small screen. Where its constraints do not apply to loopy —
+problems on a single small screen. Where its constraints do not apply to segno —
 notably screen size and count — its solutions were deliberately not copied.
 
 ## Why This Approach
@@ -33,7 +33,7 @@ came from the user and beats all four: keep the existing drawer (which already
 protects a clean stage view) and put the rail *inside* it. Config then never
 routes you away from the performance surface — it is an overlay you drop out of
 with one gesture. Sheeran's launcher was rejected as inheriting a small-screen
-constraint loopy does not have: two taps to anywhere is a tax for a ~5″ display.
+constraint segno does not have: two taps to anywhere is a tax for a ~5″ display.
 
 **Stage visibility.** Stage-first navigation was rejected as a *top-level*
 structure (a poor home for performing) but adopted *inside* the FX and Routing
@@ -42,9 +42,9 @@ stages visible furniture exactly where they matter, without forcing the model
 onto the performance view.
 
 **Racks over chains.** Sheeran's most valuable idea is not a layout — it is that
-an FX Rack is a *named, saveable, transferable object*. Loopy's chains are
+an FX Rack is a *named, saveable, transferable object*. Segno's chains are
 anonymous lists that exist only where they were built, so a sound must be rebuilt
-from scratch every time. Racks also solve a legibility problem for free: loopy
+from scratch every time. Racks also solve a legibility problem for free: segno
 already copies the input chain onto a take by value at record time, but that
 inheritance is invisible today. With named racks, a take can show which rack it
 inherited.

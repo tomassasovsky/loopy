@@ -8,8 +8,8 @@ date: 2026-06-11
 
 ## Overview
 
-Bring Loopy to Windows and Linux at the highest feature parity each OS physically
-allows. The C audio engine (`packages/loopy_engine/src/`) is already portable via
+Bring Segno to Windows and Linux at the highest feature parity each OS physically
+allows. The C audio engine (`packages/segno_engine/src/`) is already portable via
 vendored **miniaudio** — there are no macOS `#ifdef`s in the DSP, looping, lock-free
 ring, or atomic-state code. The only platform-gated code is the loopback channel-label
 exclusion (`le_compute_excluded_input_mask`, a `return 0` stub off macOS).
@@ -36,11 +36,11 @@ behavior is mandatory everywhere.
 
 ## Problem Statement
 
-Loopy currently ships macOS-only. The audio engine is portable, but:
+Segno currently ships macOS-only. The audio engine is portable, but:
 
-- **The Linux app scaffold does not exist.** `loopy/linux/` is absent. The engine
+- **The Linux app scaffold does not exist.** `segno/linux/` is absent. The engine
   plugin already declares `linux: { ffiPlugin: true }` and ships
-  [linux/CMakeLists.txt](packages/loopy_engine/linux/CMakeLists.txt), but there is no
+  [linux/CMakeLists.txt](packages/segno_engine/linux/CMakeLists.txt), but there is no
   app-level GTK runner. `flutter create --platforms=linux .` must generate it, then
   flavors must be wired.
 - **Neither Windows nor Linux has been run end-to-end on real hardware.** The Windows
@@ -48,19 +48,19 @@ Loopy currently ships macOS-only. The audio engine is portable, but:
   (record → loop → play → per-input monitor → per-lane FX) has not been exercised on a
   real interface. Linux has never run.
 - **The portable loopback features are unverified off macOS.**
-  [`le_classify_capture_device`](packages/loopy_engine/src/engine.c:1683) (device-name
+  [`le_classify_capture_device`](packages/segno_engine/src/engine.c:1683) (device-name
   classification: "monitor of", virtual devices like BlackHole/VB-Cable/VoiceMeeter) and
   the audio-level round-trip latency-measurement harness are portable in principle but
   have only been validated on macOS.
 - **Per-channel "loopback"-label exclusion is macOS-only** and currently a `return 0`
-  stub off macOS ([engine.c:1925](packages/loopy_engine/src/engine.c:1925)). The user
+  stub off macOS ([engine.c:1925](packages/segno_engine/src/engine.c:1925)). The user
   has RME / MOTU / Focusrite-class hardware on both Windows and Linux and explicitly
   wants maximum parity, but the underlying OS APIs differ fundamentally:
   - **Windows:** WASAPI / DeviceTopology cannot return per-channel name strings
     (`KSJACK_DESCRIPTION` has no name field). The only path is **ASIO**
     `ASIOGetChannelInfo().name`, which RME / MOTU / Focusrite drivers populate. But
     miniaudio has **no ASIO backend**, and the Steinberg ASIO SDK is
-    **GPLv3-or-proprietary** (since Nov 2025) — **incompatible with Loopy's MIT license**
+    **GPLv3-or-proprietary** (since Nov 2025) — **incompatible with Segno's MIT license**
     unless ASIO is opt-in, user-supplied, and non-vendored.
   - **Linux:** No stack (ALSA chmaps, PulseAudio, PipeWire ports, JACK aliases) exposes
     arbitrary per-channel labels — all are positional (FL/FR/AUX0…). The same Focusrite
@@ -85,7 +85,7 @@ the two native-label tracks (PR2, PR3) as additive, opt-in, cleanly-degrading la
 **Invariants that hold across all three PRs:**
 
 - **No change to the FFI boundary's shape.** The ~40-function C ABI and the Dart loader
-  ([native_audio_engine.dart:26](packages/loopy_engine/lib/src/native_audio_engine.dart:26),
+  ([native_audio_engine.dart:26](packages/segno_engine/lib/src/native_audio_engine.dart:26),
   already branching `.dll` / `.so` / `process()`) are stable. All native-label work lives
   behind `le_compute_excluded_input_mask` and new platform-specific translation units,
   invisible to Dart.
@@ -98,7 +98,7 @@ the two native-label tracks (PR2, PR3) as additive, opt-in, cleanly-degrading la
 ### Architecture
 
 The platform-gating already lives in one place. Today
-[engine.c:1925](packages/loopy_engine/src/engine.c:1925):
+[engine.c:1925](packages/segno_engine/src/engine.c:1925):
 
 ```c
 static uint32_t le_compute_excluded_input_mask(const char* uid, int channel_count) {
@@ -118,9 +118,9 @@ strategy, each in its own translation unit, each degrading to `0`:
 static uint32_t le_compute_excluded_input_mask(const char* uid, int channel_count) {
 #if defined(__APPLE__)
   return le_macos_excluded_mask(uid, channel_count);          // existing
-#elif defined(_WIN32) && defined(LOOPY_ENABLE_ASIO)
+#elif defined(_WIN32) && defined(SEGNO_ENABLE_ASIO)
   return le_win_asio_excluded_mask(uid, channel_count);        // PR2, opt-in
-#elif defined(__linux__) && defined(LOOPY_ENABLE_PIPEWIRE_LABELS)
+#elif defined(__linux__) && defined(SEGNO_ENABLE_PIPEWIRE_LABELS)
   return le_linux_pipewire_excluded_mask(uid, channel_count);  // PR3, opt-in, if kept
 #else
   (void)uid; (void)channel_count;
@@ -129,19 +129,19 @@ static uint32_t le_compute_excluded_input_mask(const char* uid, int channel_coun
 }
 ```
 
-`le_label_is_loopback` ([engine.c:1696](packages/loopy_engine/src/engine.c:1696)) is
+`le_label_is_loopback` ([engine.c:1696](packages/segno_engine/src/engine.c:1696)) is
 reused **verbatim** by every backend — it already passes its unit tests
-([test_engine_core.c:974+](packages/loopy_engine/src/test/test_engine_core.c)). Only the
+([test_engine_core.c:974+](packages/segno_engine/src/test/test_engine_core.c)). Only the
 *source of the label strings* is platform-specific.
 
 ### Build wiring
 
-[src/CMakeLists.txt](packages/loopy_engine/src/CMakeLists.txt) already branches on
+[src/CMakeLists.txt](packages/segno_engine/src/CMakeLists.txt) already branches on
 `WIN32` (links `ole32 winmm`) and `UNIX AND NOT APPLE` (links `Threads`, `${CMAKE_DL_LIBS}`,
-`m`). Both the [linux](packages/loopy_engine/linux/CMakeLists.txt) and
-[windows](packages/loopy_engine/windows/CMakeLists.txt) plugin entry points already
-`add_subdirectory` the shared `src`. New compile-time options (`LOOPY_ENABLE_ASIO`,
-`LOOPY_ENABLE_PIPEWIRE_LABELS`) gate the additive sources and their extra includes/links.
+`m`). Both the [linux](packages/segno_engine/linux/CMakeLists.txt) and
+[windows](packages/segno_engine/windows/CMakeLists.txt) plugin entry points already
+`add_subdirectory` the shared `src`. New compile-time options (`SEGNO_ENABLE_ASIO`,
+`SEGNO_ENABLE_PIPEWIRE_LABELS`) gate the additive sources and their extra includes/links.
 
 ### Implementation Phases
 
@@ -156,11 +156,11 @@ verified on real hardware; compile-only CI guards the portable core.
 
 1. **Generate the Linux app scaffold.**
    - Run `flutter create --platforms=linux --org <existing-org> .` to generate
-     `loopy/linux/` (GTK runner: `linux/CMakeLists.txt`, `linux/runner/`,
+     `segno/linux/` (GTK runner: `linux/CMakeLists.txt`, `linux/runner/`,
      `linux/flutter/`). Verify it does not clobber existing config.
    - **Flavors are entrypoint-only on desktop — do NOT hand-roll per-flavor app-name/bundle-id
      CMake.** Flutter desktop has no real `--flavor` app-identity support: the Windows runner
-     hardcodes `set(BINARY_NAME "loopy")` with no flavor branching, and the canonical desktop
+     hardcodes `set(BINARY_NAME "segno")` with no flavor branching, and the canonical desktop
      invocation (per README) is `flutter run --flavor development --target lib/main_development.dart`
      — i.e. **`--target` selects the entrypoint** ([lib/main_development.dart](lib/main_development.dart) /
      `main_staging.dart` / `main_production.dart`); `--flavor` on Windows/Linux only namespaces the
@@ -174,10 +174,10 @@ verified on real hardware; compile-only CI guards the portable core.
    - `flutter run -d windows --flavor development --target lib/main_development.dart` (and a release build).
    - Exercise the full pipeline on the user's RME/MOTU/Focusrite Windows interface:
      record → loop → play → per-input monitor → per-lane FX.
-   - Confirm the FFI loader resolves `loopy_engine.dll`
-     ([native_audio_engine.dart:30](packages/loopy_engine/lib/src/native_audio_engine.dart:30)).
+   - Confirm the FFI loader resolves `segno_engine.dll`
+     ([native_audio_engine.dart:30](packages/segno_engine/lib/src/native_audio_engine.dart:30)).
    - **De-risk `multi_window` early** (see risk table): confirm the `desktop_multi_window`
-     waveform sub-window ([run_loopy.dart](lib/app/run_loopy.dart)) works on Windows. Its
+     waveform sub-window ([run_segno.dart](lib/app/run_segno.dart)) works on Windows. Its
      GTK/Linux support is historically the weakest of the three desktop targets — check this
      in the *first* scaffold build, not at PR-close, so a gap doesn't silently block PR1.
 
@@ -185,18 +185,18 @@ verified on real hardware; compile-only CI guards the portable core.
    - `flutter run -d linux --flavor development --target lib/main_development.dart` (and a release build).
    - Same full-pipeline exercise on the user's Linux interface, including the `multi_window`
      check from task 2 on GTK.
-   - Confirm the FFI loader resolves `libloopy_engine.so`
-     ([native_audio_engine.dart:31](packages/loopy_engine/lib/src/native_audio_engine.dart:31)).
+   - Confirm the FFI loader resolves `libsegno_engine.so`
+     ([native_audio_engine.dart:31](packages/segno_engine/lib/src/native_audio_engine.dart:31)).
    - Confirm miniaudio selects a working backend (PipeWire vs ALSA vs Pulse) and capture
      produces non-silent audio. *(Open question: confirm the Linux test box runs PipeWire,
      needed for PR3 applicability.)*
 
 4. **Verify portable loopback features on both OSes.**
-   - **Device-name classification** ([`le_classify_capture_device`](packages/loopy_engine/src/engine.c:1683)):
+   - **Device-name classification** ([`le_classify_capture_device`](packages/segno_engine/src/engine.c:1683)):
      plug in / enable a virtual device (VB-Cable / VoiceMeeter on Windows; a PipeWire/Pulse
      "Monitor of …" source on Linux) and confirm it classifies as
      `LE_LOOPBACK_VIRTUAL` / detects the "monitor of" prefix. Existing unit tests
-     ([test_engine_core.c:911+](packages/loopy_engine/src/test/test_engine_core.c)) already
+     ([test_engine_core.c:911+](packages/segno_engine/src/test/test_engine_core.c)) already
      cover the string logic — this verifies the *device names the OS actually reports*.
    - **Latency-measurement harness (best-effort, not a hard merge gate):** run the audio-level
      round-trip latency measurement on each OS and confirm a plausible figure. ⚠️ Per repo
@@ -224,7 +224,7 @@ verified on real hardware; compile-only CI guards the portable core.
      gotchas when running tests locally; CI uses the VGV workflow which is unaffected.
 
 **Success criteria (PR1):**
-- [ ] `loopy/linux/` exists and `flutter run -d linux --flavor development --target lib/main_development.dart`
+- [ ] `segno/linux/` exists and `flutter run -d linux --flavor development --target lib/main_development.dart`
       launches the app. (All three `--target` entrypoints wired; merge gated on `development` running.)
 - [ ] Full pipeline (record/loop/play/monitor/FX) verified by hand on real hardware on
       **both** Windows and Linux.
@@ -249,7 +249,7 @@ isn't built or available.
 
 0. **De-risking spike — DO THIS FIRST; gates all of PR2 (~30 min, zero committed code).**
    - Validate that `ASIOChannelInfo.name` actually carries a "Loopback"-style string (one that
-     [`le_label_is_loopback`](packages/loopy_engine/src/engine.c:1696) matches) on the **user's
+     [`le_label_is_loopback`](packages/segno_engine/src/engine.c:1696) matches) on the **user's
      specific Windows interface** (~80% confidence per brainstorm).
    - In the same spike, determine the **ASIO↔WASAPI device-matching heuristic** (task 2's open
      question): does the interface present a name that reliably maps the miniaudio/WASAPI `uid`
@@ -261,33 +261,33 @@ isn't built or available.
    - **Success criterion:** a yes/no on both questions, recorded in the PR description.
 
 1. **CMake opt-in plumbing.**
-   - Add `option(LOOPY_ENABLE_ASIO "Build Windows ASIO channel-label probe" OFF)` and a
-     `LOOPY_ASIO_SDK_DIR` cache var pointing at a **user-supplied** ASIO SDK (never
+   - Add `option(SEGNO_ENABLE_ASIO "Build Windows ASIO channel-label probe" OFF)` and a
+     `SEGNO_ASIO_SDK_DIR` cache var pointing at a **user-supplied** ASIO SDK (never
      vendored — MIT/GPLv3 conflict). When `ON`, add the ASIO host sources +
-     `target_include_directories` for the SDK and `target_compile_definitions(... LOOPY_ENABLE_ASIO)`.
+     `target_include_directories` for the SDK and `target_compile_definitions(... SEGNO_ENABLE_ASIO)`.
    - **`.gitignore` the SDK location** so a user-supplied GPLv3 SDK can never be accidentally
      committed. Note: the existing `license_check.yaml` gate scans **Dart deps only** — it does
      **not** catch a C SDK in the build tree, so the MIT boundary here is enforced by the
      OFF-by-default flag + `.gitignore` + review, not by CI.
-   - **Files:** [src/CMakeLists.txt](packages/loopy_engine/src/CMakeLists.txt), `.gitignore`.
+   - **Files:** [src/CMakeLists.txt](packages/segno_engine/src/CMakeLists.txt), `.gitignore`.
 
 2. **ASIO label-probe translation unit** (`src/win_asio_labels.cpp` or `.c`).
    - **Label probe ONLY** — capture/playback stay on miniaudio/WASAPI. The probe:
      loads the ASIO driver for the target device, calls `ASIOGetChannelInfo()` per input
      channel, runs each `ASIOChannelInfo.name` through the existing
-     [`le_label_is_loopback`](packages/loopy_engine/src/engine.c:1696), and sets the bit.
+     [`le_label_is_loopback`](packages/segno_engine/src/engine.c:1696), and sets the bit.
    - Map the miniaudio/WASAPI `uid` to the ASIO driver using the heuristic confirmed in task 0.
      miniaudio's WASAPI IDs are endpoint strings while ASIO enumerates drivers by registry
      name, so the match can be fuzzy on multi-interface rigs. **Rule: prefer no-match over
      wrong-match** — on any ambiguity, return `0` (exclude nothing) rather than risk excluding
      the *wrong* channels (a false-positive mask is worse than a no-op).
    - Expose `uint32_t le_win_asio_excluded_mask(const char* uid, int channel_count)`.
-   - **Files:** new `packages/loopy_engine/src/win_asio_labels.c`, declaration in
-     [engine_internal.h](packages/loopy_engine/src/engine_internal.h).
+   - **Files:** new `packages/segno_engine/src/win_asio_labels.c`, declaration in
+     [engine_internal.h](packages/segno_engine/src/engine_internal.h).
 
 3. **Wire the dispatch** in `le_compute_excluded_input_mask`
-   ([engine.c:1925](packages/loopy_engine/src/engine.c:1925)) under
-   `#elif defined(_WIN32) && defined(LOOPY_ENABLE_ASIO)`.
+   ([engine.c:1925](packages/segno_engine/src/engine.c:1925)) under
+   `#elif defined(_WIN32) && defined(SEGNO_ENABLE_ASIO)`.
 
 4. **Tests & docs.** Unit-test the bit-setting logic with a fake channel-name provider
    (the OS-facing ASIO calls aren't unit-testable in CI). Document the opt-in build:
@@ -296,7 +296,7 @@ isn't built or available.
 **Success criteria (PR2):**
 - [ ] Default build (flag OFF) is byte-for-byte unchanged: `le_compute_excluded_input_mask`
       returns `0` on Windows, no ASIO SDK required, CI still green.
-- [ ] With `LOOPY_ENABLE_ASIO=ON` + a local SDK, loopback channels on the user's interface
+- [ ] With `SEGNO_ENABLE_ASIO=ON` + a local SDK, loopback channels on the user's interface
       are excluded via the same mask path as macOS.
 - [ ] No GPLv3 code vendored into the MIT repo.
 
@@ -326,11 +326,11 @@ the node — established in PR1 Phase 1 task 3.
    channels (expected: generic `AUX<n>`). Determine if an `AUX`-index heuristic isolates the
    loopback pair with no false positives.
 2. **If reliable:** wrap it in `le_linux_pipewire_excluded_mask` behind
-   `option(LOOPY_ENABLE_PIPEWIRE_LABELS OFF)`, link `libpipewire-0.3`, wire the dispatch
-   `#elif defined(__linux__) && defined(LOOPY_ENABLE_PIPEWIRE_LABELS)`. Document it as a
+   `option(SEGNO_ENABLE_PIPEWIRE_LABELS OFF)`, link `libpipewire-0.3`, wire the dispatch
+   `#elif defined(__linux__) && defined(SEGNO_ENABLE_PIPEWIRE_LABELS)`. Document it as a
    brittle, interface-specific heuristic.
 3. **If unreliable:** remove the spike **completely** — the `.c` translation unit, the
-   `option(LOOPY_ENABLE_PIPEWIRE_LABELS ...)`, the `libpipewire-0.3` link, the dispatch
+   `option(SEGNO_ENABLE_PIPEWIRE_LABELS ...)`, the `libpipewire-0.3` link, the dispatch
    `#elif`, and any header declarations (no half-removed dead config left behind). Document
    Linux per-channel labels as an OS limitation in `docs/` and the engine header comment.
    Device-name classification (which *does* work) remains the Linux loopback path.
@@ -349,7 +349,7 @@ the node — established in PR1 Phase 1 task 3.
    target* because the user has RME/MOTU/Focusrite-class hardware on both OSes and
    explicitly wants maximum parity. (It survives as PR1 + the degradation fallback.)
 2. **Vendor the ASIO SDK** — rejected: GPLv3-or-proprietary since Nov 2025, incompatible
-   with Loopy's MIT license. Opt-in, user-supplied, non-vendored is the only MIT-safe path.
+   with Segno's MIT license. Opt-in, user-supplied, non-vendored is the only MIT-safe path.
 3. **Route Windows capture through ASIO** (full second backend) — rejected in favor of
    **label-probe only**: capture stays on miniaudio/WASAPI; ASIO is used solely to read
    channel names. Avoids maintaining a second audio backend.
@@ -361,9 +361,9 @@ the node — established in PR1 Phase 1 task 3.
 
 ### Functional Requirements
 
-- [ ] **PR1:** Loopy builds and runs end-to-end (record/loop/play/per-input monitor/per-lane
+- [ ] **PR1:** Segno builds and runs end-to-end (record/loop/play/per-input monitor/per-lane
       FX) on Windows and Linux on the user's real interfaces.
-- [ ] **PR1:** `loopy/linux/` GTK scaffold exists with flavors wired
+- [ ] **PR1:** `segno/linux/` GTK scaffold exists with flavors wired
       (`development`/`staging`/`production`).
 - [ ] **PR1:** Portable loopback features verified on both OSes: device-name classification
       (`le_classify_capture_device`) and the latency-measurement harness.
@@ -447,7 +447,7 @@ the node — established in PR1 Phase 1 task 3.
 - `docs/PROGRESS.md` — update platform status (Windows/Linux running; per-channel labels:
   macOS full, Windows opt-in ASIO, Linux device-name only / OS limitation).
 - Engine header comment near
-  [`le_compute_excluded_input_mask`](packages/loopy_engine/src/engine.c:1925) — document the
+  [`le_compute_excluded_input_mask`](packages/segno_engine/src/engine.c:1925) — document the
   per-platform label strategy and the deliberate `return 0` degradation.
 - A build doc for the **opt-in ASIO** path (PR2): flag, SDK supply, licensing rationale.
 - Linux per-channel-label **OS limitation** note (PR3 outcome, if cut).
@@ -457,17 +457,17 @@ the node — established in PR1 Phase 1 task 3.
 
 ### Internal References
 
-- Platform dispatch / stub: [engine.c:1925](packages/loopy_engine/src/engine.c:1925)
-- macOS label reader (the parity target): [engine.c:1860-1920](packages/loopy_engine/src/engine.c:1860)
-- Reusable label matcher: [engine.c:1696](packages/loopy_engine/src/engine.c:1696)
-- Device-name classifier: [engine.c:1683](packages/loopy_engine/src/engine.c:1683)
-- Label/classifier unit tests: [test_engine_core.c:911](packages/loopy_engine/src/test/test_engine_core.c)
-- FFI loader (`.dll`/`.so`/`process()`): [native_audio_engine.dart:26](packages/loopy_engine/lib/src/native_audio_engine.dart:26)
-- Shared build (WIN32 / UNIX links): [src/CMakeLists.txt](packages/loopy_engine/src/CMakeLists.txt)
-- Linux plugin entry: [linux/CMakeLists.txt](packages/loopy_engine/linux/CMakeLists.txt)
-- Windows plugin entry: [windows/CMakeLists.txt](packages/loopy_engine/windows/CMakeLists.txt)
+- Platform dispatch / stub: [engine.c:1925](packages/segno_engine/src/engine.c:1925)
+- macOS label reader (the parity target): [engine.c:1860-1920](packages/segno_engine/src/engine.c:1860)
+- Reusable label matcher: [engine.c:1696](packages/segno_engine/src/engine.c:1696)
+- Device-name classifier: [engine.c:1683](packages/segno_engine/src/engine.c:1683)
+- Label/classifier unit tests: [test_engine_core.c:911](packages/segno_engine/src/test/test_engine_core.c)
+- FFI loader (`.dll`/`.so`/`process()`): [native_audio_engine.dart:26](packages/segno_engine/lib/src/native_audio_engine.dart:26)
+- Shared build (WIN32 / UNIX links): [src/CMakeLists.txt](packages/segno_engine/src/CMakeLists.txt)
+- Linux plugin entry: [linux/CMakeLists.txt](packages/segno_engine/linux/CMakeLists.txt)
+- Windows plugin entry: [windows/CMakeLists.txt](packages/segno_engine/windows/CMakeLists.txt)
 - Flavor entrypoints: [lib/main_development.dart](lib/main_development.dart) (+ staging/production)
-- Shared run + multi_window: [lib/app/run_loopy.dart](lib/app/run_loopy.dart)
+- Shared run + multi_window: [lib/app/run_segno.dart](lib/app/run_segno.dart)
 - CI workflow: [.github/workflows/main.yaml](.github/workflows/main.yaml)
 - Brainstorm: [docs/brainstorm/2026-06-11-windows-linux-native-brainstorm-doc.md](docs/brainstorm/2026-06-11-windows-linux-native-brainstorm-doc.md)
 

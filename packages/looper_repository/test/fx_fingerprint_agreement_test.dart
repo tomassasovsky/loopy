@@ -8,7 +8,7 @@ import 'package:looper_repository/looper_repository.dart';
 // Only the native pump engine + the fingerprint constant come from the engine
 // package; every other name (EngineConfig, the effect models) is the domain
 // type from the looper_repository barrel.
-import 'package:loopy_engine/loopy_engine.dart'
+import 'package:segno_engine/segno_engine.dart'
     show FxFingerprint, PumpedNativeEngine;
 
 /// Proves the Dart [fxChainFingerprint] and the native
@@ -16,12 +16,12 @@ import 'package:loopy_engine/loopy_engine.dart'
 /// the guarantee the sequence fuzzer's `cache == engine` invariant relies on.
 /// Drives the REAL native engine through the device-free pump.
 ///
-/// Self-skips when `LOOPY_ENGINE_LIB` is unset; build it first:
-///   export LOOPY_ENGINE_LIB="$(bash packages/loopy_engine/tool/build_test_lib.sh)"
+/// Self-skips when `SEGNO_ENGINE_LIB` is unset; build it first:
+///   export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
 void main() {
-  final lib = Platform.environment['LOOPY_ENGINE_LIB'];
+  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
   final skip = lib == null || lib.isEmpty
-      ? 'LOOPY_ENGINE_LIB not set — run tool/build_test_lib.sh'
+      ? 'SEGNO_ENGINE_LIB not set — run tool/build_test_lib.sh'
       : null;
 
   late PumpedNativeEngine engine;

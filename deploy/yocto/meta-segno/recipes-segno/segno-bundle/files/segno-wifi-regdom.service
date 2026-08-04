@@ -1,0 +1,15 @@
+[Unit]
+Description=Segno: WiFi regulatory domain
+DefaultDependencies=no
+After=data.mount
+Before=NetworkManager.service network-pre.target
+# Only ordering, not a requirement: a console with no /data override still gets
+# the image default, and a failure here must not keep NetworkManager down.
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/segno-wifi-regdom
+
+[Install]
+WantedBy=NetworkManager.service

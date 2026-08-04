@@ -11,7 +11,7 @@ part: 2 of 2
 > **Part 2 of 2.** This PR adds the real ASIO capture/playback backend behind the
 > seam from Part 1, plus the Dart/repository/UI stack that selects it, persists
 > it, and surfaces the negotiated reality. ASIO stays opt-in behind
-> `LOOPY_ENABLE_ASIO` with a user-supplied GPLv3 SDK; the default build and
+> `SEGNO_ENABLE_ASIO` with a user-supplied GPLv3 SDK; the default build and
 > macOS/Linux are byte-for-byte unaffected.
 
 ## Dependencies
@@ -24,14 +24,14 @@ part: 2 of 2
 
 ## Overview
 
-Loopy on Windows sees only **2 channels** of a pro multichannel interface because
+Segno on Windows sees only **2 channels** of a pro multichannel interface because
 the Focusrite (18-in / 20-out class) driver publishes only its first analogue
 pair to WASAPI. Inputs 3–18 and outputs 3–20 exist **only** inside the device's
 **ASIO** driver (diagnosed, not assumed: a probe reported `max ch: shared=2
 exclusive=2` for every direction).
 
 This PR adds a **real ASIO duplex backend** (`win_asio_device.cpp`,
-`#if LOOPY_ENABLE_ASIO`): load the driver, create its buffers, run its real-time
+`#if SEGNO_ENABLE_ASIO`): load the driver, create its buffers, run its real-time
 `bufferSwitch` callback, and feed the **existing, unchanged** `le_engine_process`
 at the driver's full channel count. It plugs into Part 1's seam, so the SPSC ring,
 the atomic snapshot, and the looper/lane/FX DSP are reused as-is. The Dart engine
@@ -84,10 +84,10 @@ the ASIO TU**, so the engine core never sees it:
 Channel mapping is direct: ASIO channel *c* → engine channel *c*.
 `LE_MAX_CHANNELS = 32` covers 18/20.
 
-### Layer 1 — The ASIO device backend (`#if LOOPY_ENABLE_ASIO`)
+### Layer 1 — The ASIO device backend (`#if SEGNO_ENABLE_ASIO`)
 
 **1a. Pure bridge math** — declared in
-[engine_internal.h](packages/loopy_engine/src/engine_internal.h), defined in
+[engine_internal.h](packages/segno_engine/src/engine_internal.h), defined in
 engine.c (platform-agnostic, no ASIO headers), so the riskiest unit is tested
 off-thread without hardware:
 
@@ -122,8 +122,8 @@ step, and a request outside the set snapping to `preferred`.
 > (used at open to guarantee a valid size) ships here.
 
 **1c. The ASIO backend TU** — new `win_asio_device.cpp`
-(`#if defined(_WIN32) && defined(LOOPY_ENABLE_ASIO)`, mirroring
-[win_asio_labels.cpp](packages/loopy_engine/src/win_asio_labels.cpp)). Exposes
+(`#if defined(_WIN32) && defined(SEGNO_ENABLE_ASIO)`, mirroring
+[win_asio_labels.cpp](packages/segno_engine/src/win_asio_labels.cpp)). Exposes
 `extern "C" const le_device_backend le_asio_backend` (declared in
 `win_asio_device.h`):
 - **`le_asio_open`**: `loadAsioDriver(cfg->asio_driver)` → `ASIOInit`
@@ -152,7 +152,7 @@ step, and a request outside the set snapping to `preferred`.
   the pointer only after `ASIOStop` returns is a **correctness requirement** (no
   use-after-free / no callback racing teardown), not polish.
 
-**1d. `le_select_backend` returns `&le_asio_backend`** under `#if LOOPY_ENABLE_ASIO`
+**1d. `le_select_backend` returns `&le_asio_backend`** under `#if SEGNO_ENABLE_ASIO`
 when `backend == LE_BACKEND_ASIO`. The symbol reference is inside the `#if`, so the
 default build still links no ASIO symbol (Part 1's link-time guarantee holds).
 
@@ -177,11 +177,11 @@ fallback, unlike the share-mode fallback, resets no config fields).
 LE_EXPORT int32_t le_enumerate_asio_drivers(le_device_info* out, int32_t max,
                                             int32_t* count);
 ```
-Behind `LOOPY_ENABLE_ASIO`, in `win_asio_device.cpp`: `getDriverNames`, then per
+Behind `SEGNO_ENABLE_ASIO`, in `win_asio_device.cpp`: `getDriverNames`, then per
 driver `loadAsioDriver`→`ASIOInit`→`ASIOGetChannels`→`ASIOExit` to fill
 `name`/`input_channels`/`output_channels` (`id` = driver name; `is_default` = 0;
 `isInput` is N/A at the C level — see Dart mapping in 3c). Degrades to 0 / omits a
-driver on any probe failure, like the label probe. **Without `LOOPY_ENABLE_ASIO`**,
+driver on any probe failure, like the label probe. **Without `SEGNO_ENABLE_ASIO`**,
 a stub in engine.c returns `*count = 0, LE_OK`.
 
 > **R1 — ASIO global-state re-entrancy (correctness).** The ASIO host SDK uses a
@@ -196,9 +196,9 @@ a stub in engine.c returns `*count = 0, LE_OK`.
 > `enumerateAsioDrivers()` while `engineStatus.activeBackend == asio` (it
 > enumerates only when stopped / on WASAPI). A Dart test asserts this.
 
-**CMake** — add `win_asio_device.cpp` to the `LOOPY_ENABLE_ASIO` `target_sources`
+**CMake** — add `win_asio_device.cpp` to the `SEGNO_ENABLE_ASIO` `target_sources`
 block beside `win_asio_labels.cpp`
-([CMakeLists.txt:90](packages/loopy_engine/src/CMakeLists.txt)). **No new SDK
+([CMakeLists.txt:90](packages/segno_engine/src/CMakeLists.txt)). **No new SDK
 sources** are needed — the duplex backend links the same
 `common/asio.cpp`/`host/asiodrivers.cpp`/`host/pc/asiolist.cpp` objects already
 listed, and `enable_language(CXX)` (line 87) covers the new TU.
@@ -212,10 +212,10 @@ The structs already grew in Part 1, so the only new binding is the
 ### Layer 3 — Dart engine layer
 
 **3a. `AudioEngine.enumerateAsioDrivers()`** —
-[audio_engine.dart](packages/loopy_engine/lib/src/audio_engine.dart): add
+[audio_engine.dart](packages/segno_engine/lib/src/audio_engine.dart): add
 `List<AudioDevice> enumerateAsioDrivers();` (returns `[]` off-ASIO builds /
 non-Windows). Implement in
-[native_audio_engine.dart](packages/loopy_engine/lib/src/native_audio_engine.dart)
+[native_audio_engine.dart](packages/segno_engine/lib/src/native_audio_engine.dart)
 as a **new marshalling method modeled on** `_enumerate` (not an overload — the
 existing `_enumerate` is hardwired to the playback/capture native symbols and
 `isInput`). It calls `le_enumerate_asio_drivers`, reuses the `_maxDevices` buffer,
@@ -223,7 +223,7 @@ reads the channel fields, and tags each result as a **duplex** device:
 `AudioDevice(..., isInput: false, inputChannels: …, outputChannels: …)`.
 
 **3b. Duplex tagging contract** —
-[audio_device.dart](packages/loopy_engine/lib/src/audio_device.dart): an ASIO
+[audio_device.dart](packages/segno_engine/lib/src/audio_device.dart): an ASIO
 driver is one duplex device. It sets `isInput = false` and is **never** routed
 through `AudioSetupState.playbackDevices`/`captureDevices` (which partition on
 `isInput`); ASIO drivers live only in the separate `asioDrivers` list (§7a). No
@@ -231,7 +231,7 @@ new `AudioDevice` field is needed — the `inputChannels`/`outputChannels` from
 Part 1 carry the counts the picker shows.
 
 **3c. `MockAudioEngine`** —
-[mock_audio_engine.dart](packages/loopy_engine/lib/src/mock_audio_engine.dart):
+[mock_audio_engine.dart](packages/segno_engine/lib/src/mock_audio_engine.dart):
 **deterministic rule** — `enumerateAsioDrivers()` returns one fake driver
 ("Mock ASIO Device", 18 in / 20 out); `start` with `backend == asio` "succeeds"
 and the snapshot reports `activeBackend == asio` (echo intent). **The fallback
@@ -239,7 +239,7 @@ branch (requested ASIO, reality WASAPI) is therefore NOT exercised by the mock**
 the widget test drives it directly by seeding a state with `backend: asio` +
 `engineStatus.activeBackend: wasapi`.
 
-**Tests:** loopy_engine package — `enumerateAsioDrivers` marshalling (against a
+**Tests:** segno_engine package — `enumerateAsioDrivers` marshalling (against a
 statically linked test binary or the mock), duplex tagging.
 
 ### Layer 4 — Repository + persistence (Domain)
@@ -387,7 +387,7 @@ keys). Reuse existing strings where possible.
 | G3/OQ2 | Channel counts before open | Per-driver probe fills `le_device_info`; routing UI gets authoritative counts post-open from the snapshot. |
 | G4 | Requested vs ASIO-dictated channel counts | ASIO `open` ignores `cfg` counts, reports the driver's (clamped to 32); `le_engine_configure` uses negotiated counts. |
 | G5/OQ1 | Silent fallback hides lost inputs | `active_backend` (Part 1) + `_RunningPanel` fallback row + status row. |
-| G6 | Default build (`LOOPY_ENABLE_ASIO=OFF`) | `le_enumerate_asio_drivers` stub → 0 drivers → selector hidden; persisted `backend=asio` falls back via `le_select_backend` + dispatcher retry. |
+| G6 | Default build (`SEGNO_ENABLE_ASIO=OFF`) | `le_enumerate_asio_drivers` stub → 0 drivers → selector hidden; persisted `backend=asio` falls back via `le_select_backend` + dispatcher retry. |
 | E1 | Persisted driver no longer installed | Native open fails → WASAPI fallback; UI surfaces "ASIO unavailable". |
 | E2 | Driver busy / single-client (DAW) | Open fails → WASAPI fallback (same path); never a dead engine. |
 | E3 | Sample rate refused | Negotiate to driver-current rate; status shows negotiated SR; open never fails over a rate mismatch. |
@@ -403,7 +403,7 @@ keys). Reuse existing strings where possible.
 ## Acceptance Criteria
 
 ### Functional
-- [ ] On a Windows build with `LOOPY_ENABLE_ASIO=ON` and the Focusrite ASIO
+- [ ] On a Windows build with `SEGNO_ENABLE_ASIO=ON` and the Focusrite ASIO
       driver, selecting **ASIO** opens the device at the **full 18 in / 20 out**;
       recording/looping/monitoring/routing work across all channels.
 - [ ] The ASIO bridge feeds `le_engine_process` correctly: no glitches, correct
@@ -423,7 +423,7 @@ keys). Reuse existing strings where possible.
 - [ ] **RT contract preserved**: `bufferSwitch` does no allocation/locking;
       `le_engine_process` unchanged.
 - [ ] **MIT boundary intact**: GPLv3 ASIO SDK never committed (`.gitignore`d,
-      user-supplied `LOOPY_ASIO_SDK_DIR`, OFF by default).
+      user-supplied `SEGNO_ASIO_SDK_DIR`, OFF by default).
 - [ ] **Re-entrancy**: enumeration never probes a driver while ASIO is the running
       backend (R1).
 
@@ -441,7 +441,7 @@ keys). Reuse existing strings where possible.
 
 ## Verification (hardware spike — required before merge)
 
-With `LOOPY_ENABLE_ASIO=ON` + `LOOPY_ASIO_SDK_DIR`
+With `SEGNO_ENABLE_ASIO=ON` + `SEGNO_ASIO_SDK_DIR`
 ([docs/WINDOWS_ASIO.md](docs/WINDOWS_ASIO.md)):
 1. **Enumerate + probe**: ASIO driver appears with correct "18 in / 20 out".
 2. **Open at full count**: select ASIO, start; snapshot reports 18/20 +
@@ -492,12 +492,12 @@ With `LOOPY_ENABLE_ASIO=ON` + `LOOPY_ASIO_SDK_DIR`
 
 - Brainstorm: [2026-06-12-asio-audio-backend-windows-brainstorm-doc.md](docs/brainstorm/2026-06-12-asio-audio-backend-windows-brainstorm-doc.md)
 - Part 1 (the seam + struct fields): [2026-06-12-feat-asio-audio-backend-windows-part-1-plan.md](docs/plan/2026-06-12-feat-asio-audio-backend-windows-part-1-plan.md)
-- RT core reused unchanged: `le_engine_process` [engine.c:856](packages/loopy_engine/src/engine.c)
-- Existing ASIO label probe (mirror its TU shape + SDK usage): [win_asio_labels.cpp](packages/loopy_engine/src/win_asio_labels.cpp)
-- Test surface: [engine_internal.h](packages/loopy_engine/src/engine_internal.h); native tests [test_engine_core.c](packages/loopy_engine/src/test/test_engine_core.c)
-- Build: [CMakeLists.txt:77](packages/loopy_engine/src/CMakeLists.txt) (ASIO block :90)
+- RT core reused unchanged: `le_engine_process` [engine.c:856](packages/segno_engine/src/engine.c)
+- Existing ASIO label probe (mirror its TU shape + SDK usage): [win_asio_labels.cpp](packages/segno_engine/src/win_asio_labels.cpp)
+- Test surface: [engine_internal.h](packages/segno_engine/src/engine_internal.h); native tests [test_engine_core.c](packages/segno_engine/src/test/test_engine_core.c)
+- Build: [CMakeLists.txt:77](packages/segno_engine/src/CMakeLists.txt) (ASIO block :90)
 - Prior art (requested-vs-negotiated, defensive enum-name read): [2026-06-12-feat-wasapi-exclusive-mode-windows-plan.md](docs/plan/2026-06-12-feat-wasapi-exclusive-mode-windows-plan.md), [settings_repository.dart:120](packages/settings_repository/lib/src/settings_repository.dart)
-- Dart layer: [audio_engine.dart](packages/loopy_engine/lib/src/audio_engine.dart), [native_audio_engine.dart](packages/loopy_engine/lib/src/native_audio_engine.dart), [mock_audio_engine.dart](packages/loopy_engine/lib/src/mock_audio_engine.dart), [audio_device.dart](packages/loopy_engine/lib/src/audio_device.dart)
+- Dart layer: [audio_engine.dart](packages/segno_engine/lib/src/audio_engine.dart), [native_audio_engine.dart](packages/segno_engine/lib/src/native_audio_engine.dart), [mock_audio_engine.dart](packages/segno_engine/lib/src/mock_audio_engine.dart), [audio_device.dart](packages/segno_engine/lib/src/audio_device.dart)
 - Domain: [engine_status.dart](packages/looper_repository/lib/src/models/engine_status.dart), [looper_repository.dart:293](packages/looper_repository/lib/src/looper_repository.dart), [settings_repository.dart](packages/settings_repository/lib/src/settings_repository.dart)
 - Presentation: [audio_setup_cubit.dart:157](lib/audio_setup/cubit/audio_setup_cubit.dart), [audio_setup_state.dart](lib/audio_setup/cubit/audio_setup_state.dart), [audio_setup_steps.dart:153](lib/audio_setup/view/audio_setup_steps.dart), [audio_bootstrap.dart](lib/app/audio_bootstrap.dart)
 - ASIO SDK host API: `AsioDrivers::getDriverNames`, `loadAsioDriver`, `ASIOInit`, `ASIOGetChannels`, `ASIOGetChannelInfo`, `ASIOCanSampleRate`, `ASIOSetSampleRate`, `ASIOGetBufferSize`, `ASIOCreateBuffers`, `ASIOStart`/`ASIOStop`, `ASIODisposeBuffers`, `ASIOExit`, `bufferSwitch`, `ASIOOutputReady`

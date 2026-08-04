@@ -6,7 +6,7 @@ date: 2026-07-13
 
 ## Fix loop-top sync pulse docs drift - Minimal
 
-`firmware/loopy_pedal/loopy_pedal.ino` captures the loop-top sync pulse
+`firmware/segno_pedal/segno_pedal.ino` captures the loop-top sync pulse
 (`onLoopTop()` sets `g_lastLoopTopMs = millis()`) but never reads it —
 `renderRing()`'s ring animation is driven entirely by a free-running
 fixed-cadence timer (`kRingMsPerRev = 700`), independent of loop length, as
@@ -35,10 +35,10 @@ GOAL: The docs and firmware comments accurately describe the pedal ring's actual
 SUCCESS CRITERIA:
 - packages/pedal_repository/lib/src/pedal_codec.dart's loopTopPulse doc comment no longer claims the firmware "advances its ring one revolution per loop"; it accurately describes the current fixed-cadence decorative sweep and notes the pulse is reserved for possible future loop-synced rendering | verify: grep -q "revolution per loop" packages/pedal_repository/lib/src/pedal_codec.dart && exit 1 || exit 0
 - firmware/README.md's LED-map row for the ring (index 0-11) no longer claims "one revolution per loop"; it describes the actual fixed-cadence decorative sweep | verify: grep -q "one revolution per loop" firmware/README.md && exit 1 || exit 0
-- firmware/loopy_pedal/loopy_pedal.ino has a comment immediately before g_lastLoopTopMs's declaration clarifying it is currently unused/reserved | verify: grep -B3 "static unsigned long g_lastLoopTopMs = 0;" firmware/loopy_pedal/loopy_pedal.ino | grep -qi "unused\|reserved\|not.*read\|not.*yet"
-- No functional/behavioral code changes: renderRing(), kRingMsPerRev, g_ringPhase advance logic, and pollMidiIn()'s dispatch are byte-for-byte unchanged | verify: git diff --unified=0 -- firmware/loopy_pedal/loopy_pedal.ino | grep -E '^[+-]' | grep -v '^[+-][+-][+-]' | grep -vE '^\+//|^\-//|^\+\s*$' | grep -qE 'renderRing|kRingMsPerRev|g_ringPhase|pollMidiIn' && exit 1 || exit 0
-- The pedal firmware sketch still compiles cleanly after the comment edits | verify: arduino-cli core list | grep -q arduino:avr || arduino-cli core install arduino:avr; arduino-cli compile --fqbn arduino:avr:uno firmware/loopy_pedal
-- Existing pedal protocol host test suite still passes unchanged (this fix does not touch pedal_protocol.c/.h) | verify: gcc -std=c11 -I firmware/loopy_pedal firmware/test/test_pedal_protocol.c firmware/loopy_pedal/pedal_protocol.c -o /tmp/pedal_protocol_tests && /tmp/pedal_protocol_tests
+- firmware/segno_pedal/segno_pedal.ino has a comment immediately before g_lastLoopTopMs's declaration clarifying it is currently unused/reserved | verify: grep -B3 "static unsigned long g_lastLoopTopMs = 0;" firmware/segno_pedal/segno_pedal.ino | grep -qi "unused\|reserved\|not.*read\|not.*yet"
+- No functional/behavioral code changes: renderRing(), kRingMsPerRev, g_ringPhase advance logic, and pollMidiIn()'s dispatch are byte-for-byte unchanged | verify: git diff --unified=0 -- firmware/segno_pedal/segno_pedal.ino | grep -E '^[+-]' | grep -v '^[+-][+-][+-]' | grep -vE '^\+//|^\-//|^\+\s*$' | grep -qE 'renderRing|kRingMsPerRev|g_ringPhase|pollMidiIn' && exit 1 || exit 0
+- The pedal firmware sketch still compiles cleanly after the comment edits | verify: arduino-cli core list | grep -q arduino:avr || arduino-cli core install arduino:avr; arduino-cli compile --fqbn arduino:avr:uno firmware/segno_pedal
+- Existing pedal protocol host test suite still passes unchanged (this fix does not touch pedal_protocol.c/.h) | verify: gcc -std=c11 -I firmware/segno_pedal firmware/test/test_pedal_protocol.c firmware/segno_pedal/pedal_protocol.c -o /tmp/pedal_protocol_tests && /tmp/pedal_protocol_tests
 - Existing Dart tests for pedal_codec.dart still pass unchanged (doc-comment-only edit) | verify: cd packages/pedal_repository && /Users/Tomas/development/flutter/bin/flutter test test/pedal_codec_test.dart
 
 NON-GOALS:
@@ -46,12 +46,12 @@ NON-GOALS:
 - Any change to firmware/led_driver, hardware/kicad, or any other issue from the same review pass.
 - Removing g_lastLoopTopMs/onLoopTop() outright — kept and documented instead (see brainstorm doc rationale).
 
-VERIFICATION COMMAND: (arduino-cli core list | grep -q arduino:avr || arduino-cli core install arduino:avr) && arduino-cli compile --fqbn arduino:avr:uno firmware/loopy_pedal && gcc -std=c11 -I firmware/loopy_pedal firmware/test/test_pedal_protocol.c firmware/loopy_pedal/pedal_protocol.c -o /tmp/pedal_protocol_tests && /tmp/pedal_protocol_tests && (cd packages/pedal_repository && /Users/Tomas/development/flutter/bin/flutter test test/pedal_codec_test.dart)
+VERIFICATION COMMAND: (arduino-cli core list | grep -q arduino:avr || arduino-cli core install arduino:avr) && arduino-cli compile --fqbn arduino:avr:uno firmware/segno_pedal && gcc -std=c11 -I firmware/segno_pedal firmware/test/test_pedal_protocol.c firmware/segno_pedal/pedal_protocol.c -o /tmp/pedal_protocol_tests && /tmp/pedal_protocol_tests && (cd packages/pedal_repository && /Users/Tomas/development/flutter/bin/flutter test test/pedal_codec_test.dart)
 ```
 
 ## Context
 
-- `firmware/loopy_pedal/loopy_pedal.ino`:
+- `firmware/segno_pedal/segno_pedal.ino`:
   - Line ~73-74: `g_lastLoopTopMs` declaration, comment currently reads
     "Loop-position interpolation: time of the last loop-top pulse + loop
     length." (this comment itself is aspirational/inaccurate — no
@@ -76,7 +76,7 @@ VERIFICATION COMMAND: (arduino-cli core list | grep -q arduino:avr || arduino-cl
   `packages/pedal_repository/test/pedal_codec_test.dart` (no `test/src/`
   subdirectory — confirmed via `find`). It imports `package:flutter_test`,
   not `package:test`, so it must run via `flutter test`, not `dart test`.
-  Per the Loopy test-runner gotcha from memory, the `very_good` MCP test
+  Per the Segno test-runner gotcha from memory, the `very_good` MCP test
   tool is broken for this repo and bare `flutter test` can hit a repo hook —
   use the absolute binary path `/Users/Tomas/development/flutter/bin/flutter
   test test/pedal_codec_test.dart` (run from `packages/pedal_repository`),
@@ -89,11 +89,11 @@ VERIFICATION COMMAND: (arduino-cli core list | grep -q arduino:avr || arduino-cl
 
    ```dart
    /// The MIDI System Real-Time "Start" status byte (`0xFA`), reused as the
-   /// loop-top pulse: loopy sends one byte at each loop top. The firmware
+   /// loop-top pulse: segno sends one byte at each loop top. The firmware
    /// currently only records the pulse's arrival time (`g_lastLoopTopMs`) and
    /// does not use it to drive the ring — v1's ring is a fixed-cadence
    /// decorative sweep independent of loop length (see `renderRing()` in
-   /// loopy_pedal.ino). The pulse is reserved for a possible future
+   /// segno_pedal.ino). The pulse is reserved for a possible future
    /// loop-synced rendering mode. A single real-time byte survives the
    /// firmware's FastLED interrupt gap far better than multi-byte SysEx.
    static const loopTopPulse = 0xFA;
@@ -105,12 +105,12 @@ VERIFICATION COMMAND: (arduino-cli core list | grep -q arduino:avr || arduino-cl
    | 0–11 | the 12-LED loop-position ring (fixed-cadence decorative sweep, ~700 ms/revolution; not currently synced to loop length) |
    ```
 
-3. `firmware/loopy_pedal/loopy_pedal.ino`:
+3. `firmware/segno_pedal/segno_pedal.ino`:
    - Correct the `g_lastLoopTopMs` declaration comment (~line 73) from the
      inaccurate "Loop-position interpolation: ..." to something like:
 
      ```cpp
-     // Timestamp of the last loop-top pulse (0xFA) from loopy. Currently
+     // Timestamp of the last loop-top pulse (0xFA) from segno. Currently
      // unused: v1's ring (see renderRing()) is a fixed-cadence sweep
      // independent of loop length. Reserved for a possible future
      // loop-synced rendering mode.
@@ -136,6 +136,6 @@ is a documentation/comment correction).
   `f3f5b76` (origin/master HEAD).
 - Brainstorm doc:
   `docs/brainstorm/2026-07-13-loop-top-sync-docs-drift-brainstorm-doc.md`
-- Related code: `firmware/loopy_pedal/loopy_pedal.ino`,
+- Related code: `firmware/segno_pedal/segno_pedal.ino`,
   `packages/pedal_repository/lib/src/pedal_codec.dart`,
   `firmware/README.md`

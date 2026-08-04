@@ -3,22 +3,22 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/audio_setup/audio_setup.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/cubit/high_contrast_cubit.dart';
-import 'package:loopy/looper/cubit/refresh_rate_cubit.dart';
-import 'package:loopy/looper/cubit/tracks_cubit.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
-import 'package:loopy/looper/view/looper_mode_section.dart';
-import 'package:loopy/looper/view/rename_track_dialog.dart';
-import 'package:loopy/looper/view/tempo_settings_section.dart';
-import 'package:loopy/setup/setup_surface.dart';
-import 'package:loopy/theme/surface_theme.dart';
-import 'package:loopy/update/cubit/update_cubit.dart';
-import 'package:loopy/update/view/updates_settings_section.dart';
-import 'package:loopy/visualizer/visualizer.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/high_contrast_cubit.dart';
+import 'package:segno/looper/cubit/refresh_rate_cubit.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/view/looper_mode_section.dart';
+import 'package:segno/looper/view/rename_track_dialog.dart';
+import 'package:segno/looper/view/tempo_settings_section.dart';
+import 'package:segno/setup/setup_surface.dart';
+import 'package:segno/theme/surface_theme.dart';
+import 'package:segno/update/cubit/update_cubit.dart';
+import 'package:segno/update/view/updates_settings_section.dart';
+import 'package:segno/visualizer/visualizer.dart';
 
 /// A settings section, shown one at a time and selected from the left rail.
 enum SettingsSection {

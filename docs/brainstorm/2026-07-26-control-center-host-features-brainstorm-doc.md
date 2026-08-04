@@ -12,7 +12,7 @@ appliance host controls:
 
 - **WiFi** — full scan / join (PSK) / disconnect / forget / status
 - **Bluetooth** — discovery (scan nearby) + broadcasting (discoverable /
-  advertise as "Loopy"); no pairing yet
+  advertise as "Segno"); no pairing yet
 - **Brightness** — tray slider drives the panel and persists across restarts
 - **Tuner** — stays "coming soon"
 
@@ -21,7 +21,7 @@ appliance host controls:
 The Yocto kiosk image already has `wpa_supplicant`, `systemd-networkd`, and
 `bluez5`, but no NetworkManager/connman and no brightness tooling. The OTA
 stack already established a pattern: Flutter → injectable `*Env` →
-`Process.run` on a `/usr/bin/loopy-*-ctl` helper shipped by `loopy-bundle`.
+`Process.run` on a `/usr/bin/segno-*-ctl` helper shipped by `segno-bundle`.
 
 Three approaches were considered:
 
@@ -29,7 +29,7 @@ Three approaches were considered:
   with networkd, and pulls a large stack for a single-app appliance.
 - **B — Direct DBus from Dart.** No existing DBus usage in the app; heavier
   test surface than shell helpers.
-- **C — Thin `loopy-*-ctl` helpers (mirror OTA).** Reuses the proven
+- **C — Thin `segno-*-ctl` helpers (mirror OTA).** Reuses the proven
   privilege/test boundary; JSON stdout for structured results.
 
 Landed on **C**. WiFi wraps `wpa_cli`; Bluetooth wraps `bluetoothctl`;

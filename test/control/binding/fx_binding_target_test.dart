@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/binding/fx_binding_target.dart';
+import 'package:segno/control/binding/fx_binding_target.dart';
 
 void main() {
   group('FxBindingTarget', () {

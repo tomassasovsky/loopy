@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# migrate-data.sh — preserve Loopy appliance data across the one-time re-layout flash
+# migrate-data.sh — preserve Segno appliance data across the one-time re-layout flash
 # that introduces the persistent /data partition (Phase 0 of #300).
 #
 # Before that flash, the app's data lives on the ROOTFS (/root/{Documents,.config,
@@ -11,17 +11,17 @@
 #   ./migrate-data.sh restore [user@host] [backup.tar.gz]   # AFTER  the re-layout flash
 #   ./migrate-data.sh verify  [user@host]                   # list what's on /data now
 #
-# Defaults: host root@192.168.50.211, backup ./loopy-data-backup.tar.gz
+# Defaults: host root@192.168.50.211, backup ./segno-data-backup.tar.gz
 set -euo pipefail
 
 CMD="${1:-}"
 HOST="${2:-root@192.168.50.211}"
-BACKUP="${3:-./loopy-data-backup.tar.gz}"
+BACKUP="${3:-./segno-data-backup.tar.gz}"
 
 # Non-interactive ssh that works in this sandbox (osxkeychain-free).
 SSH=(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=8)
 
-# The app's persistent data, relative to $HOME. Keep in sync with loopy-kiosk-launch.
+# The app's persistent data, relative to $HOME. Keep in sync with segno-kiosk-launch.
 PATHS="Documents .config .local"
 
 die() { echo "migrate-data: $*" >&2; exit 1; }
@@ -41,7 +41,7 @@ case "$CMD" in
 
   restore)
     # New layout: /data mounted. Extract the backup into /data (creating
-    # /data/Documents, /data/.config, /data/.local). loopy-kiosk-launch points
+    # /data/Documents, /data/.config, /data/.local). segno-kiosk-launch points
     # HOME=/data, so the app picks these up.
     [ -f "$BACKUP" ] || die "no backup file at ${BACKUP} (run 'backup' first)"
     echo "==> Checking ${HOST}:/data is mounted..."
@@ -50,7 +50,7 @@ case "$CMD" in
     echo "==> Restoring ${BACKUP} -> ${HOST}:/data/"
     "${SSH[@]}" "$HOST" "tar xzf - -C /data" < "$BACKUP" || die "restore failed"
     echo "==> Restart the app so it re-reads the data:"
-    echo "    ${SSH[*]} $HOST systemctl restart loopy"
+    echo "    ${SSH[*]} $HOST systemctl restart segno"
     echo "==> Verify:"
     "$0" verify "$HOST"
     ;;

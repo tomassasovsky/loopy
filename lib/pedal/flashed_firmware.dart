@@ -1,13 +1,13 @@
 import 'dart:io';
 
-import 'package:loopy/common/console_mode.dart';
+import 'package:segno/common/console_mode.dart';
 
-/// Where `loopy-update-ctl flash-pedal` records what it wrote to the pedal.
+/// Where `segno-update-ctl flash-pedal` records what it wrote to the pedal.
 ///
 /// On `/data`, not `/etc`: `/etc` lives inside the A/B slot image, so an OS
 /// update would erase it — and this describes the attached hardware, not the
 /// image.
-const kFlashedPedalFirmwarePath = '/data/loopy/pedal-firmware-version';
+const kFlashedPedalFirmwarePath = '/data/segno/pedal-firmware-version';
 
 /// Parses the wire-protocol version out of the record the flasher writes,
 /// whose format is `<semver> <protocolVersion>` (e.g. `0.2.0 3`).
@@ -32,7 +32,7 @@ int? parseFlashedPedalProtocolVersion(String? contents) {
 ///
 /// This is the appliance's answer to "what firmware is on the pedal": the
 /// flasher is the only thing that ever writes that pedal, so it already knows,
-/// and no round trip to the hardware is needed — which matters because loopy's
+/// and no round trip to the hardware is needed — which matters because segno's
 /// 3-byte MIDI capture cannot carry a SysEx identity reply back from it.
 Future<int?> readFlashedPedalProtocolVersion({
   String path = kFlashedPedalFirmwarePath,

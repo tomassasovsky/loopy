@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/binding/fx_binding_resolver.dart';
-import 'package:loopy/control/binding/fx_binding_target.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/control/binding/fx_binding_resolver.dart';
+import 'package:segno/control/binding/fx_binding_target.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 

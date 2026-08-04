@@ -1,27 +1,27 @@
-# loopy foot-pedal firmware
+# segno foot-pedal firmware
 
-A **pure thin client** for the loopy bidirectional MIDI looper pedal. It holds
-no looper state: it renders its LEDs only from the state frames loopy pushes and
-sends raw footswitch / encoder events. loopy runs the behavior state machine and
+A **pure thin client** for the segno bidirectional MIDI looper pedal. It holds
+no looper state: it renders its LEDs only from the state frames segno pushes and
+sends raw footswitch / encoder events. segno runs the behavior state machine and
 is the single source of truth — see
 [`docs/plan/2026-06-14-feat-looper-pedal-protocol-firmware-plan.md`](../docs/plan/2026-06-14-feat-looper-pedal-protocol-firmware-plan.md).
 
 ```
-loopy ── SysEx state frames + loop-top pulse (0xFA) ──▶ pedal renders LEDs
-pedal ── Notes (footswitches) + relative CC (encoder) ──▶ loopy runs the machine
+segno ── SysEx state frames + loop-top pulse (0xFA) ──▶ pedal renders LEDs
+pedal ── Notes (footswitches) + relative CC (encoder) ──▶ segno runs the machine
 ```
 
 ## Layout
 
 | file | purpose |
 |------|---------|
-| `loopy_pedal/loopy_pedal.ino` | the Arduino UNO sketch (thin client) |
-| `loopy_pedal/pedal_protocol.h` / `.c` | the SysEx codec — the shared wire contract |
+| `segno_pedal/segno_pedal.ino` | the Arduino UNO sketch (thin client) |
+| `segno_pedal/pedal_protocol.h` / `.c` | the SysEx codec — the shared wire contract |
 | `test/test_pedal_protocol.c` | host-compiled contract test vs the golden fixtures |
 
-`pedal_protocol.c` is the **exact same** wire format as loopy's Dart
+`pedal_protocol.c` is the **exact same** wire format as segno's Dart
 `PedalCodec` (`packages/pedal_repository`). The host test below links that unit
-and checks it against the committed golden `.syx` fixtures loopy generated, so
+and checks it against the committed golden `.syx` fixtures segno generated, so
 both sides are guaranteed to agree byte-for-byte.
 
 ## Building the sketch
@@ -32,8 +32,8 @@ every `.c`/`.cpp`/`.ino` in the sketch folder, so `pedal_protocol.c` is picked u
 automatically.
 
 ```sh
-arduino-cli compile --fqbn arduino:avr:uno firmware/loopy_pedal
-arduino-cli upload  --fqbn arduino:avr:uno -p <PORT> firmware/loopy_pedal
+arduino-cli compile --fqbn arduino:avr:uno firmware/segno_pedal
+arduino-cli upload  --fqbn arduino:avr:uno -p <PORT> firmware/segno_pedal
 ```
 
 **Upload first, flash MIDI second:** the sketch is uploaded over the stock
@@ -50,10 +50,9 @@ The UNO's ATmega16U2 normally presents a USB-serial port. The
 baud — which is why the sketch uses `Serial.begin(31250)` and the MIDIUSB library
 is **not** usable here (it is 32U4-only).
 
-Stock dualMocoLUFA enumerates as USB product "MocoLUFA". loopy's pedal is
-branded VAMP, so we build from source with
-[`mocolufa-vamp-rename.patch`](mocolufa-vamp-rename.patch) applied, which
-renames the USB-MIDI product string to "VAMP Loopstation":
+Stock dualMocoLUFA enumerates as USB product "MocoLUFA". We build from source
+with [`mocolufa-segno-rename.patch`](mocolufa-segno-rename.patch) applied, which
+renames the USB-MIDI product string to "Segno Loopstation":
 
 ```sh
 # one-time build setup
@@ -61,7 +60,7 @@ git clone https://github.com/kuwatay/mocolufa
 curl -LO http://www.fourwalledcubicle.com/files/LUFA/LUFA-100807.zip
 unzip LUFA-100807.zip -d mocolufa/../  # unpacks alongside mocolufa/, per makefile's LUFA_PATH
 cd mocolufa
-patch -p1 < /path/to/firmware/mocolufa-vamp-rename.patch
+patch -p1 < /path/to/firmware/mocolufa-segno-rename.patch
 make clean && make   # produces dualMoco.hex
 ```
 
@@ -80,7 +79,7 @@ at power-on to fall back to serial mode for re-uploading the sketch.
 
 ## Pin map & LED order
 
-Set in `loopy_pedal.ino` to match the original "aquiles LoopStation" wiring
+Set in `segno_pedal.ino` to match the original "aquiles LoopStation" wiring
 (verified on hardware).
 
 **LEDs** — a single `WS2812B` strip on pin `D2`, 19 LEDs:
@@ -110,15 +109,15 @@ Set in `loopy_pedal.ino` to match the original "aquiles LoopStation" wiring
 | D12 | Bank | 9 |
 
 **Encoder** — quadrature on `A0` (clock) / `A1` (data), sends relative CC `0x10`
-(binary-offset); loopy maps it to the master output gain. The original "Next"
+(binary-offset); segno maps it to the master output gain. The original "Next"
 switch (`A2`) is dropped in this layout.
 
 ## Contract test (host, no board)
 
-The firmware's codec is unit-tested on the host against loopy's golden
+The firmware's codec is unit-tested on the host against segno's golden
 fixtures. The shared runner builds and runs the contract test against **both**
-in-repo protocol copies (`firmware/loopy_pedal/` and
-`hardware/firmware/loopy_pedal_32u4/`) and fails if the two copies drift —
+in-repo protocol copies (`firmware/segno_pedal/` and
+`hardware/firmware/segno_pedal_32u4/`) and fails if the two copies drift —
 run it from anywhere (it cd's to the repo root itself):
 
 ```sh
@@ -136,7 +135,7 @@ poll-around-`show()`) is covered by the manual per-OS smoke pass.
 
 ## Protocol summary
 
-State frame (loopy → pedal), 26 bytes at every version:
+State frame (segno → pedal), 26 bytes at every version:
 
 ```
 F0 7D <ver> <type=01> <20 packed payload bytes> <checksum> F7
@@ -148,7 +147,7 @@ XOR-checksummed. The decoder also accepts the legacy 16-byte payload (pre
 master-gain), decoding it with unity gain, so an old pedal/app still
 interoperates. Loop-top is the single real-time byte `0xFA`. Footswitches send
 a fixed Note (NoteOn press / NoteOff release); the encoder sends relative CC
-`0x10`. See `pedal_protocol.h` and loopy's `PedalCodec` for the authoritative
+`0x10`. See `pedal_protocol.h` and segno's `PedalCodec` for the authoritative
 field table.
 
 Version history — the logical payload is 17 bytes at **all** versions; each
@@ -175,7 +174,7 @@ change. The physical pedal has no spare footswitch slot, so the gesture rides
 the existing **MODE** button (`D6`, note `3`) instead:
 
 - **Tap MODE** — toggles Rec/Play mode (unchanged).
-- **Hold MODE ≥ 500 ms** — arms/disarms performance recording. loopy times the
+- **Hold MODE ≥ 500 ms** — arms/disarms performance recording. segno times the
   hold itself from the same press/release Notes the firmware already sends
   (identical to how UNDO's tap-vs-long-press-for-redo already works); the
   firmware does not need to distinguish tap from hold.
@@ -189,7 +188,7 @@ tell "armed" from "recording" eyes-free. Blink half-period is 400 ms,
 matching the on-screen simulator.
 
 **Back-compat:** a pedal still running pre-D-PEDAL firmware never sets bit3,
-which decodes as `performance_armed = 0` — loopy just never shows the pedal as
+which decodes as `performance_armed = 0` — segno just never shows the pedal as
 armed; nothing else in the frame changes shape. Conversely, new firmware
 talking to an old app build is unaffected too, since bit3 was previously
 always `0` and simply carried no meaning.

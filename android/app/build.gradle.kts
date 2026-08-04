@@ -14,7 +14,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "dev.loopy.loopy"
+    namespace = "dev.aquiles.segno"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -29,7 +29,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "dev.loopy.loopy"
+        applicationId = "dev.aquiles.segno"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -60,17 +60,17 @@ android {
         create("production") {
             dimension = "default"
             applicationIdSuffix = ""
-            manifestPlaceholders["appName"] = "Loopy"
+            manifestPlaceholders["appName"] = "Segno"
         }
         create("staging") {
             dimension = "default"
             applicationIdSuffix = ".stg"
-            manifestPlaceholders["appName"] = "[STG] Loopy"
+            manifestPlaceholders["appName"] = "[STG] Segno"
         }
         create("development") {
             dimension = "default"
             applicationIdSuffix = ".dev"
-            manifestPlaceholders["appName"] = "[DEV] Loopy"
+            manifestPlaceholders["appName"] = "[DEV] Segno"
         }
     }
 

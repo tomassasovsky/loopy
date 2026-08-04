@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy_engine/loopy_engine.dart' as engine;
+import 'package:segno_engine/segno_engine.dart' as engine;
 
 import 'helpers/fake_audio_engine.dart';
 

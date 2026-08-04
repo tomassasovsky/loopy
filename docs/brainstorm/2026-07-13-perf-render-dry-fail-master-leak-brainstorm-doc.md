@@ -7,7 +7,7 @@ topic: perf-render-dry-fail-master-leak
 
 ## What We're Building
 
-In `packages/loopy_engine/src/core/perf_render.c`'s `le_pr_worker_main`
+In `packages/segno_engine/src/core/perf_render.c`'s `le_pr_worker_main`
 (~line 1053-1087), the offline performance-render worker seeds a per-channel
 `ok` flag from the DRY stem's write-to-disk result. If the dry write fails
 (e.g. a transient I/O error) but the in-memory `stem` buffer is still valid,
@@ -70,7 +70,7 @@ issue's own suggested fix direction.
   that the gate checks `ok` instead of `wet_ok` alone, so the comment stays
   accurate and doesn't mislead the next reader.
 - **Add a regression test** in
-  `packages/loopy_engine/src/test/test_engine_core.c` that forces a dry-write
+  `packages/segno_engine/src/test/test_engine_core.c` that forces a dry-write
   failure while keeping the wet write successful, then asserts (a) the
   channel is reported as failed via `le_perf_render_track_status`, and (b)
   `master.wav` does NOT contain that channel's contribution (only other,

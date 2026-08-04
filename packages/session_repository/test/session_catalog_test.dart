@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy_engine/loopy_engine.dart';
+import 'package:segno_engine/segno_engine.dart';
 import 'package:session_repository/session_repository.dart';
 
 import 'helpers/fake_session_engine.dart';
@@ -11,7 +11,7 @@ void main() {
   late Directory root;
 
   setUp(() {
-    root = Directory.systemTemp.createTempSync('loopy_sessions_root');
+    root = Directory.systemTemp.createTempSync('segno_sessions_root');
   });
   tearDown(() => root.deleteSync(recursive: true));
 

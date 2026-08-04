@@ -1,4 +1,4 @@
-# labwc autostart for the Loopy floor console.
+# labwc autostart for the Segno floor console.
 # Copied to ~/.config/labwc/autostart. Runs once when labwc starts.
 #
 # Order matters: pin the displays deterministically FIRST (so the 16" is the
@@ -7,20 +7,20 @@
 # which the compositor places on the secondary output.
 
 # Pin outputs by connector name (idempotent; safe to re-run).
-"$HOME/loopy/deploy/rpi/pin-displays.sh" &
+"$HOME/segno/deploy/rpi/pin-displays.sh" &
 
-# Launch the Loopy release bundle full-screen. Adjust the path to your build
+# Launch the Segno release bundle full-screen. Adjust the path to your build
 # output. Build it with console/kiosk mode on so the on-screen toolbar is
 # hidden (pedals drive it): flutter build linux --release
-#   --target lib/main_production.dart --dart-define=LOOPY_CONSOLE=true
+#   --target lib/main_production.dart --dart-define=SEGNO_CONSOLE=true
 #   (see deploy/rpi/README.md).
-LOOPY_BIN="${LOOPY_BIN:-$HOME/loopy/build/linux/arm64/release/bundle/loopy}"
+SEGNO_BIN="${SEGNO_BIN:-$HOME/segno/build/linux/arm64/release/bundle/segno}"
 
 # Launch under pw-jack so the engine's preferred JACK backend binds to
 # PipeWire's JACK server. Without it the real libjack is loaded, finds no
 # running jackd, and the engine hangs retrying — audio silently dies on boot
 # with no terminal to see it (needs the `pipewire-jack` package; verified on a
 # Pi 4B bring-up). Falls back to a direct launch if pw-jack is not installed.
-LOOPY_LAUNCH=""
-command -v pw-jack >/dev/null 2>&1 && LOOPY_LAUNCH="pw-jack"
-exec $LOOPY_LAUNCH "$LOOPY_BIN" &
+SEGNO_LAUNCH=""
+command -v pw-jack >/dev/null 2>&1 && SEGNO_LAUNCH="pw-jack"
+exec $SEGNO_LAUNCH "$SEGNO_BIN" &

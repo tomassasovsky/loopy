@@ -1,9 +1,9 @@
 import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
-import 'package:loopy/looper/view/signal_graph/signal_style.dart';
-import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/looper/view/signal_graph/signal_style.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 /// A rotary **knob** — the instrument-panel control that replaces a flat slider
 /// for the mix level. Drag up/down (or use arrow keys when focused) to turn it;

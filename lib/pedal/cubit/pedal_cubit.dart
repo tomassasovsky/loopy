@@ -128,7 +128,7 @@ class PedalCubit extends Cubit<PedalState> {
     );
   }
 
-  /// Whether a REAL pedal is bound and the codec is downgrading what loopy
+  /// Whether a REAL pedal is bound and the codec is downgrading what segno
   /// sends it (flow err-4). Reads the repository's own resolved wire version
   /// rather than re-deriving the floor, so the banner follows whatever
   /// decides the version — the manual setting today, #331's identity reply
@@ -221,7 +221,7 @@ class PedalCubit extends Cubit<PedalState> {
   /// Hotplug poll: re-enumerates the host's MIDI outputs and reconciles the
   /// pinned pedal output — (re)binds it when it appears (launch, replug, or a
   /// retry after a failed open) and drops the stale handle when it vanishes,
-  /// so the LED-feedback link survives unplugs without relaunching loopy.
+  /// so the LED-feedback link survives unplugs without relaunching segno.
   /// Mirrors `MidiSetupCubit.refresh`; runs on the poll timer and is callable
   /// directly.
   void reconnect() {

@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/plugin_descriptor.dart';
-import 'package:loopy_engine/loopy_engine.dart' as engine;
+import 'package:segno_engine/segno_engine.dart' as engine;
 
 /// How a parameter's `0..1` value is read out in the UI, in its own units, when
 /// the bare number isn't meaningful on its own. Domain mirror of the engine's

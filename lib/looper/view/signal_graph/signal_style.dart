@@ -1,5 +1,5 @@
-import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 /// Shared visual language for the Signal surface — deliberately calm and
 /// native. Monospace is reserved for genuine numerics (dB, `%`, counts, channel

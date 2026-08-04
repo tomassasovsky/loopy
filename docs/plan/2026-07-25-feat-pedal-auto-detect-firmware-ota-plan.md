@@ -10,7 +10,7 @@ date: 2026-07-25
 > [docs/plan/2026-08-01-feat-pedal-auto-detect-firmware-ota-plan.md](2026-08-01-feat-pedal-auto-detect-firmware-ota-plan.md).
 > The prerequisite (protocol drift + CI gate) shipped independently, and this plan's
 > auto-detect and firmware-version mechanisms both assume a SysEx identity *reply* that
-> loopy's 3-byte native capture cannot deliver. Kept for history; do not build from it.
+> segno's 3-byte native capture cannot deliver. Kept for history; do not build from it.
 
 > Source brainstorm: [docs/brainstorm/2026-07-25-pedal-auto-detect-firmware-ota-brainstorm-doc.md](../brainstorm/2026-07-25-pedal-auto-detect-firmware-ota-brainstorm-doc.md).
 > Builds on the appliance A/B update system (#304/#306, merged) and the pedal
@@ -33,8 +33,8 @@ artifact that travels with app updates, instead of a hand-run `arduino-cli uploa
   has no concept of pedal firmware, so every future firmware fix repeats that manual
   process indefinitely, and the shipped app version and shipped firmware version have
   no guaranteed relationship.
-- `hardware/firmware/loopy_pedal_32u4/pedal_protocol.h` has already drifted from the
-  canonical `firmware/loopy_pedal/pedal_protocol.h` (stuck on `PEDAL_PROTOCOL_VERSION_V1`
+- `hardware/firmware/segno_pedal_32u4/pedal_protocol.h` has already drifted from the
+  canonical `firmware/segno_pedal/pedal_protocol.h` (stuck on `PEDAL_PROTOCOL_VERSION_V1`
   vs. the canonical `V2`), undetected by CI. Building an OTA path on top of a stale,
   unenforced copy would ship that drift as the new "latest."
 
@@ -49,7 +49,7 @@ artifact that travels with app updates, instead of a hand-run `arduino-cli uploa
 
 CI (new, light job)                    CI (existing appliance-release.yml)
   arduino-cli compile                    build-app (Flutter bundle)
-  loopy_pedal_32u4 → .hex                build-image (Yocto/RAUC .raucb)
+  segno_pedal_32u4 → .hex                build-image (Yocto/RAUC .raucb)
   version = VERSION file (#329)                  │
        │                                          ▼
        └──────────────► manifest.json { version, bundle, sha256,
@@ -57,14 +57,14 @@ CI (new, light job)                    CI (existing appliance-release.yml)
                                           │
                                           ▼ segno.aquiles.dev mirror
                                           │
-                                Pi appliance: loopy-update-ctl
+                                Pi appliance: segno-update-ctl
                                   install   → RAUC A/B (existing)
                                   flash-pedal (NEW) → touch-reset + avrdude
 ```
 
 ### Prerequisite: fix the protocol drift
 
-Before anything else, sync `hardware/firmware/loopy_pedal_32u4/pedal_protocol.h` /
+Before anything else, sync `hardware/firmware/segno_pedal_32u4/pedal_protocol.h` /
 `.c` to the canonical `V2` copy (bring in `looper_mode`/`counting_in` from #289), and
 add a CI check — extend the existing host contract test
 ([.github/workflows/main.yaml:133-141](../../.github/workflows/main.yaml)) to also
@@ -87,7 +87,7 @@ recur. Small, narrow, mechanical — ships as its own PR ahead of the rest.
 ### Part B — Firmware version + identity reply
 
 - Add a real firmware build version, sourced the same way the app's `VERSION` file
-  works (#329) — either a sibling `firmware/loopy_pedal/VERSION` or reuse the repo-root
+  works (#329) — either a sibling `firmware/segno_pedal/VERSION` or reuse the repo-root
   one, TBD in review. Report it in the identity handshake reply so the app can read
   "what firmware is currently on the pedal" without a separate query.
 - This likely needs a small, additive protocol bump (a new field on the identity reply
@@ -98,17 +98,17 @@ recur. Small, narrow, mechanical — ships as its own PR ahead of the rest.
 
 - New lightweight job (does **not** need the self-hosted/Yocto runner — `arduino-cli`
   compile is fast) in `appliance-release.yml` or a sibling workflow: `arduino-cli
-  compile` for `hardware/firmware/loopy_pedal_32u4` with the documented build
+  compile` for `hardware/firmware/segno_pedal_32u4` with the documented build
   properties (`arduino:avr:leonardo`, `build.pid=0x7D00`,
-  `build.usb_product="VAMP Loopstation"`), stamping the version from Part B.
+  `build.usb_product="Segno Loopstation"`), stamping the version from Part B.
 - Upload the `.hex` as a release artifact alongside the `.raucb`, and extend
   `manifest.json` with the `pedalFirmware: {version, hex, sha256}` block from the
   brainstorm doc.
 
 ### Part D — On-device flashing helper
 
-- Add `avrdude` to `loopy-bundle.bb`'s `RDEPENDS` (next to the existing `rauc`/`curl`/`jq`).
-- New verb on `loopy-update-ctl` (or a sibling helper, matching its shape exactly:
+- Add `avrdude` to `segno-bundle.bb`'s `RDEPENDS` (next to the existing `rauc`/`curl`/`jq`).
+- New verb on `segno-update-ctl` (or a sibling helper, matching its shape exactly:
   `set -eu`, `PROGRESS <0-100>` lines on stdout, `log()` to stderr): `flash-pedal`.
   Performs the Caterina 1200bps touch-reset on the pedal's CDC port, then `avrdude -p
   atmega32u4 -c avr109 ...` against the freshly-appeared bootloader port, verifying the
@@ -125,7 +125,7 @@ recur. Small, narrow, mechanical — ships as its own PR ahead of the rest.
   `pedalFirmware` field; `UpdateCubit`/`updates_settings_section.dart` surface it as
   part of the same available/downloading/staged flow already built (PR1-PR3b), so
   "update available" and "restart to apply" cover both artifacts as one user action —
-  matching the ask that firmware "updates along with the loopy app."
+  matching the ask that firmware "updates along with the segno app."
 
 ## PR Breakdown
 

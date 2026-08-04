@@ -15,7 +15,7 @@ date: 2026-07-05
 ## Overview
 
 Today `le_engine_export_track`
-([engine_session.c:22–35](../../packages/loopy_engine/src/core/engine_session.c))
+([engine_session.c:22–35](../../packages/segno_engine/src/core/engine_session.c))
 hardcodes `lanes[0]`. Add `le_engine_export_track_lane(engine, channel, lane,
 out, max_frames)` with the same settled-buffer memcpy semantics, extend the
 Dart `SessionIo` capability interface with `exportTrackLane`, and leave the
@@ -35,9 +35,9 @@ existing lane-0 method and every current call site untouched.
 
 ## Tasks
 
-- [ ] `packages/loopy_engine/src/core/engine_session.c` +
-      `loopy_engine_api.h` — new export function.
-- [ ] `packages/loopy_engine/lib/src/audio_engine.dart` (`SessionIo`),
+- [ ] `packages/segno_engine/src/core/engine_session.c` +
+      `segno_engine_api.h` — new export function.
+- [ ] `packages/segno_engine/lib/src/audio_engine.dart` (`SessionIo`),
       `native_audio_engine.dart`, `mock_audio_engine.dart`.
 - [ ] Regenerate ffigen bindings + `dart format`.
 - [ ] Native test (multi-lane export, invalid lane) in `test_engine_core.c`;
@@ -45,16 +45,16 @@ existing lane-0 method and every current call site untouched.
 
 ## Files touched (primary)
 
-`packages/loopy_engine/src/core/{engine_session.c,loopy_engine_api.h}`,
-`packages/loopy_engine/lib/src/{audio_engine.dart,native_audio_engine.dart,mock_audio_engine.dart}`,
-`packages/loopy_engine/lib/src/generated/*`,
-`packages/loopy_engine/src/test/test_engine_core.c`.
+`packages/segno_engine/src/core/{engine_session.c,segno_engine_api.h}`,
+`packages/segno_engine/lib/src/{audio_engine.dart,native_audio_engine.dart,mock_audio_engine.dart}`,
+`packages/segno_engine/lib/src/generated/*`,
+`packages/segno_engine/src/test/test_engine_core.c`.
 
 ## Verification
 
-1. `bash packages/loopy_engine/src/test/run_native_tests.sh` — "ALL PASSED".
+1. `bash packages/segno_engine/src/test/run_native_tests.sh` — "ALL PASSED".
 2. `flutter analyze` clean; `dart format --set-exit-if-changed .` stable.
-3. `flutter test packages/loopy_engine packages/session_repository`.
+3. `flutter test packages/segno_engine packages/session_repository`.
 
 ## Dependencies
 

@@ -9,7 +9,7 @@ import 'package:meta/meta.dart';
 /// test fixture or by `DawManifestReader` (`manifest_reader.dart`) from a
 /// finalized performance-recording capture's `performance.json`
 /// (`docs/design/performance-manifest-format.md`), never by importing
-/// `performance_repository` or `loopy_engine` (this package has no
+/// `performance_repository` or `segno_engine` (this package has no
 /// dependency on either, so it can run standalone against just the
 /// documented file formats).
 @immutable
@@ -27,7 +27,7 @@ class DawProject {
   const DawProject({required this.tracks, double tempoBpm = kFallbackTempoBpm})
     : tempoBpm = tempoBpm > 0 ? tempoBpm : kFallbackTempoBpm;
 
-  /// One entry per non-empty Loopy track or live-input stem. An empty track
+  /// One entry per non-empty Segno track or live-input stem. An empty track
   /// (nothing recorded) is never represented here — the caller building this
   /// project (a fixture, or `DawManifestReader`) already excludes it, so
   /// `buildAls` never needs to re-derive "empty."
@@ -35,7 +35,7 @@ class DawProject {
 
   /// Project tempo in BPM, applied uniformly to every clip/automation's
   /// beat-time math in `als_builder.dart` (D-TEMPO: a captured performance
-  /// still renders at one fixed tempo start-to-finish — Loopy has no
+  /// still renders at one fixed tempo start-to-finish — Segno has no
   /// mid-performance tempo changes to represent).
   ///
   /// This is the session's REAL tempo once the caller has one to supply
@@ -92,7 +92,7 @@ class DawTrack {
   /// hand should not emit two lanes for the same target on the same track.
   final List<AutomationLane> automationLanes;
 
-  /// The channel's resolved real Loopy VST3 device chain (part 10,
+  /// The channel's resolved real Segno VST3 device chain (part 10,
   /// `device_chain_resolver.dart`'s [resolveDeviceChain]), or `null` when no
   /// chain could be honestly resolved (see [deviceChainFallbackReason]) —
   /// today's existing wet-bounce export is the fallback for a `null` chain

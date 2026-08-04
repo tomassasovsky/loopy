@@ -8,29 +8,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/app/app_toasts.dart';
-import 'package:loopy/app/audio_bootstrap.dart';
-import 'package:loopy/app/loopy_navigator.dart';
-import 'package:loopy/appliance/display_brightness_cubit.dart';
-import 'package:loopy/appliance/software_brightness.dart';
-import 'package:loopy/audio_setup/audio_setup.dart';
-import 'package:loopy/common/on_screen_keyboard/on_screen_keyboard_host.dart';
-import 'package:loopy/common/pedal_device.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/looper.dart';
-import 'package:loopy/pedal/flashed_firmware.dart';
-import 'package:loopy/pedal/pedal.dart';
-import 'package:loopy/performance/performance.dart';
-import 'package:loopy/theme/theme.dart';
-import 'package:loopy/update/cubit/pedal_firmware_cubit.dart';
-import 'package:loopy/update/cubit/update_cubit.dart';
-import 'package:loopy/update/view/pedal_firmware_gate.dart';
-import 'package:loopy/visualizer/visualizer.dart';
-import 'package:loopy/window/window_chrome.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/app_toasts.dart';
+import 'package:segno/app/audio_bootstrap.dart';
+import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/appliance/display_brightness_cubit.dart';
+import 'package:segno/appliance/software_brightness.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
+import 'package:segno/common/pedal_device.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/looper.dart';
+import 'package:segno/pedal/flashed_firmware.dart';
+import 'package:segno/pedal/pedal.dart';
+import 'package:segno/performance/performance.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/update/cubit/pedal_firmware_cubit.dart';
+import 'package:segno/update/cubit/update_cubit.dart';
+import 'package:segno/update/view/pedal_firmware_gate.dart';
+import 'package:segno/visualizer/visualizer.dart';
+import 'package:segno/window/window_chrome.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:toastification/toastification.dart';
@@ -361,7 +361,7 @@ class App extends StatelessWidget {
               final cubit = PedalCubit(
                 pedal: pedalRepo,
                 settings: context.read<SettingsRepository>(),
-                // Redundant only on a desktop analysis run — see run_loopy.
+                // Redundant only on a desktop analysis run — see run_segno.
                 // ignore: avoid_redundant_argument_values
                 autoBindProductNames: kPedalAutoBindProductNames,
                 // Console only; null on desktop, where the manual setting
@@ -443,7 +443,7 @@ class _AppViewState extends State<_AppView> {
   /// Resolves localized strings from inside [MaterialApp] when this state
   /// sits above it in the tree.
   AppLocalizations get _l10n {
-    final localizedContext = loopyNavigatorKey.currentContext;
+    final localizedContext = segnoNavigatorKey.currentContext;
     if (localizedContext != null) {
       return localizedContext.l10n;
     }
@@ -627,7 +627,7 @@ class _AppViewState extends State<_AppView> {
       icon: const Icon(Icons.usb_off_outlined),
       actions: [
         TextButton(
-          onPressed: () => unawaited(openLoopySettings()),
+          onPressed: () => unawaited(openSegnoSettings()),
           child: Text(l10n.settingsMenuItem),
         ),
       ],
@@ -643,7 +643,7 @@ class _AppViewState extends State<_AppView> {
       dismissAppToast(AppToastId.update);
       return;
     }
-    if (isLoopyUpdatesSettingsOpen) {
+    if (isSegnoUpdatesSettingsOpen) {
       dismissAppToast(AppToastId.update);
       return;
     }
@@ -666,7 +666,7 @@ class _AppViewState extends State<_AppView> {
           key: const Key(AppToastId.updateAction),
           onPressed: () {
             dismissAppToast(AppToastId.update);
-            unawaited(openLoopySettings(section: SettingsSection.updates));
+            unawaited(openSegnoSettings(section: SettingsSection.updates));
           },
           child: Text(l10n.updateBannerUpdateAction),
         ),
@@ -703,7 +703,7 @@ class _AppViewState extends State<_AppView> {
         PlatformMenuItem(
           label: context.l10n.settingsMenuItem,
           shortcut: const SingleActivator(LogicalKeyboardKey.comma, meta: true),
-          onSelected: openLoopySettings,
+          onSelected: openSegnoSettings,
         ),
         const PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.quit),
       ],
@@ -747,7 +747,7 @@ class _AppViewState extends State<_AppView> {
           animationDuration: Duration(milliseconds: 280),
         ),
         child: MaterialApp(
-          navigatorKey: loopyNavigatorKey,
+          navigatorKey: segnoNavigatorKey,
           // Manual toggle forces high-contrast on every platform;
           // highContrastTheme also honors the OS flag (iOS).
           theme: context.watch<HighContrastCubit>().state
@@ -761,10 +761,10 @@ class _AppViewState extends State<_AppView> {
               final Widget page = PedalFirmwareGate(
                 child: LooperPage(exportDirectory: widget.exportDirectory),
               );
-              if (!loopyUsesFlutterTitleBar && !loopyUsesCursorAutoHide) {
+              if (!segnoUsesFlutterTitleBar && !segnoUsesCursorAutoHide) {
                 return page;
               }
-              return LoopyWindowChromeShell(
+              return SegnoWindowChromeShell(
                 title: context.l10n.appMenuLabel,
                 backgroundColor: Theme.of(context).scaffoldBackgroundColor,
                 body: page,
@@ -794,7 +794,7 @@ class _AppViewState extends State<_AppView> {
               return brightened;
             }
             return PlatformMenuBar(
-              key: const ValueKey<String>('loopy_platform_menu'),
+              key: const ValueKey<String>('segno_platform_menu'),
               menus: _menus(context),
               child: brightened,
             );

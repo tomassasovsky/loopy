@@ -19,8 +19,8 @@ the engine's `src/` tree was reorganized into `src/core/`, `src/platform/`,
 split translation units. Running the documented command fails immediately.
 
 The correct, currently-working entry point already exists:
-`bash packages/loopy_engine/src/test/run_native_tests.sh` (documented
-accurately in `packages/loopy_engine/README.md`'s "Run the native core
+`bash packages/segno_engine/src/test/run_native_tests.sh` (documented
+accurately in `packages/segno_engine/README.md`'s "Run the native core
 tests" section). This is a docs-only fix, scoped to two files:
 `docs/PROGRESS.md` and `CONTRIBUTING.md`.
 
@@ -37,7 +37,7 @@ replacement in two markdown files, no code/tests/architecture involved.
   once PROGRESS.md no longer contains a literal clang invocation.
 
 **Out of scope (explicitly not touched):**
-- `packages/loopy_engine/README.md` — already correct, not part of this fix.
+- `packages/segno_engine/README.md` — already correct, not part of this fix.
 - Any other findings from the same review pass (other agents own those).
 - Any source/test code.
 
@@ -48,18 +48,18 @@ replacement in two markdown files, no code/tests/architecture involved.
 Replace the existing fenced block:
 
 ```sh
-cd packages/loopy_engine
+cd packages/segno_engine
 clang -std=c11 -Wall -Wextra -I src -I src/miniaudio \
   src/test/test_engine_core.c src/engine.c src/lockfree_ring.c \
   src/loop_clock.c src/miniaudio_impl.c src/engine_miniaudio.c \
   src/engine_linux.c src/engine_apple.c src/engine_windows.c \
   -framework CoreAudio -framework AudioToolbox -framework AudioUnit \
-  -framework CoreFoundation -lpthread -lm -o /tmp/loopy_core_tests
-/tmp/loopy_core_tests
+  -framework CoreFoundation -lpthread -lm -o /tmp/segno_core_tests
+/tmp/segno_core_tests
 ```
 
 with a corrected block that:
-1. Points at `bash packages/loopy_engine/src/test/run_native_tests.sh` (run
+1. Points at `bash packages/segno_engine/src/test/run_native_tests.sh` (run
    from repo root — the script self-locates via `$(dirname "$0")`, so no
    preceding `cd` is required).
 2. Briefly describes what it builds/runs: the engine core test suite and
@@ -81,7 +81,7 @@ In the "Running tests" section, replace:
 
 with wording that references the actual command directly, e.g.:
 
-> Build & run them with `bash packages/loopy_engine/src/test/run_native_tests.sh`
+> Build & run them with `bash packages/segno_engine/src/test/run_native_tests.sh`
 > (documented in `docs/PROGRESS.md`).
 
 Keep the rest of the paragraph (the ffigen regen instruction that follows)
@@ -106,7 +106,7 @@ success-criteria:
     verify: "grep -q 'run_native_tests.sh' docs/PROGRESS.md"
   - criterion: The referenced script path actually exists in the repo (so
       the new pointer is not itself stale).
-    verify: "test -x packages/loopy_engine/src/test/run_native_tests.sh || test -f packages/loopy_engine/src/test/run_native_tests.sh"
+    verify: "test -x packages/segno_engine/src/test/run_native_tests.sh || test -f packages/segno_engine/src/test/run_native_tests.sh"
   - criterion: CONTRIBUTING.md points at the same corrected command rather
       than the old "clang (command in docs/PROGRESS.md)" phrasing.
     verify: "grep -q 'run_native_tests.sh' CONTRIBUTING.md"

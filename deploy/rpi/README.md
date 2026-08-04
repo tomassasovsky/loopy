@@ -1,6 +1,6 @@
-# Loopy floor-console kiosk deployment (Raspberry Pi 5)
+# Segno floor-console kiosk deployment (Raspberry Pi 5)
 
-Boots the Pi straight into Loopy full-screen across both displays — 16″ main UI,
+Boots the Pi straight into Segno full-screen across both displays — 16″ main UI,
 7″ waveform — under the **labwc** Wayland compositor chosen in Part 1. No
 keyboard or mouse.
 
@@ -14,7 +14,7 @@ keyboard or mouse.
 
 | File | Goes to | Purpose |
 |---|---|---|
-| `loopy-kiosk.service` | `/etc/systemd/system/` | Boots the kiosk on tty1, respawns on crash |
+| `segno-kiosk.service` | `/etc/systemd/system/` | Boots the kiosk on tty1, respawns on crash |
 | `boot-integrity-check.sh` | (unit `ExecStartPre=+`, root) | fsck + mount the writable data partition |
 | `start-kiosk.sh` | (unit `ExecStart`) | Execs labwc, or shows the "needs attention" screen |
 | `compositor/labwc/autostart` | `~/.config/labwc/autostart` | Pins displays, then launches the app |
@@ -26,9 +26,9 @@ keyboard or mouse.
 
 1. Build the release bundle with **console/kiosk mode** on:
    ```bash
-   flutter build linux --release --target lib/main_production.dart --dart-define=LOOPY_CONSOLE=true
+   flutter build linux --release --target lib/main_production.dart --dart-define=SEGNO_CONSOLE=true
    ```
-   `LOOPY_CONSOLE=true` hides the on-screen tracks toolbar (the foot pedals
+   `SEGNO_CONSOLE=true` hides the on-screen tracks toolbar (the foot pedals
    drive transport/mode/clear) and tightens the layout for the fixed 16″ panel
    — see [`lib/common/console_mode.dart`](../../lib/common/console_mode.dart). Omit
    the define for a normal desktop build. (The `build-linux-arm64` CI job guards
@@ -52,13 +52,13 @@ keyboard or mouse.
    It substitutes your user/home/uid into the unit, copies the compositor config
    to `~/.config/labwc/`, sets the Pi to boot to console (so the kiosk owns the
    display), and enables the service. The boot integrity check is **opt-in** — a
-   stock single-partition SD card boots straight to the app; set `LOOPY_DATA_DEV`
+   stock single-partition SD card boots straight to the app; set `SEGNO_DATA_DEV`
    only if you follow the read-only-root + writable-data-partition setup in
    [`overlayfs/README.md`](overlayfs/README.md).
 4. **Edit `pin-displays.sh`** for your wiring: run `wlr-randr` to get the real
    connector names (e.g. `HDMI-A-1`, `HDMI-A-2`, or `DSI-1`) and set
-   `LOOPY_MAIN_OUTPUT` / `LOOPY_WAVE_OUTPUT` and the per-panel scales.
-5. Reboot. The unit starts labwc, which pins the displays and launches Loopy.
+   `SEGNO_MAIN_OUTPUT` / `SEGNO_WAVE_OUTPUT` and the per-panel scales.
+5. Reboot. The unit starts labwc, which pins the displays and launches Segno.
 
 ## Display mapping & fallbacks
 
@@ -71,6 +71,6 @@ keyboard or mouse.
 - **Single display**: if only one display is connected, the app skips the
   waveform window and shows a notice (`app_singleDisplay_banner`) instead of a
   half-blank console. The Pi entrypoint wires the real display count
-  ([`run_loopy.dart`](../../lib/app/run_loopy.dart)).
+  ([`run_segno.dart`](../../lib/app/run_segno.dart)).
 - **Per-display scale** is set with `wlr-randr --scale` in `pin-displays.sh`.
   Final values depend on the Part-6 HDMI-vs-DSI panel choice; tune on hardware.

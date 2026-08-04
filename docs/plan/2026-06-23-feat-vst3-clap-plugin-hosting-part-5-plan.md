@@ -61,9 +61,9 @@ sets) and **D-UI** (first-N knobs + Open Editor; 0-param layout).
 
 ## File References
 
-- [loopy_engine_api.h](../../packages/loopy_engine/src/core/loopy_engine_api.h),
-  `packages/loopy_engine/src/host/*` (param queue)
-- [track_effect.dart](../../packages/loopy_engine/lib/src/track_effect.dart),
+- [segno_engine_api.h](../../packages/segno_engine/src/core/segno_engine_api.h),
+  `packages/segno_engine/src/host/*` (param queue)
+- [track_effect.dart](../../packages/segno_engine/lib/src/track_effect.dart),
   [models/track_effect.dart](../../packages/looper_repository/lib/src/models/track_effect.dart)
 - [looper_event.dart](../../lib/looper/bloc/looper_event.dart),
   [looper_bloc.dart](../../lib/looper/bloc/looper_bloc.dart)

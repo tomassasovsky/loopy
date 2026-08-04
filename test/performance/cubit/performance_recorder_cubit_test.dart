@@ -5,8 +5,9 @@ import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/performance/cubit/performance_recorder_cubit.dart';
-import 'package:loopy_engine/loopy_engine.dart'
+import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
+import 'package:segno_engine/segno_engine.dart'
     show
         EngineSnapshot,
         LaneSnapshot,
@@ -15,7 +16,6 @@ import 'package:loopy_engine/loopy_engine.dart'
         PerformanceRenderTrackStatus,
         TrackSnapshot,
         TrackState;
-import 'package:performance_repository/performance_repository.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -80,7 +80,7 @@ void main() {
   late DateTime clock;
 
   setUp(() {
-    tempDir = Directory.systemTemp.createTempSync('loopy_perf_cubit');
+    tempDir = Directory.systemTemp.createTempSync('segno_perf_cubit');
     engine = FakeAudioEngine();
     clock = DateTime(2026, 7, 6, 14, 30, 15);
     performance = PerformanceRepository(

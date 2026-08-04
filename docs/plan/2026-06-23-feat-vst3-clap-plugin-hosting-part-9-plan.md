@@ -32,8 +32,8 @@ See umbrella **D-SCAN** (Linux paths), **D-WIN** (X11 ownership), **D-MISS**
 - [ ] Confirm Linux GUI expectations (which target plugins ship Linux builds + X11
   editors) before implementing embedding.
 - [ ] Wire vendored SDK into
-  [linux/CMakeLists.txt](../../packages/loopy_engine/linux/CMakeLists.txt) (enable
-  `LOOPY_ENABLE_PLUGINS`).
+  [linux/CMakeLists.txt](../../packages/segno_engine/linux/CMakeLists.txt) (enable
+  `SEGNO_ENABLE_PLUGINS`).
 - [ ] VST3 scan: `/usr/lib/vst3`, `/usr/local/lib/vst3`, `~/.vst3`, app-local;
   `ModuleEntry`/`GetPluginFactory`. CLAP scan: `/usr/lib/clap`, `~/.clap`,
   `CLAP_PATH`.
@@ -51,8 +51,8 @@ See umbrella **D-SCAN** (Linux paths), **D-WIN** (X11 ownership), **D-MISS**
 
 ## File References
 
-- [linux/CMakeLists.txt](../../packages/loopy_engine/linux/CMakeLists.txt)
-- `packages/loopy_engine/src/host/scan_*.cpp`, `editor_x11.cpp`,
+- [linux/CMakeLists.txt](../../packages/segno_engine/linux/CMakeLists.txt)
+- `packages/segno_engine/src/host/scan_*.cpp`, `editor_x11.cpp`,
   `native_window_controller_x11.cpp`
 - [app_en.arb](../../lib/l10n/arb/app_en.arb), [app_es.arb](../../lib/l10n/arb/app_es.arb)
 
@@ -73,6 +73,6 @@ See umbrella **D-SCAN** (Linux paths), **D-WIN** (X11 ownership), **D-MISS**
 ## Out of Scope
 
 Wayland editor embedding (named limitation, not in this stack). Future hardening
-(out-of-process sandbox, watchdog, autosave-on-crash, exporting Loopy as a plugin)
+(out-of-process sandbox, watchdog, autosave-on-crash, exporting Segno as a plugin)
 remains separate per the umbrella §Out of Scope.
 </content>

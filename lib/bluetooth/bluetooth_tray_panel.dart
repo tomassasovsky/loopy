@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/appliance/host_page_chrome.dart';
-import 'package:loopy/bluetooth/bluetooth_cubit.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/setup/setup_surface.dart';
-import 'package:loopy/theme/theme.dart';
+import 'package:segno/appliance/host_page_chrome.dart';
+import 'package:segno/bluetooth/bluetooth_cubit.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/setup/setup_surface.dart';
+import 'package:segno/theme/theme.dart';
 
 /// In-tray Bluetooth face — fills the Control Center radio division until Back.
 class BluetoothTrayPanel extends StatefulWidget {
@@ -38,7 +38,7 @@ class _BluetoothTrayPanelState extends State<BluetoothTrayPanel> {
     final surface = context.surface;
     final state = context.watch<BluetoothCubit>().state;
     final cubit = context.read<BluetoothCubit>();
-    final alias = state.status.alias.isEmpty ? 'Loopy' : state.status.alias;
+    final alias = state.status.alias.isEmpty ? 'Segno' : state.status.alias;
 
     return KeyedSubtree(
       key: const Key('bluetooth_tray_panel'),

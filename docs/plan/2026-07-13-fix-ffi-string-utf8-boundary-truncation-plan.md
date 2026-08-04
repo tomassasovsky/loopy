@@ -6,7 +6,7 @@ date: 2026-07-13
 
 ## writeNativeString can truncate mid-UTF-8-character at the capacity boundary - Minimal
 
-`writeNativeString` in `packages/loopy_engine/lib/src/ffi_strings.dart`
+`writeNativeString` in `packages/segno_engine/lib/src/ffi_strings.dart`
 truncates a UTF-8-encoded byte array to `capacity - 1` bytes by raw byte
 count, with no check for whether the cut lands on a UTF-8 character boundary.
 A non-ASCII device id/name/driver string (`asioDriver`, `playbackDeviceId`,
@@ -28,38 +28,38 @@ scan (the max continuation-byte run in a 4-byte UTF-8 sequence).
 GOAL: writeNativeString never splits a multi-byte UTF-8 character when truncating to fit capacity, so readNativeString never emits a U+FFFD replacement character for a truncated tail that writeNativeString produced.
 
 SUCCESS CRITERIA:
-- writeNativeString backs off the truncation length to a whole UTF-8 code-point boundary instead of a raw byte-count cut | verify: manual inspect packages/loopy_engine/lib/src/ffi_strings.dart to confirm the backward continuation-byte scan is present before the truncation loop
-- A new unit test writes a string with a multi-byte character straddling the capacity boundary, round-trips it through writeNativeString -> readNativeString, and asserts the result contains no U+FFFD replacement character | verify: /Users/Tomas/development/flutter/bin/flutter test packages/loopy_engine/test/ffi_strings_test.dart
-- Existing EngineConfig/ffi_strings-adjacent tests still pass (no regression to ASCII truncation or empty-string handling) | verify: /Users/Tomas/development/flutter/bin/flutter test packages/loopy_engine/test/engine_config_test.dart
-- Static analysis is clean on the changed files | verify: /Users/Tomas/development/flutter/bin/flutter analyze packages/loopy_engine/lib/src/ffi_strings.dart packages/loopy_engine/test/ffi_strings_test.dart
+- writeNativeString backs off the truncation length to a whole UTF-8 code-point boundary instead of a raw byte-count cut | verify: manual inspect packages/segno_engine/lib/src/ffi_strings.dart to confirm the backward continuation-byte scan is present before the truncation loop
+- A new unit test writes a string with a multi-byte character straddling the capacity boundary, round-trips it through writeNativeString -> readNativeString, and asserts the result contains no U+FFFD replacement character | verify: /Users/Tomas/development/flutter/bin/flutter test packages/segno_engine/test/ffi_strings_test.dart
+- Existing EngineConfig/ffi_strings-adjacent tests still pass (no regression to ASCII truncation or empty-string handling) | verify: /Users/Tomas/development/flutter/bin/flutter test packages/segno_engine/test/engine_config_test.dart
+- Static analysis is clean on the changed files | verify: /Users/Tomas/development/flutter/bin/flutter analyze packages/segno_engine/lib/src/ffi_strings.dart packages/segno_engine/test/ffi_strings_test.dart
 
 NON-GOALS:
 - Changing readNativeString's decode behavior (allowMalformed / replacement-character handling) — the write-side fix prevents split characters from ever being written, making this unnecessary
 - Fixing any equivalent truncation logic on the native (C/C++) side of the engine, if it exists independently
 - Any other findings from the same code-review pass (handled by separate parallel worktrees)
 
-VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test packages/loopy_engine/test/ffi_strings_test.dart packages/loopy_engine/test/engine_config_test.dart && /Users/Tomas/development/flutter/bin/flutter analyze packages/loopy_engine/lib/src/ffi_strings.dart packages/loopy_engine/test/ffi_strings_test.dart
+VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test packages/segno_engine/test/ffi_strings_test.dart packages/segno_engine/test/engine_config_test.dart && /Users/Tomas/development/flutter/bin/flutter analyze packages/segno_engine/lib/src/ffi_strings.dart packages/segno_engine/test/ffi_strings_test.dart
 ```
 
 ## Context
 
-- File: `packages/loopy_engine/lib/src/ffi_strings.dart` (lines ~27-38 for
+- File: `packages/segno_engine/lib/src/ffi_strings.dart` (lines ~27-38 for
   `writeNativeString`; `readNativeString` above it is untouched).
 - `kNativeStringCapacity = 256` is the shared capacity constant for
   `le_device_info.id`/`name` and `le_config.playback_device_id`/
   `capture_device_id` (see doc comment at top of file). `le_plugin_desc.name`/
   `vendor` use capacity 128 and `.path` uses 1024 — the fix must work for any
   `capacity` value, not just the default 256.
-- Callers of `writeNativeString`: `packages/loopy_engine/lib/src/engine_config.dart`
+- Callers of `writeNativeString`: `packages/segno_engine/lib/src/engine_config.dart`
   lines 107-109 (`playback_device_id`, `capture_device_id`, `asio_driver`).
-- Existing test file `packages/loopy_engine/test/engine_config_test.dart`
+- Existing test file `packages/segno_engine/test/engine_config_test.dart`
   exercises `readNativeString`/`writeNativeString` round-trips via
   `calloc<le_config>()` — follow this pattern (import `dart:ffi`,
-  `package:ffi/ffi.dart`, `package:loopy_engine/src/ffi_strings.dart`, and the
+  `package:ffi/ffi.dart`, `package:segno_engine/src/ffi_strings.dart`, and the
   generated bindings) for the new test.
-- No `ffi_strings_test.dart` exists yet; `packages/loopy_engine/test/` is
+- No `ffi_strings_test.dart` exists yet; `packages/segno_engine/test/` is
   flat (no subdirectories) — new test file goes directly at
-  `packages/loopy_engine/test/ffi_strings_test.dart`.
+  `packages/segno_engine/test/ffi_strings_test.dart`.
 - Test runner gotcha (project memory): the very_good_cli MCP `test` tool is
   broken in this repo (exit 69). Use the absolute path
   `/Users/Tomas/development/flutter/bin/flutter test <path>` directly (a repo
@@ -77,7 +77,7 @@ cannot split a character by construction, since each loop iteration commits
 one full rune's bytes or none at all. This is the version to implement.
 
 Replace the body of `writeNativeString` in
-`packages/loopy_engine/lib/src/ffi_strings.dart`:
+`packages/segno_engine/lib/src/ffi_strings.dart`:
 
 ```dart
 void writeNativeString(
@@ -120,7 +120,7 @@ non-default capacity needs covering, `calloc<le_plugin_desc>()` exposes
 but this is optional; testing purely against the default `kNativeStringCapacity`
 (256, via `le_config`) is sufficient to prove the fix.
 
-Add `packages/loopy_engine/test/ffi_strings_test.dart` with at least:
+Add `packages/segno_engine/test/ffi_strings_test.dart` with at least:
 
 - A test with a string built to make `utf8.encode(value).length >= capacity`
   and a multi-byte character (e.g. `é`, 2 bytes) positioned so the raw

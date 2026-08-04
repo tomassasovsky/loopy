@@ -5,10 +5,10 @@ import 'package:bluetooth_client/src/bluetooth_client.dart';
 import 'package:bluetooth_client/src/bluetooth_models.dart';
 import 'package:bluetooth_client/src/unsupported_bluetooth_client.dart';
 
-/// Production [BluetoothClient]: shells out to `/usr/bin/loopy-bt-ctl`.
+/// Production [BluetoothClient]: shells out to `/usr/bin/segno-bt-ctl`.
 class SystemBluetoothClient implements BluetoothClient {
   /// Creates a [SystemBluetoothClient].
-  const SystemBluetoothClient({this.helperPath = '/usr/bin/loopy-bt-ctl'});
+  const SystemBluetoothClient({this.helperPath = '/usr/bin/segno-bt-ctl'});
 
   /// Path to the Bluetooth helper.
   final String helperPath;

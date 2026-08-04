@@ -32,7 +32,7 @@ try+timeout so one broken plugin doesn't abort the scan.
 
 ### Native (C/C++)
 - [ ] Add `IPluginHost` interface header (skeleton; only scan-relevant statics
-  needed now) under `packages/loopy_engine/src/host/`.
+  needed now) under `packages/segno_engine/src/host/`.
 - [ ] VST3 scan backend: walk the standard bundle locations (macOS user/system
   `…/VST3`), load each bundle (`bundleEntry` → `GetPluginFactory`), enumerate
   classes via `IPluginFactory2::getClassInfo2`, filter `kVstAudioEffectClass`, emit
@@ -46,17 +46,17 @@ try+timeout so one broken plugin doesn't abort the scan.
 - [ ] `le_plugin_scan_begin/poll/get/cancel` on a **dedicated scan thread**; results
   buffered for `_get`.
 - [ ] Add `le_plugin_format`, `le_plugin_desc` to
-  [loopy_engine_api.h](../../packages/loopy_engine/src/core/loopy_engine_api.h);
+  [segno_engine_api.h](../../packages/segno_engine/src/core/segno_engine_api.h);
   regen ffigen + `dart format` the generated bindings (per project memory: ffigen
   short-style drift).
 
-### Dart (loopy_engine)
+### Dart (segno_engine)
 - [ ] New `EnginePluginHosting` capability interface on the `AudioEngine`
-  abstraction ([audio_engine.dart](../../packages/loopy_engine/lib/src/audio_engine.dart)),
+  abstraction ([audio_engine.dart](../../packages/segno_engine/lib/src/audio_engine.dart)),
   with `scanBegin/scanPoll/scanResults/scanCancel`.
-- [ ] Implement in [native_audio_engine.dart](../../packages/loopy_engine/lib/src/native_audio_engine.dart).
+- [ ] Implement in [native_audio_engine.dart](../../packages/segno_engine/lib/src/native_audio_engine.dart).
 - [ ] **`MockAudioEngine` stub** returning a deterministic fixed scan list
-  ([mock_audio_engine.dart](../../packages/loopy_engine/lib/src/mock_audio_engine.dart)).
+  ([mock_audio_engine.dart](../../packages/segno_engine/lib/src/mock_audio_engine.dart)).
 - [ ] Dart `PluginDescriptor` model (id, name, vendor, path, format, version).
 
 ### Dart (repository)
@@ -67,11 +67,11 @@ try+timeout so one broken plugin doesn't abort the scan.
 
 ## File References
 
-- New: `packages/loopy_engine/src/host/plugin_host.h`, `…/scan_vst3.cpp`, `…/scan_clap.cpp`
-- [loopy_engine_api.h](../../packages/loopy_engine/src/core/loopy_engine_api.h) (ABI)
-- [audio_engine.dart](../../packages/loopy_engine/lib/src/audio_engine.dart),
-  [native_audio_engine.dart](../../packages/loopy_engine/lib/src/native_audio_engine.dart),
-  [mock_audio_engine.dart](../../packages/loopy_engine/lib/src/mock_audio_engine.dart)
+- New: `packages/segno_engine/src/host/plugin_host.h`, `…/scan_vst3.cpp`, `…/scan_clap.cpp`
+- [segno_engine_api.h](../../packages/segno_engine/src/core/segno_engine_api.h) (ABI)
+- [audio_engine.dart](../../packages/segno_engine/lib/src/audio_engine.dart),
+  [native_audio_engine.dart](../../packages/segno_engine/lib/src/native_audio_engine.dart),
+  [mock_audio_engine.dart](../../packages/segno_engine/lib/src/mock_audio_engine.dart)
 - New: `packages/looper_repository/lib/src/plugin_catalog.dart`, `…/models/plugin_descriptor.dart`
 
 ## Acceptance Criteria

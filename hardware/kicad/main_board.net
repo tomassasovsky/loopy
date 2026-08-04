@@ -460,12 +460,12 @@
       (ref "J1")
       (value "ProMicro")
       (description "Generic connector, single row, 01x24, script generated (kicad-library-utils/schlib/autogen/connector/)")
-      (footprint "loopy:ProMicro")
+      (footprint "segno:ProMicro")
       (fields
         (field
           (name "Description") "Generic connector, single row, 01x24, script generated (kicad-library-utils/schlib/autogen/connector/)")
         (field
-          (name "Footprint") "loopy:ProMicro")
+          (name "Footprint") "segno:ProMicro")
         (field
           (name "Datasheet"))
         (field
@@ -782,12 +782,12 @@
       (ref "J4")
       (value "MIDI_DIN5_RA")
       (description "5-pin DIN connector (5-pin DIN-5 stereo)")
-      (footprint "loopy:MIDI_DIN5_RA")
+      (footprint "segno:MIDI_DIN5_RA")
       (fields
         (field
           (name "Description") "5-pin DIN connector (5-pin DIN-5 stereo)")
         (field
-          (name "Footprint") "loopy:MIDI_DIN5_RA")
+          (name "Footprint") "segno:MIDI_DIN5_RA")
         (field
           (name "Datasheet") "http://www.mouser.com/ds/2/18/40_c091_abd_e-75918.pdf")
         (field
@@ -805,12 +805,12 @@
       (ref "J5")
       (value "MIDI_DIN5_RA")
       (description "5-pin DIN connector (5-pin DIN-5 stereo)")
-      (footprint "loopy:MIDI_DIN5_RA")
+      (footprint "segno:MIDI_DIN5_RA")
       (fields
         (field
           (name "Description") "5-pin DIN connector (5-pin DIN-5 stereo)")
         (field
-          (name "Footprint") "loopy:MIDI_DIN5_RA")
+          (name "Footprint") "segno:MIDI_DIN5_RA")
         (field
           (name "Datasheet") "http://www.mouser.com/ds/2/18/40_c091_abd_e-75918.pdf")
         (field

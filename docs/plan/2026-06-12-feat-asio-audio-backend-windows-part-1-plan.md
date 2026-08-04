@@ -21,7 +21,7 @@ part: 1 of 2
 
 ## Overview
 
-`le_engine_start` ([engine.c:1753](packages/loopy_engine/src/engine.c)) bakes
+`le_engine_start` ([engine.c:1753](packages/segno_engine/src/engine.c)) bakes
 miniaudio in directly: `ma_device_init` + `data_callback` → `le_engine_process`.
 There is no seam to let a second backend (ASIO, in Part 2) own the device.
 
@@ -41,7 +41,7 @@ existing native + Dart tests pass with no logic change.
 This seam is **internal to the engine** and **distinct from the per-OS
 `engine_platform.h` seam** (which exists for per-OS *capabilities* — CoreAudio
 labels, JACK pinning — not swappable device backends; see its header comment at
-[engine_platform.h:1](packages/loopy_engine/src/engine_platform.h)).
+[engine_platform.h:1](packages/segno_engine/src/engine_platform.h)).
 
 ## Problem Statement
 
@@ -84,12 +84,12 @@ typedef struct le_device_backend {
 ### Implementation steps
 
 **1a. `le_audio_backend` enum + `le_config` fields** —
-[loopy_engine_api.h](packages/loopy_engine/src/loopy_engine_api.h):
+[segno_engine_api.h](packages/segno_engine/src/segno_engine_api.h):
 
 ```c
 typedef enum le_audio_backend {
   LE_BACKEND_WASAPI = 0,  /* default: miniaudio's default backend (WASAPI/CoreAudio/ALSA) */
-  LE_BACKEND_ASIO = 1,    /* opt-in Windows ASIO (Part 2; requires LOOPY_ENABLE_ASIO) */
+  LE_BACKEND_ASIO = 1,    /* opt-in Windows ASIO (Part 2; requires SEGNO_ENABLE_ASIO) */
 } le_audio_backend;
 
 typedef struct le_config {
@@ -113,7 +113,7 @@ typedef struct le_device_info {
 ```
 
 > **Explicit change site (do not miss — latent garbage-read bug):**
-> `device_info_copy` ([engine.c:~1575](packages/loopy_engine/src/engine.c)) **must
+> `device_info_copy` ([engine.c:~1575](packages/segno_engine/src/engine.c)) **must
 > zero-initialize** `input_channels`/`output_channels` for every miniaudio device
 > (WASAPI reports no per-device channel count here). Leaving them uninitialized
 > would surface stack garbage as channel counts in Dart's `AudioDevice`. Add an
@@ -130,7 +130,7 @@ typedef struct le_device_info {
 ```
 
 Add `_Atomic int32_t a_active_backend;` to `struct le_engine`
-([engine_private.h:186](packages/loopy_engine/src/engine_private.h), beside
+([engine_private.h:186](packages/segno_engine/src/engine_private.h), beside
 `a_exclusive_active`); initialize to `LE_BACKEND_WASAPI` (0) in the configure/reset
 path; read out in `le_engine_get_snapshot` → `out->active_backend`. Publish it in
 `le_engine_start` from `le_device_open_result.active_backend` (here, always
@@ -151,7 +151,7 @@ WASAPI).
   miniaudio impl.
 
 **1e. `le_engine_start` becomes the backend dispatcher** —
-[engine.c:1753](packages/loopy_engine/src/engine.c):
+[engine.c:1753](packages/segno_engine/src/engine.c):
 
 ```c
 const le_device_backend* be = le_select_backend(config->backend);  /* 1f */
@@ -177,12 +177,12 @@ in `le_engine_start` (above the seam), unchanged.
 **1f. `le_select_backend(int32_t backend)`** in engine.c: returns
 `&le_miniaudio_backend` for every input in this PR (the `backend`/`asio_driver`
 fields are accepted and ignored — no ASIO backend exists yet). Part 2 adds the
-`#if LOOPY_ENABLE_ASIO` branch returning `&le_asio_backend`. **The default build
+`#if SEGNO_ENABLE_ASIO` branch returning `&le_asio_backend`. **The default build
 must never reference any `le_asio_*` symbol** — the ASIO branch (and that symbol
-reference) is wrapped in `#if LOOPY_ENABLE_ASIO`, guaranteed at link time, not
+reference) is wrapped in `#if SEGNO_ENABLE_ASIO`, guaranteed at link time, not
 just runtime.
 
-**CMake** — [CMakeLists.txt:8](packages/loopy_engine/src/CMakeLists.txt): add
+**CMake** — [CMakeLists.txt:8](packages/segno_engine/src/CMakeLists.txt): add
 `engine_miniaudio.c` to the unconditional `add_library` source list.
 
 ### Layer 2 — FFI bindings (regen)
@@ -191,13 +191,13 @@ Regenerate after the struct changes, per the repo gotcha
 ([PROGRESS.md](docs/PROGRESS.md)):
 
 ```sh
-cd packages/loopy_engine
+cd packages/segno_engine
 dart run ffigen --config ffigen.yaml
-dart format lib/src/generated/loopy_engine_bindings.dart   # required: tall style
+dart format lib/src/generated/segno_engine_bindings.dart   # required: tall style
 ```
 
 Verify the generated `le_config`/`le_device_info`/`le_snapshot` structs expose the
-new fields and the diff is field-scoped (no whole-file churn). Run the loopy_engine
+new fields and the diff is field-scoped (no whole-file churn). Run the segno_engine
 analyzer/tests right after regen.
 
 ### Layer 3 — minimal Dart plumbing for the new fields
@@ -207,7 +207,7 @@ bindings compile and equality stays complete — but **no UI/behavior change** (
 fields take inert defaults that reproduce today's behavior).
 
 - **`AudioBackend` enum** — define **inline in**
-  [engine_config.dart](packages/loopy_engine/lib/src/engine_config.dart) (mirrors
+  [engine_config.dart](packages/segno_engine/lib/src/engine_config.dart) (mirrors
   how `EngineResult` lives in `audio_engine.dart`; a two-value enum does not
   warrant its own file): `enum AudioBackend { wasapi, asio }` with `toNative()` /
   `fromNative(int)` (unknown → `wasapi`).
@@ -217,22 +217,22 @@ fields take inert defaults that reproduce today's behavior).
   `writeNativeString(ptr.ref.asio_driver, asioDriver)`), **hand-written**
   `==`/`hashCode`/`toString`.
 - **`AudioDevice`** —
-  [audio_device.dart](packages/loopy_engine/lib/src/audio_device.dart): add
+  [audio_device.dart](packages/segno_engine/lib/src/audio_device.dart): add
   `final int inputChannels` / `final int outputChannels` (default `0`); update the
   **hand-written** `==`/`hashCode`/`toString`; populate from `le_device_info` in
-  the enumeration mapper ([native_audio_engine.dart](packages/loopy_engine/lib/src/native_audio_engine.dart)).
+  the enumeration mapper ([native_audio_engine.dart](packages/segno_engine/lib/src/native_audio_engine.dart)).
 - **`EngineSnapshot`** —
-  [engine_snapshot.dart](packages/loopy_engine/lib/src/engine_snapshot.dart): add
+  [engine_snapshot.dart](packages/segno_engine/lib/src/engine_snapshot.dart): add
   `final AudioBackend activeBackend` (default `AudioBackend.wasapi`) to the primary
   constructor, the `initial()` const constructor, `fromNative`
   (`activeBackend: AudioBackend.fromNative(native.active_backend)`), and the
   **hand-written** `==`/`hashAll([...])`/`toString` (this class is **not**
   Equatable — there is no `props`).
 - **`MockAudioEngine`** —
-  [mock_audio_engine.dart](packages/loopy_engine/lib/src/mock_audio_engine.dart):
+  [mock_audio_engine.dart](packages/segno_engine/lib/src/mock_audio_engine.dart):
   snapshot reports `activeBackend == AudioBackend.wasapi` (the only path here).
 
-> **Equality model (codebase fact):** the whole `loopy_engine` package
+> **Equality model (codebase fact):** the whole `segno_engine` package
 > (`EngineConfig`, `AudioDevice`, `EngineSnapshot`) uses **hand-written** equality
 > members, not Equatable. Only `looper_repository` / `settings_repository` /
 > presentation classes use Equatable `props`. Edit the hand-written members.
@@ -288,10 +288,10 @@ fields take inert defaults that reproduce today's behavior).
 ## References
 
 - Brainstorm: [2026-06-12-asio-audio-backend-windows-brainstorm-doc.md](docs/brainstorm/2026-06-12-asio-audio-backend-windows-brainstorm-doc.md)
-- Device open (to move behind the seam): [engine.c:1753](packages/loopy_engine/src/engine.c), `data_callback` [engine.c:1287](packages/loopy_engine/src/engine.c), `notification_callback` [engine.c:1656](packages/loopy_engine/src/engine.c), `device_info_copy` [engine.c:1575](packages/loopy_engine/src/engine.c)
-- RT core to reuse unchanged: `le_engine_process` [engine.c:856](packages/loopy_engine/src/engine.c)
-- FFI structs: `le_config` [loopy_engine_api.h:189](packages/loopy_engine/src/loopy_engine_api.h), `le_device_info` [loopy_engine_api.h:181](packages/loopy_engine/src/loopy_engine_api.h), `le_snapshot` [loopy_engine_api.h:273](packages/loopy_engine/src/loopy_engine_api.h)
-- Engine struct: [engine_private.h:163](packages/loopy_engine/src/engine_private.h)
+- Device open (to move behind the seam): [engine.c:1753](packages/segno_engine/src/engine.c), `data_callback` [engine.c:1287](packages/segno_engine/src/engine.c), `notification_callback` [engine.c:1656](packages/segno_engine/src/engine.c), `device_info_copy` [engine.c:1575](packages/segno_engine/src/engine.c)
+- RT core to reuse unchanged: `le_engine_process` [engine.c:856](packages/segno_engine/src/engine.c)
+- FFI structs: `le_config` [segno_engine_api.h:189](packages/segno_engine/src/segno_engine_api.h), `le_device_info` [segno_engine_api.h:181](packages/segno_engine/src/segno_engine_api.h), `le_snapshot` [segno_engine_api.h:273](packages/segno_engine/src/segno_engine_api.h)
+- Engine struct: [engine_private.h:163](packages/segno_engine/src/engine_private.h)
 - Prior art (requested-vs-negotiated, per-OS seam): [2026-06-12-feat-wasapi-exclusive-mode-windows-plan.md](docs/plan/2026-06-12-feat-wasapi-exclusive-mode-windows-plan.md), [2026-06-12-refactor-per-os-engine-subdivision-plan.md](docs/plan/2026-06-12-refactor-per-os-engine-subdivision-plan.md)
-- Dart models: [engine_config.dart](packages/loopy_engine/lib/src/engine_config.dart), [engine_snapshot.dart](packages/loopy_engine/lib/src/engine_snapshot.dart), [audio_device.dart](packages/loopy_engine/lib/src/audio_device.dart), [native_audio_engine.dart](packages/loopy_engine/lib/src/native_audio_engine.dart), [mock_audio_engine.dart](packages/loopy_engine/lib/src/mock_audio_engine.dart)
+- Dart models: [engine_config.dart](packages/segno_engine/lib/src/engine_config.dart), [engine_snapshot.dart](packages/segno_engine/lib/src/engine_snapshot.dart), [audio_device.dart](packages/segno_engine/lib/src/audio_device.dart), [native_audio_engine.dart](packages/segno_engine/lib/src/native_audio_engine.dart), [mock_audio_engine.dart](packages/segno_engine/lib/src/mock_audio_engine.dart)
 - ffigen regen gotcha: [PROGRESS.md](docs/PROGRESS.md)

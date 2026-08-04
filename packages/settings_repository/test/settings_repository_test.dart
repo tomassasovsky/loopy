@@ -496,10 +496,10 @@ void main() {
     });
 
     test('round-trips a saved id + name', () async {
-      await repository.savePedalOutputDevice(id: 'out-7', name: 'Loopy Pedal');
+      await repository.savePedalOutputDevice(id: 'out-7', name: 'Segno Pedal');
       final loaded = await repository.loadPedalOutputDevice();
       expect(loaded?.id, 'out-7');
-      expect(loaded?.name, 'Loopy Pedal');
+      expect(loaded?.name, 'Segno Pedal');
     });
 
     test('treats an empty saved id as no selection', () async {
@@ -508,7 +508,7 @@ void main() {
     });
 
     test('clearPedalOutputDevice removes both keys', () async {
-      await repository.savePedalOutputDevice(id: 'out-7', name: 'Loopy Pedal');
+      await repository.savePedalOutputDevice(id: 'out-7', name: 'Segno Pedal');
       await repository.clearPedalOutputDevice();
       expect(await repository.loadPedalOutputDevice(), isNull);
       expect(store.values.containsKey('pedal.output_device_id'), isFalse);

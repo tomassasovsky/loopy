@@ -8,7 +8,7 @@ status: brainstorm
 
 ## Problem
 
-Loopy on Windows can only see **2 channels** of a pro multichannel interface.
+Segno on Windows can only see **2 channels** of a pro multichannel interface.
 The user's Focusrite (an 18-in / 20-out class device) should expose 18 inputs and
 20 outputs, but it doesn't.
 
@@ -33,7 +33,7 @@ on ASIO: WASAPI does not aggregate pro interfaces the way macOS CoreAudio does.
 
 Access the **full channel count** of a pro interface on Windows (the Focusrite's
 18 in / 20 out) for recording, looping, monitoring, and per-lane routing — the
-same multichannel experience Loopy already delivers on macOS via CoreAudio.
+same multichannel experience Segno already delivers on macOS via CoreAudio.
 
 ## The only viable path: a real ASIO capture/playback backend
 
@@ -44,7 +44,7 @@ prior PR2 work.
 
 ### What already exists (foundation, not the feature)
 
-- `LOOPY_ENABLE_ASIO` CMake option (OFF by default), `LOOPY_ASIO_SDK_DIR` for a
+- `SEGNO_ENABLE_ASIO` CMake option (OFF by default), `SEGNO_ASIO_SDK_DIR` for a
   **user-supplied, non-vendored** Steinberg ASIO SDK (GPLv3-or-proprietary,
   `.gitignore`d). The MIT boundary is preserved: the SDK is never committed.
 - `win_asio_labels.cpp` already loads ASIO drivers (`AsioDrivers`,
@@ -86,7 +86,7 @@ backend** the engine drives, with two implementations:
         └───────────────────────────┘
             │                     │
    miniaudio backend          ASIO backend (win_asio_device.cpp,
-   (engine.c today,           #if LOOPY_ENABLE_ASIO, C++ → extern "C")
+   (engine.c today,           #if SEGNO_ENABLE_ASIO, C++ → extern "C")
     WASAPI/CoreAudio/ALSA)        │
             │                     │
             └─────────┬───────────┘
@@ -138,7 +138,7 @@ mask-based routing model needs no change.
 
 ### Graceful fallback
 
-When `LOOPY_ENABLE_ASIO` isn't built, no ASIO driver is installed/selected, or
+When `SEGNO_ENABLE_ASIO` isn't built, no ASIO driver is installed/selected, or
 ASIO init fails, the engine uses the **miniaudio (WASAPI) backend** — exactly
 today's behavior. ASIO is purely additive and opt-in; the default build and all
 non-Windows platforms are unaffected.
@@ -147,7 +147,7 @@ non-Windows platforms are unaffected.
 
 ### In (first deliverable — "core end-to-end")
 - Device-backend seam in the engine; miniaudio refactored to sit behind it (no
-  behavior change) and the ASIO backend added behind `LOOPY_ENABLE_ASIO`.
+  behavior change) and the ASIO backend added behind `SEGNO_ENABLE_ASIO`.
 - ASIO duplex open at the driver's **full** channel count, feeding the existing
   `le_engine_process` (de-interleave/convert in, interleave/convert out).
 - Backend selector + ASIO driver picker UI; ASIO-allowed buffer-size chips;
@@ -209,15 +209,15 @@ non-Windows platforms are unaffected.
 ## References
 
 - Proven constraint: WASAPI channel probe (this session) on the user's Focusrite.
-- Existing ASIO foundation: `packages/loopy_engine/src/win_asio_labels.{cpp,h}`,
-  `LOOPY_ENABLE_ASIO` in `packages/loopy_engine/src/CMakeLists.txt`,
+- Existing ASIO foundation: `packages/segno_engine/src/win_asio_labels.{cpp,h}`,
+  `SEGNO_ENABLE_ASIO` in `packages/segno_engine/src/CMakeLists.txt`,
   `docs/WINDOWS_ASIO.md`.
 - Engine core to reuse: `le_engine_process` /
-  [engine.c](../../packages/loopy_engine/src/engine.c), the SPSC ring, the atomic
+  [engine.c](../../packages/segno_engine/src/engine.c), the SPSC ring, the atomic
   `le_snapshot`.
 - Just-shipped WASAPI exclusive mode + per-OS seam:
   `docs/plan/2026-06-12-feat-wasapi-exclusive-mode-windows-plan.md`,
-  `packages/loopy_engine/src/engine_platform.h`.
+  `packages/segno_engine/src/engine_platform.h`.
 - Steinberg ASIO SDK (user-supplied, non-vendored): `AsioDrivers`, `ASIOInit`,
   `ASIOGetChannels`, `ASIOGetBufferSize`, `ASIOCreateBuffers`, `bufferSwitch`,
   `ASIOStart`, `ASIOGetLatencies`, `ASIOControlPanel`.

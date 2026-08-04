@@ -1,5 +1,5 @@
 /// The bidirectional MIDI foot-pedal feature: the behavior cubit and its
-/// settings UI. loopy owns all pedal state and pushes LED frames back over the
+/// settings UI. segno owns all pedal state and pushes LED frames back over the
 /// `pedal_repository` transport.
 library;
 

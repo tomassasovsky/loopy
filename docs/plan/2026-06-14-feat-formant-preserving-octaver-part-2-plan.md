@@ -27,7 +27,7 @@ and gains no slider. Add the persistence migration so chains saved by the
 The octaver rewrite (parts 3–4) needs a 4th normalized param `p3 = mode`
 (`< 0.5` → phase vocoder, `≥ 0.5` → PSOLA). The param array is a fixed global
 width (`a_fx_param[LE_FX_MAX][LE_FX_PARAMS]`,
-[loopy_engine_api.h:168](../../packages/loopy_engine/src/loopy_engine_api.h)),
+[segno_engine_api.h:168](../../packages/segno_engine/src/segno_engine_api.h)),
 so adding a param means widening that constant and every place that assumes the
 old width — across two languages, the FFI boundary, persistence, and l10n.
 
@@ -35,9 +35,9 @@ old width — across two languages, the FFI boundary, persistence, and l10n.
 
 ### Native (C)
 
-- **`loopy_engine_api.h`**: `#define LE_FX_PARAMS 4`. The atomic arrays resize
+- **`segno_engine_api.h`**: `#define LE_FX_PARAMS 4`. The atomic arrays resize
   automatically.
-- **`le_fx_default_params`** ([engine.c:2735](../../packages/loopy_engine/src/engine.c)):
+- **`le_fx_default_params`** ([engine.c:2735](../../packages/segno_engine/src/engine.c)):
   **every** `case` must write `out[3]` (B1). All non-octaver types set
   `out[3] = 0.0f` (inert). `LE_FX_OCTAVER` keeps `{0.25, 0.5, 0.5}` and adds
   `out[3] = 0.0f` (mode = PV). Audit each `case` body — none may leave `out[3]`
@@ -47,7 +47,7 @@ old width — across two languages, the FFI boundary, persistence, and l10n.
 
 ### Dart model + UI
 
-- **`kTrackEffectParams = 4`** ([track_effect.dart:13](../../packages/loopy_engine/lib/src/track_effect.dart)).
+- **`kTrackEffectParams = 4`** ([track_effect.dart:13](../../packages/segno_engine/lib/src/track_effect.dart)).
 - **Per-type `params` lists** drive the editor (`fx.type.params.length` sliders,
   [effect_params_editor.dart:99](../../lib/common/effect_params_editor.dart)) —
   so **only the octaver's list grows**: append a **discrete `Mode`** entry
@@ -56,12 +56,12 @@ old width — across two languages, the FFI boundary, persistence, and l10n.
   slider.
 - **`defaultParams` (B1)**: these are **separate** const lists from the slider
   metadata and are length-3 for **all eight** types
-  ([track_effect.dart:108-117](../../packages/loopy_engine/lib/src/track_effect.dart)).
+  ([track_effect.dart:108-117](../../packages/segno_engine/lib/src/track_effect.dart)).
   Widen **all eight** to length 4 — append `0` to the seven non-octaver entries
   and append the mode default `0.0` to octaver. (Skipping the non-octaver entries
   leaves their `params.length` disagreeing with `kTrackEffectParams`.)
 - **`fromJson` migration (B2 / D6)**: `TrackEffect.fromJson`
-  ([track_effect.dart:174](../../packages/loopy_engine/lib/src/track_effect.dart))
+  ([track_effect.dart:174](../../packages/segno_engine/lib/src/track_effect.dart))
   currently passes the decoded list through verbatim. Change it to **normalize to
   `kTrackEffectParams`**: truncate if longer; pad missing trailing slots with the
   **type's `defaultParams[i]`** (not a blanket `0.0`), so engine and editor agree
@@ -70,7 +70,7 @@ old width — across two languages, the FFI boundary, persistence, and l10n.
 - **l10n (N4)**: add the Mode label + "Phase Vocoder" / "PSOLA" readout keys to
   the **template ARB first** (`app_en.arb`), then `app_es.arb`, or
   `flutter gen-l10n` fails the build gate.
-- **FFI**: regenerate `loopy_engine_bindings.dart` via ffigen (the width is a
+- **FFI**: regenerate `segno_engine_bindings.dart` via ffigen (the width is a
   compile-time `#define`; this is doc/const sync).
 
 ## Dependencies
@@ -80,14 +80,14 @@ old width — across two languages, the FFI boundary, persistence, and l10n.
 
 ## Implementation Order
 
-1. `loopy_engine_api.h`: `LE_FX_PARAMS 4`.
+1. `segno_engine_api.h`: `LE_FX_PARAMS 4`.
 2. `engine.c` `le_fx_default_params`: write `out[3]` in **all** cases.
 3. Native test: assert other effects unchanged after the widening (M3).
 4. `track_effect.dart`: `kTrackEffectParams = 4`; octaver `params` += discrete
    Mode; widen **all** `defaultParams` to length 4; `fromJson` pad/truncate with
    per-type defaults.
 5. l10n: template ARB first, then `es`; `flutter gen-l10n`.
-6. ffigen regenerate `loopy_engine_bindings.dart`.
+6. ffigen regenerate `segno_engine_bindings.dart`.
 7. Dart tests (below). Register any native test in `main()`.
 8. Gates: native `ALL PASSED`, `flutter analyze`, `flutter test`,
    `flutter build windows --debug`.
@@ -113,7 +113,7 @@ old width — across two languages, the FFI boundary, persistence, and l10n.
 - **Native** (`test_engine_core.c`, registered in `main()`): widening leaves
   drive/filter/delay/tremolo/echo/reverb output unchanged on a mono input (can
   extend an existing FX test rather than add a new one).
-- **Dart** (`packages/loopy_engine/test/.../track_effect_test.dart`):
+- **Dart** (`packages/segno_engine/test/.../track_effect_test.dart`):
   - `fromJson` with a **length-3 fixture** → length-4 `TrackEffect`, octaver
     `mode == 0.0` (PV) (B2/D6).
   - `fromJson` with a length-5 list → truncated to 4.
@@ -134,10 +134,10 @@ old width — across two languages, the FFI boundary, persistence, and l10n.
 ## References & Research
 
 - Param surface: `LE_FX_PARAMS`
-  ([loopy_engine_api.h:168](../../packages/loopy_engine/src/loopy_engine_api.h)),
-  `le_fx_default_params` ([engine.c:2735](../../packages/loopy_engine/src/engine.c)).
+  ([segno_engine_api.h:168](../../packages/segno_engine/src/segno_engine_api.h)),
+  `le_fx_default_params` ([engine.c:2735](../../packages/segno_engine/src/engine.c)).
 - Dart: `kTrackEffectParams`/`params`/`defaultParams`/`fromJson`
-  ([track_effect.dart:13,64,108,174](../../packages/loopy_engine/lib/src/track_effect.dart));
+  ([track_effect.dart:13,64,108,174](../../packages/segno_engine/lib/src/track_effect.dart));
   per-type slider loop
   ([effect_params_editor.dart:99](../../lib/common/effect_params_editor.dart)).
 - Decisions D6 (persistence), M3 (other-effects inert) in the

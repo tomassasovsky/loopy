@@ -8,7 +8,7 @@ issue: 351
 ## feat: FX system v3 — Extensive
 
 > Source brainstorm: [docs/brainstorm/2026-07-28-fx-system-v3-brainstorm-doc.md](../brainstorm/2026-07-28-fx-system-v3-brainstorm-doc.md)
-> Issue: [#351](https://github.com/tomassasovsky/loopy/issues/351) (retitled; supersedes the discarded Sheeran-parity experiment PR #352)
+> Issue: [#351](https://github.com/tomassasovsky/segno/issues/351) (retitled; supersedes the discarded Sheeran-parity experiment PR #352)
 > Autonomy: `autonomy:plan-gate` — direction approved in-session (capture model, four stages, pedal mode shape, expression path); this plan is the review artifact.
 > Build convention: split each part below into its own `-part-N-plan.md` before `/build`ing it; `/build` targets a part, never this index. Once a part file exists it is canonical — the index's bullets are source material to lift, not a second copy to maintain. Each part gets its own child issue with `stage:*`/`autonomy:*` labels (part 8 and part 5's physical slice `blocked-verify`); every part checks the cspell dictionary (stomp/plog/FS-6/TRS vocabulary) + semantic PR title before opening its PR.
 > Review provenance: user-flow analysis (findings tagged [A#]/[B#]) + a 4-dimension
@@ -43,7 +43,7 @@ issue: 351
 
 ## Overview
 
-Redesign Loopy's FX system around four first-class stages with everything
+Redesign Segno's FX system around four first-class stages with everything
 editable forever and hardware-class CPU in the steady state:
 
 - **Stages:** Input (live, feeds recording) → Loop (per loop slot; inherited
@@ -74,7 +74,7 @@ editable forever and hardware-class CPU in the steady state:
 
 1. **No bypass exists.** The only "off" for a built-in effect is deleting it
    (its parameters are lost). `fx_apply_chain` processes every slot
-   unconditionally (`packages/loopy_engine/src/core/engine_fx.c:983-994`);
+   unconditionally (`packages/segno_engine/src/core/engine_fx.c:983-994`);
    `le_fx_state` has no enabled flag. Pedal FX toggling is impossible today.
 2. **"Track FX" is a fiction — and there is no track bus at all.** Chains
    exist per-input (monitor) and per-lane only (`engine_private.h:230-283`);
@@ -158,7 +158,7 @@ monitors summed **after** the master chain → out. Decisions pinned in part 1
   single dispatch point for discrete-CC toggle/momentary interpretation (no
   second control-surface interpreter grows in a repository package). The
   **chain envelope is owned by `looper_repository`**, wrapping
-  `loopy_engine`'s existing entries codec — the engine never consumes
+  `segno_engine`'s existing entries codec — the engine never consumes
   provenance/meta. Direct engine-codec call sites that migrate to the
   envelope: `lib/app/audio_bootstrap.dart:291`,
   `lib/app/monitor_migration.dart:162`,
@@ -191,7 +191,7 @@ The foundation everything else stands on.
       **Documented behavior: no tail spill on bypass** [B7]
 - [ ] API + ring commands: `le_engine_set_{lane,monitor,track,master}_fx_enabled`,
       `..._fx_chain_enabled`, plus full track/master chain setters mirroring
-      the lane set (`loopy_engine_api.h`, `engine_commands.c`); enabled flips
+      the lane set (`segno_engine_api.h`, `engine_commands.c`); enabled flips
       use direct atomic stores (like params — no heap pointers move, so no
       ring needed) so they work while stopped
 - [ ] **Performance event log** [R3]: mirror the params pattern — push
@@ -220,7 +220,7 @@ The foundation everything else stands on.
       mapping + monitor-uncolored; re-enable resets DSP state; defaults on
       old sessions
 
-Exit: `bash packages/loopy_engine/src/test/run_native_tests.sh` green. Effort: L.
+Exit: `bash packages/segno_engine/src/test/run_native_tests.sh` green. Effort: L.
 
 ### Part 2 — Engine: Loop-stage wet cache
 
@@ -534,7 +534,7 @@ Exit: bind → stomp → correct toggle in widget tests + simulator. Effort: L
       `MappingTrigger` and `ContinuousBinding` gain persisted forms (kind,
       CC id, MIDI channel, target via the part-3 canonical FxAddress form,
       lo/hi)
-- [ ] **Learn hygiene** [B8]: learn ignores the Loopy pedal's own protocol
+- [ ] **Learn hygiene** [B8]: learn ignores the Segno pedal's own protocol
       traffic (note range + relative encoder CC); fan-out (one CC → many
       targets) allowed — reference-grounded, Sheeran assigns up to 4 params
       to one expression pedal (manual 5.5.4); many CCs → one target =
@@ -633,8 +633,8 @@ Exit: soak notes + docs merged. Effort: M.
 GOAL: Four-stage editable FX with baked-class steady-state CPU, pedal FX mode, and expression mapping — nothing destructive anywhere.
 
 SUCCESS CRITERIA:
-- Engine bypass + track bus + inserts: no-tail-spill, ramp continuity, empty-chain bit-identity, D-MASTER/D-TRACKROUTE/D-MASTERCH pinned, plog events (part 1) | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- Wet cache: correctness incl. volume-in-key, revision bump audit, threading lifecycle under ASan, cache-hot toggle round-trip, storm safety (part 2) | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
+- Engine bypass + track bus + inserts: no-tail-spill, ramp continuity, empty-chain bit-identity, D-MASTER/D-TRACKROUTE/D-MASTERCH pinned, plog events (part 1) | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Wet cache: correctness incl. volume-in-key, revision bump audit, threading lifecycle under ASan, cache-hot toggle round-trip, storm safety (part 2) | verify: bash packages/segno_engine/src/test/run_native_tests.sh
 - Domain/session: migration fidelity, envelope back-compat, leftover reset incl. new stages, arm fix end-to-end (part 3) | verify: /Users/Tomas/development/flutter/bin/flutter test packages/looper_repository packages/session_repository packages/performance_repository test/looper test/audio_setup
 - Four-stage Signal surface + single power control + dead-code removal (part 4) | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper && ! ls lib/looper/view/fx_editor/fx_inspector.dart 2>/dev/null
 - Protocol v3: contract tests both trees via new runner, v1/v2/v3 pairing matrix, projection + never-encode-above-negotiated (part 5) | verify: bash firmware/test/run_tests.sh && /Users/Tomas/development/flutter/bin/flutter test packages/pedal_repository
@@ -655,7 +655,7 @@ NON-GOALS:
 - Per-session expression mappings (global only in v1, stated rationale)
 - Unity-render volume optimization for linear-only chains (future)
 
-VERIFICATION COMMAND: bash packages/loopy_engine/src/test/run_native_tests.sh
+VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh
 ```
 
 ## Risk Analysis & Mitigation

@@ -1,0 +1,413 @@
+#!/bin/sh
+# segno-wifi-ctl — privileged WiFi helper the Flutter app drives.
+#
+# Verbs (stdout = compact JSON; detail on stderr):
+#   status                 {supported,enabled,connected,ssid,ip,signal}
+#   scan                   [{ssid,signal,secured}, ...]
+#   connect <ssid> [psk]   {} on success (waits for activation)
+#   disconnect             {}
+#   forget <ssid>          {}
+#   radio on|off           {}  (Control Center tap toggle)
+#
+# NetworkManager owns the radio, and nothing else may. There is deliberately no
+# second backend: see reclaim_wifi below for what having one cost us (#468).
+set -eu
+
+IFACE="${SEGNO_WIFI_IFACE:-wlan0}"
+# The join budget. This was 20s while a wpa_supplicant fallback existed, so a
+# slow AP would trip it and hand the radio away; with nothing to fall back to,
+# waiting is strictly better than failing.
+NM_CONNECT_WAIT_SECS="${SEGNO_WIFI_NM_CONNECT_TIMEOUT:-45}"
+# Beats the ephemeral wired profile (autoconnect-priority -999). Used as the
+# floor: next_autoconnect_priority lifts each new join above every saved
+# network, so the one the user just picked is the one that comes back after a
+# reboot (#463).
+WIFI_AUTOCONNECT_PRIORITY="${SEGNO_WIFI_AUTOCONNECT_PRIORITY:-100}"
+
+log() { echo "segno-wifi-ctl: $*" >&2; }
+
+json_escape() {
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+have_nmcli() { command -v nmcli >/dev/null 2>&1; }
+# The appliance image always ships NetworkManager, so it is the single owner
+# of the radio. There used to be a wpa_supplicant fallback here for when an NM
+# join failed. It was worse than the problem: taking over meant setting wlan0
+# `managed no`, which made every later call pick the fallback again, so a
+# console ran our supplicant and NM's dbus-owned one at the same time. Two
+# supplicants on one interface tear down each other's association — the AP saw
+# the console reconnect every few seconds forever. See #468.
+
+# Undo that state if an older image (or a live-patched helper) left it behind,
+# so the first run after an update repairs the console instead of inheriting a
+# radio nobody owns.
+reclaim_wifi() {
+    have_nmcli || return 0
+    # Only ever our own supplicant, matched by its config path. NM's instance
+    # is `wpa_supplicant -u` and killing it would take WiFi down entirely.
+    if [ -d /proc ]; then
+        for pid in /proc/[0-9]*; do
+            [ -r "$pid/cmdline" ] || continue
+            if tr '\0' ' ' <"$pid/cmdline" 2>/dev/null \
+                | grep -q "wpa_supplicant-${IFACE}.conf"; then
+                log "killing a stale fallback supplicant (${pid##*/})"
+                kill "${pid##*/}" 2>/dev/null || true
+            fi
+        done
+    fi
+    case "$(nmcli -t -f GENERAL.STATE device show "$IFACE" 2>/dev/null | head -n1)" in
+        *unmanaged*)
+            log "reclaiming $IFACE for NetworkManager"
+            nmcli device set "$IFACE" managed yes >/dev/null 2>&1 || true
+            ;;
+    esac
+}
+
+disable_powersave() {
+    command -v iw >/dev/null 2>&1 || return 0
+    iw dev "$IFACE" set power_save off >/dev/null 2>&1 || true
+}
+
+iface_ip() {
+    ip -4 -o addr show dev "$IFACE" 2>/dev/null \
+        | awk '{print $4}' | cut -d/ -f1 | head -n1
+}
+
+iface_enabled() {
+    ip -o link show "$IFACE" 2>/dev/null | grep -Eq '[,<]UP[,>]'
+}
+
+# Every saved wifi profile, one SSID per line. The UI needs these separately
+# from a scan: a network you saved is not the same as one that happens to be
+# in range, and until now the two were indistinguishable — you could not
+# forget a saved network unless you were connected to it (#471).
+saved_ssids() {
+    nmcli -t -g NAME,TYPE connection show 2>/dev/null \
+        | awk -F: '$2 ~ /wireless/ { print $1 }'
+}
+
+# One above the highest saved network, so the network the user just chose wins
+# the next autoconnect. Every profile used to get the same constant, which left
+# NetworkManager breaking the tie by timestamp — so a failing network the user
+# had moved on from kept being reselected (#463).
+next_autoconnect_priority() {
+    highest=$(nmcli -t -g NAME,TYPE,802-11-wireless.ssid connection show 2>/dev/null \
+        | awk -F: '$2 ~ /wireless/ { print $1 }' \
+        | while IFS= read -r name; do
+              [ -n "$name" ] || continue
+              nmcli -g connection.autoconnect-priority connection show "$name" 2>/dev/null
+          done \
+        | awk 'BEGIN { m = 0 } /^-?[0-9]+$/ { if ($1 > m) m = $1 } END { print m }')
+    [ -n "$highest" ] || highest=0
+    if [ "$highest" -lt "$WIFI_AUTOCONNECT_PRIORITY" ]; then
+        printf '%s\n' "$WIFI_AUTOCONNECT_PRIORITY"
+    else
+        printf '%s\n' "$((highest + 1))"
+    fi
+}
+
+# ---------- NetworkManager path ----------
+
+# What wpa_supplicant said while this join was being attempted. NetworkManager
+# is not a reliable narrator here, so go to the source.
+JOURNALCTL="${SEGNO_JOURNALCTL:-journalctl}"
+JOIN_EVIDENCE_WINDOW="${SEGNO_JOIN_EVIDENCE_WINDOW:-90}"
+
+# iwd drives the radio, NetworkManager narrates it, and older images used
+# wpa_supplicant — match all three rather than one, or a supplicant swap
+# silently turns every failure back into "wrong password" (it did: this grep
+# said wpa_supplicant until #470 removed it).
+supplicant_evidence() {
+    "$JOURNALCTL" --since "-${JOIN_EVIDENCE_WINDOW}s" --no-pager 2>/dev/null \
+        | grep -aiE 'wpa_supplicant|iwd|NetworkManager' || true
+}
+
+# NetworkManager reports `Secrets were required` for two unrelated things, and
+# on this console it is nearly always the wrong one.
+#
+# A headless appliance runs no secret agent. So when an association times out,
+# NM's fallback is to ask for fresh secrets, find nobody to ask, and fail the
+# connection as `no-secrets` — even when it logged "secrets exist, no new
+# secrets needed" moments earlier. Believing it tells the user to re-enter a
+# password that is provably correct, and hides an AP that accepted the
+# association and then never started the handshake.
+#
+# wpa_supplicant distinguishes the two plainly, so ask it instead and only fall
+# back to NM's wording when it has nothing to say.
+map_connect_error() {
+    err=$1
+    lower=$(printf '%s' "$err" | tr '[:upper:]' '[:lower:]')
+    evidence=$(supplicant_evidence)
+
+    # A real key failure: the AP sent M1 and the MIC did not check out.
+    if printf '%s' "$evidence" | grep -qiE \
+        '4-way handshake failed|pre-shared key may be incorrect|reason=wrong_key'
+    then
+        log "authentication failed (wrong password?)"
+        return 0
+    fi
+    # Associated, then silence. The key was never tested.
+    if printf '%s' "$evidence" | grep -qiE \
+        'authentication with .* timed out|association took too long'
+    then
+        log "timed out waiting for association"
+        return 0
+    fi
+
+    # NetworkManager's own words are not evidence about the password. On a
+    # headless console there is no secret agent, so ANY activation failure ends
+    # as `no-secrets` — it said exactly that while holding a key that was
+    # provably correct, and cost a night of debugging (#466, #459).
+    if printf '%s' "$lower" | grep -qE 'wrong[^[:space:]]*password|invalid passphrase'
+    then
+        log "authentication failed (wrong password?)"
+    elif printf '%s' "$lower" | grep -qE \
+        'secrets were required|no secrets|802\.1x|took too long|timeout'
+    then
+        log "timed out waiting for association"
+    else
+        log "connection failed: $err"
+    fi
+}
+
+do_status_nm() {
+    wifi_radio=$(nmcli -t -f WIFI radio 2>/dev/null || echo disabled)
+    enabled=false
+    case "$wifi_radio" in enabled|on) enabled=true ;; esac
+
+    if [ "$enabled" != true ]; then
+        echo '{"supported":true,"enabled":false,"connected":false,"ssid":"","ip":"","signal":0}'
+        return 0
+    fi
+
+    state=$(nmcli -t -f GENERAL.STATE device show "$IFACE" 2>/dev/null \
+        | sed -n 's/^GENERAL.STATE://p' | head -n1)
+    connected=false
+    case "$state" in 100\ *|*\(connected\)*) connected=true ;; esac
+
+    ssid=$(nmcli -t -f GENERAL.CONNECTION device show "$IFACE" 2>/dev/null \
+        | sed -n 's/^GENERAL.CONNECTION://p' | head -n1)
+    case "$ssid" in ''|--*) ssid= ;; esac
+
+    ip=$(nmcli -t -f IP4.ADDRESS device show "$IFACE" 2>/dev/null \
+        | sed -n 's/^IP4.ADDRESS\[[0-9]*\]://p' | head -n1 | cut -d/ -f1)
+
+    signal=0
+    if [ "$connected" = true ] && [ -n "$ssid" ]; then
+        signal=$(nmcli -t -f IN-USE,SSID,SIGNAL device wifi list ifname "$IFACE" 2>/dev/null \
+            | awk -F: -v s="$ssid" '$1=="*" && $2==s {print $3; exit}')
+        [ -n "$signal" ] || signal=0
+    fi
+
+    printf '{"supported":true,"enabled":true,"connected":%s,"ssid":"%s","ip":"%s","signal":%s}\n' \
+        "$connected" "$(json_escape "${ssid:-}")" "$(json_escape "${ip:-}")" "$signal"
+}
+
+do_radio_nm() {
+    onoff=$1
+    case "$onoff" in on|off) ;; *) log "radio needs on|off"; return 2 ;; esac
+    nmcli radio wifi "$onoff" >/dev/null
+    echo '{}'
+}
+
+do_scan_nm() {
+    nmcli radio wifi on >/dev/null 2>&1 || true
+    nmcli device wifi rescan ifname "$IFACE" >/dev/null 2>&1 || true
+    sleep 2
+
+    raw=$(mktemp)
+    ranked=$(mktemp)
+    nmcli -t -f SSID,SIGNAL,SECURITY device wifi list ifname "$IFACE" 2>/dev/null >"$raw" || true
+
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        security=${line##*:}
+        rest=${line%:*}
+        signal=${rest##*:}
+        ssid=${rest%:*}
+        [ -n "$ssid" ] || continue
+        case "$ssid" in --*) continue ;; esac
+        secured=true
+        case "$security" in ''|--*) secured=false ;; esac
+        ssid_safe=$(printf '%s' "$ssid" | tr '\t' ' ')
+        printf '%s\t%s\t%s\n' "$ssid_safe" "${signal:-0}" "$secured"
+    done <"$raw" | awk -F'\t' '
+        {
+            ssid=$1; sig=$2+0; sec=$3
+            if (!(ssid in best) || sig > best[ssid]) {
+                best[ssid]=sig
+                secured[ssid]=sec
+            }
+        }
+        END {
+            for (s in best) printf "%s\t%d\t%s\n", s, best[s], secured[s]
+        }
+    ' | sort -t"$(printf '\t')" -k2,2nr >"$ranked"
+
+    # A saved network that is out of range still belongs in the list. Otherwise
+    # the only way to forget one is to be connected to it, which is impossible
+    # precisely when the saved profile is the thing that will not connect
+    # (#471). inRange says whether the scan actually saw it — carried
+    # explicitly because signal is dBm on some paths and 0-100 quality on
+    # others, so no sentinel value is safe.
+    saved=$(mktemp)
+    saved_ssids >"$saved"
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        if ! cut -f1 "$ranked" | grep -qxF "$name"; then
+            printf '%s\t0\ttrue\tfalse\n' "$name" >>"$ranked"
+        fi
+    done <"$saved"
+
+    first=1
+    printf '['
+    while IFS="$(printf '\t')" read -r ssid signal secured in_range; do
+        [ -n "$ssid" ] || continue
+        [ -n "$in_range" ] || in_range=true
+        is_saved=false
+        grep -qxF "$ssid" "$saved" && is_saved=true
+        if [ "$first" -eq 1 ]; then
+            first=0
+        else
+            printf ','
+        fi
+        printf '{"ssid":"%s","signal":%s,"secured":%s,"saved":%s,"inRange":%s}' \
+            "$(json_escape "$ssid")" "$signal" "$secured" "$is_saved" "$in_range"
+    done <"$ranked"
+    printf ']\n'
+    rm -f "$raw" "$ranked" "$saved"
+}
+
+do_forget_nm() {
+    ssid=$1
+    nmcli -t -f UUID,NAME,TYPE connection show 2>/dev/null \
+        | awk -F: '$3 ~ /wireless|wifi/ {print $1"\t"$2}' \
+        | while IFS="$(printf '\t')" read -r uuid name; do
+            [ -n "$uuid" ] || continue
+            profile_ssid=$(nmcli -t -f 802-11-wireless.ssid connection show "$uuid" 2>/dev/null \
+                | sed -n 's/^802-11-wireless.ssid://p')
+            if [ "$name" = "$ssid" ] || [ "$profile_ssid" = "$ssid" ]; then
+                nmcli connection delete uuid "$uuid" >/dev/null 2>&1 || true
+            fi
+        done
+    echo '{}'
+}
+
+do_connect_nm() {
+    ssid=$1
+    psk=${2:-}
+    nmcli radio wifi on >/dev/null 2>&1 || true
+    disable_powersave
+    do_forget_nm "$ssid" >/dev/null 2>&1 || true
+
+    join_priority=$(next_autoconnect_priority)
+    errf=$(mktemp)
+    passf=
+    set +e
+    if [ -n "$psk" ]; then
+        # Create the profile without embedding the PSK in argv, then activate
+        # via passwd-file. On this image `connection up` after `wifi-sec.psk=…`
+        # often fails immediately with "Secrets were required".
+        nmcli connection add type wifi ifname "$IFACE" con-name "$ssid" \
+            ssid "$ssid" \
+            wifi-sec.key-mgmt wpa-psk \
+            wifi-sec.auth-alg open \
+            connection.autoconnect yes \
+            connection.autoconnect-priority "$join_priority" \
+            802-11-wireless.powersave 2 \
+            >"$errf" 2>&1
+        rc=$?
+        if [ "$rc" -eq 0 ]; then
+            passf=$(mktemp)
+            chmod 600 "$passf"
+            printf '802-11-wireless-security.psk:%s\n' "$psk" >"$passf"
+            nmcli --wait "$NM_CONNECT_WAIT_SECS" connection up "$ssid" \
+                passwd-file "$passf" >"$errf" 2>&1
+            rc=$?
+            # Persist secrets into the keyfile for autoconnect after reboot.
+            if [ "$rc" -eq 0 ]; then
+                nmcli connection modify "$ssid" \
+                    wifi-sec.psk "$psk" wifi-sec.psk-flags 0 \
+                    >/dev/null 2>&1 || true
+            fi
+        fi
+    else
+        nmcli connection add type wifi ifname "$IFACE" con-name "$ssid" \
+            ssid "$ssid" \
+            connection.autoconnect yes \
+            connection.autoconnect-priority "$join_priority" \
+            802-11-wireless.powersave 2 \
+            >"$errf" 2>&1 \
+            && nmcli --wait "$NM_CONNECT_WAIT_SECS" connection up "$ssid" \
+                >"$errf" 2>&1
+        rc=$?
+    fi
+    set -e
+    rm -f "$passf"
+    if [ "$rc" -ne 0 ]; then
+        map_connect_error "$(cat "$errf")"
+        rm -f "$errf"
+        return 1
+    fi
+    rm -f "$errf"
+    echo '{}'
+}
+
+do_disconnect_nm() {
+    nmcli device disconnect "$IFACE" >/dev/null 2>&1 || true
+    echo '{}'
+}
+
+# Every verb repairs the ownership state first: it is idempotent, costs one
+# nmcli read, and means a console does not stay broken until someone reboots it.
+require_nm() {
+    if ! have_nmcli; then
+        log "NetworkManager (nmcli) is not installed"
+        return 1
+    fi
+    reclaim_wifi
+}
+
+do_status() {
+    if ! have_nmcli; then
+        echo '{"supported":false,"enabled":false,"connected":false,"ssid":"","ip":"","signal":0}'
+        return 0
+    fi
+    reclaim_wifi
+    do_status_nm
+}
+
+do_radio() { require_nm && do_radio_nm "$@"; }
+do_scan() { require_nm || { echo '[]'; return 1; }; do_scan_nm; }
+do_connect() { require_nm && do_connect_nm "$@"; }
+do_disconnect() { require_nm && do_disconnect_nm; }
+do_forget() { require_nm && do_forget_nm "$@"; }
+
+usage() {
+    log "usage: $0 status|scan|connect <ssid> [psk]|disconnect|forget <ssid>|radio on|off"
+    exit 2
+}
+
+[ $# -ge 1 ] || usage
+verb=$1
+shift
+
+case "$verb" in
+    status) do_status ;;
+    scan) do_scan ;;
+    connect)
+        [ $# -ge 1 ] || usage
+        do_connect "$@"
+        ;;
+    disconnect) do_disconnect ;;
+    forget)
+        [ $# -ge 1 ] || usage
+        do_forget "$1"
+        ;;
+    radio)
+        [ $# -ge 1 ] || usage
+        do_radio "$1"
+        ;;
+    *) usage ;;
+esac

@@ -1,15 +1,15 @@
-# fix: correct inaccurate mh_dylib comment in loopy_engine.podspec
+# fix: correct inaccurate mh_dylib comment in segno_engine.podspec
 
 Brainstorm: `docs/brainstorm/2026-07-13-podspec-mh-dylib-comment-fix-brainstorm-doc.md`
 
 ## Problem
 
-`packages/loopy_engine/macos/loopy_engine.podspec` (lines ~33-39) documents
+`packages/segno_engine/macos/segno_engine.podspec` (lines ~33-39) documents
 `MACH_O_TYPE => 'mh_dylib'` with a comment claiming FFI symbols are "resolved
-at runtime via `DynamicLibrary.open('loopy_engine.framework/loopy_engine')`".
+at runtime via `DynamicLibrary.open('segno_engine.framework/segno_engine')`".
 
 That's not what happens. `_openLibrary()` in
-`packages/loopy_engine/lib/src/native_audio_engine.dart` (lines 34-44) always
+`packages/segno_engine/lib/src/native_audio_engine.dart` (lines 34-44) always
 uses `DynamicLibrary.process()` on macOS/iOS — dlopen(NULL) semantics against
 the process's global symbol namespace — and that file's own comment says
 "there is no standalone library file to open". A maintainer debugging a
@@ -22,7 +22,7 @@ correct and must not change — only the prose explaining it is wrong.
 ## Scope
 
 - **In scope**: rewrite the comment block at
-  `packages/loopy_engine/macos/loopy_engine.podspec` lines ~33-39 (the prose
+  `packages/segno_engine/macos/segno_engine.podspec` lines ~33-39 (the prose
   above/around `'MACH_O_TYPE' => 'mh_dylib'`) so it accurately describes that
   symbols are found via `DynamicLibrary.process()` (dlopen(NULL) / global
   process symbol visibility), not a path-based `DynamicLibrary.open()`.
@@ -42,7 +42,7 @@ Replace the existing comment (currently lines 33-39):
     # Mach-O dylib. Flutter/CocoaPods default plugin frameworks to static
     # (MACH_O_TYPE=staticlib); that works for normal plugins (reached via the
     # registrant) but breaks FFI plugins, whose symbols are only resolved at
-    # runtime via DynamicLibrary.open('loopy_engine.framework/loopy_engine').
+    # runtime via DynamicLibrary.open('segno_engine.framework/segno_engine').
     # A static framework's binary is an ar archive that dlopen cannot load, and
     # its symbols get dead-stripped since nothing references them at link time.
 ```
@@ -55,7 +55,7 @@ with prose that:
 2. Corrects the loading mechanism: the Dart side loads native symbols via
    `DynamicLibrary.process()` (dlopen(NULL) semantics against the process's
    global symbol table) — see `_openLibrary()` in
-   `packages/loopy_engine/lib/src/native_audio_engine.dart` — not a
+   `packages/segno_engine/lib/src/native_audio_engine.dart` — not a
    path-based `DynamicLibrary.open(...)` on the framework binary.
 3. Ties the two together: `mh_dylib` is what makes the framework's symbols
    dynamically loaded and globally visible in the host process in the first
@@ -83,21 +83,21 @@ Suggested replacement text:
 ### Step 2 — Verify no other references need updating
 
 Confirm (already checked during brainstorm via repo-wide grep) that no other
-file references the old `DynamicLibrary.open('loopy_engine.framework/...')`
+file references the old `DynamicLibrary.open('segno_engine.framework/...')`
 claim. No other edits expected.
 
 ## Success Criteria
 
 - [ ] `MACH_O_TYPE => 'mh_dylib'` line is byte-for-byte unchanged.
-      verify: `git diff --unified=0 packages/loopy_engine/macos/loopy_engine.podspec | grep -c "MACH_O_TYPE"` returns `0` (i.e., that line does not appear in the diff hunks — confirming it wasn't touched)
-- [ ] The podspec no longer contains the phrase `DynamicLibrary.open('loopy_engine.framework`.
-      verify: `! grep -q "DynamicLibrary.open('loopy_engine.framework" packages/loopy_engine/macos/loopy_engine.podspec`
+      verify: `git diff --unified=0 packages/segno_engine/macos/segno_engine.podspec | grep -c "MACH_O_TYPE"` returns `0` (i.e., that line does not appear in the diff hunks — confirming it wasn't touched)
+- [ ] The podspec no longer contains the phrase `DynamicLibrary.open('segno_engine.framework`.
+      verify: `! grep -q "DynamicLibrary.open('segno_engine.framework" packages/segno_engine/macos/segno_engine.podspec`
 - [ ] The podspec comment references `DynamicLibrary.process()` and/or `native_audio_engine.dart`, aligning it with the real loading mechanism.
-      verify: `grep -q "DynamicLibrary.process" packages/loopy_engine/macos/loopy_engine.podspec`
+      verify: `grep -q "DynamicLibrary.process" packages/segno_engine/macos/segno_engine.podspec`
 - [ ] No other files changed.
-      verify: `git diff --stat | grep -v "loopy_engine.podspec" | grep -v "^ [0-9]* files\? changed" | grep -c . ` — expect only the podspec (and this plan/brainstorm doc) in the diff stat; manual check: `git status --short` shows only the podspec, brainstorm doc, and plan doc as changed/untracked.
+      verify: `git diff --stat | grep -v "segno_engine.podspec" | grep -v "^ [0-9]* files\? changed" | grep -c . ` — expect only the podspec (and this plan/brainstorm doc) in the diff stat; manual check: `git status --short` shows only the podspec, brainstorm doc, and plan doc as changed/untracked.
 - [ ] Podspec remains syntactically valid Ruby (CocoaPods podspecs are plain Ruby).
-      verify: `ruby -c packages/loopy_engine/macos/loopy_engine.podspec`
+      verify: `ruby -c packages/segno_engine/macos/segno_engine.podspec`
 
 ## Risks
 

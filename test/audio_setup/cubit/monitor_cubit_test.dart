@@ -1,8 +1,8 @@
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';

@@ -1,8 +1,8 @@
 # Windows ASIO: channel-label exclusion + duplex device backend
 
-`LOOPY_ENABLE_ASIO` gates **two** Windows ASIO features, **on by default on
+`SEGNO_ENABLE_ASIO` gates **two** Windows ASIO features, **on by default on
 Windows** and built against the Steinberg ASIO SDK vendored under
-[third_party/asiosdk](../packages/loopy_engine/third_party/asiosdk):
+[third_party/asiosdk](../packages/segno_engine/third_party/asiosdk):
 
 1. **Channel-label exclusion** (the original feature): read per-channel hardware
    labels via `ASIOGetChannelInfo().name` to exclude an interface's "Loopback"
@@ -28,12 +28,12 @@ the no-driver affordance rather than dropping to system audio.
 
 ## License (GPLv3) and the vendored SDK
 
-The Steinberg ASIO SDK is **GPLv3-or-proprietary**. Loopy is licensed
+The Steinberg ASIO SDK is **GPLv3-or-proprietary**. Segno is licensed
 **GPL-3.0-or-later**, so the SDK is **vendored** under
-[`packages/loopy_engine/third_party/asiosdk`](../packages/loopy_engine/third_party/asiosdk)
+[`packages/segno_engine/third_party/asiosdk`](../packages/segno_engine/third_party/asiosdk)
 (version pinned in its README), with the Steinberg Licensing Agreement kept
 intact alongside it. ASIO is therefore compiled by default on Windows — no
-user-supplied SDK step. macOS/Linux keep the miniaudio backend (`LOOPY_ENABLE_ASIO`
+user-supplied SDK step. macOS/Linux keep the miniaudio backend (`SEGNO_ENABLE_ASIO`
 is OFF there).
 
 > `license_check.yaml` scans Dart dependencies only; it does not assert the repo
@@ -110,7 +110,7 @@ To **disable** ASIO (e.g. a non-ASIO CI build), set the enable flag — via env
 var, since the Flutter Windows build can't forward `-D` cache flags:
 
 ```powershell
-$env:LOOPY_ENABLE_ASIO = 'OFF'
+$env:SEGNO_ENABLE_ASIO = 'OFF'
 flutter clean   # force a CMake reconfigure so the change takes effect
 flutter build windows --debug --target lib/main_development.dart
 ```
@@ -123,32 +123,32 @@ The vendored SDK uses the standard layout
 **Label probe**
 
 - Dispatch: `le_platform_excluded_input_mask` in
-  [engine_windows.c](../packages/loopy_engine/src/platform/engine_windows.c), under
-  `#if defined(LOOPY_ENABLE_ASIO)`.
-- ASIO probe: [win_asio_labels.cpp](../packages/loopy_engine/src/asio/win_asio_labels.cpp)
-  (+ [win_asio_labels.h](../packages/loopy_engine/src/asio/win_asio_labels.h)).
+  [engine_windows.c](../packages/segno_engine/src/platform/engine_windows.c), under
+  `#if defined(SEGNO_ENABLE_ASIO)`.
+- ASIO probe: [win_asio_labels.cpp](../packages/segno_engine/src/asio/win_asio_labels.cpp)
+  (+ [win_asio_labels.h](../packages/segno_engine/src/asio/win_asio_labels.h)).
 - Portable, unit-tested mask core: `le_excluded_mask_from_names` /
   `le_label_is_loopback` in
-  [engine_devices.c](../packages/loopy_engine/src/core/engine_devices.c) (tested in
-  [test_engine_core.c](../packages/loopy_engine/src/test/test_engine_core.c)).
+  [engine_devices.c](../packages/segno_engine/src/core/engine_devices.c) (tested in
+  [test_engine_core.c](../packages/segno_engine/src/test/test_engine_core.c)).
 
 **Duplex backend (Part 2)**
 
 - ASIO backend + driver enumeration:
-  [win_asio_device.cpp](../packages/loopy_engine/src/asio/win_asio_device.cpp)
-  (+ [win_asio_device.h](../packages/loopy_engine/src/asio/win_asio_device.h)),
+  [win_asio_device.cpp](../packages/segno_engine/src/asio/win_asio_device.cpp)
+  (+ [win_asio_device.h](../packages/segno_engine/src/asio/win_asio_device.h)),
   exposing `le_asio_backend` and `le_enumerate_asio_drivers`.
 - Backend selection: `le_select_backend` in
-  [engine_devices.c](../packages/loopy_engine/src/core/engine_devices.c), called from
+  [engine_devices.c](../packages/segno_engine/src/core/engine_devices.c), called from
   `le_engine_start` in
-  [engine.c](../packages/loopy_engine/src/core/engine.c). The default build links no
+  [engine.c](../packages/segno_engine/src/core/engine.c). The default build links no
   ASIO symbol (the reference lives inside the `#if`); a non-ASIO build provides a
   stub `le_enumerate_asio_drivers` returning 0.
 - Pure, unit-tested bridge math: `le_deinterleave_in` / `le_interleave_out` /
-  `le_asio_pick_buffer` in [engine_convert.c](../packages/loopy_engine/src/core/engine_convert.c)
-  (tested in [test_engine_core.c](../packages/loopy_engine/src/test/test_engine_core.c)).
+  `le_asio_pick_buffer` in [engine_convert.c](../packages/segno_engine/src/core/engine_convert.c)
+  (tested in [test_engine_core.c](../packages/segno_engine/src/test/test_engine_core.c)).
 - Dart stack: the `enumerateAsioDrivers` FFI marshalling
-  ([native_audio_engine.dart](../packages/loopy_engine/lib/src/native_audio_engine.dart)),
+  ([native_audio_engine.dart](../packages/segno_engine/lib/src/native_audio_engine.dart)),
   the `AudioBackend` / `asioDriver` persistence
   ([settings_repository.dart](../packages/settings_repository/lib/src/settings_repository.dart)),
   and the backend selector + driver picker in the audio-setup feature

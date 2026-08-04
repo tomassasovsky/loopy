@@ -4,11 +4,11 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/looper/looper.dart';
-import 'package:loopy_engine/loopy_engine.dart'
-    show EngineSnapshot, TrackSnapshot;
-import 'package:loopy_engine/loopy_engine.dart' as le show LatencyState;
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/looper/looper.dart';
+import 'package:segno_engine/segno_engine.dart'
+    show EngineSnapshot, TrackSnapshot;
+import 'package:segno_engine/segno_engine.dart' as le show LatencyState;
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';

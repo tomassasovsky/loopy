@@ -68,13 +68,13 @@ BP/settings rework ────┴─► C, D  (independent of each other)
 
 ## Codebase context & conventions
 
-VGV layered monorepo. Native engine in `packages/loopy_engine/src/` (RT-safe
+VGV layered monorepo. Native engine in `packages/segno_engine/src/` (RT-safe
 audio callback; control→audio via the SPSC ring; audio→control via per-field
 `_Atomic` snapshots). FFI bindings are regenerated with
-`dart run ffigen --config ffigen.yaml` after any `loopy_engine_api.h` change.
+`dart run ffigen --config ffigen.yaml` after any `segno_engine_api.h` change.
 Native tests: `clang … src/test/test_engine_core.c …` (device-free). Dart/Flutter
 tests via the absolute `/Users/Tomas/development/flutter/bin/flutter`. App reaches
-the engine only through `package:looper_repository` (no `loopy_engine` import in
+the engine only through `package:looper_repository` (no `segno_engine` import in
 `lib/`). Keep every PR green: native `ALL PASSED`, `flutter analyze`, app suite,
 macOS build.
 
@@ -95,7 +95,7 @@ macOS build.
 Goal: choose the output/input device (default = system); detect disconnects;
 auto-recover a pinned device; surface it all through the repository.
 
-Native (`loopy_engine_api.h` / `engine.c`):
+Native (`segno_engine_api.h` / `engine.c`):
 - Device enumeration: `le_device_info { char id[256]; char name[256]; int32_t
   is_default; }` and `le_enumerate_playback_devices` /
   `le_enumerate_capture_devices(le_device_info* out, int32_t max, int32_t*
@@ -114,7 +114,7 @@ Native (`loopy_engine_api.h` / `engine.c`):
 
 FFI regen.
 
-Dart (`loopy_engine`):
+Dart (`segno_engine`):
 - `EngineConfig`: `playbackDeviceId` / `captureDeviceId` (default `''`).
 - New value object `AudioDevice { id, name, isDefault, isInput }` +
   `AudioEngine.enumerateDevices()` (returns inputs+outputs).

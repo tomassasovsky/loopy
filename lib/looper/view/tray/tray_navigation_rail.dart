@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/cubit/settings_tray_cubit.dart';
-import 'package:loopy/looper/view/tray/tray_metrics.dart';
-import 'package:loopy/theme/theme.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/settings_tray_cubit.dart';
+import 'package:segno/looper/view/tray/tray_metrics.dart';
+import 'package:segno/theme/theme.dart';
 
 /// The open tray's navigation spine: a persistent vertical rail listing every
 /// in-tray destination, with the selected one filling the sheet beside it.

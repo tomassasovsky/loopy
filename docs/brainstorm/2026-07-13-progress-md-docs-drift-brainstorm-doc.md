@@ -22,16 +22,16 @@ been violated for three large, already-shipped feature areas:
    performance-recording + DAW-export + VST3 plan; PRs #132, #133, #146): a
    new `daw_export` package that turns a performance capture into an Ableton
    Live 12 `.als` project — audio tracks, session/arrangement clips, volume +
-   mute automation envelopes, and (the newest piece) real Loopy VST3 device
+   mute automation envelopes, and (the newest piece) real Segno VST3 device
    chains embedded in the `.als` when a track's per-lane effects resolve
    cleanly, falling back to a wet-bounce stem otherwise.
 3. **VST3 plugins**, which is really two related but distinct threads that
    both need to appear:
-   - **Plugin hosting** (loading third-party VST3/CLAP plugins into Loopy as
+   - **Plugin hosting** (loading third-party VST3/CLAP plugins into Segno as
      effects) — vendored SDKs, scan/catalog, slot lifecycle, dynamic
      parameter UI, native editor windows on **macOS and Windows**; Linux
      (X11) hosting is the one part still not shipped.
-   - **Loopy's own built-in effects, exported as installable VST3 plugins**
+   - **Segno's own built-in effects, exported as installable VST3 plugins**
      for third-party DAWs (a separate, newer plan) — 7 native macOS plugins
      shipped (Delay, Reverb, Echo, Drive, Filter, Tremolo, Octaver), a
      golden-parity audio-diff harness proving DSP parity with the engine,
@@ -113,7 +113,7 @@ is no live user to ask:
   `pedal_repository` 116, `midi_device_repository` 22, `routing_graph` 45,
   `controller_repository` 18 (was 14), `settings_repository` 65 (was 63),
   `session_repository` 57 (was 17), `local_storage_client` 1 (unchanged),
-  `loopy_engine` (dart-level) 138 with ~7 skipped (was documented as
+  `segno_engine` (dart-level) 138 with ~7 skipped (was documented as
   "plugin 38" — an old label for the same suite). The main `app` suite is
   being re-verified; if it doesn't come back clean and fast, its count will
   be left as the last-known-green figure with a note rather than blocked on
@@ -128,7 +128,7 @@ is no live user to ask:
   routing UI (PR 5)" already folds a multi-PR arc into one bullet), DAW
   export (folded with it or adjacent, since the two plans merged and the
   device-chain-resolver piece depends on both), Plugin hosting status
-  correction + Loopy-FX-as-VST3-plugins (separate bullet, since it's a
+  correction + Segno-FX-as-VST3-plugins (separate bullet, since it's a
   distinct deliverable from the host).
 - **Roadmap update**: note VST3 plugin-hosting's one remaining gap (Linux X11
   host) and the VST3-FX-plugins plan's remaining parts 15-17 (brainstormed,

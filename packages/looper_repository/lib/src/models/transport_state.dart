@@ -1,5 +1,5 @@
 import 'package:equatable/equatable.dart';
-import 'package:loopy_engine/loopy_engine.dart';
+import 'package:segno_engine/segno_engine.dart';
 
 /// The master loop transport plus the tempo grid, click, and count-in state
 /// (plan A1/A2; `2026-07-22-feat-tempo-aware-looper-modes-plan.md`).

@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/common/console_mode.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/pedal/cubit/pedal_cubit.dart';
-import 'package:loopy/pedal/view/pedal_assignment_page.dart';
-import 'package:loopy/setup/setup_surface.dart';
-import 'package:loopy/theme/surface_theme.dart';
 import 'package:pedal_repository/pedal_repository.dart'
     show PedalBindStatus, PedalCodec, PedalOutput;
+import 'package:segno/common/console_mode.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/pedal/cubit/pedal_cubit.dart';
+import 'package:segno/pedal/view/pedal_assignment_page.dart';
+import 'package:segno/setup/setup_surface.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 /// Dropdown value for the "None" item — not a real device id (hosts may expose
 /// ports whose id is empty, which would duplicate `''` and trip
 /// DropdownButton).
-const _kPedalNoneValue = '__loopy_pedal_none__';
+const _kPedalNoneValue = '__segno_pedal_none__';
 
 /// Dropdown value for the "not set" firmware-version item — protocol
 /// versions start at 1, so 0 is never a real version.
@@ -24,7 +24,7 @@ const _kPedalVersionUnknownValue = 0;
 /// engine, so it renders even in Windows ASIO-only mode.
 ///
 /// The pedal's *input* (footswitches) shares the MIDI input device selected in
-/// the MIDI input section; this only binds the output destination loopy pushes
+/// the MIDI input section; this only binds the output destination segno pushes
 /// state frames to.
 class PedalSettingsSection extends StatelessWidget {
   /// Creates a [PedalSettingsSection].
@@ -315,7 +315,7 @@ class _PedalStyledDropdown<T> extends StatelessWidget {
 
 /// The manual pedal firmware wire-protocol version picker — the pre-#331
 /// version-discovery gate (R6). "Not set" keeps outbound frames at the v2
-/// safety floor; picking the flashed firmware's version lets loopy encode up
+/// safety floor; picking the flashed firmware's version lets segno encode up
 /// to it (pedal FX mode needs v3). Options span v1 through the newest
 /// protocol the codec speaks, so a future bump appears here without a UI
 /// change.

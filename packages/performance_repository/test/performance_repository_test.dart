@@ -3,8 +3,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy_engine/loopy_engine.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno_engine/segno_engine.dart';
 import 'package:wav_codec/wav_codec.dart';
 
 import 'helpers/fake_performance_engine.dart';
@@ -17,7 +17,7 @@ void main() {
   late DateTime clock;
 
   setUp(() {
-    tempDir = Directory.systemTemp.createTempSync('loopy_perf');
+    tempDir = Directory.systemTemp.createTempSync('segno_perf');
     engine = FakePerformanceEngine();
     clock = DateTime(2026, 7, 6, 14, 30, 15);
     repo = PerformanceRepository(

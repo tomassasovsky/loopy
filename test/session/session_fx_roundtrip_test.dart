@@ -6,8 +6,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/session/session_mapping.dart';
-import 'package:loopy_engine/loopy_engine.dart'
+import 'package:segno/session/session_mapping.dart';
+import 'package:segno_engine/segno_engine.dart'
     show FxFingerprint, PumpedNativeEngine;
 import 'package:session_repository/session_repository.dart';
 
@@ -17,12 +17,12 @@ import 'package:session_repository/session_repository.dart';
 /// engine's published chains match the repository cache (fingerprint-verified).
 /// This is acceptance criterion #1 of the FX-state-robustness plan.
 ///
-/// Self-skips when `LOOPY_ENGINE_LIB` is unset:
-///   export LOOPY_ENGINE_LIB="$(bash packages/loopy_engine/tool/build_test_lib.sh)"
+/// Self-skips when `SEGNO_ENGINE_LIB` is unset:
+///   export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
 void main() {
-  final lib = Platform.environment['LOOPY_ENGINE_LIB'];
+  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
   final skip = lib == null || lib.isEmpty
-      ? 'LOOPY_ENGINE_LIB not set — run packages/loopy_engine/tool/build_test_lib.sh'
+      ? 'SEGNO_ENGINE_LIB not set — run packages/segno_engine/tool/build_test_lib.sh'
       : null;
 
   late PumpedNativeEngine engine;
@@ -43,7 +43,7 @@ void main() {
         ),
       );
     session = SessionRepository(engine: engine);
-    tempDir = Directory.systemTemp.createTempSync('loopy_fx_session');
+    tempDir = Directory.systemTemp.createTempSync('segno_fx_session');
     // The pump engine only advances (and drains ring commands) when pumped;
     // a background driver lets the repositories' async clear/settle waits make
     // progress the way a live audio device would.

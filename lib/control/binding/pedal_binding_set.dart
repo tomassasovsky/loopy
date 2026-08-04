@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:equatable/equatable.dart';
-import 'package:loopy/control/binding/pedal_binding.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/binding/pedal_binding.dart';
 
 /// The whole remap: at most one [PedalBinding] per bindable control.
 ///

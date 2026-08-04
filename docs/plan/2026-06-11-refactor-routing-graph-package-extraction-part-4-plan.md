@@ -149,7 +149,7 @@ tests**. `flutter analyze` + `dart format` clean; all groups pass; keys preserve
   domain + widget tests are the net; keys preserved; behaviour unchanged.
 - **R2 — Public-API drift via the barrel.** Moving the model could silently drop
   a public type. *Mit:* barrel re-exports `routing_graph.dart` + `routing_edit.dart`
-  + the view; confirm the test's `package:loopy/looper/looper.dart` import still
+  + the view; confirm the test's `package:segno/looper/looper.dart` import still
   resolves every type with no source change beyond `RoutingEdit.forTarget`.
 - **R3 — Privacy → public surface.** `_GraphNode` → `RoutingGraphNode` becomes
   app-public. *Mit:* keep it **out of the barrel** (feature-internal, as it was).

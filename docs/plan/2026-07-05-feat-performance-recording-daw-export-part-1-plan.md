@@ -17,7 +17,7 @@ date: 2026-07-05
 
 While armed, the audio thread must emit two kinds of streams into pre-published
 lock-free rings: the post-limiter master output (after `master_bus_frame`,
-[engine_process.c:974–1017](../../packages/loopy_engine/src/core/engine_process.c))
+[engine_process.c:974–1017](../../packages/segno_engine/src/core/engine_process.c))
 and each monitor input active at arm (post-monitor-FX, pre-route, inside
 `mix_monitors_frame`, :1289–1310). Rings are **allocated control-side at arm**
 (≥2 s of audio at device rate each) and published to the audio thread with the
@@ -29,7 +29,7 @@ D-MASTER, D-INPUT).
 ## Context / findings
 
 - The existing `le_ring` is a 256-slot fixed-POD command ring
-  ([lockfree_ring.h:30–69](../../packages/loopy_engine/src/core/lockfree_ring.h))
+  ([lockfree_ring.h:30–69](../../packages/segno_engine/src/core/lockfree_ring.h))
   — wrong shape for audio; this part adds a float SPSC ring type
   (`le_audio_ring`).
 - Armed state, captured-frame count, and overrun count are published as
@@ -40,7 +40,7 @@ D-MASTER, D-INPUT).
   later are logged, not tapped).
 - Dart engine boundary: new `EnginePerformanceCapture` capability interface
   composed into `AudioEngine`
-  ([audio_engine.dart](../../packages/loopy_engine/lib/src/audio_engine.dart),
+  ([audio_engine.dart](../../packages/segno_engine/lib/src/audio_engine.dart),
   precedent `EnginePluginHosting`), implemented by `NativeAudioEngine` and
   `MockAudioEngine`.
 
@@ -66,42 +66,42 @@ D-MASTER, D-INPUT).
 
 ## Tasks
 
-- [ ] `packages/loopy_engine/src/core/audio_ring.{h,c}` — `le_audio_ring`
+- [ ] `packages/segno_engine/src/core/audio_ring.{h,c}` — `le_audio_ring`
       (float SPSC, power-of-two capacity, cached head/tail).
-- [ ] `packages/loopy_engine/src/core/loopy_engine_api.h` — `le_perf_arm`
+- [ ] `packages/segno_engine/src/core/segno_engine_api.h` — `le_perf_arm`
       / `le_perf_disarm` ABI (+ capture-config struct: out pair, input mask),
       `LE_CMD_PERF_ARM/DISARM` codes.
-- [ ] `packages/loopy_engine/src/core/engine_process.c` — arm/disarm command
+- [ ] `packages/segno_engine/src/core/engine_process.c` — arm/disarm command
       handling (publish/unpublish ring pointers); master tap after
       `master_bus_frame`; per-monitor tap in `mix_monitors_frame`; frame +
       overrun atomics.
-- [ ] `packages/loopy_engine/src/core/engine_commands.c` — control-side
+- [ ] `packages/segno_engine/src/core/engine_commands.c` — control-side
       alloc/publish/free + quiescent handshake.
-- [ ] `packages/loopy_engine/src/core/engine_snapshot.c` — perf atomics into
+- [ ] `packages/segno_engine/src/core/engine_snapshot.c` — perf atomics into
       the snapshot struct.
 - [ ] Dart: `EnginePerformanceCapture` interface in
-      `packages/loopy_engine/lib/src/audio_engine.dart`; `NativeAudioEngine` +
+      `packages/segno_engine/lib/src/audio_engine.dart`; `NativeAudioEngine` +
       `MockAudioEngine` implementations; snapshot model fields; regenerate
       ffigen bindings + `dart format`.
-- [ ] Native tests in `packages/loopy_engine/src/test/test_engine_core.c`:
+- [ ] Native tests in `packages/segno_engine/src/test/test_engine_core.c`:
       tap bit-parity, overflow counting, arm/disarm handshake, RT-safety
       assertions.
 - [ ] Dart tests: mock fakes + snapshot field mapping.
 
 ## Files touched (primary)
 
-`packages/loopy_engine/src/core/{audio_ring.h,audio_ring.c,loopy_engine_api.h,engine_process.c,engine_commands.c,engine_snapshot.c,engine_private.h}`,
-`packages/loopy_engine/lib/src/{audio_engine.dart,native_audio_engine.dart,mock_audio_engine.dart,engine_snapshot.dart}`,
-`packages/loopy_engine/lib/src/generated/*` (regenerated),
-`packages/loopy_engine/src/test/test_engine_core.c`.
+`packages/segno_engine/src/core/{audio_ring.h,audio_ring.c,segno_engine_api.h,engine_process.c,engine_commands.c,engine_snapshot.c,engine_private.h}`,
+`packages/segno_engine/lib/src/{audio_engine.dart,native_audio_engine.dart,mock_audio_engine.dart,engine_snapshot.dart}`,
+`packages/segno_engine/lib/src/generated/*` (regenerated),
+`packages/segno_engine/src/test/test_engine_core.c`.
 Keep `run_native_tests.sh`'s source globs valid (new `audio_ring.c` matches
 `src/core/engine*.c`? No — add it to the glob list or name it accordingly).
 
 ## Verification
 
-1. `bash packages/loopy_engine/src/test/run_native_tests.sh` — "ALL PASSED".
+1. `bash packages/segno_engine/src/test/run_native_tests.sh` — "ALL PASSED".
 2. `flutter analyze` clean; `dart format --set-exit-if-changed .` stable.
-3. `flutter test packages/loopy_engine`.
+3. `flutter test packages/segno_engine`.
 
 ## Dependencies
 

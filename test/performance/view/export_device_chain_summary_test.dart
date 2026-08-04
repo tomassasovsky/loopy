@@ -1,8 +1,8 @@
 import 'package:daw_export/daw_export.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/performance/view/export_device_chain_summary.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/performance/view/export_device_chain_summary.dart';
 
 import '../../helpers/helpers.dart';
 

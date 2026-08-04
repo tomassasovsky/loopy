@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/theme/theme.dart';
-import 'package:loopy/update/cubit/pedal_firmware_cubit.dart';
-import 'package:loopy/update/view/pedal_firmware_gate.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/update/cubit/pedal_firmware_cubit.dart';
+import 'package:segno/update/view/pedal_firmware_gate.dart';
 import 'package:update_repository/update_repository.dart';
 
 /// Drives the real cubit rather than a stand-in, so these assertions are about

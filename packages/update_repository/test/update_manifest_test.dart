@@ -6,7 +6,7 @@ void main() {
     test('parses a well-formed manifest', () {
       final manifest = UpdateManifest.fromJson({
         'version': '0.2.0',
-        'bundle': 'loopy-appliance-2.raucb',
+        'bundle': 'segno-appliance-2.raucb',
         'sha256': 'abc123',
         'channel': 'experimental',
         'size': 131803622,
@@ -15,7 +15,7 @@ void main() {
 
       expect(manifest, isNotNull);
       expect(manifest!.version, Version.parse('0.2.0'));
-      expect(manifest.bundle, 'loopy-appliance-2.raucb');
+      expect(manifest.bundle, 'segno-appliance-2.raucb');
       expect(manifest.sha256, 'abc123');
       expect(manifest.channel, 'experimental');
       expect(manifest.size, 131803622);
@@ -123,7 +123,7 @@ void _pedalFirmwareTests() {
         ...base(),
         'pedalFirmware': <String, dynamic>{
           'version': '0.2.0',
-          'hex': 'loopy-pedal-0.2.0.hex',
+          'hex': 'segno-pedal-0.2.0.hex',
           'protocolVersion': 3,
           'sha256': 'abc',
         },
@@ -131,7 +131,7 @@ void _pedalFirmwareTests() {
 
       final firmware = manifest?.pedalFirmware;
       expect(firmware?.version, Version.parse('0.2.0'));
-      expect(firmware?.hex, 'loopy-pedal-0.2.0.hex');
+      expect(firmware?.hex, 'segno-pedal-0.2.0.hex');
       expect(firmware?.protocolVersion, 3);
       expect(firmware?.sha256, 'abc');
     });

@@ -20,7 +20,7 @@ brainstorm: docs/brainstorm/2026-07-22-tempo-aware-looper-modes-brainstorm-doc.m
 
 ## Overview
 
-Bring loopy to parity with the Sheeran Looper X tempo system: BPM (30–300; a
+Bring segno to parity with the Sheeran Looper X tempo system: BPM (30–300; a
 deliberate superset of the Sheeran's manual-verified 30–280) with all 17
 manual-verified time signatures (2/4–7/4, 5/8–15/8), a synthesized routable
 click (4-value click mode) with configurable count-in measures, tap tempo,
@@ -48,9 +48,9 @@ green:
 |-------|-----------|-----|----------|------------|
 | **A** | part 1 | 8 | Core grid in Multi: tempo, time signatures, click + count-in, tap tempo, musical quantize, loop↔tempo sync, length presets, `.als` real tempo | — |
 | **B** | part 2 | 9 | Five modes: `InteractionMode` rename, mode enum, per-track clocks (Free), primary track, Sync divisions, Song sections, Band groups, pedal protocol v2, manifest v4 completion | A (except B0/B1) |
-| **C** | part 3 | 2 | MIDI clock **send** (loopy as master) | A |
+| **C** | part 3 | 2 | MIDI clock **send** (segno as master) | A |
 | **D** | part 4 | 4 | Time-stretch (Sync Audio to Tempo) | A |
-| **E** | part 5 | 3 | MIDI clock **receive** (loopy as slave) | C, D |
+| **E** | part 5 | 3 | MIDI clock **receive** (segno as slave) | C, D |
 
 Sequencing notes (from plan review): **B0** (the `InteractionMode` rename) and
 **B1** (the Song-mode spec doc) have **no Phase-A dependency** — land them
@@ -78,14 +78,14 @@ Phase A, A2 and A3 are **siblings off A1**, not a chain. Keep stacks shallow
 
 ## Problem Statement
 
-Loopy was deliberately converted to a tempo-free looper in `2f0513a` (−1,706
+Segno was deliberately converted to a tempo-free looper in `2f0513a` (−1,706
 lines): metronome, count-in, tap tempo, loop↔tempo sync, and quantize-start
 arming were deleted, leaving one master loop length set by the first recording
 and a boolean loop-top quantize. That architecture cannot express any of the
 Sheeran Looper X's tempo system:
 
 - There is **one** `le_loop_clock` (`length` + `position` only,
-  `packages/loopy_engine/src/core/loop_clock.h:17-20`); every track derives its
+  `packages/segno_engine/src/core/loop_clock.h:17-20`); every track derives its
   playback position from it (`engine_process.c:1732-1737`), so
   independent-length un-synced tracks (Free mode) are inexpressible.
 - Quantize is a boolean loop-top snap (`LE_CMD_ARM`/`LE_CMD_DISARM`,
@@ -110,7 +110,7 @@ re-implemented against the current core.
 Five architectural elements, layered so the grid-off Multi path never executes
 new code:
 
-1. **Tempo grid module** (`packages/loopy_engine/src/core/tempo_grid.c/.h`,
+1. **Tempo grid module** (`packages/segno_engine/src/core/tempo_grid.c/.h`,
    new). Pure-value math over `{bpm, ts_num, ts_den, sample_rate}`:
    frames-per-beat-unit, frames-per-bar, subdivision boundary lookup
    (`next_boundary(pos, subdivision)`), loop-length↔BPM derivation. No engine
@@ -204,7 +204,7 @@ analysis. Items marked **(user-approved)** were confirmed 2026-07-22.
 | D16 | **Sync divisions** (track at 1/2, 1/4 of primary) are new engine work — the `seg_base` multiple math cannot express them; Phase B extends the derivation. Length-preset pickers become context-restricted in Sync/Band (only valid multiples/divisions of the primary selectable). |
 | D17 | **Length presets:** a 1–64-bar preset auto-finalizes at exactly N bars (extends the existing fixed-multiple auto-finalize, `engine_process.c:1445`); an early record-press closes at the quantized boundary instead (disarms the preset). Preset changes on a recorded track are inert until re-record. N bars × signature × 30 BPM is validated against `max_loop_frames` **before** recording starts, with an error surfaced. Manual refinement (§5.9.3 matrix, song-mode-spec §1): AUTO+click-off derives tempo *and* bars; AUTO+click-on derives bars only; **N-bars+click-off derives the tempo from recording-length ÷ N**; N-bars+click-on auto-finishes at N bars. In Sync/Band the preset applies only to the first-recorded track. Presets unavailable while clock receive is on. |
 | D18 | **Primary track (Sync/Band):** designation persists if the primary is cleared/undone-to-empty (its grid survives per D6); re-crowning is an explicit user action; **no auto-reassignment** (surprising on stage). Crown UI per the brainstorm (Wave-view style). |
-| D19 | **Song mode spec**: DRAFTED from the manual — [2026-07-22-song-mode-spec.md](2026-07-22-song-mode-spec.md) (plan-gate, awaiting review). Key outcomes: a section **is a track** (8 sections in loopy Song mode; 1 primary + 7 in Band); no advance gesture exists (sections start/stop via their own track presses); Band section starts/stops quantize to the primary cycle; one session tempo confirmed; per-track **One Shot** flag enters Phase B scope; Feedback/Decay stays out of scope. **No engine work for Song (B4) before the spec is approved.** |
+| D19 | **Song mode spec**: DRAFTED from the manual — [2026-07-22-song-mode-spec.md](2026-07-22-song-mode-spec.md) (plan-gate, awaiting review). Key outcomes: a section **is a track** (8 sections in segno Song mode; 1 primary + 7 in Band); no advance gesture exists (sections start/stop via their own track presses); Band section starts/stops quantize to the primary cycle; one session tempo confirmed; per-track **One Shot** flag enters Phase B scope; Feedback/Decay stays out of scope. **No engine work for Song (B4) before the spec is approved.** |
 | D20 | **New `LooperAction` inventory** (controller mapping + pedal + settings stay in sync): `tapTempo` (returns), `toggleMetronome`, `cancelArm`, `realignDownbeat` (E), `crownPrimary` (B). (`advanceSection` dropped — the manual has no such gesture; sections are driven by direct track presses, song-mode-spec §2 Q2.) |
 
 ### Manifest v4 schema
@@ -278,7 +278,7 @@ in the note at top). Summary:
 - **Dart-side MIDI clock follower** — rejected: UI-thread jitter makes a
   musical clock follower unusable; native follower feeding the engine
   directly (§Architecture 5).
-- **Redefining Free mode as "today's loopy"** — rejected in brainstorm: today
+- **Redefining Free mode as "today's segno"** — rejected in brainstorm: today
   is structurally Multi; Sheeran Free (independent un-synced tracks) is a
   genuinely new capability, and parity means adopting its semantics.
 - **Keep receive in Phase C with drift semantics** — rejected (user call
@@ -287,19 +287,19 @@ in the note at top). Summary:
 ## Success Criteria
 
 ```success-criteria
-GOAL: Loopy reaches Sheeran Looper X tempo-system parity (grid, five modes, clock I/O, length presets, time-stretch) while today's tempo-free workflow remains bit-identical as Multi-with-grid-off.
+GOAL: Segno reaches Sheeran Looper X tempo-system parity (grid, five modes, clock I/O, length presets, time-stretch) while today's tempo-free workflow remains bit-identical as Multi-with-grid-off.
 
 SUCCESS CRITERIA:
-- Bit-identical gate: the pre-existing native engine + MIDI suites pass unchanged on every PR of every phase | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- Every new engine behavior in the D1–D20 decision table has a named C test (tempo/lock/precedence, click routing + perf-capture exclusion, quantize table incl. rounding + races, Free-mode independent clocks, divisions, presets, clock send timing, stretch integrity, follower freewheel), compiled into the same suite | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- ASAN-clean: the same suites pass under AddressSanitizer | verify: EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g" bash packages/loopy_engine/src/test/run_native_tests.sh
-- Pedal protocol contract holds across all four app/firmware version pairings (v1/v2 × v1/v2; runs inside the native-tests CI job) | verify: gcc -std=c11 -Wall -I firmware/loopy_pedal firmware/test/test_pedal_protocol.c firmware/loopy_pedal/pedal_protocol.c -o /tmp/pedal_protocol_tests && /tmp/pedal_protocol_tests
+- Bit-identical gate: the pre-existing native engine + MIDI suites pass unchanged on every PR of every phase | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Every new engine behavior in the D1–D20 decision table has a named C test (tempo/lock/precedence, click routing + perf-capture exclusion, quantize table incl. rounding + races, Free-mode independent clocks, divisions, presets, clock send timing, stretch integrity, follower freewheel), compiled into the same suite | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- ASAN-clean: the same suites pass under AddressSanitizer | verify: EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g" bash packages/segno_engine/src/test/run_native_tests.sh
+- Pedal protocol contract holds across all four app/firmware version pairings (v1/v2 × v1/v2; runs inside the native-tests CI job) | verify: gcc -std=c11 -Wall -I firmware/segno_pedal firmware/test/test_pedal_protocol.c firmware/segno_pedal/pedal_protocol.c -o /tmp/pedal_protocol_tests && /tmp/pedal_protocol_tests
 - App analyzes clean and all Dart suites pass with the CI coverage gates (root ≥90, daw_export 100) | verify: /Users/Tomas/development/flutter/bin/flutter analyze && /Users/Tomas/development/flutter/bin/flutter test --coverage
 - v3 session loads as Multi/grid-off with zero data loss; v4 round-trips every phase-marked field (session_repository suite) | verify: /Users/Tomas/development/flutter/bin/flutter test packages/session_repository
 - .als export emits the session tempo instead of the hardcoded 120 (daw_export suite) | verify: /Users/Tomas/development/flutter/bin/flutter test packages/daw_export
-- Click routed off-master by default: a rendered count-in contains no click energy on master outputs and none in a performance recording (native test) | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
+- Click routed off-master by default: a rendered count-in contains no click energy on master outputs and none in a performance recording (native test) | verify: bash packages/segno_engine/src/test/run_native_tests.sh
 - Grid-off Multi UI is visually unchanged; new tempo/mode UI matches the app design language and the UI-conventions section (LooperTheme tokens, widget classes, widget tests) | verify: manual 1. regenerate screenshot goldens on the author machine 2. eyeball diff grid-off screens against pre-branch goldens 3. review new tempo/mode screens
-- External device locks to loopy's clock (Phase C) and loopy locks to an external master under the Sheeran restrictions (Phase E) | verify: manual 1. slave Ableton to loopy, confirm bar-locked over 5 min 2. master Ableton over USB-MIDI, confirm loopy records bar-locked, tempo controls disabled 3. stop the master mid-record, confirm freewheel finalize
+- External device locks to segno's clock (Phase C) and segno locks to an external master under the Sheeran restrictions (Phase E) | verify: manual 1. slave Ableton to segno, confirm bar-locked over 5 min 2. master Ableton over USB-MIDI, confirm segno records bar-locked, tempo controls disabled 3. stop the master mid-record, confirm freewheel finalize
 - Pedal shows mode + counting-in on v2 firmware; v1 firmware degrades per D11 with an update notice | verify: manual 1. flash v2 firmware, cycle modes, record with count-in 2. flash v1 firmware, confirm legacy frames + app notice
 
 NON-GOALS:
@@ -309,7 +309,7 @@ NON-GOALS:
 - Any change to LE_MAX_TRACKS, banks-as-presentation, or the lanes/monitors/perf-recording architectures
 - Windows/Linux-specific audio backend work (this feature is platform-agnostic engine + Dart)
 
-VERIFICATION COMMAND: bash packages/loopy_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g" bash packages/loopy_engine/src/test/run_native_tests.sh && gcc -std=c11 -Wall -I firmware/loopy_pedal firmware/test/test_pedal_protocol.c firmware/loopy_pedal/pedal_protocol.c -o /tmp/pedal_protocol_tests && /tmp/pedal_protocol_tests && /Users/Tomas/development/flutter/bin/flutter analyze && /Users/Tomas/development/flutter/bin/flutter test --coverage
+VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g" bash packages/segno_engine/src/test/run_native_tests.sh && gcc -std=c11 -Wall -I firmware/segno_pedal firmware/test/test_pedal_protocol.c firmware/segno_pedal/pedal_protocol.c -o /tmp/pedal_protocol_tests && /tmp/pedal_protocol_tests && /Users/Tomas/development/flutter/bin/flutter analyze && /Users/Tomas/development/flutter/bin/flutter test --coverage
 ```
 
 ## Dependencies & Prerequisites
@@ -321,7 +321,7 @@ VERIFICATION COMMAND: bash packages/loopy_engine/src/test/run_native_tests.sh &&
   clock-send-while-stopped behavior (C1).
 - **Pedal hardware + 32U4 toolchain** for B5b firmware verification
   (device-gated).
-- ffigen regen after every `loopy_engine_api.h` change, followed by
+- ffigen regen after every `segno_engine_api.h` change, followed by
   `dart format` (format-drift gotcha, `ffigen.yaml:2-8`).
 
 ## Risk Analysis & Mitigation
@@ -368,21 +368,21 @@ device). Estimated shape: **26 PRs** across five phases; A and B dominate.
 - Deleted tempo stack (reference implementation): commit `2f0513a` — commands,
   click, tap, sync math, 13 C tests + Dart tests recoverable via
   `git show 2f0513a`
-- Loop clock: `packages/loopy_engine/src/core/loop_clock.h:17-30`, single
+- Loop clock: `packages/segno_engine/src/core/loop_clock.h:17-30`, single
   instance `engine_private.h:636`
-- Quantize arm machinery: `packages/loopy_engine/src/core/engine_commands.c:519-746`
-- Mix/advance order (click insertion point): `packages/loopy_engine/src/core/engine_process.c:2018-2054`
+- Quantize arm machinery: `packages/segno_engine/src/core/engine_commands.c:519-746`
+- Mix/advance order (click insertion point): `packages/segno_engine/src/core/engine_process.c:2018-2054`
 - Multiple auto-round-up (preset seed): `engine_process.c:224-256,1445`
-- Snapshot surface: `packages/loopy_engine/src/core/engine_snapshot.c:138-179`
-- MIDI real-time drop (lifted for follower): `packages/loopy_engine/src/midi/midi.c:84,99-100`
-- Command enum free slots: `packages/loopy_engine/src/core/loopy_engine_api.h:86-194`
+- Snapshot surface: `packages/segno_engine/src/core/engine_snapshot.c:138-179`
+- MIDI real-time drop (lifted for follower): `packages/segno_engine/src/midi/midi.c:84,99-100`
+- Command enum free slots: `packages/segno_engine/src/core/segno_engine_api.h:86-194`
 - Pedal codec + 1-bit ceiling: `packages/pedal_repository/lib/src/pedal_codec.dart:76-106`,
-  `pedal_mode.dart:6-18`; firmware `firmware/loopy_pedal/pedal_protocol.h`
+  `pedal_mode.dart:6-18`; firmware `firmware/segno_pedal/pedal_protocol.h`
 - Session v3: `packages/session_repository/lib/src/models/session.dart:377-462`
 - `.als` tempo threading: `packages/daw_export/lib/src/daw_project.dart:18-28`,
   `als_builder.dart:434-468`
 - `LooperMode` (rename target): `lib/looper/model/looper_mode.dart:8-23` + ~40 sites
-- Interface-segregation pattern to follow: `packages/loopy_engine/lib/src/audio_engine.dart:643-654`
+- Interface-segregation pattern to follow: `packages/segno_engine/lib/src/audio_engine.dart:643-654`
 - Bit-identical gate precedent: ASIO seam, `docs/PROGRESS.md:346-370`
 
 ### External References

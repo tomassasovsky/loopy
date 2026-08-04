@@ -1,7 +1,7 @@
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/binding/control_value_target.dart';
-import 'package:loopy/control/binding/fx_binding_resolver.dart';
-import 'package:loopy/control/binding/fx_chain_lookup.dart';
+import 'package:segno/control/binding/control_value_target.dart';
+import 'package:segno/control/binding/fx_binding_resolver.dart';
+import 'package:segno/control/binding/fx_chain_lookup.dart';
 
 /// Resolves a typed [ControlValueTarget] against the live rig — the app-side
 /// half of the continuous binding model, and the twin of part 6b's

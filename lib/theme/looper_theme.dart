@@ -2,7 +2,7 @@ import 'dart:math' show sqrt;
 
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
-import 'package:loopy/looper/model/interaction_mode.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
 
 /// Maps engine peak amplitude (`0..1`) to meter fill (`0..1`).
 ///
@@ -95,7 +95,7 @@ enum TrackIndicator {
   }
 }
 
-/// Loopy-specific design tokens layered on top of [ThemeData] via a
+/// Segno-specific design tokens layered on top of [ThemeData] via a
 /// [ThemeExtension], so the looper grid and visualizer pick up per-mode colors
 /// (per-track accents, waveform stroke, tile surfaces) without hard-coding them
 /// in widgets.

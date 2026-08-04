@@ -1,4 +1,4 @@
-import 'package:loopy/wifi/wifi_cubit.dart';
+import 'package:segno/wifi/wifi_cubit.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 /// Scan rows shown in the found-networks list.

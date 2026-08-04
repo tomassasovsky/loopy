@@ -1,6 +1,6 @@
 # MIDI foot-controller setup
 
-Loopy can be driven hands-free from a USB MIDI foot controller so you can
+Segno can be driven hands-free from a USB MIDI foot controller so you can
 record, stop, undo, and clear loops with your feet while both hands play — and,
 since FX v3 part 7, sweep parameters from an expression pedal and stomp FX
 chains from any MIDI switch.
@@ -19,7 +19,7 @@ plug the controller in and pick it in settings.
    every incoming MIDI message so you can confirm the pedal is talking.
 
 Your choice is remembered and reconnects automatically on the next launch. If
-the device is unplugged it is kept pinned — replug it and Loopy re-attaches on
+the device is unplugged it is kept pinned — replug it and Segno re-attaches on
 its own. Switching or losing a MIDI device never restarts the audio engine, and
 the picker is available even on Windows (ASIO-only) builds.
 
@@ -58,7 +58,7 @@ control it listens to, and what that control drives.
   domain; setting LO **above** HI inverts the pedal (heel-down loud).
 - **Switch (discrete)** — the CC crossing a **threshold** stomps an FX chain or
   a single effect on and off, with the same **toggle / momentary** behaviors a
-  Loopy pedal footswitch binding has. Toggle latches; momentary is held (the
+  Segno pedal footswitch binding has. Toggle latches; momentary is held (the
   press captures the target's state and the release puts it back). A small
   hysteresis band under the threshold means a controller resting on the boundary
   or dithering around it holds its state instead of chattering.
@@ -74,9 +74,9 @@ so a filter sweep is smooth rather than stepped.
 3. The mapping is created. Press **Learn** on an existing row to re-point it at
    a different control — its LO/HI (or threshold and behavior) are kept.
 
-**Learn hygiene.** The Loopy pedal's own protocol traffic — its footswitch notes
+**Learn hygiene.** The Segno pedal's own protocol traffic — its footswitch notes
 and its encoder CC — is ignored while learning, so you can learn a third-party
-controller with the Loopy pedal plugged in and stomping will not capture it.
+controller with the Segno pedal plugged in and stomping will not capture it.
 
 If the control you move is already mapped, the row asks before replacing that
 mapping — **Replace** takes the control over, **Keep** leaves things as they
@@ -101,7 +101,7 @@ Mappings are **global** — one `controller.mappings` blob in settings, not part
 of any session. Expression hardware belongs to the rig, not the song: the pedal
 plugged into this machine is the same one whatever session is loaded, and a
 session carrying its own CC map would either fight the rig it was opened on or
-stop being portable between machines. (The Loopy pedal's own footswitch remap is
+stop being portable between machines. (The Segno pedal's own footswitch remap is
 the deliberate exception — its layout IS part of an arrangement, so a session
 can carry one.)
 
@@ -133,4 +133,4 @@ parameters, track volume, and master gain can.
   something other than Note/CC (e.g. clock); check its CC assignments above.
 - **A learn never catches anything** — the control may be sending on a channel
   the app never sees (check it is a CC or Note, not aftertouch or pitch bend),
-  or it may be the Loopy pedal itself, which learn ignores by design.
+  or it may be the Segno pedal itself, which learn ignores by design.

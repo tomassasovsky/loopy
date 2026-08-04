@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:loopy/appliance/host_page_chrome.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/pedal/view/pedal_assignment_page.dart';
+import 'package:segno/appliance/host_page_chrome.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/pedal/view/pedal_assignment_page.dart';
 
 /// In-tray pedal-assignment face.
 ///

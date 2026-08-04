@@ -40,7 +40,7 @@ class ControllerRepository {
   /// [bindings].
   ///
   /// [learnIgnore] filters MIDI-learn capture: an input it accepts is ignored
-  /// while learning, as if it had never arrived. The app passes the Loopy
+  /// while learning, as if it had never arrived. The app passes the Segno
   /// pedal's own protocol traffic (B8), so learning with the pedal connected
   /// captures the controller the user is actually moving rather than pedal
   /// chatter. Dispatch is unaffected — the filter is about what a capture may

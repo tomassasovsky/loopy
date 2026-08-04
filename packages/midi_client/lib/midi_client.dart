@@ -1,6 +1,6 @@
-/// Native USB MIDI input for Loopy.
+/// Native USB MIDI input for Segno.
 ///
-/// Wraps the `le_midi_*` capture seam (in `loopy_engine`) behind a small typed
+/// Wraps the `le_midi_*` capture seam (in `segno_engine`) behind a small typed
 /// Dart API (`MidiClient` + `MidiDevice`) and adapts it to the controller
 /// abstraction as a `MidiControllerSource` (implements `ControllerSource`), so
 /// a foot pedal can drive the looper hands-free.

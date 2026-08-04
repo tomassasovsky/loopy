@@ -1,6 +1,6 @@
-# Running Loopy on a Raspberry Pi 5 (floor-console target)
+# Running Segno on a Raspberry Pi 5 (floor-console target)
 
-Loopy's Raspberry Pi 5 build is the same native Linux/GTK runner described in
+Segno's Raspberry Pi 5 build is the same native Linux/GTK runner described in
 [RUNNING_ON_LINUX.md](RUNNING_ON_LINUX.md), compiled for `arm64`. Pi OS uses the
 same PipeWire → JACK → ALSA audio path, so **that doc is the source of truth for
 audio**; this doc covers only what is Pi-specific: building an `arm64` bundle,
@@ -13,26 +13,26 @@ unknowns **before** any panels or enclosure work begin.
 ## Logs (appliance / Yocto kiosk)
 
 On the Yocto image the app writes a rotating logfile under the persistent data
-partition (`HOME=/data` → **`/data/log/loopy.log`**). Stderr is also captured by
+partition (`HOME=/data` → **`/data/log/segno.log`**). Stderr is also captured by
 systemd:
 
 ```bash
-tail -f /data/log/loopy.log
-journalctl -u loopy.service -b --no-pager
-journalctl -u loopy.service -f
+tail -f /data/log/segno.log
+journalctl -u segno.service -b --no-pager
+journalctl -u segno.service -f
 ```
 
 ## Persistent `/data` size (appliance)
 
 The flashable WIC image seeds the `data` partition at **2 GiB** so the image
 stays small. On first boot (and after an OTA that includes it) the
-`loopy-data-grow` oneshot expands that partition — and its MBR extended
+`segno-data-grow` oneshot expands that partition — and its MBR extended
 container — to fill the rest of the SD card, then runs `resize2fs`. No reflash
 is required to claim a larger card: install the update, reboot, and check:
 
 ```bash
 df -h /data
-journalctl -u loopy-data-grow.service -b --no-pager
+journalctl -u segno-data-grow.service -b --no-pager
 ```
 
 Sessions and exports live under `/data/Documents/{sessions,exports}/` and survive
@@ -41,13 +41,13 @@ both OTA and the grow (the grow never wipes the filesystem).
 ## Control Center (WiFi / Bluetooth / brightness)
 
 Swipe down the settings tray on the main touchscreen. On the Yocto appliance
-these tiles talk to host helpers (same pattern as OTA's `loopy-update-ctl`):
+these tiles talk to host helpers (same pattern as OTA's `segno-update-ctl`):
 
 | Helper | Role |
 |--------|------|
-| `/usr/bin/loopy-wifi-ctl` | scan / join / disconnect / forget (`nmcli` / NetworkManager) |
-| `/usr/bin/loopy-bt-ctl` | scan + discoverable / advertise (`bluetoothctl`) |
-| `/usr/bin/loopy-brightness-ctl` | DDC/CI brightness via `ddcutil` VCP 0x10 |
+| `/usr/bin/segno-wifi-ctl` | scan / join / disconnect / forget (`nmcli` / NetworkManager) |
+| `/usr/bin/segno-bt-ctl` | scan + discoverable / advertise (`bluetoothctl`) |
+| `/usr/bin/segno-brightness-ctl` | DDC/CI brightness via `ddcutil` VCP 0x10 |
 
 WiFi is owned by **NetworkManager** (eth0 + wlan*). `systemd-networkd` is
 masked on the appliance image so the two managers do not fight.
@@ -56,23 +56,23 @@ masked on the appliance image so the two managers do not fight.
 
 ```bash
 # WiFi
-loopy-wifi-ctl status
-loopy-wifi-ctl scan
-loopy-wifi-ctl connect 'YourSSID' 'your-psk'
+segno-wifi-ctl status
+segno-wifi-ctl scan
+segno-wifi-ctl connect 'YourSSID' 'your-psk'
 ip -4 addr show wlan0
-loopy-wifi-ctl disconnect
+segno-wifi-ctl disconnect
 
 # Bluetooth (discoverable from a phone; pairing not implemented yet)
-loopy-bt-ctl status
-loopy-bt-ctl discoverable on
-loopy-bt-ctl advertise on
-loopy-bt-ctl scan
+segno-bt-ctl status
+segno-bt-ctl discoverable on
+segno-bt-ctl advertise on
+segno-bt-ctl scan
 
 # Brightness (needs a DDC/CI-capable HDMI panel)
-loopy-brightness-ctl supported
-loopy-brightness-ctl get
-loopy-brightness-ctl set 40
-loopy-brightness-ctl set 80
+segno-brightness-ctl supported
+segno-brightness-ctl get
+segno-brightness-ctl set 40
+segno-brightness-ctl set 80
 ```
 
 In the app: open the tray → WiFi (join a network) → Bluetooth (toggle
@@ -161,8 +161,8 @@ runs in CI). To build on a Pi 5 (Pi OS, `arm64`) directly:
    flutter build linux --debug --target lib/main_development.dart
    ```
 
-   The native engine builds as `libloopy_engine.so` and is bundled alongside the
-   `loopy` binary. The Skia force in `main.cc` means icons render correctly with
+   The native engine builds as `libsegno_engine.so` and is bundled alongside the
+   `segno` binary. The Skia force in `main.cc` means icons render correctly with
    no extra flags.
 
 For audio bring-up on the device (interface selection, JACK/PipeWire quantum,
@@ -171,13 +171,13 @@ nothing changes on `arm64`.
 
 ## Kiosk boot + dual-display
 
-The console boots straight into Loopy full-screen across both panels (16″ main
+The console boots straight into Segno full-screen across both panels (16″ main
 UI, 7″ waveform) under labwc, with no keyboard or mouse. The systemd unit,
 compositor config, and the deterministic output-pinning script live in
 [`deploy/rpi/`](../deploy/rpi/README.md) — follow that README to install them and
 to set your real connector names with `wlr-randr`.
 
-How the display edge cases are handled (all in [`run_loopy.dart`](../lib/app/run_loopy.dart)
+How the display edge cases are handled (all in [`run_segno.dart`](../lib/app/run_segno.dart)
 + the app shell, so they are exercised in widget tests):
 
 - **Deterministic pinning.** `deploy/rpi/pin-displays.sh` pins each output by
@@ -197,11 +197,11 @@ How the display edge cases are handled (all in [`run_loopy.dart`](../lib/app/run
 A stompable unit gets its power cut mid-set, so the appliance is hardened against
 it (config in [`deploy/rpi/`](../deploy/rpi/README.md)):
 
-- **App/compositor supervision.** The `loopy-kiosk` systemd unit respawns the
+- **App/compositor supervision.** The `segno-kiosk` systemd unit respawns the
   whole kiosk on any crash (`Restart=always`, with a generous start-limit budget
   for a keyboard-less unit). On relaunch the app cleans up any orphaned waveform
   sub-window itself via `closeOrphanWindows()` in
-  [`run_loopy.dart`](../lib/app/run_loopy.dart) — no orphan window survives a
+  [`run_segno.dart`](../lib/app/run_segno.dart) — no orphan window survives a
   respawn.
 - **Read-only root + writable data partition.** `/` runs read-only (overlay), so
   a power-cut can't corrupt the OS; app settings + sessions live on a separate
@@ -236,7 +236,7 @@ peripherals and runs on a **Pi 4 Model B 8GB** with no code changes:
 
 The console's hardware design lives under [`hardware/`](../hardware):
 
-- **BOM / shopping list:** [`hardware/loopy_console_shopping_list.md`](../hardware/loopy_console_shopping_list.md)
+- **BOM / shopping list:** [`hardware/segno_console_shopping_list.md`](../hardware/segno_console_shopping_list.md)
   (Argentina-sourced) — Pi 5 + active cooler, 16″ touchscreen, **7″ HDMI**
   display, USB interface, footswitches, EC11 encoder, WS2812 ring + strip, the
   RP2040 LED driver, and power.
@@ -254,7 +254,7 @@ micro-HDMI — is moot here. Set the 7″ per-output `--scale` to taste.
 These cannot be verified in CI (no display, no audio). Tick them when the panels
 and a Pi 5 are available:
 
-- [ ] An `arm64` Loopy bundle launches full-screen on the Pi 5 under labwc.
+- [ ] An `arm64` Segno bundle launches full-screen on the Pi 5 under labwc.
 - [ ] Material icons render correctly (not "tofu" boxes) — confirms the Skia path
       in [`main.cc`](../linux/runner/main.cc) works on `arm64`.
 - [ ] The waveform second window opens and is controllable under GTK-on-Wayland
@@ -272,7 +272,7 @@ and a Pi 5 are available:
 - [ ] Audio captures and plays back per [RUNNING_ON_LINUX.md](RUNNING_ON_LINUX.md)
       with the chosen USB interface.
 - [ ] Cold boot lands on the app full-screen with **16″ = main UI, 7″ =
-      waveform**, with no keyboard/mouse (the `loopy-kiosk` systemd unit).
+      waveform**, with no keyboard/mouse (the `segno-kiosk` systemd unit).
 - [ ] The display mapping is stable across **≥5 reboots** (no output-naming
       race) — adjust `deploy/rpi/pin-displays.sh` connector names if it flips.
 - [ ] Disconnecting the 7″ shows the single-display notice; a failed second
@@ -317,17 +317,17 @@ the end. Build the `aarch64` bundle with `deploy/rpi/build/build-arm64-bundle.sh
   **labwc**. As above, `wlr-randr` must list the outputs; if it errors with
   "compositor doesn't support wlr-output-management-unstable-v1" the image is still
   on Wayfire and output pinning will not work.
-- **`pipewire-jack` present, and launch via `pw-jack`.** Goal 3 needs Loopy to
+- **`pipewire-jack` present, and launch via `pw-jack`.** Goal 3 needs Segno to
   land on the **JACK** backend; the PulseAudio backend captures silence (see
   [RUNNING_ON_LINUX.md](RUNNING_ON_LINUX.md)). Install `pipewire-jack`, and run the
-  binary under **`pw-jack`** (`pw-jack …/loopy`) — without it the engine loads the
+  binary under **`pw-jack`** (`pw-jack …/segno`) — without it the engine loads the
   real `libjack`, finds no running `jackd`, and **hangs retrying** (`Cannot connect
   to server socket … jack server is not running`). The kiosk `autostart` already
   wraps the launch in `pw-jack`; confirm the app selects JACK, not "Monitor of …".
 - **Sample rate must match the interface, and use "Pro Audio".** Set the card's
   profile to **Pro Audio** (raw channels, not `analog-surround`) and pick the app
   **sample rate to match what the device actually runs** (check with `pw-top` — both
-  the interface and `dev.loopy.loopy` nodes should show the same RATE). A mismatch
+  the interface and `dev.aquiles.segno` nodes should show the same RATE). A mismatch
   (e.g. app @ 96 k, device @ 48 k) makes PipeWire insert a **resampler** that adds
   latency and xruns (climbing `ERR` in `pw-top`). Pin the CPU governor to
   `performance` to kill DVFS jitter.
@@ -348,17 +348,17 @@ the end. Build the `aarch64` bundle with `deploy/rpi/build/build-arm64-bundle.sh
   On the **Pi 5** the redesigned USB (RP1, dedicated controllers) largely removes
   this — another reason Pi 4B audio-timing is not representative.
 - **Connectors.** Pi 4 has 2× **micro-HDMI** → `HDMI-A-1` / `HDMI-A-2`. Set
-  `LOOPY_MAIN_OUTPUT` / `LOOPY_WAVE_OUTPUT` and the per-panel `--scale` in
+  `SEGNO_MAIN_OUTPUT` / `SEGNO_WAVE_OUTPUT` and the per-panel `--scale` in
   [`deploy/rpi/pin-displays.sh`](../deploy/rpi/pin-displays.sh). On the **TV**,
   turn **overscan** off ("Just Scan" / 1:1 in the TV's picture menu, or
   `disable_overscan=1` in `config.txt`) or the UI edges are clipped.
-- **First-run device setup.** `LOOPY_CONSOLE` hides the transport chrome, so the
+- **First-run device setup.** `SEGNO_CONSOLE` hides the transport chrome, so the
   device pickers live in **Settings** (right-click, or press `S`). Bind: (a) the
   **MIDI FOOT CONTROLLER** input, (b) the **PEDAL LINK** output, and (c) the
   **audio interface as both input and output @ 512 frames**. These persist across
   reboots (`tryAutoStartEngine` + hotplug reconnect). **Open question:** confirm
   Settings is reachable in a console build; if it is not, do the first-run bind
-  with a **non-console** bundle (omit `--dart-define=LOOPY_CONSOLE=true` — no new
+  with a **non-console** bundle (omit `--dart-define=SEGNO_CONSOLE=true` — no new
   tooling), then switch back to the console bundle.
 
 ### Goal 1 — Dual-display
@@ -391,8 +391,8 @@ the end. Build the `aarch64` bundle with `deploy/rpi/build/build-arm64-bundle.sh
 - **Functional-smoke pass:** the input is **heard, not silent** (proves the JACK
   backend + port pinning); a loop records, overdubs, and plays back **xrun-free**;
   the channels land on the real interface (not a "Monitor of …" source).
-- **Isolate a failure:** `pw-record` / `arecord` to prove capture outside Loopy;
-  verify `pipewire-jack` is installed and that Loopy selected the JACK backend.
+- **Isolate a failure:** `pw-record` / `arecord` to prove capture outside Segno;
+  verify `pipewire-jack` is installed and that Segno selected the JACK backend.
 
 ### VST3 on the Pi (documented only — no hands-on test this pass)
 

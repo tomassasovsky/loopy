@@ -1,9 +1,9 @@
-import 'package:loopy/common/console_mode.dart';
+import 'package:segno/common/console_mode.dart';
 
-/// Every USB product string a Loopy pedal is known to advertise, newest first.
+/// Every USB product string a Segno pedal is known to advertise, newest first.
 ///
 /// Set at build time via `build.usb_product` (see
-/// `hardware/firmware/loopy_pedal_32u4/README.md`); it is also what the custom
+/// `hardware/firmware/segno_pedal_32u4/README.md`); it is also what the custom
 /// PID `0x7D00` keeps stable in CoreMIDI's name cache, so the OS-reported MIDI
 /// label is built from this string.
 ///
@@ -13,6 +13,10 @@ import 'package:loopy/common/console_mode.dart';
 /// there is no picker to bind it manually in the meantime. Drop an old name
 /// only once no pedal can still be running that firmware.
 const kPedalUsbProductNames = <String>[
+  'Segno Loopstation',
+  // Pre-rename field units — keep until every console pedal has been
+  // reflashed. OTA flash-pedal finds the board by the same legacy string
+  // (see segno-update-ctl PEDAL_PRODUCT_GLOBS); drop both together.
   'VAMP Loopstation',
 ];
 

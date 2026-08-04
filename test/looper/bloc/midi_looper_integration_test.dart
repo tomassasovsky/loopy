@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/looper/looper.dart';
 import 'package:midi_client/midi_client.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/looper/looper.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 

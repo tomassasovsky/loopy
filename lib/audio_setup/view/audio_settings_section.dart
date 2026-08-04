@@ -3,16 +3,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
-import 'package:loopy/audio_setup/view/audio_device_picker.dart';
-import 'package:loopy/audio_setup/view/midi_device_picker.dart';
-import 'package:loopy/audio_setup/view/midi_learn_section.dart';
-import 'package:loopy/common/console_mode.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/cubit/quantize_cubit.dart';
-import 'package:loopy/looper/cubit/record_options_cubit.dart';
-import 'package:loopy/pedal/pedal.dart';
-import 'package:loopy/setup/setup_surface.dart';
+import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
+import 'package:segno/audio_setup/view/audio_device_picker.dart';
+import 'package:segno/audio_setup/view/midi_device_picker.dart';
+import 'package:segno/audio_setup/view/midi_learn_section.dart';
+import 'package:segno/common/console_mode.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/quantize_cubit.dart';
+import 'package:segno/looper/cubit/record_options_cubit.dart';
+import 'package:segno/pedal/pedal.dart';
+import 'package:segno/setup/setup_surface.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// The audio controls embedded in the Tracks settings "Audio" section,
@@ -391,7 +391,7 @@ class _Asio4AllLink extends StatelessWidget {
   }
 }
 
-/// Shown on Windows when no ASIO driver is installed: explains that Loopy needs
+/// Shown on Windows when no ASIO driver is installed: explains that Segno needs
 /// ASIO and offers the ASIO4ALL link (the engine cannot start with no driver).
 class _NoAsioDriverMessage extends StatelessWidget {
   const _NoAsioDriverMessage();

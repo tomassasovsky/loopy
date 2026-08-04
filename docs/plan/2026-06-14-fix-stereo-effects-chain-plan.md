@@ -7,10 +7,10 @@ date: 2026-06-14
 ## fix: process the effect chain in full stereo — Standard
 
 > No source brainstorm; design settled in discussion. Native-only DSP change to
-> the shared FX chain ([packages/loopy_engine/src/engine.c](../../packages/loopy_engine/src/engine.c)),
+> the shared FX chain ([packages/segno_engine/src/engine.c](../../packages/segno_engine/src/engine.c)),
 > used by **both** track lanes and monitor lanes. Builds on the multi-lane
 > monitoring work ([docs/plan/2026-06-14-feat-multi-lane-input-monitoring-plan.md](./2026-06-14-feat-multi-lane-input-monitoring-plan.md),
-> PR [#29](https://github.com/tomassasovsky/loopy/pull/29)) — it relies on the
+> PR [#29](https://github.com/tomassasovsky/segno/pull/29)) — it relies on the
 > shared `le_fx_entry_reset` and `le_monitor_lane_reset` helpers introduced
 > there, so this branch stacks on `feat/multilane-monitoring`.
 
@@ -26,7 +26,7 @@ the right.
 
 ## Problem Statement / Motivation
 
-`fx_apply_chain` ([engine.c:602](../../packages/loopy_engine/src/engine.c)) carries a
+`fx_apply_chain` ([engine.c:602](../../packages/segno_engine/src/engine.c)) carries a
 single value `x` and only sets a right channel `r` (and `stereo = 1`) when
 `LE_FX_REVERB` runs. Every other effect is mono — it processes only `x` (the
 left). The right channel a reverb produced then **passes through any later
@@ -226,7 +226,7 @@ The two-ring version preserves that philosophy *per channel*:
 ### Public surface
 
 No FFI / Dart change — effect types and params are identical. Only the
-`loopy_engine_api.h` doc comment that states the spreader-last rule is removed,
+`segno_engine_api.h` doc comment that states the spreader-last rule is removed,
 and the `fx_apply_chain` header comment is rewritten to describe the stereo
 contract.
 
@@ -264,7 +264,7 @@ contract.
    free-only-what-this-call-allocated on OOM); both-channel frees in
    `le_lane_reset` / `le_monitor_lane_reset` / `le_engine_destroy` (both destroy
    loops).
-5. `loopy_engine_api.h` + `fx_apply_chain` header comment: drop the
+5. `segno_engine_api.h` + `fx_apply_chain` header comment: drop the
    spreader-last note, document the stereo contract.
 6. `test_engine_core.c`: keep the existing FX tests (verify still green); add
    the new stereo-chain tests below.
@@ -291,7 +291,7 @@ contract.
 
 ## Testing
 
-All in `packages/loopy_engine/src/test/test_engine_core.c` (mingw gcc):
+All in `packages/segno_engine/src/test/test_engine_core.c` (mingw gcc):
 
 - **Unchanged (must stay green):** `test_fx_bypass_is_transparent`,
   `test_fx_count_gates_the_chain`, `test_fx_drive_saturates`,
@@ -336,15 +336,15 @@ All in `packages/loopy_engine/src/test/test_engine_core.c` (mingw gcc):
 
 ## References & Research
 
-- Effect functions + chain + router: [engine.c:322-677](../../packages/loopy_engine/src/engine.c)
+- Effect functions + chain + router: [engine.c:322-677](../../packages/segno_engine/src/engine.c)
   (`fx_drive`/`fx_filter`/`fx_delay`/`fx_tremolo`/`fx_octaver`/`fx_echo`/`fx_reverb`,
   `fx_apply_chain`, `le_fx_route`).
 - DSP state struct: `le_fx_state` in
-  [engine_private.h:72](../../packages/loopy_engine/src/engine_private.h).
+  [engine_private.h:72](../../packages/segno_engine/src/engine_private.h).
 - Alloc / reset: `le_fx_prepare_entry`, `le_fx_entry_reset`, `le_lane_reset`,
   `le_monitor_lane_reset`, `le_engine_destroy` in
-  [engine.c](../../packages/loopy_engine/src/engine.c).
-- FX tests: [test_engine_core.c](../../packages/loopy_engine/src/test/test_engine_core.c).
+  [engine.c](../../packages/segno_engine/src/engine.c).
+- FX tests: [test_engine_core.c](../../packages/segno_engine/src/test/test_engine_core.c).
 - Design principle: memory `effects-always-stereo`.
-- Related PR: multi-lane input monitoring [#29](https://github.com/tomassasovsky/loopy/pull/29).
+- Related PR: multi-lane input monitoring [#29](https://github.com/tomassasovsky/segno/pull/29).
 ```

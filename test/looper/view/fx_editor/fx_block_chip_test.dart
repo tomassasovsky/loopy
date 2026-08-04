@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/looper/view/fx_editor/fx_block_chip.dart';
+import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
 
 import '../../../helpers/helpers.dart';
 

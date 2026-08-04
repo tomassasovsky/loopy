@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/session/session_mapping.dart';
-import 'package:loopy_engine/loopy_engine.dart' show MockAudioEngine;
+import 'package:segno/session/session_mapping.dart';
+import 'package:segno_engine/segno_engine.dart' show MockAudioEngine;
 import 'package:session_repository/session_repository.dart';
 
 /// The manifest-v5 migration invariants that only a full save → load → save

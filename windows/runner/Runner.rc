@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "dev.loopy.loopy" "\0"
-            VALUE "FileDescription", "loopy" "\0"
+            VALUE "CompanyName", "dev.aquiles.segno" "\0"
+            VALUE "FileDescription", "segno" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "loopy" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 dev.loopy.loopy. All rights reserved." "\0"
-            VALUE "OriginalFilename", "loopy.exe" "\0"
-            VALUE "ProductName", "Loopy" "\0"
+            VALUE "InternalName", "segno" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 dev.aquiles.segno. All rights reserved." "\0"
+            VALUE "OriginalFilename", "segno.exe" "\0"
+            VALUE "ProductName", "Segno" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

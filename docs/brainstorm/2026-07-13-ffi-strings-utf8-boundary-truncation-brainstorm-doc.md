@@ -7,7 +7,7 @@ topic: ffi-strings-utf8-boundary-truncation
 
 ## What We're Building
 
-`writeNativeString` in `packages/loopy_engine/lib/src/ffi_strings.dart` truncates
+`writeNativeString` in `packages/segno_engine/lib/src/ffi_strings.dart` truncates
 UTF-8-encoded strings to `capacity - 1` bytes by raw byte count, with no regard
 for whether the cut point lands inside a multi-byte UTF-8 character. When a
 non-ASCII string (e.g. `asioDriver`, `playbackDeviceId`, `captureDeviceId` on
@@ -67,8 +67,8 @@ direction suggested in the verified issue.
   pure internal fix to the truncation calculation; callers
   (`EngineConfig.toNative` in `lib/src/engine_config.dart`) are unaffected.
 - **Test file location**: no existing `ffi_strings_test.dart` exists; the
-  `test/` directory in `packages/loopy_engine` is flat (no subdirectories), so
-  the new test file goes at `packages/loopy_engine/test/ffi_strings_test.dart`,
+  `test/` directory in `packages/segno_engine` is flat (no subdirectories), so
+  the new test file goes at `packages/segno_engine/test/ffi_strings_test.dart`,
   following the flat convention already used by sibling test files
   (`engine_config_test.dart`, `audio_device_test.dart`, etc.).
 - **Test approach**: allocate a native `Array<Char>` via `calloc<le_config>()`

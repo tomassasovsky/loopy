@@ -12,7 +12,7 @@ date: 2026-06-19
 
 ## Overview
 
-The `looper_repository` barrel re-exports raw `loopy_engine` effect/track types, leaking
+The `looper_repository` barrel re-exports raw `segno_engine` effect/track types, leaking
 engine shapes into the effect-editing, routing-graph, and monitor UI. This PR introduces
 repository-owned domain equivalents for the **effects cluster**, transforms at the repository
 boundary, updates the consuming files, and stops re-exporting those raw types.
@@ -22,7 +22,7 @@ Behavior-preserving.
 
 `packages/looper_repository/lib/looper_repository.dart:5-24` re-exports `TrackEffect`,
 `TrackEffectType`, `TrackEffectParam`, `ParamReadout` (plus others handled in Part 3). These
-flow into ~10 `lib/` files. A change to `loopy_engine`'s effect shapes ripples into the UI.
+flow into ~10 `lib/` files. A change to `segno_engine`'s effect shapes ripples into the UI.
 
 ## Technical Approach
 
@@ -63,14 +63,14 @@ repository boundary, and switch consumers to the domain types.
 ## Acceptance Criteria
 
 - [ ] No `lib/` file names `TrackEffect` / `TrackEffectType` / `TrackEffectParam` /
-      `ParamReadout` from `loopy_engine`; they come from `looper_repository` domain models.
+      `ParamReadout` from `segno_engine`; they come from `looper_repository` domain models.
 - [ ] Effect editing, routing graphs, monitor lanes, and track-state colors behave exactly
       as before.
 - [ ] `flutter analyze` + `bloc_lint` clean; full suite green.
 
 ## Dependencies
 
-- **Requires Part 1 (V1) merged** — keeps the `app.dart` / `run_loopy.dart` wiring stable and
+- **Requires Part 1 (V1) merged** — keeps the `app.dart` / `run_segno.dart` wiring stable and
   avoids mid-flight merge conflicts.
 - Blocks Part 3 (both edit the barrel + shared `localized.dart` / `app.dart`).
 

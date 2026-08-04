@@ -12,7 +12,7 @@ without importing engine code.
 
 `events.log` sits alongside `master.pcm`, `input-<N>.pcm`, and
 `performance.json` under the capture directory passed to `le_perf_arm`
-(`packages/loopy_engine/src/core/perf_drain.c`). It is opened once at arm,
+(`packages/segno_engine/src/core/perf_drain.c`). It is opened once at arm,
 appended to every ~250ms drain cycle, and never truncated or rewritten —
 unlike `performance.json`, which is atomically replaced each cycle.
 
@@ -80,9 +80,9 @@ Every `LE_CMD_*` the audio thread applies (`engine_process.c`'s
 `apply_command`) was audited for whether it affects audibility. The logged
 subset reuses `le_command`'s own code and union arm verbatim — the `payload`
 bytes are that command's union, unchanged, so a reader already familiar with
-`loopy_engine_api.h`'s command-arm documentation can interpret them directly.
+`segno_engine_api.h`'s command-arm documentation can interpret them directly.
 
-| Code (from `loopy_engine_api.h`)   | Value | Arm         | Logged? | Why |
+| Code (from `segno_engine_api.h`)   | Value | Arm         | Logged? | Why |
 |--------------------------------------|-------|-------------|---------|-----|
 | `LE_CMD_MEASURE_LATENCY`              | 1     | —           | No      | Device-calibration workflow, not a performance action |
 | `LE_CMD_RECORD`                       | 2     | generic     | Yes     | Explicitly required (record/play/stop) |

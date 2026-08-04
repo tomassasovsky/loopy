@@ -4,9 +4,9 @@ import 'dart:typed_data';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/session/session.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
 
 class _MockSessionRepository extends Mock implements SessionRepository {}

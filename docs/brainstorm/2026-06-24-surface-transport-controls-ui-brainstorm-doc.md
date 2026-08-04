@@ -60,7 +60,7 @@ divergence to keep in sync.
   WCAG-labelled `_SessionMenu`/`FocusableTapTarget` widgets.
 - **Reuse existing events/cubits:** `LooperPlayAllPressed` / `LooperStopAllPressed`,
   `LooperClearAllPressed`, `LooperUndoPressed(channel)` / `LooperRedoPressed(channel)`,
-  and `toggleLoopyFullScreen()`. No new bloc events.
+  and `toggleSegnoFullScreen()`. No new bloc events.
 - **Theme + a11y conventions:** use `LooperTheme` tokens and `FocusableTapTarget`
   / `IconButton` with semantic labels and `Key`s, matching the surrounding
   top-bar and track-column widgets (per VGV architecture standards — extracted

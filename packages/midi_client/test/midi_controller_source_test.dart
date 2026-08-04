@@ -2,7 +2,7 @@ import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:midi_client/midi_client.dart';
 
-import 'helpers/fake_loopy_engine_bindings.dart';
+import 'helpers/fake_segno_engine_bindings.dart';
 
 /// MIDI status bytes (channel 0) used across the cases.
 const int _noteOn = 0x90;
@@ -11,7 +11,7 @@ const int _cc = 0xB0;
 
 void main() {
   group('MidiControllerSource', () {
-    late FakeLoopyEngineBindings bindings;
+    late FakeSegnoEngineBindings bindings;
     late MidiControllerSource source;
 
     MidiControllerSource build({
@@ -19,7 +19,7 @@ void main() {
       List<MidiDevice> devices = const [],
       int openResult = 0,
     }) {
-      bindings = FakeLoopyEngineBindings(
+      bindings = FakeSegnoEngineBindings(
         devices: devices,
         openResult: openResult,
       );

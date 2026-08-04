@@ -8,7 +8,7 @@ date: 2026-07-13
 
 ## Overview
 
-`Vst3Host::loadImpl` (`packages/loopy_engine/src/host/host_vst3.cpp`, ~line 682-705)
+`Vst3Host::loadImpl` (`packages/segno_engine/src/host/host_vst3.cpp`, ~line 682-705)
 calls `connectComponentAndController()` unconditionally whenever `controller_` is
 non-null, including the single-component case where `controller_` was obtained via
 `component_->queryInterface(IEditController::iid, ...)` on the *same* underlying
@@ -79,7 +79,7 @@ the single-component case is already handled correctly.
 ## Technical Considerations
 
 - **No behavior change for any plugin this repo ships or tests today.** Verified by
-  grep: none of `packages/loopy_engine/vst3/{delay,reverb,echo,drive,filter,tremolo,octaver}`
+  grep: none of `packages/segno_engine/vst3/{delay,reverb,echo,drive,filter,tremolo,octaver}`
   implement `getControllerClassId` (so all are single-component,
   `separateController == false` for every one of them) or `IConnectionPoint` (so
   `connectComponentAndController()`'s own internal `if (compCP_ && ctrlCP_)` guard
@@ -130,9 +130,9 @@ VST3 SDK's own PlugProvider guard, with zero behavior change for any plugin this
 repo currently ships or tests.
 
 SUCCESS CRITERIA:
-- connectComponentAndController() in host_vst3.cpp's loadImpl is gated on separateController (single-component plugins skip it; plugins with a distinct controller class still connect) | verify: grep -A2 "controller_->setComponentHandler(&componentHandler_);" packages/loopy_engine/src/host/host_vst3.cpp | grep -q "if (separateController)"
+- connectComponentAndController() in host_vst3.cpp's loadImpl is gated on separateController (single-component plugins skip it; plugins with a distinct controller class still connect) | verify: grep -A2 "controller_->setComponentHandler(&componentHandler_);" packages/segno_engine/src/host/host_vst3.cpp | grep -q "if (separateController)"
 - setComponentHandler is still called unconditionally whenever controller_ is non-null (unaffected by this fix) | verify: manual - read host_vst3.cpp loadImpl (~line 696-708) and confirm controller_->setComponentHandler(&componentHandler_) is not wrapped in the new separateController gate
-- The full native test suite (engine, MIDI, plugin scan, plugin slot — the latter two link host_vst3.cpp) builds and passes on this Darwin host | verify: cd packages/loopy_engine && bash src/test/run_native_tests.sh
+- The full native test suite (engine, MIDI, plugin scan, plugin slot — the latter two link host_vst3.cpp) builds and passes on this Darwin host | verify: cd packages/segno_engine && bash src/test/run_native_tests.sh
 - No other files or behaviors outside this one gating change (and its comment) are touched | verify: manual - git diff --stat shows only host_vst3.cpp changed (plus this plan/brainstorm doc)
 
 NON-GOALS:
@@ -140,7 +140,7 @@ NON-GOALS:
 - Touching connectComponentAndController()'s own body or the teardown/disconnect path — both already correct and unaffected.
 - Fixing any other finding from the same review pass (other agents own those).
 
-VERIFICATION COMMAND: cd packages/loopy_engine && bash src/test/run_native_tests.sh && grep -A2 "controller_->setComponentHandler(&componentHandler_);" src/host/host_vst3.cpp | grep -q "if (separateController)"
+VERIFICATION COMMAND: cd packages/segno_engine && bash src/test/run_native_tests.sh && grep -A2 "controller_->setComponentHandler(&componentHandler_);" src/host/host_vst3.cpp | grep -q "if (separateController)"
 ```
 
 ## Success Metrics
@@ -165,12 +165,12 @@ VERIFICATION COMMAND: cd packages/loopy_engine && bash src/test/run_native_tests
 
 ## References & Research
 
-- Bug evidence: `packages/loopy_engine/src/host/host_vst3.cpp:682-705` (the
-  unconditional connect) and `packages/loopy_engine/src/host/host_vst3.cpp:920-935`
+- Bug evidence: `packages/segno_engine/src/host/host_vst3.cpp:682-705` (the
+  unconditional connect) and `packages/segno_engine/src/host/host_vst3.cpp:920-935`
   (`connectComponentAndController()`'s `IConnectionPoint` query/connect).
-  Teardown symmetry already correct: `packages/loopy_engine/src/host/host_vst3.cpp:1008-1028`.
+  Teardown symmetry already correct: `packages/segno_engine/src/host/host_vst3.cpp:1008-1028`.
 - Reference pattern being mirrored:
-  `packages/loopy_engine/third_party/vst3sdk/public.sdk/source/vst/hosting/plugprovider.cpp:130,162,218,225-235`
+  `packages/segno_engine/third_party/vst3sdk/public.sdk/source/vst/hosting/plugprovider.cpp:130,162,218,225-235`
   (`isSingleComponent` computation and the `!isSingleComponent` guard on
   `connectComponents()`).
 - Brainstorm doc:

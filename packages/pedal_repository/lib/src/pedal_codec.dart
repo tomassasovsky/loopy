@@ -5,17 +5,17 @@ import 'package:pedal_repository/src/pedal_event.dart';
 import 'package:pedal_repository/src/pedal_mode.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
 
-/// The wire codec shared by loopy and the pedal firmware.
+/// The wire codec shared by segno and the pedal firmware.
 ///
 /// Two directions:
 ///
-/// * **loopy → pedal:** [encodeFrame] serializes a [PedalStateFrame] to a
+/// * **segno → pedal:** [encodeFrame] serializes a [PedalStateFrame] to a
 ///   versioned, checksummed, 7-bit-packed SysEx message; [decodeFrame] is the
 ///   inverse (mirrors what the firmware does, and underpins the golden tests).
-/// * **pedal → loopy:** [decodeMessage] turns a raw 3-byte MIDI message
+/// * **pedal → segno:** [decodeMessage] turns a raw 3-byte MIDI message
 ///   (button Note / encoder CC) into a [PedalEvent].
 ///
-/// ### State frame layout (loopy → pedal)
+/// ### State frame layout (segno → pedal)
 ///
 /// ```text
 /// F0 7D <ver> <type=STATE> <packed payload…> <checksum> F7
@@ -125,11 +125,11 @@ abstract final class PedalCodec {
   static const encoderCc = 0x10;
 
   /// The MIDI System Real-Time "Start" status byte (`0xFA`), reused as the
-  /// loop-top pulse: loopy sends one byte at each loop top. The firmware
+  /// loop-top pulse: segno sends one byte at each loop top. The firmware
   /// currently only records the pulse's arrival time (`g_lastLoopTopMs`) and
   /// does not use it to drive the ring — v1's ring is a fixed-cadence
   /// decorative sweep independent of loop length (see `renderRing()` in
-  /// loopy_pedal.ino). The pulse is reserved for a possible future
+  /// segno_pedal.ino). The pulse is reserved for a possible future
   /// loop-synced rendering mode. A single real-time byte survives the
   /// firmware's FastLED interrupt gap far better than multi-byte SysEx.
   static const loopTopPulse = 0xFA;
@@ -138,7 +138,7 @@ abstract final class PedalCodec {
   static const _payloadLength = 17;
 
   // ---------------------------------------------------------------------------
-  // loopy → pedal
+  // segno → pedal
   // ---------------------------------------------------------------------------
 
   /// Serializes [frame] to a complete SysEx message, targeting
@@ -221,11 +221,11 @@ abstract final class PedalCodec {
   }
 
   /// The Universal Non-Real-Time SysEx **Identity Request**
-  /// (`F0 7E 7F 06 01 F7`). loopy broadcasts this when it binds an output port,
+  /// (`F0 7E 7F 06 01 F7`). segno broadcasts this when it binds an output port,
   /// so a pedal can recognize the host.
   ///
   /// The pedal's identity *reply* is a SysEx message, which cannot be delivered
-  /// through loopy's 3-byte input capture — so the reply is **not parsed** in
+  /// through segno's 3-byte input capture — so the reply is **not parsed** in
   /// v1 and binding is driven by the output port opening (see
   /// `PedalRepository`).
   /// The request is still sent for forward compatibility with a future
@@ -351,7 +351,7 @@ abstract final class PedalCodec {
   ///
   /// Stateless: this package has no live firmware-version-discovery channel
   /// today. `PedalRepository.bind` broadcasts [encodeIdentityRequest], but
-  /// the reply is a SysEx message loopy's current 3-byte-only input capture
+  /// the reply is a SysEx message segno's current 3-byte-only input capture
   /// cannot deliver (see `PedalBindStatus`'s doc comment), so nothing here
   /// reads hardware. Callers pass whatever they learn — the manual
   /// firmware-version setting today, #331's identity-reply discovery later —
@@ -361,7 +361,7 @@ abstract final class PedalCodec {
       firmwareProtocolVersion < protocolVersionMax;
 
   // ---------------------------------------------------------------------------
-  // pedal → loopy
+  // pedal → segno
   // ---------------------------------------------------------------------------
 
   /// Decodes a raw 3-byte MIDI [status]/[data1]/[data2] message into a

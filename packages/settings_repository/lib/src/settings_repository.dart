@@ -951,7 +951,7 @@ class SettingsRepository {
 
   /// Loads the user-selected update channel (`experimental` / `production`),
   /// or `null` when the user has never set one (fall back to the device's
-  /// baked `/etc/loopy/update-channel` marker).
+  /// baked `/etc/segno/update-channel` marker).
   Future<String?> loadUpdateChannel() async {
     final raw = await _store.getString(_updateChannelKey);
     if (raw == null || raw.trim().isEmpty) return null;

@@ -81,13 +81,13 @@ bidirectional degrade policy (D11).
 - [ ] **B5a — pedal protocol v2 codec** (`autonomy:auto`)
   - `packages/pedal_repository`: version byte 0x02, 3-bit mode field +
     counting-in bit, degrade policy both directions (D11);
-    `firmware/loopy_pedal/pedal_protocol.h` doc-comment fix (16→17-byte
+    `firmware/segno_pedal/pedal_protocol.h` doc-comment fix (16→17-byte
     payload lag noted in research).
   - Contract fixtures for all four app/firmware pairings in
     `firmware/test/test_pedal_protocol.c`.
 - [ ] **B5b — firmware v2** (`autonomy:blocked-verify`; hardware flash
   required)
-  - `firmware/loopy_pedal/`: emit/parse v2, mode + counting-in LED
+  - `firmware/segno_pedal/`: emit/parse v2, mode + counting-in LED
     patterns.
 - [ ] **B5c — app mode UI + manifest B fields** (`autonomy:merge-gate`;
   depends on B5a only)
@@ -103,9 +103,9 @@ bidirectional degrade policy (D11).
 GOAL: All five modes selectable, persistent, and Sheeran-faithful; pedal shows mode + counting-in on v2 firmware and degrades cleanly on v1; grid-off Multi stays bit-identical.
 
 SUCCESS CRITERIA:
-- Existing suites unchanged; new mode/clock/division behaviors have named C tests | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- ASAN-clean (Free-mode clocks are new hot-path memory) | verify: EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g" bash packages/loopy_engine/src/test/run_native_tests.sh
-- Pedal contract holds across v1/v2 × v1/v2 | verify: gcc -std=c11 -Wall -I firmware/loopy_pedal firmware/test/test_pedal_protocol.c firmware/loopy_pedal/pedal_protocol.c -o /tmp/pedal_protocol_tests && /tmp/pedal_protocol_tests
+- Existing suites unchanged; new mode/clock/division behaviors have named C tests | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- ASAN-clean (Free-mode clocks are new hot-path memory) | verify: EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g" bash packages/segno_engine/src/test/run_native_tests.sh
+- Pedal contract holds across v1/v2 × v1/v2 | verify: gcc -std=c11 -Wall -I firmware/segno_pedal firmware/test/test_pedal_protocol.c firmware/segno_pedal/pedal_protocol.c -o /tmp/pedal_protocol_tests && /tmp/pedal_protocol_tests
 - Dart suites green with coverage gates; rename PR is behavior-neutral | verify: /Users/Tomas/development/flutter/bin/flutter analyze && /Users/Tomas/development/flutter/bin/flutter test --coverage
 - Free-mode session round-trips 8 independent lengths | verify: /Users/Tomas/development/flutter/bin/flutter test packages/session_repository
 - v2 firmware shows mode + counting-in; v1 degrades with update notice | verify: manual 1. flash v2, cycle modes, count-in 2. flash v1, confirm legacy frames + notice
@@ -113,12 +113,12 @@ SUCCESS CRITERIA:
 
 NON-GOALS: clock I/O (parts 3/5), stretch (part 4), mode transitions with content (locked, D4).
 
-VERIFICATION COMMAND: bash packages/loopy_engine/src/test/run_native_tests.sh && gcc -std=c11 -Wall -I firmware/loopy_pedal firmware/test/test_pedal_protocol.c firmware/loopy_pedal/pedal_protocol.c -o /tmp/pedal_protocol_tests && /tmp/pedal_protocol_tests && /Users/Tomas/development/flutter/bin/flutter analyze && /Users/Tomas/development/flutter/bin/flutter test --coverage
+VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && gcc -std=c11 -Wall -I firmware/segno_pedal firmware/test/test_pedal_protocol.c firmware/segno_pedal/pedal_protocol.c -o /tmp/pedal_protocol_tests && /tmp/pedal_protocol_tests && /Users/Tomas/development/flutter/bin/flutter analyze && /Users/Tomas/development/flutter/bin/flutter test --coverage
 ```
 
 ## References
 
 Index plan (architecture §4, D4, D10–D12, D16–D20); `seg_base` math
 `engine_process.c:1732-1737`; pedal codec `pedal_codec.dart:76-106`;
-`pedal_mode.dart:6-18`; firmware `firmware/loopy_pedal/`; rename target
+`pedal_mode.dart:6-18`; firmware `firmware/segno_pedal/`; rename target
 `lib/looper/model/looper_mode.dart:8-23`.

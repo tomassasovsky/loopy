@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <!--
-  Minimal labwc config for the Loopy floor console (kiosk).
+  Minimal labwc config for the Segno floor console (kiosk).
   Copied to ~/.config/labwc/rc.xml.
 
   Goals: no window decorations (the app is chromeless on BigPictureView), no

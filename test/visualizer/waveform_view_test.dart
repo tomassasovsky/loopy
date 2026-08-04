@@ -2,8 +2,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/theme/theme.dart';
-import 'package:loopy/visualizer/visualizer.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/visualizer/visualizer.dart';
 
 void main() {
   testWidgets('WaveformView paints with the active theme', (tester) async {

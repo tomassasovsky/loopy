@@ -33,7 +33,7 @@ additional entry points to those same existing destinations.
 
 Research into the existing app found no slide-down/overlay precedent at all —
 navigation is plain `Navigator`/`MaterialPageRoute` pushes via a global
-`loopyNavigatorKey`, and the only sheet-like precedent is a single
+`segnoNavigatorKey`, and the only sheet-like precedent is a single
 `showModalBottomSheet` call. This interaction has to be built from scratch
 regardless of approach.
 
@@ -42,8 +42,8 @@ Three approaches were considered for the tray mechanism:
 - **A — Local Stack overlay with drag-following animation.** A drag detector
   on the top edge of `TracksChrome` reveals a panel in a `Stack`, tracking the
   finger during the drag and snapping open/closed on release.
-- **B — Custom modal route** pushed through the existing `loopyNavigatorKey`
-  pattern (same shape as `openLoopySettings()`), with a barrier and slide
+- **B — Custom modal route** pushed through the existing `segnoNavigatorKey`
+  pattern (same shape as `openSegnoSettings()`), with a barrier and slide
   transition.
 - **C — Global `SettingsTrayCubit`** mounted above the `Navigator` in
   `app.dart`, making the tray reachable from every screen.

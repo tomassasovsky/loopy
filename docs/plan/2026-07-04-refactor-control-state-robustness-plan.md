@@ -111,7 +111,7 @@ these written down):
 
 #### Phase 0: engine fix-first (PR 1) — ~1 day
 
-**0a. Undo-layer memory model** (packages/loopy_engine/src/core)
+**0a. Undo-layer memory model** (packages/segno_engine/src/core)
 
 - [x] Per-lane `pool_cap[LE_POOL_SLOTS]` (allocated frames per slot) in
       `le_lane` (engine_private.h). Shadow slots allocate at
@@ -136,7 +136,7 @@ these written down):
 
 **0b. Export vs fade tail** (engine_snapshot.c / session_repository)
 
-- [x] Add `layer_in_flight` to `le_track_snapshot` (loopy_engine_api.h —
+- [x] Add `layer_in_flight` to `le_track_snapshot` (segno_engine_api.h —
       additive ABI; regen bindings) → `TrackSnapshot.layerInFlight` →
       `Track.layerInFlight`.
 - [x] `SessionRepository._capture` treats an in-flight track as unsettled:
@@ -160,28 +160,28 @@ cap.
 **Enablers**
 
 - [x] Export `le_engine_configure` + `le_engine_process` with `LE_EXPORT` in
-      loopy_engine_api.h (documented "test pump — not part of the app
+      segno_engine_api.h (documented "test pump — not part of the app
       surface"); regen per the documented two-step workflow
       (`dart run ffigen --config ffigen.yaml` THEN
-      `dart format lib/src/generated/loopy_engine_bindings.dart` — skipping
+      `dart format lib/src/generated/segno_engine_bindings.dart` — skipping
       the format rewrites the whole file and hides the real diff). Same
       workflow applies to phase 0b's snapshot-field regen.
 - [x] `PumpedNativeEngine implements AudioEngine`
-      (packages/loopy_engine/lib/src/pumped_native_engine.dart, exported from
+      (packages/segno_engine/lib/src/pumped_native_engine.dart, exported from
       the MAIN barrel like the existing `MockAudioEngine` precedent — no new
       testing.dart sub-library): `start()` →
       `le_engine_configure` only (no device); `pump({int frames, double
       input})` → `le_engine_process` with a deterministic input block;
       `snapshot()` reuses NativeAudioEngine's marshalling. Library loading:
       REUSE NativeAudioEngine's existing DynamicLibrary lookup, adding one
-      `LOOPY_ENGINE_LIB` environment override checked first (tests/CI point
+      `SEGNO_ENGINE_LIB` environment override checked first (tests/CI point
       it at an explicitly built lib).
 - [x] Test-lib build (pinned, no "or"): a small script
-      `packages/loopy_engine/tool/build_test_lib.sh` compiling the same
+      `packages/segno_engine/tool/build_test_lib.sh` compiling the same
       engine source list as run_native_tests.sh into a shared lib
       (`-shared -fPIC`, per-OS extension) at a known path. Locally it's
       one command; in CI the app-test job runs it and exports
-      `LOOPY_ENGINE_LIB` before `flutter test`.
+      `SEGNO_ENGINE_LIB` before `flutter test`.
 
 - [x] Latch the undo long-press target at PRESS time (pedal_cubit.dart:592
       fires redo against `state.selectedTrack` at timer fire — an on-screen
@@ -262,7 +262,7 @@ cap.
       `very_good_workflows/flutter_package.yml` (no pre-steps injectable),
       and a DLL-requiring test would redden it. Follow the repo's OWN
       precedent (`test/screenshots/` + dart_test.yaml): declare a `fuzz` tag,
-      self-skip with a clear message when `LOOPY_ENGINE_LIB` is unset (plain
+      self-skip with a clear message when `SEGNO_ENGINE_LIB` is unset (plain
       local `flutter test` stays green), and add a bespoke `fuzz` job to
       .github/workflows/main.yaml: checkout → `tool/build_test_lib.sh` →
       `flutter test --tags fuzz` with the env exported. Because fuzz tests
@@ -384,7 +384,7 @@ rejected (staleness stays possible, or layering breaks).
 
 ### Quality Gates
 
-- [x] `bash packages/loopy_engine/src/test/run_native_tests.sh` — ALL PASSED
+- [x] `bash packages/segno_engine/src/test/run_native_tests.sh` — ALL PASSED
 - [x] `flutter test` + package suites + `flutter analyze` clean, each phase
 - [x] Each phase is an independently green, revertable PR
 
@@ -426,9 +426,9 @@ rejected (staleness stays possible, or layering breaks).
 - Brainstorm + stored-intent inventory: docs/brainstorm/2026-07-04-control-state-robustness-brainstorm-doc.md
 - Reconciler being replaced: lib/pedal/cubit/pedal_cubit.dart (`_onLooperState`, `_sounding`)
 - Cursor duplication: lib/pedal/view/pedal_cursor_bridge.dart, lib/looper/cubit/tracks_cubit.dart
-- Engine pump precedent: packages/loopy_engine/src/test/test_engine_core.c (`process_const`, `drain`)
+- Engine pump precedent: packages/segno_engine/src/test/test_engine_core.c (`process_const`, `drain`)
 - Snapshot polling / injectable ticker: packages/looper_repository/lib/src/looper_repository.dart:75-90
-- Per-pass undo machinery: packages/loopy_engine/src/core/engine_commands.c, engine_process.c, engine_private.h
+- Per-pass undo machinery: packages/segno_engine/src/core/engine_commands.c, engine_process.c, engine_private.h
 - Prior art for "single source of truth": docs/brainstorm/2026-06-14-looper-pedal-firmware-protocol-brainstorm-doc.md
 
 ### Related Work

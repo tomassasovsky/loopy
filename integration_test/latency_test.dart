@@ -8,7 +8,7 @@
 //   /Users/Tomas/development/flutter/bin/flutter drive \
 //     --driver=test_driver/integration_test.dart \
 //     --target=integration_test/latency_test.dart \
-//     -d macos --dart-define=loopy.flavor=development
+//     -d macos --dart-define=segno.flavor=development
 //
 // This is a diagnostic, not a CI gate: it logs generously and only hard-fails
 // if the engine cannot open the device at all.
@@ -16,7 +16,7 @@ import 'dart:developer';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:loopy_engine/loopy_engine.dart';
+import 'package:segno_engine/segno_engine.dart';
 
 Future<void> main() async {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();

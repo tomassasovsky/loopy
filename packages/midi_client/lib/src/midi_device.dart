@@ -6,7 +6,7 @@ import 'package:meta/meta.dart';
 /// per-OS stable token used to re-select the same device across replug (the
 /// CoreMIDI unique id on macOS, the port name on ALSA/WinMM); [name] is the
 /// human-readable label shown in the picker. Mirrors `AudioDevice` from
-/// `loopy_engine`, scoped to the fields the MIDI seam reports.
+/// `segno_engine`, scoped to the fields the MIDI seam reports.
 @immutable
 class MidiDevice {
   /// Creates a [MidiDevice].

@@ -1,6 +1,6 @@
 name: midi_device_repository
 description: >-
-  Owns the MIDI input (foot-controller) device lifecycle for Loopy: enumerates,
+  Owns the MIDI input (foot-controller) device lifecycle for Segno: enumerates,
   opens/closes, supervises hotplug, and persists the selection — projecting a
   MidiConnection domain stream for the presentation layer.
 version: 0.1.0

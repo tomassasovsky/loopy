@@ -22,10 +22,10 @@ date: 2026-07-04
 
 ## Overview
 
-loopy has one session slot: `defaultSessionDirectory()` resolves a single
-`loopy_session/` bundle and Save overwrites it in place. This adds **named,
+segno has one session slot: `defaultSessionDirectory()` resolves a single
+`segno_session/` bundle and Save overwrites it in place. This adds **named,
 multiple sessions** with full CRUD and a document-editor UX: sessions are
-`.loopy` bundles under a `sessions/<name>/` root, a tracked "current session"
+`.segno` bundles under a `sessions/<name>/` root, a tracked "current session"
 lets plain Save write back silently, and one **Sessions-manager** dialog handles
 list / load / save-as / rename / delete.
 
@@ -58,8 +58,8 @@ the **manager dialog**. No engine or looper-repository surface changes.
   export) to restructure.
 - `lib/session_directory.dart` — `defaultSessionDirectory()` → generalize to a
   **sessions-root** resolver; the new root `<documents>/sessions` is a *sibling*
-  of the legacy `<documents>/loopy_session`, so the old bundle is never listed.
-- `lib/app/view/app.dart` (~L42/99/280/595), `lib/app/run_loopy.dart` (~L126),
+  of the legacy `<documents>/segno_session`, so the old bundle is never listed.
+- `lib/app/view/app.dart` (~L42/99/280/595), `lib/app/run_segno.dart` (~L126),
   `lib/looper/view/looper_page.dart` (~L21/41), `lib/main_mock.dart` — thread
   the resolver (and update the now-stale `sessionDirectory` doc comments).
 - `lib/looper/view/rename_track_dialog.dart` — `showDialog` + `AlertDialog` +
@@ -113,7 +113,7 @@ its typed error on actual load instead. The current-session pointer is
       error); the dialog's inline check is a fast-feedback affordance only.
 - [ ] Load surfaces the existing typed failures (sample-rate mismatch /
       unsupported version) through the SnackBar unchanged.
-- [ ] The legacy `loopy_session/` bundle is left untouched and not shown.
+- [ ] The legacy `segno_session/` bundle is left untouched and not shown.
 - [ ] A save/load/export never wipes `currentSessionName` or the session list
       (the `SessionState.copyWith` conversion holds across transitions).
 - [ ] `flutter analyze` clean; `dart format` stable; full suite +
@@ -197,7 +197,7 @@ its typed error on actual load instead. The current-session pointer is
       **Sessions…** entry opening the manager (keep export items); add a quick
       **Save** action + **Cmd/Ctrl+S** shortcut (write-back, falls back to
       Save-As); show the current session name (or "Unsaved") in the top bar.
-- [ ] Thread `defaultSessionsRoot` through `run_loopy.dart` / `app.dart` /
+- [ ] Thread `defaultSessionsRoot` through `run_segno.dart` / `app.dart` /
       `looper_page.dart` / `main_mock.dart`; rename the `sessionDirectory` param
       and update its now-stale doc comments (LooperPage + the cubit `directory`
       param). Remove the dead single-bundle Save/Load path and stale
@@ -220,7 +220,7 @@ its typed error on actual load instead. The current-session pointer is
 `lib/session/session_mapping.dart` (reused, unchanged),
 `lib/session/view/sessions_manager_dialog.dart` (new) + the name-input dialog,
 `lib/looper/view/tracks_chrome.dart`, `lib/session_directory.dart`,
-`lib/app/view/app.dart`, `lib/app/run_loopy.dart`, `lib/main_mock.dart`,
+`lib/app/view/app.dart`, `lib/app/run_segno.dart`, `lib/main_mock.dart`,
 `lib/looper/view/looper_page.dart`, `lib/l10n/arb/app_{en,es}.arb`,
 mirrored test files throughout.
 
@@ -233,7 +233,7 @@ mirrored test files throughout.
    rename "A" → collision with "B" rejected inline; rename to "C" succeeds;
    delete the open session (confirm → music keeps playing, top bar "Unsaved",
    next Save prompts); relaunch → both sessions still listed; confirm the old
-   `loopy_session/` is untouched on disk.
+   `segno_session/` is untouched on disk.
 
 ## Dependencies & Prerequisites
 
@@ -245,7 +245,7 @@ mirrored test files throughout.
 
 ## Notes / accepted trade-offs
 
-- **No migration** of the legacy `loopy_session/` — sibling of the new root, so
+- **No migration** of the legacy `segno_session/` — sibling of the new root, so
   it is simply never listed. Importing it can be a later follow-up.
 - **Reject duplicate slugs** (no overwrite / auto-suffix); the repository is the
   atomic authority, the dialog check is fast-feedback UX.

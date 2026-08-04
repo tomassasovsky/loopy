@@ -1,4 +1,4 @@
-/// Local key-value persistence for Loopy, backed by shared_preferences.
+/// Local key-value persistence for Segno, backed by shared_preferences.
 library;
 
 export 'src/key_value_store.dart';

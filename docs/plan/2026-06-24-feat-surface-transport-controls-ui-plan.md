@@ -22,13 +22,13 @@ The five gap actions (confirmed by cross-referencing `_onKey` in
 |--------|------------------|----------|------------------|
 | Play All / Stop All | `Space`, pedal Rec/Play | `LooperPlayAllPressed` / `LooperStopAllPressed` | Top bar — single state-aware toggle |
 | Clear All | `C`, pedal Clear | `LooperClearAllPressed` | Top bar |
-| Fullscreen | `F` | `toggleLoopyFullScreen()` | Top bar (desktop only) |
+| Fullscreen | `F` | `toggleSegnoFullScreen()` | Top bar (desktop only) |
 | Undo (per track) | `U` / `Cmd/Ctrl+Z`, pedal Undo tap | `LooperUndoPressed(channel)` | Selected track column header |
 | Redo (per track) | `Cmd/Ctrl+Y` / `Cmd/Ctrl+Shift+Z`, pedal Undo long-press | `LooperRedoPressed(channel)` | Selected track column header |
 
 ## Problem Statement / Motivation
 
-Loopy is keyboard- and pedal-first, but a user driving the app with mouse/touch
+Segno is keyboard- and pedal-first, but a user driving the app with mouse/touch
 (or learning it) has no way to undo, redo, clear all, play/stop all, or toggle
 fullscreen — those actions are invisible. Surfacing them makes the app fully
 operable by pointer and improves discoverability of the shortcuts (via tooltips),
@@ -85,12 +85,12 @@ IconButton(
       : null,
 ),
 // Fullscreen — desktop only, static icon
-if (loopySupportsDesktopWindowing)
+if (segnoSupportsDesktopWindowing)
   IconButton(
     key: const Key('bigpicture_fullscreen'),
     tooltip: l10n.fullscreenTooltip, // "Fullscreen (F)"
     icon: const Icon(Icons.fullscreen),
-    onPressed: () => unawaited(toggleLoopyFullScreen()),
+    onPressed: () => unawaited(toggleSegnoFullScreen()),
   ),
 ```
 
@@ -150,7 +150,7 @@ API beyond these callbacks (VGV: no pixel params in widget APIs).
 
 ## Technical Considerations
 
-- **Architecture:** Presentation-layer only, in the `loopy` app package. Reuses
+- **Architecture:** Presentation-layer only, in the `segno` app package. Reuses
   existing `LooperBloc` events; no new events, no repository/engine changes, no
   new package. Matches VGV layered architecture.
 - **No keyboard/button drift:** the extracted helpers are the single source of
@@ -158,13 +158,13 @@ API beyond these callbacks (VGV: no pixel params in widget APIs).
   `a11y*` strings the keyboard already does (they already exist in the ARBs:
   `a11yPlayingAll`, `a11yStoppedAll`, `a11yAllCleared`, `a11yUndone`,
   `a11yRedone`) — no new announcement strings needed.
-- **Fullscreen icon is static this PR.** `toggleLoopyFullScreen()`
+- **Fullscreen icon is static this PR.** `toggleSegnoFullScreen()`
   (`lib/window/window_chrome.dart:40`) is fire-and-forget with only an async
   `isFullScreen()` getter and no state stream; the OS can exit fullscreen
   (green button / Esc / F11) without the app knowing. Reflecting live
   enter/exit state would require a `windowManager` listener
   (`onWindowEnterFullScreen`/`onWindowLeaveFullScreen`) + notifier — deferred as
-  out of scope (YAGNI). Button is gated on `loopySupportsDesktopWindowing` so it
+  out of scope (YAGNI). Button is gated on `segnoSupportsDesktopWindowing` so it
   does not render on web.
 - **Tooltip localization + platform modifier.** New ARB strings go in **both**
   `lib/l10n/arb/app_en.arb` and `lib/l10n/arb/app_es.arb` (with `@`-metadata).
@@ -202,7 +202,7 @@ API beyond these callbacks (VGV: no pixel params in widget APIs).
 - [ ] Both Play/Stop All and Clear All are **disabled** when `!state.hasContent`
       or `!state.status.isConnected`.
 - [ ] Top bar shows a **Fullscreen** button on desktop only
-      (`loopySupportsDesktopWindowing`) that calls `toggleLoopyFullScreen()`.
+      (`segnoSupportsDesktopWindowing`) that calls `toggleSegnoFullScreen()`.
 - [ ] The **selected** track column header shows **Undo** and **Redo** buttons;
       Undo enabled when `track.hasContent`, Redo enabled when `track.canRedo`;
       they dispatch `LooperUndoPressed`/`LooperRedoPressed` for that channel and
@@ -254,7 +254,7 @@ API beyond these callbacks (VGV: no pixel params in widget APIs).
 - `_TrackColumn` header insertion point: `lib/looper/view/big_picture_view.dart:601-618`
 - Events: `lib/looper/bloc/looper_event.dart:59` (Undo), `:65` (Redo), `:352` (PlayAll), `:358` (StopAll), `:364` (ClearAll)
 - State flags: `packages/looper_repository/lib/src/models/looper_state.dart:40` (`hasContent`); `packages/looper_repository/lib/src/models/track.dart:79` (`hasContent`), `:86` (`canUndo`), `:89` (`canRedo`)
-- Fullscreen helper + desktop guard: `lib/window/window_chrome.dart:33` (`loopySupportsDesktopWindowing`), `:40` (`toggleLoopyFullScreen`)
+- Fullscreen helper + desktop guard: `lib/window/window_chrome.dart:33` (`segnoSupportsDesktopWindowing`), `:40` (`toggleSegnoFullScreen`)
 - Existing announce strings: `lib/l10n/arb/app_en.arb:73-79`
 - Tooltip-with-shortcut precedent: `lib/l10n/arb/app_en.arb:287` (`"signalTooltip": "Signal flow (G)"`)
 - Existing widget tests: `test/looper/view/big_picture_view_test.dart`

@@ -2,11 +2,11 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/view/fx_editor/fx_scope.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/view/fx_editor/fx_scope.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../../helpers/helpers.dart';

@@ -60,7 +60,7 @@ a truncated WAV (umbrella D-FMT, D-FAIL, D-SALVAGE).
 
 ## Tasks
 
-- [ ] `packages/loopy_engine/src/core/perf_drain.{h,c}` — thread lifecycle
+- [ ] `packages/segno_engine/src/core/perf_drain.{h,c}` — thread lifecycle
       (spawn at arm / join at disarm), drain loop, raw PCM writers, sidecar
       writer (JSON, atomic rename on each flush), silence-fill, disk-full
       stop.
@@ -73,17 +73,17 @@ a truncated WAV (umbrella D-FMT, D-FAIL, D-SALVAGE).
 
 ## Files touched (primary)
 
-`packages/loopy_engine/src/core/{perf_drain.h,perf_drain.c,loopy_engine_api.h,engine_commands.c,engine.c}`,
-`packages/loopy_engine/lib/src/native_audio_engine.dart` (+ mock),
-`packages/loopy_engine/lib/src/generated/*` (regenerated),
-`packages/loopy_engine/src/test/test_engine_core.c`,
-`packages/loopy_engine/src/test/run_native_tests.sh` (source list).
+`packages/segno_engine/src/core/{perf_drain.h,perf_drain.c,segno_engine_api.h,engine_commands.c,engine.c}`,
+`packages/segno_engine/lib/src/native_audio_engine.dart` (+ mock),
+`packages/segno_engine/lib/src/generated/*` (regenerated),
+`packages/segno_engine/src/test/test_engine_core.c`,
+`packages/segno_engine/src/test/run_native_tests.sh` (source list).
 
 ## Verification
 
-1. `bash packages/loopy_engine/src/test/run_native_tests.sh` — "ALL PASSED".
+1. `bash packages/segno_engine/src/test/run_native_tests.sh` — "ALL PASSED".
 2. `flutter analyze` clean; `dart format --set-exit-if-changed .` stable.
-3. `flutter test packages/loopy_engine`.
+3. `flutter test packages/segno_engine`.
 
 ## Dependencies
 

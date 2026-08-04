@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Segno
+Description=Segno floor-console boot splash (segno mark, breathe + shimmer)
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/segno
+ScriptFile=/usr/share/plymouth/themes/segno/segno.script

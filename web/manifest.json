@@ -1,11 +1,11 @@
 {
-    "name": "Loopy",
-    "short_name": "Loopy",
+    "name": "Segno",
+    "short_name": "Segno",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "Loopy — a cross-platform desktop loopstation with a native low-latency audio engine",
+    "description": "Segno — a cross-platform desktop loopstation with a native low-latency audio engine",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

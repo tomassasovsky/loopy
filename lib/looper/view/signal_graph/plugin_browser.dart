@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/view/signal_graph/signal_style.dart';
-import 'package:loopy/theme/surface_theme.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/view/signal_graph/signal_style.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 /// Opens the plugin browser over the [LooperRepository]'s scan catalog and
 /// resolves to the chosen [PluginDescriptor], or null if dismissed. Shared by

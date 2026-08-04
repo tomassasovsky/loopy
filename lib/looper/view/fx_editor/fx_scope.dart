@@ -1,7 +1,7 @@
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
+import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
 
 /// A scope-agnostic adapter over one editable FX chain, at any of the four FX
 /// stages (R21): a hardware input's live-monitor chain ([InputFxScope]), a

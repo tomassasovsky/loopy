@@ -53,7 +53,7 @@ moving on.
 
 VGV layered monorepo. Data → Repository → Bloc/Cubit → Presentation.
 
-- **Native engine**: `packages/loopy_engine/src/engine.c` (+ `loopy_engine_api.h`,
+- **Native engine**: `packages/segno_engine/src/engine.c` (+ `segno_engine_api.h`,
   `loop_clock.c`, `lockfree_ring.c`). RT contract: the audio callback
   (`le_engine_process` / `data_callback`) does **no** malloc/lock/syscall/
   unbounded-loop. Control→audio commands go through the SPSC ring
@@ -63,27 +63,27 @@ VGV layered monorepo. Data → Repository → Bloc/Cubit → Presentation.
   the audio thread only reads `pool[a_live]`.
 - **Native tests** (deterministic, device-free — the real safety net):
   ```sh
-  cd packages/loopy_engine
+  cd packages/segno_engine
   clang -std=c11 -Wall -Wextra -I src -I src/miniaudio \
     src/test/test_engine_core.c src/engine.c src/lockfree_ring.c \
     src/loop_clock.c src/miniaudio_impl.c \
     -framework CoreAudio -framework AudioToolbox -framework AudioUnit \
-    -framework CoreFoundation -lpthread -lm -o /tmp/loopy_core_tests
-  /tmp/loopy_core_tests
+    -framework CoreFoundation -lpthread -lm -o /tmp/segno_core_tests
+  /tmp/segno_core_tests
   ```
-- **Regenerate FFI bindings** after editing `loopy_engine_api.h` (struct/array
+- **Regenerate FFI bindings** after editing `segno_engine_api.h` (struct/array
   sizes are baked into the generated Dart):
-  `cd packages/loopy_engine && dart run ffigen --config ffigen.yaml`
+  `cd packages/segno_engine && dart run ffigen --config ffigen.yaml`
 - **Dart/Flutter tests**: the very_good_cli MCP test tool is broken here; run via
   the absolute path `/Users/Tomas/development/flutter/bin/flutter test`
   (the lint hook blocks bare `flutter test`).
 - **macOS build**:
   `/Users/Tomas/development/flutter/bin/flutter build macos --debug --flavor development -t lib/main_development.dart`
 - App constructs the engine via `LooperRepository.withNativeEngine()` (no direct
-  `loopy_engine` import in `lib/`). `EngineConfig`/`EngineResult`/`EngineStatus`
+  `segno_engine` import in `lib/`). `EngineConfig`/`EngineResult`/`EngineStatus`
   reach `lib/` via `package:looper_repository`.
 - Current relevant constants: `LE_MAX_TRACKS = 8`, `LE_MAX_CHANNELS = 2`
-  (`loopy_engine_api.h`). Per-track buffers are currently `channels`-wide
+  (`segno_engine_api.h`). Per-track buffers are currently `channels`-wide
   (stereo); record write index and playback read index multiply position by
   `ch`.
 
@@ -96,7 +96,7 @@ Goal: open the device with full input and output channel counts, no routing yet
 multichannel I/O.
 
 Tasks:
-- `loopy_engine_api.h`: raise `LE_MAX_CHANNELS` to `32`. In `le_config`, replace
+- `segno_engine_api.h`: raise `LE_MAX_CHANNELS` to `32`. In `le_config`, replace
   `channels` with `input_channels` and `output_channels` (or add the two and
   keep `channels` as a deprecated alias mapped to both — prefer the clean
   replacement). Add `input_channels` / `output_channels` to `le_snapshot`.
@@ -170,7 +170,7 @@ keeps prior tests green (adapted for mono).
 
 ## Phase 3 — Dart data + repository
 
-- `loopy_engine` (`lib/src/`):
+- `segno_engine` (`lib/src/`):
   - `engine_config.dart`: `inputChannels` / `outputChannels` (replace
     `channels`); `writeTo` maps to the renamed native fields.
   - `engine_snapshot.dart`: add `inputChannels` / `outputChannels` to
@@ -180,7 +180,7 @@ keeps prior tests green (adapted for mono).
   - `audio_engine.dart` interface + `native_audio_engine.dart`:
     `setInputChannel({required int channel, required int value})` and
     `setOutputMask({required int channel, required int mask})`.
-  - `loopy_engine.dart` exports as needed.
+  - `segno_engine.dart` exports as needed.
 - `looper_repository`:
   - `Track` model: add `inputChannel` and `outputMask`.
   - `_project`: map snapshot routing into `Track`; surface device

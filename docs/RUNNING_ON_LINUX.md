@@ -1,10 +1,10 @@
-# Running Loopy on Linux
+# Running Segno on Linux
 
-Loopy runs natively on Linux (GTK). The native engine + miniaudio compile and
-bundle as `libloopy_engine.so`.
+Segno runs natively on Linux (GTK). The native engine + miniaudio compile and
+bundle as `libsegno_engine.so`.
 
 Most "it doesn't work on Linux" reports are **host/interface configuration**, not
-Loopy. This doc captures what was learned bringing it up on a Focusrite Clarett+
+Segno. This doc captures what was learned bringing it up on a Focusrite Clarett+
 8Pre, so the next person doesn't spend an evening on it.
 
 ## Backend: JACK (not PulseAudio)
@@ -12,7 +12,7 @@ Loopy. This doc captures what was learned bringing it up on a Focusrite Clarett+
 On a PipeWire system miniaudio's **PulseAudio** backend returns **silent capture
 buffers** (verified: a connected source reads as pure silence through pulse, but
 fine through JACK/`pw-record`). So the engine prefers the **JACK** backend on
-Linux ([engine.c](../packages/loopy_engine/src/engine.c), `le_engine_start`):
+Linux ([engine.c](../packages/segno_engine/src/engine.c), `le_engine_start`):
 JACK → PulseAudio → ALSA. PipeWire ships a JACK server, so this needs no extra
 setup, and JACK exposes the full multichannel interface (ALSA only offers a
 2-channel bridge, and the raw `hw:` device is busy while PipeWire holds it).
@@ -90,9 +90,9 @@ interface can look broken:
   A weak input that the gain knob barely changes is the classic symptom of a
   condenser mic with **48V off** (press it on the device).
 
-### Diagnosing signal level (no Loopy needed)
+### Diagnosing signal level (no Segno needed)
 
-PipeWire sources are shared, so you can measure in parallel with Loopy. Per-channel
+PipeWire sources are shared, so you can measure in parallel with Segno. Per-channel
 input peak:
 
 ```bash
@@ -101,6 +101,6 @@ python3 -c "import wave,array,math;w=wave.open('/tmp/in.wav');d=array.array('h')
 print([round(max((abs(d[i+c]) for i in range(0,len(d),ch)),default=0)/32768,4) for c in range(ch)])"
 ```
 
-Record the sink's `.monitor` to see exactly what Loopy is sending out. If the input
-shows signal but the output `.monitor` is flat, the problem is Loopy; if both move
-together, Loopy is fine and it's a host level/routing issue.
+Record the sink's `.monitor` to see exactly what Segno is sending out. If the input
+shows signal but the output `.monitor` is flat, the problem is Segno; if both move
+together, Segno is fine and it's a host level/routing issue.

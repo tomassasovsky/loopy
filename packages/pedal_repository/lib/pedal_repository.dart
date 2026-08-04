@@ -1,4 +1,4 @@
-/// Repository + protocol layer for the Loopy bidirectional MIDI looper pedal:
+/// Repository + protocol layer for the Segno bidirectional MIDI looper pedal:
 /// the state-frame models and SysEx codec shared with the firmware as one
 /// contract, the `PedalRepository` over a `PedalTransport`, and the native
 /// composition factory (`createNativePedalRepository`) that adapts a MIDI input

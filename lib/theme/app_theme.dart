@@ -1,7 +1,7 @@
-import 'package:loopy/theme/looper_theme.dart';
-import 'package:loopy/theme/page_transitions.dart';
-import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/theme/looper_theme.dart';
+import 'package:segno/theme/page_transitions.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 /// Maps the app's neutral [SurfaceTheme] tokens onto the structural tokens the
 /// `routing_graph` package reads via `context.routingGraph`, so the graphs
@@ -83,7 +83,7 @@ const _hcIndicatorColors = <TrackIndicator, Color>{
   TrackIndicator.record: Color(0xFFFF5470),
 };
 
-/// Loopy's visual themes — named for their palettes, not for any screen or
+/// Segno's visual themes — named for their palettes, not for any screen or
 /// mode they happen to dress.
 abstract final class AppTheme {
   /// The default **Neon** theme: neon-on-near-black (Chewie-Monsta vibe).

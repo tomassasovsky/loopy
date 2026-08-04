@@ -33,7 +33,7 @@ A stompable performance unit will get its power cut mid-session. Today the OS is
 
 ### Mock files
 
-- `deploy/rpi/loopy-kiosk.service` (modified — watchdog/respawn directives)
+- `deploy/rpi/segno-kiosk.service` (modified — watchdog/respawn directives)
 - `deploy/rpi/overlayfs/` (new — read-only root / overlay config)
 - `deploy/rpi/boot-integrity-check.sh` (new — SD integrity check + "needs attention" fallback)
 - `docs/RUNNING_ON_RPI.md` (modified — resilience/rootfs/shutdown)
@@ -66,4 +66,4 @@ A stompable performance unit will get its power cut mid-session. Today the OS is
 ## References
 
 - Orphan-window cleanup: [`waveform_window_service.dart:36`](../../lib/visualizer/waveform_window_service.dart)
-- Kiosk launcher: from Part 5 (`deploy/rpi/loopy-kiosk.service`)
+- Kiosk launcher: from Part 5 (`deploy/rpi/segno-kiosk.service`)

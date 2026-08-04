@@ -13,10 +13,10 @@ date: 2026-06-14
 
 ## Overview
 
-Add a header-only radix-2 FFT (`packages/loopy_engine/src/fft.h`) that the phase
+Add a header-only radix-2 FFT (`packages/segno_engine/src/fft.h`) that the phase
 vocoder (part 3) will use, plus an isolated round-trip test. Header-only means
 **no new translation unit**, so the CMake source list
-([src/CMakeLists.txt](../../packages/loopy_engine/src/CMakeLists.txt)), the macOS
+([src/CMakeLists.txt](../../packages/segno_engine/src/CMakeLists.txt)), the macOS
 podspec glob, and the test build's explicit file list are all untouched.
 
 ## Problem Statement / Motivation
@@ -30,7 +30,7 @@ spec alone and lets part 3 assume a trusted FFT.
 ## Proposed Solution
 
 ```c
-// packages/loopy_engine/src/fft.h — included by a single TU (engine.c in part 3;
+// packages/segno_engine/src/fft.h — included by a single TU (engine.c in part 3;
 // the test TU here). All functions static; caller owns all buffers (no malloc).
 
 #define LE_FFT_PI 3.14159265358979323846f
@@ -66,10 +66,10 @@ static void le_rfft_inv(const float* re, const float* im, float* y, int n);
 
 ## Implementation Order
 
-1. Write `packages/loopy_engine/src/fft.h` (`le_fft`, `le_rfft_fwd`,
+1. Write `packages/segno_engine/src/fft.h` (`le_fft`, `le_rfft_fwd`,
    `le_rfft_inv`, guarded Hann-table helper).
 2. Add `test_fft_roundtrip` to
-   [test_engine_core.c](../../packages/loopy_engine/src/test/test_engine_core.c)
+   [test_engine_core.c](../../packages/segno_engine/src/test/test_engine_core.c)
    and **register it in `main()`'s call list** (the runner has no auto-discovery
    — every test is a manual `RUN(test_x)` line).
 3. Build & run the native test on Windows (MSVC) and Linux/macOS (clang).
@@ -100,7 +100,7 @@ static void le_rfft_inv(const float* re, const float* im, float* y, int n);
 
 ## References & Research
 
-- Build source list (unchanged): [src/CMakeLists.txt](../../packages/loopy_engine/src/CMakeLists.txt).
-- Test runner (manual `main()` registration): [test_engine_core.c](../../packages/loopy_engine/src/test/test_engine_core.c).
+- Build source list (unchanged): [src/CMakeLists.txt](../../packages/segno_engine/src/CMakeLists.txt).
+- Test runner (manual `main()` registration): [test_engine_core.c](../../packages/segno_engine/src/test/test_engine_core.c).
 - Consumer: part 3 phase vocoder
   ([part-3](./2026-06-14-feat-formant-preserving-octaver-part-3-plan.md)).

@@ -2,10 +2,10 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/performance/cubit/performance_recorder_cubit.dart';
-import 'package:loopy/performance/view/perf_record_button.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
+import 'package:segno/performance/view/perf_record_button.dart';
 
 import '../../helpers/helpers.dart';
 

@@ -36,7 +36,7 @@ is not in the layer stack for 3a. (It *is* where 3b lives — see Non-Goals.)
 
 The real risk is therefore **not the Flutter version** (our bundle embeds its own
 3.44.4 engine) but **ABI matching**: our prebuilt `libflutter_linux_gtk.so` +
-`libloopy_engine.so` must load against the image's GTK3/glib/glibc/Mesa. That is
+`libsegno_engine.so` must load against the image's GTK3/glib/glibc/Mesa. That is
 classic "green build ≠ runs" — a **`blocked-verify`** item proven on the Pi.
 
 ## Proposed Solution
@@ -70,12 +70,12 @@ classic "green build ≠ runs" — a **`blocked-verify`** item proven on the Pi.
 - **weston kiosk-shell** (`[core] shell=kiosk-shell.so` in `weston.ini` via a
   `weston-init` bbappend) — fullscreen, one app per output. Autostart the bundle as
   a Wayland client (`GDK_BACKEND=wayland`).
-- **`loopy-bundle.bb` (prebuilt install recipe):** `do_install` copies the exact
-  bundle tree (`loopy`, `libflutter_linux_gtk.so`, `libloopy_engine.so`, `data/`)
+- **`segno-bundle.bb` (prebuilt install recipe):** `do_install` copies the exact
+  bundle tree (`segno`, `libflutter_linux_gtk.so`, `libsegno_engine.so`, `data/`)
   into the image — **no source build**. Guard against Yocto stripping/relocating the
   AOT/native `.so` destructively (`INHIBIT_PACKAGE_STRIP`, appropriate `FILES`/
   `INSANE_SKIP` as needed). This keeps tonight's byte-identical binary.
-- **Native engine deps:** enumerate what `libloopy_engine.so` needs at runtime
+- **Native engine deps:** enumerate what `libsegno_engine.so` needs at runtime
   (ALSA, any USB/MIDI libs) with `ldd` and add them explicitly to the image.
 
 ### Phase 3 — Audio (ALSA-only — cleaner than Tier 2)
@@ -100,7 +100,7 @@ classic "green build ≠ runs" — a **`blocked-verify`** item proven on the Pi.
 Single-display first, then dual-display:
 
 1. Image boots to weston; the bundle launches fullscreen under kiosk-shell.
-2. **ABI OK:** `ldd` clean on device; bundle + `libloopy_engine.so` load; app window
+2. **ABI OK:** `ldd` clean on device; bundle + `libsegno_engine.so` load; app window
    appears (this is the make-or-break unknown).
 3. **Audio:** Scarlett input audible; record → overdub → playback via ALSA.
 4. **Dual-HDMI:** `weston.ini` `[output] name=HDMI-A-1 / HDMI-A-2` with mode + `x/y`
@@ -118,7 +118,7 @@ GOAL: Prove the existing Flutter GTK floor-console bundle runs unmodified on a m
 SUCCESS CRITERIA:
 - kas-container build emits a raspberrypi4-64 core-image-weston-based image | verify: manual (build completes; .wic.bz2 + .wic.bmap produced)
 - Image boots to weston on the Pi 4B | verify: manual (weston + kiosk-shell come up)
-- Prebuilt bundle + libloopy_engine.so load with no missing libs (ABI OK) | verify: manual (ldd clean on device; app window renders)
+- Prebuilt bundle + libsegno_engine.so load with no missing libs (ABI OK) | verify: manual (ldd clean on device; app window renders)
 - Audio works via ALSA (record/overdub/playback), no pw-jack | verify: manual (Scarlett input audible; loop plays back)
 - Dual-HDMI: main UI + waveform on the two outputs via weston.ini | verify: manual (both render)
 - Boot-to-interactive measured and compared to Tier 2 | verify: manual (both numbers recorded)

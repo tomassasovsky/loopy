@@ -8,11 +8,11 @@ topic: 32u4-ring-playhead-docs-drift
 ## What We're Building
 
 A docs-and-comment-only fix, mirroring PR #176 (commit `668cb2d`), applied to
-`hardware/firmware/loopy_pedal_32u4/` — the newer THT/Pro-Micro firmware port
+`hardware/firmware/segno_pedal_32u4/` — the newer THT/Pro-Micro firmware port
 added by the "feat(pedal): 32U4 firmware + THT main-board bring-up" commit,
 which #176 did not touch because it didn't exist on `master` at diff time.
 
-`renderRing()` in `loopy_pedal_32u4.ino` is confirmed byte-for-byte the same
+`renderRing()` in `segno_pedal_32u4.ino` is confirmed byte-for-byte the same
 fixed-cadence algorithm as the old UNO firmware: `kRingMsPerRev = 700`,
 `g_ringPhase` advances by `dt / kRingMsPerRev * kRingCount` every frame, with
 no reference to `g_frame.loop_length_micros` anywhere in that math.
@@ -25,16 +25,16 @@ currently is, which it does not.
 A full grep of the directory for `loop-position|playhead|revolution` found
 more instances than the originating issue listed:
 
-- `loopy_pedal_32u4.ino:16` — "RING (D15): the off-the-shelf 16-LED NeoPixel
+- `segno_pedal_32u4.ino:16` — "RING (D15): the off-the-shelf 16-LED NeoPixel
   ring, loop-position."
-- `loopy_pedal_32u4.ino:39` — "RING strip: the 16-LED NeoPixel ring on D15
+- `segno_pedal_32u4.ino:39` — "RING strip: the 16-LED NeoPixel ring on D15
   (loop-position playhead)."
-- `loopy_pedal_32u4.ino:321` — "Map the logical playhead to the mirrored
+- `segno_pedal_32u4.ino:321` — "Map the logical playhead to the mirrored
   physical LED so the hump rotates CLOCKWISE..."
-- `loopy_pedal_32u4.ino:329` — "Fills clockwise (the same sense as the
+- `segno_pedal_32u4.ino:329` — "Fills clockwise (the same sense as the
   loop-position hump)..."
-- `loopy_pedal_32u4.ino:354` — "...the frozen-playhead ring holds steady..."
-- `loopy_pedal_32u4.ino:431` — "// shows the loop-position playhead. Signed
+- `segno_pedal_32u4.ino:354` — "...the frozen-playhead ring holds steady..."
+- `segno_pedal_32u4.ino:431` — "// shows the loop-position playhead. Signed
   compare is millis()-wrap safe."
 - `README.md:67` — "...the frozen-playhead ring holds steady instead of
   decaying."
@@ -50,7 +50,7 @@ comment is **shared** between both firmware ports and was already corrected
 by #176 — it needs no further change here.
 
 The fix: reword every "loop-position"/"playhead" instance in
-`loopy_pedal_32u4.ino` and its `README.md` to describe the actual
+`segno_pedal_32u4.ino` and its `README.md` to describe the actual
 fixed-cadence decorative sweep, and add a clarifying comment at
 `g_lastLoopTopMs`'s declaration marking it reserved-for-possible-future-use,
 matching #176's treatment of the old firmware exactly.

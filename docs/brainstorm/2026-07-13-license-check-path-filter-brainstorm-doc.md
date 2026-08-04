@@ -11,7 +11,7 @@ topic: license-check-path-filter
 `pull_request` and `push` triggers) when `pubspec.yaml` (the root manifest) or
 the workflow file itself changes. In this repo, dependencies are routinely
 added via one of the 13 `packages/*/pubspec.yaml` manifests (e.g.
-`loopy_engine`'s `ffi: ^2.1.3`), which resolve into the single committed root
+`segno_engine`'s `ffi: ^2.1.3`), which resolve into the single committed root
 `pubspec.lock` — the file the license checker actually reads from — without
 ever touching the root `pubspec.yaml`. That means a PR that introduces a new,
 possibly incompatibly-licensed dependency through a package can merge without

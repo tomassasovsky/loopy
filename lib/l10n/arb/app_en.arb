@@ -1,9 +1,9 @@
 {
     "@@locale": "en",
-    "appMenuLabel": "Loopy",
+    "appMenuLabel": "Segno",
     "settingsMenuItem": "Settings…",
     "settingsSectionUpdates": "Updates",
-    "updatesIntro": "Keep Loopy current. Checking is read-only — downloading and installing an update is always your choice.",
+    "updatesIntro": "Keep Segno current. Checking is read-only — downloading and installing an update is always your choice.",
     "updatesInstalledVersionLabel": "Installed version",
     "updatesChannelLabel": "Channel",
     "updatesVersionValue": "v{version}",
@@ -115,7 +115,7 @@
     "@pedalFirmwareGateFailedTitle": {
         "description": "Shown when flashing the pedal firmware failed."
     },
-    "pedalFirmwareGateFailedBody": "Your pedal still works on its previous firmware. Loopy will try again next time it starts.",
+    "pedalFirmwareGateFailedBody": "Your pedal still works on its previous firmware. Segno will try again next time it starts.",
     "@pedalFirmwareGateFailedBody": {
         "description": "Reassurance shown when the pedal firmware flash failed."
     },
@@ -193,7 +193,7 @@
         }
     },
     "sessionErrorSampleRate": "Couldn't load the session — it was recorded at a different sample rate than the current device. Reopen the device at the session's sample rate, then try again.",
-    "sessionErrorUnsupportedVersion": "Couldn't load the session — it was saved by a newer version of Loopy. Update the app, then try again.",
+    "sessionErrorUnsupportedVersion": "Couldn't load the session — it was saved by a newer version of Segno. Update the app, then try again.",
     "sessionErrorGeneric": "Session action failed: {details}",
     "@sessionErrorGeneric": {
         "placeholders": {
@@ -449,7 +449,7 @@
     "settingsSectionAudio": "Audio",
     "settingsSectionTracks": "Tracks",
     "settingsKicker": "SETTINGS",
-    "settingsTitle": "Loopy",
+    "settingsTitle": "Segno",
     "settingsViewIntro": "Switch layouts, tune looper defaults, and toggle the secondary output-waveform window.",
     "viewGroupLabel": "VIEW",
     "waveformWindowTitle": "Output waveform window",
@@ -749,7 +749,7 @@
         }
     },
     "noAsioDriverTitle": "No ASIO driver found",
-    "noAsioDriverMessage": "Loopy uses ASIO on Windows. Install your interface's ASIO driver, or get a generic one from ASIO4ALL, then reopen settings.",
+    "noAsioDriverMessage": "Segno uses ASIO on Windows. Install your interface's ASIO driver, or get a generic one from ASIO4ALL, then reopen settings.",
     "downloadAsio4all": "Get ASIO4ALL",
     "sampleRateLabel": "Sample rate",
     "bufferLabel": "Buffer",
@@ -921,7 +921,7 @@
             }
         }
     },
-    "outputWaveformWindowTitle": "Loopy — Output",
+    "outputWaveformWindowTitle": "Segno — Output",
     "midiInputGroup": "MIDI FOOT CONTROLLER",
     "midiNoDevicesFound": "No MIDI input devices found",
     "midiNone": "None",
@@ -999,7 +999,7 @@
             }
         }
     },
-    "pedalOutputHint": "Pick the pedal's MIDI output so loopy can drive its LEDs. Its footswitches use the MIDI input above.",
+    "pedalOutputHint": "Pick the pedal's MIDI output so segno can drive its LEDs. Its footswitches use the MIDI input above.",
     "pedalFirmwareGroup": "PEDAL FIRMWARE PROTOCOL",
     "pedalFirmwareUnknown": "Not set — send v{version} (default)",
     "@pedalFirmwareUnknown": {
@@ -1019,7 +1019,7 @@
             }
         }
     },
-    "pedalFirmwareHint": "Match the protocol of the firmware flashed on your pedal. loopy never sends a newer protocol than this; the pedal FX mode needs v3.",
+    "pedalFirmwareHint": "Match the protocol of the firmware flashed on your pedal. segno never sends a newer protocol than this; the pedal FX mode needs v3.",
     "pedalFirmwareUpdateTitle": "Pedal firmware update available",
     "@pedalFirmwareUpdateTitle": {
         "description": "Heading of the banner shown while the bound pedal speaks a wire protocol older than the one FX mode needs."
@@ -1036,7 +1036,7 @@
             }
         }
     },
-    "pedalFirmwareUpdateBodyUnknown": "This pedal's firmware protocol is not set, so loopy stays on the v{version} safety floor: FX mode shows its chain LEDs in green instead of blue and the pedal reads FX as mute. Flash the v{needed} firmware, then set the protocol above to v{needed}.",
+    "pedalFirmwareUpdateBodyUnknown": "This pedal's firmware protocol is not set, so segno stays on the v{version} safety floor: FX mode shows its chain LEDs in green instead of blue and the pedal reads FX as mute. Flash the v{needed} firmware, then set the protocol above to v{needed}.",
     "@pedalFirmwareUpdateBodyUnknown": {
         "description": "Body of the pedal firmware update banner when no firmware version has been set; {version} is the safety-floor protocol and {needed} the protocol FX mode needs.",
         "placeholders": {
@@ -1178,7 +1178,7 @@
     },
     "perfExportTrackLive": "Live plugins",
     "@perfExportTrackLive": {
-        "description": "Per-track export summary label: this track exported with a live, editable Loopy VST3 device chain."
+        "description": "Per-track export summary label: this track exported with a live, editable Segno VST3 device chain."
     },
     "perfExportTrackBounced": "Bounced audio",
     "@perfExportTrackBounced": {
@@ -1194,7 +1194,7 @@
     },
     "perfExportReasonUnrepresented": "Exported as audio — this track uses an effect that can't be exported live yet.",
     "@perfExportReasonUnrepresented": {
-        "description": "Fallback reason shown under a bounced-audio track: its chain includes an effect type this Loopy version doesn't recognize as exportable."
+        "description": "Fallback reason shown under a bounced-audio track: its chain includes an effect type this Segno version doesn't recognize as exportable."
     },
     "perfExportReExport": "Re-export",
     "@perfExportReExport": {
@@ -1664,9 +1664,9 @@
     "@trayBackLabel": {
         "description": "Back control on an in-tray WiFi/Bluetooth expand panel — returns to the Control Center tiles without dismissing the tray."
     },
-    "wifiUnsupportedBody": "WiFi is only available on the Loopy console appliance.",
+    "wifiUnsupportedBody": "WiFi is only available on the Segno console appliance.",
     "@wifiUnsupportedBody": {
-        "description": "Shown on the WiFi page when loopy-wifi-ctl is not present (desktop builds)."
+        "description": "Shown on the WiFi page when segno-wifi-ctl is not present (desktop builds)."
     },
     "wifiStatusLabel": "Status",
     "@wifiStatusLabel": {
@@ -1791,9 +1791,9 @@
     "@wifiJoinAction": {
         "description": "Confirm button on the WiFi password dialog."
     },
-    "bluetoothUnsupportedBody": "Bluetooth is only available on the Loopy console appliance.",
+    "bluetoothUnsupportedBody": "Bluetooth is only available on the Segno console appliance.",
     "@bluetoothUnsupportedBody": {
-        "description": "Shown on the Bluetooth page when loopy-bt-ctl is not present."
+        "description": "Shown on the Bluetooth page when segno-bt-ctl is not present."
     },
     "bluetoothIntro": "Make this console discoverable so a phone or sidecar can find it. Pairing comes later.",
     "@bluetoothIntro": {
@@ -1827,7 +1827,7 @@
     "@bluetoothAdvertiseTitle": {
         "description": "Toggle title for BLE advertising."
     },
-    "bluetoothAdvertiseSubtitle": "Advertise as Loopy over Bluetooth LE",
+    "bluetoothAdvertiseSubtitle": "Advertise as Segno over Bluetooth LE",
     "@bluetoothAdvertiseSubtitle": {
         "description": "Toggle subtitle for BLE advertising."
     },

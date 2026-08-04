@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/l10n/l10n.dart';
+import 'package:segno/l10n/l10n.dart';
 
 void main() {
   group('AppLocalizations', () {
@@ -19,7 +19,7 @@ void main() {
         ),
       );
 
-      expect(l10n.appMenuLabel, 'Loopy');
+      expect(l10n.appMenuLabel, 'Segno');
       expect(l10n.sessionSaveAs, 'Save as…');
       expect(l10n.trackStatePlaying, 'playing');
       expect(l10n.defaultTrackName(1), 'TRACK 1');
