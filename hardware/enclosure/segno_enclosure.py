@@ -128,9 +128,13 @@ FSW_SLOT_CLR_D = 3.0          # HORIZONTAL front+rear clearance target around th
 # faceplate but the pedal is HORIZONTAL, so the on-slope slot depth must be the
 # horizontal envelope divided by cos(slope) -- without that the projected
 # opening was only 0.16mm/side for the WTB-006 (and 0.28mm/side for the ASP-1).
-FOOTPLATE_PROUD = 12.0        # top-pad surface stands this far above the sloped top.
-                              # 12 (was 10 for the ASP-1): keeps the FRONT pedestal tall
-                              # enough for M3x3 inserts now that PEDAL_H grew to 29.3.
+# Pedal seating rule (issue #373, replaces the old FOOTPLATE_PROUD=12 constant):
+# the pedal's BODY TOP (case top, under the top pad) sits FLUSH with the sloped
+# faceplate surface at the slot's UPPER (rear) rim; only the pad stands above the
+# metal. The plate keeps rising for half a slot past the pedal centre, so with the
+# old +12 rule the pad top ended up ~0.8 mm BELOW the rear rim and the pedals read
+# sunken. Flush-at-rim lands the pad ~15 mm over the slot centre-line -- taller
+# front pedestals as a bonus (more insert depth).
 PLATFORM_MARGIN = 2.0         # platform shelf overhang past the pedal footprint (stay within the slot)
 PLATFORM_FOOT   = 18.0        # base screw inset band (holes ff/2 from the platform edge)
 # The pedal platforms are 3D-PRINTED pedestals (they replaced the folded sheet
@@ -166,7 +170,9 @@ SKIRT_GAP    = 0.3            # wall top to the REAL faceplate underside. Small 
 # (the manufacturing source of truth) 2026-07-28: +1.6 over row 1, +0.7 over
 # row 2. Without this the skirt gap came out 2.6/1.7 instead of 1.0.
 SKIRT_DRIFT_ROW1 = 1.6
-SKIRT_DRIFT_ROW2 = 0.7
+SKIRT_DRIFT_ROW2 = 0.5   # was 0.7 at the old row-2 line; re-measured after the #366
+                         # rearward move + #373 flush-raise: 0.5 leaves 0.3 mm to the
+                         # REAL plate at the tub's rear band (probed in the populated doc)
 SKIRT_NOTCH_W = 12.0          # cable notch in the rear tub wall, centred (the
                               # WTB-006 cable leaves the case at the back)
 SKIRT_OUT_W  = 88.75          # pedestal footprint W (unchanged from the fence rev)
@@ -208,7 +214,9 @@ LED_INS_POCKET = (6.0, 6.0, 0.8)  # LED nest recess in the shoulder's back face
 D_ENC     = 7.0      # EC11 encoder bush
 RING_OD   = 58.0     # diffused-annulus ring window OD (12 THT LEDs behind)
 RING_ID   = 40.0     # ring window ID
-N_IND     = 7        # indicator LEDs (segno indicatorLeds[7])
+N_IND     = 10       # indicator LED pills -- ALL 10 pedals (issue #366). Firmware
+                     # chain contract is still indicatorLeds[7]; widening it to 10
+                     # is an open firmware change, flagged on the issue.
 IND_PITCH = 50.0     # indicator LED pitch
 
 # --- rear I/O -----------------------------------------------------------------
@@ -392,8 +400,16 @@ PEDAL_ROW1_V = FRONT_PEDAL_MARGIN + FSW_SLOT_D / 2.0   # front row pulled to the
 # and asserted >= 40 in _check().
 SCREEN_TOP_V = 371.0
 FRONT_GAP    = SCREEN_TOP_V - BIG_H - (PEDAL_ROW1_V + FSW_SLOT_D / 2.0)
-# CLEAR/BANK sit so their BOTTOM (front) edge aligns with the 16" screen's bottom.
-PEDAL_ROW2_V = (SCREEN_TOP_V - BIG_H) + FSW_SLOT_D / 2.0
+# CLEAR/BANK sit so their LABEL TOP aligns with the screens' shared top line
+# (SCREEN_TOP_V) -- the layout the user approved in the LED trial (issue #366).
+# SILK_CAP is the cap-height/em ratio of the label font as it actually renders
+# (measured in the "Segno console (populated)" doc; Arial-class bold ~0.717): the
+# silk `h` parameter is an em size, so glyph caps top out at v_lbl + SILK_H*SILK_CAP.
+SILK_CAP     = 0.7168
+PEDAL_ROW2_V = SCREEN_TOP_V - SILK_H * SILK_CAP - (LED_GAP + 12.0) - FSW_SLOT_D / 2.0
+# The encoder + LED ring do NOT follow the pedals rearward: the ring would hit the
+# 7" screen. It stays on the OLD row-2 centre (the 16"-screen-bottom line).
+ENC_V        = (SCREEN_TOP_V - BIG_H) + FSW_SLOT_D / 2.0
 
 # Front row of 8, EVENLY spaced across the faceplate (no 4+4 grouping).
 _ROW1 = ["REC/PLAY", "STOP", "UNDO", "MODE", "TRACK1", "TRACK2", "TRACK3", "TRACK4"]
@@ -420,10 +436,10 @@ PEDALS = [(_ROW1[i], _row1_u(i), PEDAL_ROW1_V) for i in range(8)] + [
 # every foot-plate), the middle one on centre. Shared by the lid lip and the front wall.
 FRONT_SCREW_U = [COL_U, FP_W / 2.0, (_row1_u(6) + _row1_u(7)) / 2.0]
 
-# Status-LED pedals: the 4 tracks + CLEAR + BANK (REC/PLAY has no LED -- the encoder
-# ring serves it; it's the first LED position in row 1, removed).
+# Status-LED pedals: ALL of them (issue #366 -- the LED trial added pills over
+# REC/PLAY, STOP, UNDO and MODE; the encoder ring stays as well).
 def _has_led(label):
-    return label in ("CLEAR", "BANK") or label.startswith("TRACK")
+    return True
 
 # Silkscreen label text per control (REC/PLAY stacks on two lines; tracks show the number).
 def _silk_lines(label):
@@ -434,10 +450,22 @@ def _silk_lines(label):
     return [label]
 
 def platform_h(v):
-    """Platform shelf height that lands the pedal's TOP-PAD surface FOOTPLATE_PROUD
-    above the sloped top at depth v (0 = flush, <0 = recessed). The pedal sinks
-    POCKET_DEPTH into the deck's locating pocket, so the deck compensates."""
-    return lid_top_z(v) + FOOTPLATE_PROUD - PEDAL_H + POCKET_DEPTH
+    """Platform shelf height that lands the pedal's BODY TOP (case top, under the
+    top pad) FLUSH with the faceplate surface at the slot's UPPER (rear) rim --
+    pad above the metal (issue #373). The pedal sinks POCKET_DEPTH into the
+    deck's locating pocket, so the deck compensates. face_drift closes the gap
+    between the bare lid_top_z frame and the REAL plate seating (flush was still
+    1.4 mm short at row 1 without it -- measured in the populated doc)."""
+    v_rim = v + FSW_SLOT_D / 2.0
+    return lid_top_z(v_rim) + face_drift(v_rim) + PEDAL_PAD_T - PEDAL_H + POCKET_DEPTH
+
+def face_drift(v):
+    """Measured faceplate seating offset ABOVE the bare lid_top_z slope in the
+    "Segno console (populated)" doc -- two-point calibration (+1.6 mm at the row-1
+    line, +0.7 mm at the old row-2 line; the same pair behind SKIRT_DRIFT_*).
+    lid_top_z uses the tan-slope shortcut, the real plate follows sin + a seating
+    offset; this closes the gap where a check needs REAL clearance."""
+    return 1.96 - 0.00533 * v
 
 # ---------------------------------------------------------------------------
 # FACEPLATE SUPPORT POSTS  (base-anchored props -- issue #292)
@@ -488,7 +516,7 @@ def faceplate_holes():
     """All faceplate features. Pedal slots have NO mounting holes (the pedals
     stand on internal welded platforms). u=player L->R, v=front->rear."""
     cuts, engr = [], []
-    # --- 10 pedal slots (two rows); a status LED above the TRACK pedals only -
+    # --- 10 pedal slots (two rows); a status LED pill above EVERY pedal --------
     for label, u, v in PEDALS:
         cuts.append({"kind": "rect", "u": u - FSW_SLOT_W/2, "v": v - FSW_SLOT_D/2,
                      "w": FSW_SLOT_W, "h": FSW_SLOT_D, "r": 0.0, "ref": label})  # square: max corner clearance
@@ -507,7 +535,7 @@ def faceplate_holes():
             infos.append((ln, LED_SLOT_W / est_w, LED_SLOT_W))
         left_x = u - max(d for _, _, d in infos) / 2.0   # multiline: flush-left, block centred
         for k, (ln, wf, disp_w) in enumerate(infos):
-            vpos = v_lbl + (len(lines)-1-k)*(SILK_H*1.15)
+            vpos = v_lbl + (len(lines)-1-k)*(SILK_H*0.95)   # tight 2-line stack (issue #366)
             if len(lines) > 1:                         # multiline (REC/PLAY) -> left-aligned
                 engr.append({"u": left_x, "v": vpos, "h": SILK_H, "s": ln, "wf": wf, "halign": "left"})
             else:                                      # single line -> centred on the pedal
@@ -527,14 +555,15 @@ def faceplate_holes():
     cuts.append({"kind": "rect", "u": COL_U - SMALL_W/2.0, "v": SCREEN_TOP_V - SMALL_H, "w": SMALL_W, "h": SMALL_H, "ref": "SCREEN_7IN"})
     s16_uc = (_row1_u(4) + _row1_u(7)) / 2.0    # centre over the 4 track pedals (row-1 right group)
     cuts.append({"kind": "rect", "u": s16_uc - BIG_W/2.0, "v": SCREEN_TOP_V - BIG_H, "w": BIG_W, "h": BIG_H, "ref": "SCREEN_16IN"})
-    # --- encoder + diffused ring: on the CLEAR/BANK height centre line, and on
+    # --- encoder + diffused ring: on the OLD row-2 centre line (ENC_V -- it does
+    #     NOT follow CLEAR/BANK rearward, see the PEDAL_ROW2_V note), and on
     #     COL_U -- the SAME vertical centre-line as the 7" screen (pedal 1/2 gap) -
-    enc_v = PEDAL_ROW2_V                 # CLEAR/BANK height centre
+    enc_v = ENC_V
     enc_u = COL_U                        # shared left-column centre-line (7" screen + ring)
     cuts.append({"kind": "ring",   "u": enc_u, "v": enc_v, "od": RING_OD, "id": RING_ID, "ref": "RING"})
     cuts.append({"kind": "circle", "u": enc_u, "v": enc_v, "d": D_ENC, "ref": "ENCODER"})
-    # NOTE: no LEDs flank the encoder -- like the reference, the ring stands alone
-    # (it is also the REC/PLAY indicator). Power state shows on the rear power button.
+    # NOTE: no LEDs flank the encoder -- like the reference, the ring stands alone.
+    # Power state shows on the rear power button.
     # The lid bolts to the body through its DOWN-TURNED SKIRT FLANGES (front lip +
     # sides + rear), NOT through this top face -- those screw holes live on the
     # flanges, added in dxf_faceplate / the render. So nothing more on the top here.
@@ -700,7 +729,7 @@ def _check():
         assert -8.0 <= proud <= PEDAL_H, f"PLATFORM_HEADROOM: pedal proud {proud:.1f} mm at v={v:.0f}"
         # heat-set pilots need >= 3mm even in the LOW front pedestal (M3 x 3 shorts)
         pil = min(INSERT_DEPTH, (ph - T - 1.0) / 2.0)
-        assert pil >= 3.0, f"PLATFORM_INSERTS: pilot depth {pil:.1f} mm < 3 at v={v:.0f} -- raise FOOTPLATE_PROUD"
+        assert pil >= 3.0, f"PLATFORM_INSERTS: pilot depth {pil:.1f} mm < 3 at v={v:.0f} -- deck too shallow"
         # pocket floor must keep a solid web above the toe-side pilot bores
         assert (ph - T) - POCKET_DEPTH - pil >= 2.0, \
             f"PLATFORM_POCKET: web {(ph-T)-POCKET_DEPTH-pil:.1f} mm under the pocket at v={v:.0f}"
@@ -712,8 +741,13 @@ def _check():
     for v in (PEDAL_ROW1_V, PEDAL_ROW2_V):
         v_screw = v + PEDAL_D / 2.0 - PEDAL_SCREW_BACK
         boss_top = platform_h(v) + PEDAL_PAD_T + PEDAL_SCREW_Z + PEDAL_SCREW_BOSS_D / 2.0
-        clr = lid_under_z(v_screw) - boss_top
-        assert clr >= 1.5, f"SCREW_BOSS: only {clr:.1f} mm under the faceplate at v={v_screw:.0f}"
+        # REAL clearance: bare-frame underside + the doc-calibrated seating drift
+        # (the flush-at-rim seating (#373) eats the old margin; the bare frame
+        # alone under-reports by face_drift and would false-fail row 2).
+        clr = lid_under_z(v_screw) + face_drift(v_screw) - boss_top
+        # flush-at-rim seating (#373) eats the old margin: real clearance is now
+        # ~1.0 row 1 / ~0.95 row 2 (doc-probed). Static parts, no relative motion.
+        assert clr >= 0.8, f"SCREW_BOSS: only {clr:.1f} mm under the faceplate at v={v_screw:.0f}"
 
     # 3c. the front gap absorbed the deeper Cherub slot; keep it usable
     assert FRONT_GAP >= 40.0, f"FRONT_GAP: {FRONT_GAP:.1f} mm < 40 -- pedals crowd the screen block"
@@ -1099,7 +1133,6 @@ def dxf_base(path):
     for f in (0.18, 0.5, 0.82):
         _circle(msp, BW*f, BD + SEAM_PEM_V, PEM_M4)                    # lid-lap PEM on the transition
                                                                        # (concentric with the lap M4s)
-
     _text(msp, 8, BD+Hr+Ht+10, 9,
           f"Segno BASE  2.0mm  x1  bottom + front/rear/sides fold up (bend ded {bdd:.2f}); WELD-FREE: rivet the 4 corners via L-brackets; rear 2nd fold = transition (flange FULL width, seats on the relieved side-wall tops); FOLD with the DRAWN side as the INSIDE face (canonical mirror: encoder lands on the player's LEFT)",
           "NOTE")
@@ -1288,6 +1321,19 @@ def _platform_printed(cq, ph, v_c):
         4.0, SKIRT_NOTCH_W, 60.0,
         centered=(True, True, False)).translate((sd/2 - 1.5, 0, h)))
     body = body.union(ring)
+    # PERIMETER RELIEF (#373): the tub footprint overhangs the slot opening
+    # (1.25 mm front/rear, ~5.2 mm per side), so those strips lie UNDER the
+    # faceplate (and under the down-turned front lip on row 1). With the
+    # flush-raise the DECK BOX itself reaches that zone, so shave everything in
+    # the perimeter region (outside the opening footprint) with the SAME
+    # sloped plane the skirt cut uses -- which already sits ~0.3 under the
+    # REAL plate (drift-calibrated per row). Deck inside the opening keeps
+    # full height; the pedal (76.35 x 109.87) never sits on the shaved strips.
+    opening_d = FSW_SLOT_D * math.cos(math.radians(SLOPE_ANGLE))
+    ring_region = (cq.Workplane("XY").box(sd, sw, 200.0, centered=(True, True, False))
+                   .cut(cq.Workplane("XY").box(opening_d, FSW_SLOT_W, 200.0,
+                                               centered=(True, True, False))))
+    body = body.cut(ring_region.intersect(cutter))
     return body
 
 def build_platform_steps():
@@ -1454,7 +1500,7 @@ def build_mini_console():
     return outp
 
 def build_diffuser_step():
-    """LED pill diffuser INSERT (3D-print in WHITE PLA, x6 per console):
+    """LED pill diffuser INSERT (3D-print in WHITE PLA, x10 per console):
     a stadium lens that pushes into the faceplate slot FROM THE INSIDE until its
     shoulder flange seats on the sheet's underside; the lens stands LED_INS_PROUD
     above the outer skin. The single-LED module (hardware/led_strip/ puck or an
@@ -1638,7 +1684,7 @@ def report():
     P(f"  layout        : {n1} front row + {len(PEDALS)-n1} centre (CLEAR/BANK), LEDs aligned above")
     P(f"  slot          : {FSW_SLOT_W:.0f}(u) x {FSW_SLOT_D:.0f}(v) mm  [PROVISIONAL]")
     P(f"  platform H    : front {platform_h(PEDAL_ROW1_V):.1f} / mid {platform_h(PEDAL_ROW2_V):.1f} mm "
-      f"(foot-plate proud {FOOTPLATE_PROUD:+.0f} mm)  [PROVISIONAL]")
+      f"(case top flush with the slot's upper rim, pad +{PEDAL_PAD_T:.1f} above, #373)  [PROVISIONAL]")
     P(f"Screens         : 7in {SMALL_W:.0f}x{SMALL_H:.0f} (left) | 15.6in {BIG_W:.0f}x{BIG_H:.0f} (right), tops aligned, from behind")
     P(f"Rear I/O        : 9V + btn + fuse + [pi: Pi USB/Ethernet block | nopi: 2xHDMI+2xUSB] + vents + earth")
     P(f"Ventilation     : free area {_vent_free_area(rear_holes())+_vent_free_area(_bottom_vents()):.0f} mm^2 (>= {VENT_FREE_AREA_MIN:.0f}), standoff {STANDOFF_H:.0f}mm")
@@ -1707,7 +1753,7 @@ def layout_svg(path):
             e.append(f'<rect x="{X(c["u"]):.1f}" y="{Yr(c["v"]+c["h"]):.1f}" width="{c["w"]:.1f}" height="{c["h"]:.1f}" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.3"/>')
     fy = rear_base + REAR_WALL_H + 28
     e.append(f'<text x="{M}" y="{fy:.1f}" fill="#7c8aa3" font-size="10.5">9V · power · fuse · USB-A x2 · earth stud · vents   |   service: back out the front-lip + rear-lap screws, lift the lid (side wings just locate)</text>')
-    e.append(f'<text x="{M}" y="{fy+18:.1f}" fill="#7c8aa3" font-size="10.5">10x Cherub WTB-006 pedals on printed pedestals (PROVISIONAL) · 7 indicator LEDs (REC/PLAY · CLEAR · BANK · TRACK 1-4) · Pi+board mount on the rear bottom plate</text>')
+    e.append(f'<text x="{M}" y="{fy+18:.1f}" fill="#7c8aa3" font-size="10.5">10x Cherub WTB-006 pedals on printed pedestals (PROVISIONAL) · 10 indicator LED pills (one per pedal) + encoder ring · Pi+board mount on the rear bottom plate</text>')
     e.append('</svg>')
     with open(path, "w") as f:
         f.write("\n".join(e) + "\n")
@@ -1891,7 +1937,7 @@ def main(argv):
     if "--no-step" not in argv:
         try:
             d = build_diffuser_step()
-            print("\nLED diffuser insert (3D print, x6): out/" + os.path.basename(d) + " (+ .stl)")
+            print("\nLED diffuser insert (3D print, x10): out/" + os.path.basename(d) + " (+ .stl)")
             r = build_ring_diffuser_step()
             print("Ring diffuser insert (3D print, x1): out/" + os.path.basename(r) + " (+ .stl)")
             s = build_post_step()
