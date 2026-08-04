@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/app.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/looper/looper.dart';
 // Domain audio-config + effect types come from the looper_repository barrel
 // above; the engine-typed fixtures fed to the fake engine use the `le` prefix,
 // and settings owns its own AudioBackend via the `persisted` prefix.
@@ -938,6 +940,216 @@ void main() {
       );
       expect(result.started, isFalse);
       expect(result.recoveryConfig?.playbackDeviceId, 'out-1');
+    });
+  });
+
+  // The exit criterion for #389, end to end: stage chains on all four stages,
+  // load a session that defines DIFFERENT ones, then cold-boot and assert the
+  // LOADED session comes back. `applySession` updates the engine and the
+  // re-apply caches but never settings, so before the resync this restored the
+  // pre-load Track/Master chains and an EMPTY Loop stage (the load's
+  // destructive clear zeroed those keys on the way past).
+  group('a session load owns the boot-restore chain keys', () {
+    late FakeAudioEngine engine;
+    late LooperRepository repository;
+    late SettingsRepository settings;
+    late LooperBloc bloc;
+    late MonitorCubit monitor;
+
+    /// A settled-empty two-track snapshot, so a load's clear-settle wait
+    /// passes immediately and the boot restore has tracks to walk.
+    EngineSnapshot clearedSnapshot() => const EngineSnapshot(
+      isRunning: true,
+      sampleRate: 48000,
+      bufferFrames: 128,
+      framesProcessed: 0,
+      xrunCount: 0,
+      inputRms: 0,
+      inputPeak: 0,
+      outputRms: 0,
+      latencyState: le.LatencyState.idle,
+      measuredLatencyMs: -1,
+      tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
+    );
+
+    setUp(() async {
+      engine = FakeAudioEngine()..nextSnapshot = clearedSnapshot();
+      repository = LooperRepository(
+        engine: engine,
+        ticker: const Stream<void>.empty(),
+      )..startEngine(const EngineConfig());
+      settings = SettingsRepository(store: FakeKeyValueStore());
+      bloc = LooperBloc(repository: repository, settings: settings);
+      monitor = MonitorCubit(repository: repository, settings: settings);
+      addTearDown(() async {
+        await bloc.close();
+        await monitor.close();
+        await repository.dispose();
+      });
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+      );
+    });
+
+    /// Stages the PRE-LOAD rig through the real edit paths, so every key holds
+    /// a live-rig value before the load — the value that must NOT come back.
+    ///
+    /// Deliberately ONE lane on track 0: the loaded session below grows it to
+    /// two, so `lane_count.0` is stale unless the write-back re-persists it —
+    /// and a stale count silently caps the boot restore's lane loop, hiding
+    /// lane 1's chain no matter how correctly it was written.
+    Future<void> stagePreLoadRig() async {
+      bloc
+        ..add(const LooperLaneEffectAdded(0, 0, type: TrackEffectType.drive))
+        ..add(
+          LooperTrackEffectsChanged(0, [
+            BuiltInEffect(type: TrackEffectType.drive),
+          ]),
+        )
+        ..add(
+          LooperMasterEffectsChanged([
+            BuiltInEffect(type: TrackEffectType.drive),
+          ]),
+        );
+      await monitor.setEnabled(0, enabled: true);
+      monitor.addEffect(0);
+      await pumpEventQueue();
+    }
+
+    /// The listener's two halves, in the order the widget dispatches them.
+    Future<void> resync() async {
+      await monitor.syncFromRepository();
+      bloc.add(const LooperSessionLoaded());
+      await pumpEventQueue();
+    }
+
+    /// A cold boot: a FRESH engine + repository over the SAME settings store.
+    Future<FakeAudioEngine> coldBoot() async {
+      final rebootEngine = FakeAudioEngine()..nextSnapshot = clearedSnapshot();
+      final rebooted = LooperRepository(
+        engine: rebootEngine,
+        ticker: const Stream<void>.empty(),
+      );
+      addTearDown(rebooted.dispose);
+      final started = await tryAutoStartEngine(
+        repository: rebooted,
+        settings: settings,
+      );
+      expect(started.started, isTrue);
+      return rebootEngine;
+    }
+
+    test('restores the LOADED chains after a cold boot, not the pre-load '
+        'ones', () async {
+      await stagePreLoadRig();
+
+      final pcm = Float32List.fromList([1, 1, 1, 1]);
+      await repository.applySession(
+        SessionRig(
+          baseLengthFrames: 4,
+          // TWO lanes, where the pre-load rig had one — so the restore only
+          // reaches lane 1 if the write-back re-persisted the lane count.
+          tracks: [
+            SessionRigTrack(
+              channel: 0,
+              lanes: [
+                SessionRigLane(
+                  lane: 0,
+                  layers: [pcm],
+                  volume: 1,
+                  muted: false,
+                  outputMask: 0x3,
+                  inputChannel: 0,
+                ),
+                SessionRigLane(
+                  lane: 1,
+                  layers: [pcm],
+                  volume: 1,
+                  muted: false,
+                  outputMask: 0x3,
+                  inputChannel: 0,
+                ),
+              ],
+            ),
+          ],
+          laneChains: {
+            (0, 0): FxChainEnvelope(
+              entries: [BuiltInEffect(type: TrackEffectType.filter)],
+            ),
+            (0, 1): FxChainEnvelope(
+              entries: [BuiltInEffect(type: TrackEffectType.echo)],
+            ),
+          },
+          trackChains: {
+            0: FxChainEnvelope(
+              entries: [BuiltInEffect(type: TrackEffectType.reverb)],
+            ),
+          },
+          masterChain: FxChainEnvelope(
+            entries: [BuiltInEffect(type: TrackEffectType.delay)],
+          ),
+          monitors: [
+            SessionRigMonitor(
+              input: 0,
+              enabled: true,
+              outputMask: 0x3,
+              volume: 1,
+              muted: false,
+              effects: [BuiltInEffect(type: TrackEffectType.echo)],
+            ),
+          ],
+        ),
+        clearPollInterval: Duration.zero,
+      );
+      await resync();
+
+      final rebooted = await coldBoot();
+
+      // Loop: the loaded filter, not the pre-load drive — and not empty.
+      expect(rebooted.laneFx[(0, 0, 0)]?.code, TrackEffectType.filter.code);
+      expect(rebooted.laneFxCount[(0, 0)], 1);
+      // Lane 1 exists only in the LOADED session. It comes back only if the
+      // write-back re-persisted `lane_count.0` too — the boot restore bounds
+      // its lane loop by that key, so a stale count would drop this chain
+      // even though it was written correctly.
+      expect(await settings.loadLaneCount(0), 2);
+      expect(rebooted.laneFx[(0, 1, 0)]?.code, TrackEffectType.echo.code);
+      // Track + Master: the loaded chains, not the pre-load drive.
+      expect(rebooted.trackFx[(0, 0)]?.code, TrackEffectType.reverb.code);
+      expect(rebooted.masterFx[0]?.code, TrackEffectType.delay.code);
+      // Input is the stage that was already correct — the regression canary
+      // for folding its listener into the shared one. Monitors are restored by
+      // MonitorCubit.load(), so assert the key it reads.
+      expect(
+        decodeFxChain(await settings.loadMonitorEffects(0)).entries.single,
+        isA<BuiltInEffect>().having(
+          (e) => e.type,
+          'type',
+          TrackEffectType.echo,
+        ),
+      );
+    });
+
+    test('a shrinking load leaves no stale chain behind', () async {
+      await stagePreLoadRig();
+
+      // The loaded session defines NO chains at all.
+      await repository.applySession(
+        const SessionRig(),
+        clearPollInterval: Duration.zero,
+      );
+      await resync();
+
+      final rebooted = await coldBoot();
+
+      expect(await settings.loadLaneEffects(0, 0), isNull);
+      expect(await settings.loadTrackFxChain(0), isNull);
+      expect(rebooted.laneFx.containsKey((0, 0, 0)), isFalse);
+      expect(rebooted.trackFx.containsKey((0, 0)), isFalse);
+      expect(
+        decodeFxChain(await settings.loadMasterFxChain()).entries,
+        isEmpty,
+      );
     });
   });
 }
