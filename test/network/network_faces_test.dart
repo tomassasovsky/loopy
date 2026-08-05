@@ -1,5 +1,6 @@
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/bluetooth/bluetooth_cubit.dart';
@@ -282,6 +283,68 @@ void main() {
       expect(opening.height, lessThan(open.height));
       expect(midway.height, greaterThan(opening.height));
       expect(midway.height, lessThanOrEqualTo(open.height));
+    });
+
+    testWidgets('the whole open card takes the press, not just its row', (
+      tester,
+    ) async {
+      await pumpWifi(tester, _FakeWifiClient());
+      await tester.tap(find.byKey(const Key('wifi_network_Studio-5G')));
+      await tester.pumpAndSettle();
+
+      // One ink well over the card — row AND action strip — so a press
+      // lights the whole thing rather than its top 70px.
+      final ink = find.ancestor(
+        of: find.byKey(const Key('console_row_actions')),
+        matching: find.byType(InkWell),
+      );
+      expect(ink, findsOneWidget);
+      final card = tester.getSize(
+        find.ancestor(
+          of: find.byKey(const Key('console_row_actions')),
+          matching: find.byType(ConsoleExpandedRow),
+        ),
+      );
+      expect(tester.getSize(ink.first).height, card.height);
+      expect(tester.getSize(ink.first).height, greaterThan(kConsoleRowHeight));
+    });
+
+    testWidgets('the divider fades with the row instead of snapping', (
+      tester,
+    ) async {
+      await pumpWifi(tester, _FakeWifiClient());
+
+      // The hairline's PAINTED colour, read off the render object so this
+      // sees the interpolated value rather than the target.
+      Color? hairline() {
+        for (final box in tester.renderObjectList<RenderDecoratedBox>(
+          find.descendant(
+            of: find.byKey(const Key('wifi_network_Studio-5G')),
+            matching: find.byType(DecoratedBox),
+          ),
+        )) {
+          final decoration = box.decoration;
+          if (decoration is BoxDecoration && decoration.border != null) {
+            return decoration.border!.bottom.color;
+          }
+        }
+        return null;
+      }
+
+      final shut = hairline();
+      expect(shut, isNotNull);
+      expect(shut!.a, greaterThan(0));
+
+      await tester.tap(find.byKey(const Key('wifi_network_Studio-5G')));
+      await tester.pump();
+
+      // Frame one: still (nearly) its old colour. Snapping to transparent
+      // here is the flicker — a line disappearing under a tint that is
+      // itself still fading in.
+      expect(hairline()!.a, greaterThan(0));
+
+      await tester.pumpAndSettle();
+      expect(hairline()!.a, 0);
     });
 
     testWidgets('the actions shrink away rather than vanishing', (

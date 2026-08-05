@@ -266,7 +266,6 @@ class _MappingList extends StatelessWidget {
             ? l10n.midiControlSweep
             : l10n.midiControlSwitch,
         expanded: open,
-        divider: !open,
         onTap: () => onToggle(binding.key),
       ),
       ConsoleExpansion(
