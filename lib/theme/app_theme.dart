@@ -66,6 +66,50 @@ const _hcMuteMeterColors = <LooperMeterState, Color>{
   LooperMeterState.muted: Color(0xFFFFFFFF),
 };
 
+/// Waveform stroke color per meter state.
+///
+/// The design system's decided reading of this surface (#499): the waveform is
+/// part of the transport legend, not a fixed brand accent, so it reuses the
+/// same stage colours the meters and pedal LEDs already speak — recording red,
+/// playing green, stopped white. The retired single cyan (`0xFF00E5FF`) said
+/// only "this is a waveform".
+///
+/// The three not-sounding states share one white, dimmed by alpha rather than
+/// split into hues: `empty` and `stopped` are both "this track is not playing"
+/// and read identically, while `muted` dims further to say it was silenced on
+/// purpose. Spending a hue on them would imply a distinction the transport does
+/// not make. Every state clears 3:1 against [LooperTheme.waveformBackground]
+/// (asserted in `test/theme/`) — a waveform is a non-text component (WCAG
+/// 1.4.11).
+///
+/// `empty` deliberately does *not* borrow the meter's dim empty groove, even
+/// though every other state matches the meter table. The meter can afford a
+/// near-invisible empty because it draws no bar there; this surface paints the
+/// **mixed output**, so it still has a full waveform to show while the cursor
+/// track itself is empty — parking the cursor on a fresh track mid-performance
+/// would black out the mix.
+const _waveformColors = <LooperMeterState, Color>{
+  LooperMeterState.empty: Color(0xB3FFFFFF),
+  LooperMeterState.recording: Color(0xFFFF1744),
+  LooperMeterState.overdubbing: Color(0xFFFF1744),
+  LooperMeterState.playing: Color(0xFF4CDA4A),
+  LooperMeterState.stopped: Color(0xB3FFFFFF),
+  LooperMeterState.muted: Color(0x66FFFFFF),
+};
+
+/// High-contrast waveform colors: the same legend with the HC state pair
+/// (`0xFFFF5470` / `0xFF6EE77F`) and the dim tones lifted — stopped goes fully
+/// opaque and muted takes the alpha stopped used to, so the "not sounding"
+/// pair stays distinguishable without either dropping under the 3:1 floor.
+const _hcWaveformColors = <LooperMeterState, Color>{
+  LooperMeterState.empty: Color(0xFFFFFFFF),
+  LooperMeterState.recording: Color(0xFFFF5470),
+  LooperMeterState.overdubbing: Color(0xFFFF5470),
+  LooperMeterState.playing: Color(0xFF6EE77F),
+  LooperMeterState.stopped: Color(0xFFFFFFFF),
+  LooperMeterState.muted: Color(0x99FFFFFF),
+};
+
 /// Per-track status-indicator colors: a dim `idle` that still reads above the
 /// tile surface, reusing the meter green/red for the play/record states.
 const _indicatorColors = <TrackIndicator, Color>{
@@ -100,7 +144,7 @@ abstract final class AppTheme {
       looper: const LooperTheme(
         tileBackground: Colors.black,
         tileBorder: Color(0xFF17171B),
-        waveformColor: Color(0xFF00E5FF),
+        waveformColors: _waveformColors,
         waveformBackground: Color(0xFF060607),
         recordColor: Color(0xFFFF1744),
         fxColor: Color(0xFF3B82F6),
@@ -129,7 +173,7 @@ abstract final class AppTheme {
       looper: const LooperTheme(
         tileBackground: Color(0xFF0A0A0B),
         tileBorder: Color(0xFF7A7A80),
-        waveformColor: Color(0xFF4DEEFF),
+        waveformColors: _hcWaveformColors,
         waveformBackground: Color(0xFF000000),
         recordColor: Color(0xFFFF5470),
         fxColor: Color(0xFF6BA8FF),

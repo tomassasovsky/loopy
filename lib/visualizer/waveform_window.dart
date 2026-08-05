@@ -1,6 +1,7 @@
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:screen_retriever/screen_retriever.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
@@ -175,6 +176,32 @@ Future<void> runWaveformWindow(WindowController controller) async {
   runApp(WaveformWindowApp(frame: frame, readout: readout, title: title));
 }
 
+/// The waveform's colour state for [readout]: the cursor track's transport
+/// state, with muted overlaying it — the same legend the meters use, keyed off
+/// the same track whose name the waveform already labels itself with.
+///
+/// Pure so the second screen's colouring can be tested without a window. Falls
+/// back to [LooperMeterState.empty] when no track is selected, or when the
+/// state token is one this build does not know: the readout crosses an engine
+/// boundary as strings, and an unrecognised one must degrade to the quiet
+/// "nothing to show" tone rather than throw on a render.
+@visibleForTesting
+LooperMeterState waveformStateOf(PerformanceReadout readout) {
+  for (final track in readout.tracks) {
+    if (!track.selected) continue;
+    final state = _trackStatesByName[track.state];
+    if (state == null) return LooperMeterState.empty;
+    return LooperMeterState.of(state, muted: track.muted);
+  }
+  return LooperMeterState.empty;
+}
+
+/// [TrackState] by its wire token. Hoisted out of [waveformStateOf] because
+/// that runs once per pushed frame — rebuilding the map there would allocate at
+/// frame rate to answer a five-entry lookup.
+final Map<String, TrackState> _trackStatesByName = TrackState.values
+    .asNameMap();
+
 /// Coerces a method-channel payload (a [Float32List], or a `List` of numbers
 /// after the plugin re-serializes across engines) into a [Float32List].
 Float32List _toFloat32List(Object? raw) {
@@ -234,6 +261,7 @@ class WaveformWindowApp extends StatelessWidget {
                   selectedTrack: data.selectedTrack,
                   samples: data.samples,
                   progress: data.progress,
+                  state: waveformStateOf(readoutData),
                   semanticLabel: context.l10n.a11yWaveform,
                 ),
               ),
