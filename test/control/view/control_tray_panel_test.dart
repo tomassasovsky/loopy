@@ -190,7 +190,7 @@ void main() {
   });
 
   group('Pedal tab', () {
-    testWidgets('shows the four assignable switches and nothing else', (
+    testWidgets('shows the transport cards and the track rows', (
       tester,
     ) async {
       await pump(tester);
@@ -207,12 +207,12 @@ void main() {
           reason: 'no card for ${button.name}',
         );
       }
-      // Mode and Bank are unbindable, and the track row is bank-keyed — both
-      // stay off a surface four cards wide.
+      // Mode and Bank can never hold a binding (B12), so they get no card
+      // and no row.
       expect(find.byKey(const Key('pedal_switch_mode')), findsNothing);
-      expect(find.byKey(const Key('pedal_switch_track1')), findsNothing);
-      // Nothing selected: no target list yet.
-      expect(find.byType(ConsoleCard), findsNothing);
+      expect(find.byKey(const Key('pedal_switch_bank')), findsNothing);
+      // Nothing selected: the track list is the only card on the face.
+      expect(find.byType(ConsoleCard), findsOneWidget);
     });
 
     testWidgets('selecting a switch lists the racks it can drive', (
@@ -223,9 +223,20 @@ void main() {
       await tester.tap(find.byKey(const Key('pedal_switch_recPlay')));
       await tester.pumpAndSettle();
 
-      expect(find.byType(ConsoleCard), findsOneWidget);
+      // The track list plus the assign list, under a caption that names what
+      // is being assigned.
+      expect(find.byType(ConsoleCard), findsNWidgets(2));
       expect(find.byKey(const Key('pedal_show_slots')), findsOneWidget);
-      expect(find.text(l10n.pedalControlShowSlots), findsOneWidget);
+      expect(
+        find.text(
+          l10n
+              .pedalControlAssign(
+                pedalButtonLabel(l10n, PedalButton.recPlay),
+              )
+              .toUpperCase(),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('individual effects are one tap further down', (tester) async {
@@ -263,6 +274,9 @@ void main() {
           .firstOrNull;
       expect(binding, isNotNull);
       expect(binding!.target, target.canonicalString());
+      // The chosen target is marked in the list — checked, not tinted, so it
+      // cannot be confused with the row that is open.
+      expect(find.byKey(const Key('pedal_target_current')), findsOneWidget);
       // The card now names what it drives instead of saying "unassigned".
       expect(
         find.descendant(
