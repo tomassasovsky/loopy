@@ -4,13 +4,18 @@
 # Verbs (stdout = compact JSON; detail on stderr):
 #   status                         {supported,powered,discoverable,advertising,alias,
 #                                   connected,device}
-#   scan                           [{name,address}, ...]  (timed discovery)
+#   scan                           [{name,address,paired,connected,inRange,kind}, ...]
 #   power on|off                   {}  (Control Center tap toggle)
 #   discoverable on|off            {}
 #   advertise on|off               {}  (power + LE advertise / discoverable)
+#   pair ADDRESS                   {}  (pair + trust + connect)
+#   connect ADDRESS                {}
+#   disconnect ADDRESS             {}  (keeps the pairing)
+#   forget ADDRESS                 {}  (drops the pairing)
 #
-# Discovery and broadcasting only — no pair/connect. Status still reports the
-# first Connected peer (if any) so Control Center can show its name.
+# Every device verb reports only success or failure; the console re-reads
+# `scan` afterwards rather than trusting the verb's own account of what it
+# changed, since bluez can accept a command and leave the device as it was.
 set -eu
 
 ALIAS="${SEGNO_BT_ALIAS:-Segno}"
@@ -24,11 +29,11 @@ json_escape() {
 }
 
 have_bt() {
-    command -v bluetoothctl >/dev/null 2>&1
+    command -v "${SEGNO_BLUETOOTHCTL:-bluetoothctl}" >/dev/null 2>&1
 }
 
 bt() {
-    bluetoothctl "$@"
+    "${SEGNO_BLUETOOTHCTL:-bluetoothctl}" "$@"
 }
 
 ensure_powered() {
@@ -120,8 +125,27 @@ do_scan() {
         name=$(printf '%s\n' "$line" | cut -d' ' -f3-)
         [ -n "$address" ] || continue
         [ -n "$name" ] || name="$address"
-        printf '{"name":"%s","address":"%s"}\n' \
-            "$(json_escape "$name")" "$(json_escape "$address")"
+        # Per-device detail, so the console can tell a paired device from a
+        # merely visible one, and say what kind of thing it is.
+        info=$(bt info "$address" 2>/dev/null || true)
+        paired=false
+        connected=false
+        kind=""
+        case "$info" in *"Paired: yes"*) paired=true ;; esac
+        case "$info" in *"Connected: yes"*) connected=true ;; esac
+        icon=$(printf '%s\n' "$info" | awk -F': ' '/Icon:/ {print $2; exit}')
+        case "$icon" in
+            audio-headset|audio-headphones) kind="headphones" ;;
+            audio-card) kind="speaker" ;;
+            input-keyboard) kind="keyboard" ;;
+            input-mouse) kind="mouse" ;;
+            phone) kind="phone" ;;
+            computer) kind="computer" ;;
+            *) kind="$icon" ;;
+        esac
+        printf '{"name":"%s","address":"%s","paired":%s,"connected":%s,"inRange":true,"kind":"%s"}\n' \
+            "$(json_escape "$name")" "$(json_escape "$address")" \
+            "$paired" "$connected" "$(json_escape "$kind")"
     done >"$tmp"
     first=1
     printf '['
@@ -177,8 +201,61 @@ do_advertise() {
     echo '{}'
 }
 
+# Device verbs. Each one ends by reporting nothing but success/failure: the
+# console re-reads `scan` afterwards rather than trusting a return value, since
+# bluez can report a command accepted and still leave the device unchanged.
+do_pair() {
+    address=$1
+    [ -n "$address" ] || { log "pair needs an address"; return 2; }
+    have_bt || { log "no bluetooth stack"; return 1; }
+    ensure_powered
+    # Discovery has to be running for an unseen device to be pairable.
+    bt --timeout "$SCAN_SECONDS" scan on >/dev/null 2>&1 || true
+    if ! bt pair "$address" >/dev/null 2>&1; then
+        log "pair failed for $address"
+        return 1
+    fi
+    # Trust so the device may reconnect on its own after a reboot.
+    bt trust "$address" >/dev/null 2>&1 || true
+    bt connect "$address" >/dev/null 2>&1 || true
+    echo '{}'
+}
+
+do_connect() {
+    address=$1
+    [ -n "$address" ] || { log "connect needs an address"; return 2; }
+    have_bt || { log "no bluetooth stack"; return 1; }
+    ensure_powered
+    if ! bt connect "$address" >/dev/null 2>&1; then
+        log "connect failed for $address"
+        return 1
+    fi
+    echo '{}'
+}
+
+do_disconnect() {
+    address=$1
+    [ -n "$address" ] || { log "disconnect needs an address"; return 2; }
+    have_bt || { log "no bluetooth stack"; return 1; }
+    bt disconnect "$address" >/dev/null 2>&1 || true
+    echo '{}'
+}
+
+do_forget() {
+    address=$1
+    [ -n "$address" ] || { log "forget needs an address"; return 2; }
+    have_bt || { log "no bluetooth stack"; return 1; }
+    bt disconnect "$address" >/dev/null 2>&1 || true
+    bt untrust "$address" >/dev/null 2>&1 || true
+    if ! bt remove "$address" >/dev/null 2>&1; then
+        log "remove failed for $address"
+        return 1
+    fi
+    echo '{}'
+}
+
 usage() {
-    log "usage: $0 status|scan|power on|off|discoverable on|off|advertise on|off"
+    log "usage: $0 status|scan|power on|off|discoverable on|off|advertise on|off|pair ADDR|connect ADDR|disconnect ADDR|forget ADDR"
     exit 2
 }
 
@@ -200,6 +277,22 @@ case "$verb" in
     advertise)
         [ $# -ge 1 ] || usage
         do_advertise "$1"
+        ;;
+    pair)
+        [ $# -ge 1 ] || usage
+        do_pair "$1"
+        ;;
+    connect)
+        [ $# -ge 1 ] || usage
+        do_connect "$1"
+        ;;
+    disconnect)
+        [ $# -ge 1 ] || usage
+        do_disconnect "$1"
+        ;;
+    forget)
+        [ $# -ge 1 ] || usage
+        do_forget "$1"
         ;;
     *) usage ;;
 esac

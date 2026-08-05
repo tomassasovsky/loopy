@@ -9,6 +9,7 @@ class BluetoothState extends Equatable {
     this.devices = const [],
     this.scanning = false,
     this.busy = false,
+    this.pairingAddress,
     this.errorMessage,
   });
 
@@ -27,6 +28,11 @@ class BluetoothState extends Equatable {
   /// True while a toggle/load is in flight.
   final bool busy;
 
+  /// Address of the device being paired, if any. Pairing is the one action
+  /// the console cannot finish on its own — bluez waits on the device — so it
+  /// gets its own in-flight marker rather than hiding inside [busy].
+  final String? pairingAddress;
+
   /// Last error message, if any.
   final String? errorMessage;
 
@@ -37,14 +43,19 @@ class BluetoothState extends Equatable {
     List<BluetoothDevice>? devices,
     bool? scanning,
     bool? busy,
+    String? pairingAddress,
     String? errorMessage,
     bool clearError = false,
+    bool clearPairing = false,
   }) => BluetoothState(
     supported: supported ?? this.supported,
     status: status ?? this.status,
     devices: devices ?? this.devices,
     scanning: scanning ?? this.scanning,
     busy: busy ?? this.busy,
+    pairingAddress: clearPairing
+        ? null
+        : (pairingAddress ?? this.pairingAddress),
     errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
   );
 
@@ -55,6 +66,7 @@ class BluetoothState extends Equatable {
     devices,
     scanning,
     busy,
+    pairingAddress,
     errorMessage,
   ];
 }

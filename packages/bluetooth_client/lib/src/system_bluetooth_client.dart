@@ -55,6 +55,18 @@ class SystemBluetoothClient implements BluetoothClient {
     return _run(args);
   }
 
+  @override
+  Future<void> pair(String address) => _run(['pair', address]);
+
+  @override
+  Future<void> connect(String address) => _run(['connect', address]);
+
+  @override
+  Future<void> disconnect(String address) => _run(['disconnect', address]);
+
+  @override
+  Future<void> forget(String address) => _run(['forget', address]);
+
   Future<Object?> _runJson(List<String> args) async {
     final result = await _run(args);
     final text = result.stdout.toString().trim();

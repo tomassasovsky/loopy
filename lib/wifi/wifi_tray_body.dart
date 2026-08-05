@@ -2,24 +2,24 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
-import 'package:segno/appliance/host_page_chrome.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/setup/setup_surface.dart';
-import 'package:segno/theme/theme.dart';
+import 'package:segno/network/network_surface.dart';
 import 'package:segno/wifi/wifi_cubit.dart';
 import 'package:segno/wifi/wifi_error_message.dart';
+import 'package:segno/wifi/wifi_join_sheet.dart';
 import 'package:segno/wifi/wifi_network_visibility.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
-/// The WiFi tab's body — status, error, and the scannable network list.
+/// The WiFi tab of the console's Network domain, drawn to `NETWORK / wifi`.
 ///
-/// Chrome-less by design: this is one tab of the tray's Network domain (#498),
-/// and the domain owns the single [HostTrayChromeBar] above the tab strip.
-/// A body that carried its own title bar would stack a second one under the
-/// domain's. The scan control that used to live in this widget's chrome is
-/// [WifiScanAction], which the domain hoists into that one bar while WiFi is
-/// the showing tab.
+/// One card of networks, each row `SSID / detail` with its state on the right.
+/// Switched off, the power row is the whole face — there is nothing truthful
+/// to list about a radio that is down, and the mockups say so by showing
+/// nothing.
+///
+/// Chrome-less: the domain owns the tab strip above this, and this owns its
+/// own title row (which carries the radio switch, because the switch decides
+/// whether the rest of the face exists).
 class WifiTrayBody extends StatefulWidget {
   /// Creates a [WifiTrayBody].
   const WifiTrayBody({super.key});
@@ -28,35 +28,12 @@ class WifiTrayBody extends StatefulWidget {
   State<WifiTrayBody> createState() => _WifiTrayBodyState();
 }
 
-/// The WiFi tab's chrome action: rescan, hidden while the platform has no
-/// WiFi support at all.
-///
-/// A widget rather than a builder callback on the panel: it reads [WifiCubit]
-/// itself, so knowledge of when a scan is possible stays in the WiFi feature
-/// instead of being restated by whatever chrome happens to host it.
-class WifiScanAction extends StatelessWidget {
-  /// Creates a [WifiScanAction].
-  const WifiScanAction({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final state = context.watch<WifiCubit>().state;
-    final cubit = context.read<WifiCubit>();
-    if (!state.supported) return const SizedBox.shrink();
-    return HostChromeIconButton(
-      key: const Key('wifi_scan'),
-      icon: Icons.refresh,
-      spinner: state.scanning,
-      tooltip: state.scanning ? l10n.wifiScanningSubtitle : l10n.wifiScanTitle,
-      onPressed: state.scanning || state.busy
-          ? null
-          : () => unawaited(cubit.scan()),
-    );
-  }
-}
-
 class _WifiTrayBodyState extends State<WifiTrayBody> {
+  /// SSID of the row that is currently open, if any. Local to the view: which
+  /// row is showing its actions is not something the radio has an opinion
+  /// about, and it must not survive the face being left.
+  String? _openSsid;
+
   @override
   void initState() {
     super.initState();
@@ -64,353 +41,259 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
       final cubit = context.read<WifiCubit>();
       await cubit.load();
       if (!mounted) return;
-      if (cubit.state.supported) await cubit.scan();
+      if (cubit.state.supported && cubit.state.status.enabled) {
+        await cubit.scan();
+      }
     });
+  }
+
+  Future<void> _join(WifiCubit cubit, WifiNetwork network) async {
+    final l10n = context.l10n;
+    // A saved network already has its passphrase on the console; asking again
+    // would be theatre.
+    if (!network.secured || network.saved) {
+      await cubit.connect(network.ssid);
+      return;
+    }
+    final passphrase = await showWifiJoinSheet(
+      context,
+      ssid: network.ssid,
+      security: l10n.wifiSecuritySecured,
+    );
+    if (passphrase == null || !mounted) return;
+    await cubit.connect(network.ssid, psk: passphrase);
+  }
+
+  Future<void> _forget(WifiCubit cubit, String ssid) async {
+    final l10n = context.l10n;
+    final confirmed = await showNetworkForgetDialog(
+      context,
+      title: l10n.wifiForgetConfirmTitle(ssid),
+      body: l10n.wifiForgetConfirmBody,
+      confirmLabel: l10n.wifiForgetConfirmAction,
+      confirmKey: const Key('wifi_forget_confirm'),
+    );
+    if (!confirmed) return;
+    await cubit.forget(ssid);
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final surface = context.surface;
     final state = context.watch<WifiCubit>().state;
     final cubit = context.read<WifiCubit>();
+    final on = state.status.enabled;
+    final connecting = state.connectingSsid;
+    final error = state.errorMessage;
 
     return KeyedSubtree(
       key: const Key('wifi_tray_body'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          NetworkFaceHeader(
+            title: l10n.trayWifiLabel,
+            rescanKey: const Key('wifi_scan'),
+            powerKey: const Key('wifi_power'),
+            status: _headerStatus(l10n, state),
+            powered: on && state.supported,
+            onPoweredChanged: state.supported && !state.busy
+                ? (_) => unawaited(cubit.toggleEnabled())
+                : null,
+            scanning: state.scanning,
+            onRescan: state.supported && on
+                ? () => unawaited(cubit.scan())
+                : null,
+          ),
+          const SizedBox(height: 14),
           if (!state.supported)
-            Expanded(
-              child: Center(
-                child: Text(
-                  // Helper failures used to leave supported=false with no
-                  // message — operators then saw the "appliance only" copy
-                  // even when the binary was present (e.g. NM helper without
-                  // nmcli on an older image). Prefer the real error.
-                  state.errorMessage != null
-                      ? wifiErrorMessage(l10n, state.errorMessage)
-                      : l10n.wifiUnsupportedBody,
-                  textAlign: TextAlign.center,
-                  style: context.setupBody,
-                ),
-              ),
+            NetworkEmptyCard(
+              // A helper that failed for a real reason says so; only a build
+              // with no WiFi at all falls back to the generic line.
+              message: error != null
+                  ? wifiErrorMessage(l10n, error)
+                  : l10n.wifiUnsupportedBody,
             )
-          else ...[
-            _StatusCard(state: state, cubit: cubit),
-            if (state.errorMessage != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                wifiErrorMessage(l10n, state.errorMessage),
-                style: context.setupBody.copyWith(fontSize: 12),
-              ),
-            ],
-            const SizedBox(height: 16),
-            SetupGroupLabel(l10n.wifiNetworksGroup),
-            const SizedBox(height: 8),
-            Expanded(
-              child: state.networks.isEmpty && !state.scanning
-                  ? Align(
-                      alignment: Alignment.topLeft,
-                      child: Text(
-                        l10n.wifiEmptyNetworks,
-                        style: context.setupBody,
+          else if (on)
+            Flexible(
+              child: SingleChildScrollView(
+                child: NetworkCard(
+                  children: [
+                    if (connecting != null)
+                      NetworkBanner(
+                        actionKey: const Key('wifi_connect_cancel'),
+                        message: l10n.wifiJoiningMessage(connecting),
+                        actionLabel: l10n.cancel,
+                        onAction: () => unawaited(cubit.cancelConnect()),
+                      )
+                    else if (error != null)
+                      NetworkBanner(
+                        actionKey: const Key('wifi_error_retry'),
+                        failed: true,
+                        message: wifiErrorMessage(l10n, error),
+                        actionLabel: l10n.networkTryAgainAction,
+                        onAction: () => unawaited(cubit.scan()),
                       ),
-                    )
-                  : DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: surface.card.withValues(alpha: 0.55),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: surface.line),
-                      ),
-                      child: Builder(
-                        builder: (context) {
-                          final networks = visibleWifiNetworks(state);
-                          return ListView.separated(
-                            padding: EdgeInsets.zero,
-                            itemCount: networks.length,
-                            separatorBuilder: (_, _) =>
-                                Divider(height: 1, color: surface.line),
-                            itemBuilder: (context, index) {
-                              final network = networks[index];
-                              final connecting =
-                                  state.connectingSsid == network.ssid;
-                              return _NetworkRow(
-                                network: network,
-                                connecting: connecting,
-                                onTap: state.busy
-                                    ? null
-                                    : () => unawaited(
-                                        _join(context, cubit, network),
-                                      ),
-                              );
-                            },
-                          );
-                        },
-                      ),
-                    ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Future<void> _join(
-    BuildContext context,
-    WifiCubit cubit,
-    WifiNetwork network,
-  ) async {
-    final l10n = context.l10n;
-    if (!network.secured) {
-      await cubit.connect(network.ssid);
-      return;
-    }
-    final controller = TextEditingController();
-    final psk = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        key: const Key('wifi_password_dialog'),
-        title: Text(l10n.wifiPasswordTitle(network.ssid)),
-        content: TextField(
-          key: const Key('wifi_password_field'),
-          controller: controller,
-          obscureText: true,
-          autofocus: true,
-          decoration: InputDecoration(hintText: l10n.wifiPasswordHint),
-          onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(l10n.cancel),
-          ),
-          TextButton(
-            key: const Key('wifi_password_join'),
-            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
-            child: Text(l10n.wifiJoinAction),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (psk == null || !context.mounted) return;
-    await cubit.connect(network.ssid, psk: psk);
-  }
-}
-
-class _StatusCard extends StatelessWidget {
-  const _StatusCard({required this.state, required this.cubit});
-
-  final WifiState state;
-  final WifiCubit cubit;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final surface = context.surface;
-    final disconnecting = state.disconnecting;
-    final connected = state.status.connected && !disconnecting;
-    final ssid = connected && state.status.ssid.isNotEmpty
-        ? state.status.ssid
-        : '—';
-    final ip = state.status.ip.isEmpty ? '—' : state.status.ip;
-    final detail = disconnecting
-        ? l10n.wifiStatusDisconnecting
-        : connected
-        ? '${l10n.wifiStatusConnected} · $ip'
-        : l10n.wifiStatusDisconnected;
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: surface.card.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: surface.line),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                if (disconnecting)
-                  SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      key: const Key('wifi_status_spinner'),
-                      strokeWidth: 2,
-                      color: surface.accent,
-                    ),
-                  )
-                else
-                  Icon(
-                    connected ? Icons.wifi : Icons.wifi_off,
-                    size: 18,
-                    color: connected ? surface.accent : surface.textTertiary,
-                  ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 280),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeInCubic,
-                    child: Text.rich(
-                      key: ValueKey<String>('$ssid|$detail'),
-                      TextSpan(
-                        children: [
-                          TextSpan(
-                            text: ssid,
-                            style: TextStyle(
-                              color: surface.textPrimary,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          TextSpan(
-                            text: '  $detail',
-                            style: TextStyle(
-                              color: surface.textSecondary,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
+                    ..._rows(l10n, state, cubit),
+                  ],
                 ),
-              ],
-            ),
-            if (connected) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  HostActionChip(
-                    key: const Key('wifi_disconnect'),
-                    label: l10n.wifiDisconnectTitle,
-                    icon: Icons.link_off,
-                    onPressed: state.busy
-                        ? null
-                        : () => unawaited(cubit.disconnect()),
-                  ),
-                  HostActionChip(
-                    key: const Key('wifi_forget'),
-                    label: l10n.wifiForgetTitle,
-                    icon: Icons.delete_outline,
-                    onPressed: state.busy
-                        ? null
-                        : () => unawaited(_confirmForget(context, cubit, ssid)),
-                  ),
-                ],
               ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _confirmForget(
-    BuildContext context,
-    WifiCubit cubit,
-    String ssid,
-  ) async {
-    final l10n = context.l10n;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.wifiForgetTitle),
-        content: Text(l10n.wifiForgetConfirm(ssid)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(l10n.cancel),
-          ),
-          TextButton(
-            key: const Key('wifi_forget_confirm'),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(l10n.wifiForgetTitle),
-          ),
+            ),
         ],
       ),
     );
-    if (confirmed ?? false) await cubit.forget(ssid);
+  }
+
+  /// The live line beside the title: what the radio is doing right now, or
+  /// what it just failed to do.
+  String? _headerStatus(AppLocalizations l10n, WifiState state) {
+    final connecting = state.connectingSsid;
+    if (connecting != null) return l10n.wifiHeaderJoining(connecting);
+    if (state.errorMessage != null) return l10n.wifiHeaderJoinFailed;
+    return null;
+  }
+
+  List<Widget> _rows(
+    AppLocalizations l10n,
+    WifiState state,
+    WifiCubit cubit,
+  ) {
+    final rows = <_WifiRowData>[
+      if (state.status.connected && state.status.ssid.isNotEmpty)
+        _WifiRowData(
+          ssid: state.status.ssid,
+          subtitle: state.status.ip.isEmpty ? null : state.status.ip,
+          value: state.disconnecting
+              ? l10n.wifiStatusDisconnecting
+              : l10n.wifiRowConnected,
+          connected: true,
+          saved: true,
+        ),
+      for (final network in visibleWifiNetworks(state))
+        _WifiRowData(
+          ssid: network.ssid,
+          subtitle: _networkSubtitle(l10n, network),
+          value: _networkValue(l10n, network),
+          saved: network.saved,
+          joinable: network.inRange,
+          network: network,
+        ),
+    ];
+
+    return [
+      for (final row in rows)
+        _wifiRow(
+          l10n: l10n,
+          data: row,
+          state: state,
+          cubit: cubit,
+          last: row == rows.last,
+        ),
+    ];
+  }
+
+  Widget _wifiRow({
+    required AppLocalizations l10n,
+    required _WifiRowData data,
+    required WifiState state,
+    required WifiCubit cubit,
+    required bool last,
+  }) {
+    final open = _openSsid == data.ssid;
+    // Only a network the console holds credentials for has anything to show
+    // when opened; the rest simply join on tap.
+    final expandable = data.connected || data.saved;
+
+    void toggle() {
+      if (!expandable) {
+        final network = data.network;
+        if (network != null && data.joinable) {
+          unawaited(_join(cubit, network));
+        }
+        return;
+      }
+      setState(() => _openSsid = open ? null : data.ssid);
+    }
+
+    final row = NetworkRow(
+      key: Key('wifi_network_${data.ssid}'),
+      title: data.ssid,
+      subtitle: data.subtitle,
+      value: data.value,
+      expanded: open,
+      divider: !last && !open,
+      onTap: state.busy && !expandable ? null : toggle,
+    );
+
+    if (!open) return row;
+
+    return NetworkExpandedRow(
+      row: row,
+      actions: [
+        if (data.connected)
+          NetworkActionChip(
+            key: const Key('wifi_disconnect'),
+            label: l10n.wifiDisconnectTitle,
+            icon: Icons.link_off,
+            onPressed: state.busy ? null : () => unawaited(cubit.disconnect()),
+          )
+        else if (data.joinable)
+          NetworkActionChip(
+            key: const Key('wifi_connect'),
+            label: l10n.wifiJoinAction,
+            icon: Icons.wifi,
+            onPressed: state.busy
+                ? null
+                : () => unawaited(cubit.connect(data.ssid)),
+          ),
+        if (data.saved)
+          NetworkActionChip(
+            key: const Key('wifi_forget'),
+            label: l10n.wifiForgetAction,
+            icon: Icons.delete_outline,
+            destructive: true,
+            onPressed: state.busy
+                ? null
+                : () => unawaited(_forget(cubit, data.ssid)),
+          ),
+      ],
+    );
+  }
+
+  String? _networkSubtitle(AppLocalizations l10n, WifiNetwork network) {
+    if (!network.inRange) return l10n.wifiNotInRange;
+    final security = network.secured
+        ? l10n.wifiSecuritySecured
+        : l10n.wifiSecurityOpen;
+    return '${network.signal} dBm · $security';
+  }
+
+  String? _networkValue(AppLocalizations l10n, WifiNetwork network) {
+    if (network.saved) return l10n.wifiRowSaved;
+    if (!network.secured) return l10n.wifiRowOpen;
+    return null;
   }
 }
 
-class _NetworkRow extends StatelessWidget {
-  const _NetworkRow({
-    required this.network,
-    required this.connecting,
-    required this.onTap,
+/// One list row's worth of WiFi, whether it came from the association status
+/// or from a scan result.
+@immutable
+class _WifiRowData {
+  const _WifiRowData({
+    required this.ssid,
+    this.subtitle,
+    this.value,
+    this.connected = false,
+    this.saved = false,
+    this.joinable = true,
+    this.network,
   });
 
-  final WifiNetwork network;
-  final bool connecting;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final surface = context.surface;
-    return FocusableTapTarget(
-      onTap: onTap,
-      semanticLabel: connecting
-          ? '${network.ssid}, ${l10n.wifiConnectingLabel}'
-          : network.ssid,
-      child: InkWell(
-        key: Key('wifi_network_${network.ssid}'),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Row(
-            children: [
-              Icon(
-                network.secured ? Icons.lock_outline : Icons.wifi,
-                size: 16,
-                color: surface.textSecondary,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  network.ssid,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: surface.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              if (connecting)
-                SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                    key: Key('wifi_network_spinner_${network.ssid}'),
-                    strokeWidth: 2,
-                    color: surface.accent,
-                  ),
-                )
-              else
-                Text(
-                  '${network.signal} dBm',
-                  style: TextStyle(
-                    color: surface.textTertiary,
-                    fontSize: 11,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  final String ssid;
+  final String? subtitle;
+  final String? value;
+  final bool connected;
+  final bool saved;
+  final bool joinable;
+  final WifiNetwork? network;
 }

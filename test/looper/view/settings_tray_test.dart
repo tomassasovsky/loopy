@@ -92,6 +92,18 @@ class _ToggleBluetoothClient implements BluetoothClient {
 
   @override
   Future<void> setAdvertising({required bool enabled}) async {}
+
+  @override
+  Future<void> pair(String address) async {}
+
+  @override
+  Future<void> connect(String address) async {}
+
+  @override
+  Future<void> disconnect(String address) async {}
+
+  @override
+  Future<void> forget(String address) async {}
 }
 
 void main() {
@@ -300,7 +312,9 @@ void main() {
         expect(find.byKey(const Key('wifi_tray_body')), findsOneWidget);
         expect(find.byKey(const Key('settingsTray_wifi')), findsNothing);
 
-        await tester.tap(find.byKey(const Key('network_back')));
+        // No back chevron by design: the rail is the tray's one navigation
+        // surface, so leaving the domain means picking another rail entry.
+        await tester.tap(find.byKey(const Key('settingsTrayRail_home')));
         await tester.pumpAndSettle();
         expect(cubit.state.destination, SettingsTrayDestination.home);
         expect(find.byKey(const Key('settingsTray_wifi')), findsOneWidget);
@@ -361,7 +375,7 @@ void main() {
         expect(cubit.state.networkTab, NetworkTab.bluetooth);
         expect(find.byKey(const Key('bluetooth_tray_body')), findsOneWidget);
 
-        await tester.tap(find.byKey(const Key('network_back')));
+        await tester.tap(find.byKey(const Key('settingsTrayRail_home')));
         await tester.pumpAndSettle();
         expect(cubit.state.destination, SettingsTrayDestination.home);
       },
@@ -454,24 +468,21 @@ void main() {
     }
 
     testWidgets(
-      'both radios sit under one chrome bar and one tab strip',
+      'the domain is a tab strip over one body, with no chrome bar at all',
       (tester) async {
         await openNetwork(tester);
         final l10n = await AppLocalizations.delegate.load(const Locale('en'));
 
-        // The whole point of splitting chrome from body: two panels that each
-        // carried their own title bar would stack two bars under one domain.
-        expect(find.byType(HostTrayChromeBar), findsOneWidget);
-        expect(
-          find.descendant(
-            of: find.byType(HostTrayChromeBar),
-            matching: find.text(l10n.trayNetworkLabel),
-          ),
-          findsOneWidget,
-        );
+        // The mockups give the face no title bar and no back control: the rail
+        // is always on screen, and a second way back would be a second
+        // navigation surface. Each body carries its own title row instead,
+        // because that row also carries the radio's power switch.
+        expect(find.byType(HostTrayChromeBar), findsNothing);
         expect(find.byKey(const Key('network_tabs')), findsOneWidget);
         expect(find.byKey(const Key('wifi_tray_body')), findsOneWidget);
         expect(find.byKey(const Key('bluetooth_tray_body')), findsNothing);
+        expect(find.text(l10n.trayWifiLabel), findsWidgets);
+        expect(find.byKey(const Key('wifi_power')), findsOneWidget);
       },
     );
 
@@ -494,19 +505,19 @@ void main() {
         expect(cubit.state.dragProgress, 1);
         expect(find.byKey(const Key('bluetooth_tray_body')), findsOneWidget);
         expect(find.byKey(const Key('wifi_tray_body')), findsNothing);
-        expect(find.byType(HostTrayChromeBar), findsOneWidget);
       },
     );
 
     testWidgets(
-      "the chrome action is the showing tab's, not the domain's",
+      "the rescan and power controls are the showing tab's",
       (tester) async {
         await openNetwork(tester);
         final l10n = await AppLocalizations.delegate.load(const Locale('en'));
 
-        // Scanning is a per-radio verb, so the shared bar has to ask the
-        // showing tab for its action rather than owning one.
+        // Rescanning and power are per-radio verbs, so they live in each
+        // body's title row rather than in anything the domain owns.
         expect(find.byKey(const Key('wifi_scan')), findsOneWidget);
+        expect(find.byKey(const Key('wifi_power')), findsOneWidget);
         expect(find.byKey(const Key('bluetooth_scan')), findsNothing);
 
         await tester.tap(
@@ -518,6 +529,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.byKey(const Key('bluetooth_scan')), findsOneWidget);
+        expect(find.byKey(const Key('bluetooth_power')), findsOneWidget);
         expect(find.byKey(const Key('wifi_scan')), findsNothing);
       },
     );

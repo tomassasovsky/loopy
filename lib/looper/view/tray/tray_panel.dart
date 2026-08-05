@@ -59,7 +59,7 @@ class TrayPanel extends StatelessWidget {
                       const TrayNavigationRail(),
                       Expanded(
                         child: Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 18, 20, 40),
+                          padding: const EdgeInsets.fromLTRB(19, 19, 19, 41),
                           // Home FILLS the pane — it is a grid of cards sized
                           // from the space available, not a content-sized
                           // blob. The config faces keep a fixed
@@ -117,7 +117,6 @@ class TrayPanel extends StatelessWidget {
                                     child: NetworkTrayPanel(
                                       tab: state.networkTab,
                                       onTabChanged: cubit.showNetworkTab,
-                                      onBack: cubit.showHome,
                                     ),
                                   ),
                               },

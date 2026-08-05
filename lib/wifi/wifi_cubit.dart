@@ -102,10 +102,23 @@ class WifiCubit extends Cubit<WifiState> {
           busy: false,
           clearConnectingSsid: true,
           disconnecting: false,
+          failedSsid: ssid,
           errorMessage: '$e',
         ),
       );
     }
+  }
+
+  /// Abandons a join in flight.
+  ///
+  /// The helper call itself cannot be interrupted once issued, so this does
+  /// the only thing that is true afterwards: drop the in-flight marker and
+  /// tell the supplicant to disconnect, so a half-finished association does
+  /// not quietly complete after the user said no.
+  Future<void> cancelConnect() async {
+    if (state.connectingSsid == null) return;
+    emit(state.copyWith(clearConnectingSsid: true, clearError: true));
+    await disconnect();
   }
 
   /// Disconnects the current association.

@@ -64,6 +64,18 @@ class _FakeBluetoothClient implements BluetoothClient {
       alias: statusValue.alias,
     );
   }
+
+  @override
+  Future<void> pair(String address) async {}
+
+  @override
+  Future<void> connect(String address) async {}
+
+  @override
+  Future<void> disconnect(String address) async {}
+
+  @override
+  Future<void> forget(String address) async {}
 }
 
 BluetoothRepository _repo(_FakeBluetoothClient client) =>
