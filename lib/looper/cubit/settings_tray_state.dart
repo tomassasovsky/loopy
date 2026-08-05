@@ -16,9 +16,11 @@ enum SettingsTrayDestination {
   /// Tile grid + brightness.
   home,
 
-  /// In-tray pedal-assignment panel (#440) — the console's path to remapping
-  /// footswitches, which otherwise sits three levels deep in Settings.
-  pedal,
+  /// In-tray Control panel: the footswitches and external MIDI as two tabs of
+  /// one domain (#516). Was a Pedal-only destination (#440) — the console's
+  /// path to remapping footswitches, which otherwise sits three levels deep in
+  /// Settings.
+  control,
 
   /// In-tray tuner panel. Placement only — the tuner itself is not
   /// implemented, and this face says so.
@@ -42,6 +44,7 @@ class SettingsTrayState extends Equatable {
     this.brightness = 0.8,
     this.destination = SettingsTrayDestination.home,
     this.networkTab = NetworkTab.wifi,
+    this.controlTab = ControlTab.pedal,
   });
 
   /// Live drag/settle progress in `0..1` — `0` fully closed, `1` fully open.
@@ -65,6 +68,10 @@ class SettingsTrayState extends Equatable {
   /// In-tray face: home tiles, or one of the rail's config panels.
   final SettingsTrayDestination destination;
 
+  /// Which tab the Control face shows. Kept across navigation for the same
+  /// reason as [networkTab].
+  final ControlTab controlTab;
+
   /// Which tab the Network face shows. Kept while the tray navigates
   /// elsewhere so returning to Network lands where it was left, and
   /// deliberately not reset by `closeTray`: only [destination] goes home.
@@ -77,12 +84,14 @@ class SettingsTrayState extends Equatable {
     double? brightness,
     SettingsTrayDestination? destination,
     NetworkTab? networkTab,
+    ControlTab? controlTab,
   }) => SettingsTrayState(
     dragProgress: dragProgress ?? this.dragProgress,
     isNavigating: isNavigating ?? this.isNavigating,
     brightness: brightness ?? this.brightness,
     destination: destination ?? this.destination,
     networkTab: networkTab ?? this.networkTab,
+    controlTab: controlTab ?? this.controlTab,
   );
 
   @override
@@ -92,5 +101,6 @@ class SettingsTrayState extends Equatable {
     brightness,
     destination,
     networkTab,
+    controlTab,
   ];
 }

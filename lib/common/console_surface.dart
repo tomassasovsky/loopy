@@ -1,11 +1,14 @@
-/// The Network domain's shared row/card vocabulary, drawn to the console
-/// mockups' `NETWORK / *` screens.
+/// The console's shared row/card vocabulary, drawn to the mockups.
 ///
-/// WiFi and Bluetooth are the same surface with different nouns — a card of
+/// Every tray domain is the same surface with different nouns — a card of
 /// 70px rows, each `title / subtitle` on the left and `value ›` on the right,
-/// one of which can open to reveal its actions. Both faces build from these
-/// pieces rather than each drawing its own, so the two tabs of one domain
-/// cannot drift apart the way the two former panels had.
+/// one of which can open to reveal its actions. Faces build from these pieces
+/// rather than each drawing its own, so the tabs of one domain cannot drift
+/// apart the way the two former radio panels had, and one domain cannot drift
+/// from the next.
+///
+/// Named for the console rather than a domain since the Control face (#516)
+/// became the second caller; it started life as the Network domain's own.
 library;
 
 import 'package:flutter/material.dart';
@@ -14,25 +17,25 @@ import 'package:segno/theme/theme.dart';
 
 /// Row height from the mockups (`row-h`). Big enough to hit while standing
 /// over a floor console.
-const double kNetworkRowHeight = 70;
+const double kConsoleRowHeight = 70;
 
-/// Card corner radius for the Network faces.
+/// Card corner radius for the tray faces.
 const double _cardRadius = 12;
 
-/// A card wrapping a group of [NetworkRow]s.
+/// A card wrapping a group of [ConsoleRow]s.
 ///
 /// The 1px inset is the mockups' own: rows paint their hairline edge-to-edge,
 /// and the inset keeps that hairline inside the rounded corner instead of
 /// cutting across it.
-class NetworkCard extends StatelessWidget {
-  /// Creates a [NetworkCard].
-  const NetworkCard({required this.children, this.bordered = false, super.key});
+class ConsoleCard extends StatelessWidget {
+  /// Creates a [ConsoleCard].
+  const ConsoleCard({required this.children, this.bordered = false, super.key});
 
   /// The rows.
   final List<Widget> children;
 
   /// Whether to draw the outer border. The mockups border the Bluetooth
-  /// visibility card and leave the device/network list unbordered.
+  /// visibility card and leave the primary list of a face unbordered.
   final bool bordered;
 
   @override
@@ -59,15 +62,15 @@ class NetworkCard extends StatelessWidget {
   }
 }
 
-/// One row of a [NetworkCard]: `title / subtitle` with a right-hand value and
+/// One row of a [ConsoleCard]: `title / subtitle` with a right-hand value and
 /// a disclosure marker.
 ///
 /// The marker is part of the row rather than a per-item decision — the
 /// mockups reserve the gutter for every row in a group so the titles of rows
 /// that have no chevron still line up with those that do.
-class NetworkRow extends StatelessWidget {
-  /// Creates a [NetworkRow].
-  const NetworkRow({
+class ConsoleRow extends StatelessWidget {
+  /// Creates a [ConsoleRow].
+  const ConsoleRow({
     required this.title,
     this.subtitle,
     this.value,
@@ -76,6 +79,10 @@ class NetworkRow extends StatelessWidget {
     this.expanded = false,
     this.showDisclosure = true,
     this.divider = true,
+    this.selected = false,
+    this.indented = false,
+    this.centred = false,
+    this.leading,
     super.key,
   });
 
@@ -103,6 +110,21 @@ class NetworkRow extends StatelessWidget {
   /// Whether to paint the bottom hairline. False on a group's last row.
   final bool divider;
 
+  /// Whether this row is the current choice in a pick list — tinted, the way
+  /// the mockups mark the target a switch already drives.
+  final bool selected;
+
+  /// Whether to indent the title, for a row that belongs INSIDE the row above
+  /// it (an effect within a rack).
+  final bool indented;
+
+  /// Whether to centre the title instead of aligning it left. For a row that
+  /// is an action rather than an item — "Show individual effects".
+  final bool centred;
+
+  /// Optional glyph before the title — a state dot, in the mockups.
+  final Widget? leading;
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
@@ -110,12 +132,18 @@ class NetworkRow extends StatelessWidget {
     final status = value;
 
     final content = Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 15),
+      padding: EdgeInsets.fromLTRB(indented ? 42 : 20, 14, 20, 15),
       child: Row(
         children: [
+          if (leading != null) ...[
+            leading!,
+            const SizedBox(width: 14),
+          ],
           Expanded(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: centred
+                  ? CrossAxisAlignment.center
+                  : CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
@@ -123,7 +151,9 @@ class NetworkRow extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: surface.textPrimary,
+                    color: centred
+                        ? surface.textSecondary
+                        : surface.textPrimary,
                     fontSize: 17,
                     // Tight leading, from the mockups: title + subtitle have
                     // to clear 41px between the row's 14/15 padding, which
@@ -164,7 +194,7 @@ class NetworkRow extends StatelessWidget {
             if (showDisclosure)
               Padding(
                 padding: const EdgeInsets.only(left: 14),
-                child: NetworkDisclosure(expanded: expanded),
+                child: ConsoleDisclosure(expanded: expanded),
               ),
           ],
         ],
@@ -172,7 +202,7 @@ class NetworkRow extends StatelessWidget {
     );
 
     final row = SizedBox(
-      height: kNetworkRowHeight,
+      height: kConsoleRowHeight,
       child: onTap == null ? content : InkWell(onTap: onTap, child: content),
     );
 
@@ -188,9 +218,9 @@ class NetworkRow extends StatelessWidget {
 
 /// The row disclosure marker: a small solid triangle, pointing right while the
 /// row is closed and down while it is open.
-class NetworkDisclosure extends StatelessWidget {
-  /// Creates a [NetworkDisclosure].
-  const NetworkDisclosure({required this.expanded, super.key});
+class ConsoleDisclosure extends StatelessWidget {
+  /// Creates a [ConsoleDisclosure].
+  const ConsoleDisclosure({required this.expanded, super.key});
 
   /// Whether the row it belongs to is open.
   final bool expanded;
@@ -211,9 +241,9 @@ class NetworkDisclosure extends StatelessWidget {
 
 /// An opened row: the row itself over a right-aligned strip of its actions,
 /// the pair tinted and lifted out of the list as one card.
-class NetworkExpandedRow extends StatelessWidget {
-  /// Creates a [NetworkExpandedRow].
-  const NetworkExpandedRow({
+class ConsoleExpandedRow extends StatelessWidget {
+  /// Creates a [ConsoleExpandedRow].
+  const ConsoleExpandedRow({
     required this.row,
     required this.actions,
     super.key,
@@ -258,9 +288,9 @@ class NetworkExpandedRow extends StatelessWidget {
 }
 
 /// A pill button inside an opened row — Disconnect, Forget, Connect.
-class NetworkActionChip extends StatelessWidget {
-  /// Creates a [NetworkActionChip].
-  const NetworkActionChip({
+class ConsoleActionChip extends StatelessWidget {
+  /// Creates a [ConsoleActionChip].
+  const ConsoleActionChip({
     required this.label,
     required this.icon,
     required this.onPressed,
@@ -318,9 +348,9 @@ class NetworkActionChip extends StatelessWidget {
 ///
 /// Power lives here rather than in the list because it governs whether there
 /// is a list at all — switched off, this row is the entire face.
-class NetworkFaceHeader extends StatelessWidget {
-  /// Creates a [NetworkFaceHeader].
-  const NetworkFaceHeader({
+class ConsoleFaceHeader extends StatelessWidget {
+  /// Creates a [ConsoleFaceHeader].
+  const ConsoleFaceHeader({
     required this.title,
     required this.powered,
     required this.onPoweredChanged,
@@ -393,7 +423,7 @@ class NetworkFaceHeader extends StatelessWidget {
             ),
             const SizedBox(width: 10),
           ],
-          NetworkSwitch(
+          ConsoleSwitch(
             key: powerKey,
             value: powered,
             onChanged: onPoweredChanged,
@@ -460,9 +490,9 @@ class _RescanButton extends StatelessWidget {
 /// Hand-drawn rather than Material's `Switch`, which carries its own 40x24
 /// geometry, ripple and thumb elevation — none of which the mockups have, and
 /// all of which read as borrowed once the switch sits in a list row.
-class NetworkSwitch extends StatelessWidget {
-  /// Creates a [NetworkSwitch].
-  const NetworkSwitch({
+class ConsoleSwitch extends StatelessWidget {
+  /// Creates a [ConsoleSwitch].
+  const ConsoleSwitch({
     required this.value,
     required this.onChanged,
     this.semanticLabel,
@@ -524,14 +554,16 @@ class NetworkSwitch extends StatelessWidget {
 /// The banner that rides at the top of the list while something is in flight
 /// or has just failed: a state dot, the message, and the one action that
 /// answers it.
-class NetworkBanner extends StatelessWidget {
-  /// Creates a [NetworkBanner].
-  const NetworkBanner({
+class ConsoleBanner extends StatelessWidget {
+  /// Creates a [ConsoleBanner].
+  const ConsoleBanner({
     required this.message,
     required this.actionLabel,
     required this.onAction,
     this.failed = false,
     this.actionKey,
+    this.secondaryLabel,
+    this.onSecondary,
     super.key,
   });
 
@@ -549,6 +581,13 @@ class NetworkBanner extends StatelessWidget {
 
   /// Key for the action button.
   final Key? actionKey;
+
+  /// A second, affirmative action beside the first — the replace prompt's
+  /// "Replace" against its "Keep".
+  final String? secondaryLabel;
+
+  /// Runs [secondaryLabel]'s action.
+  final VoidCallback? onSecondary;
 
   @override
   Widget build(BuildContext context) {
@@ -577,7 +616,14 @@ class NetworkBanner extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 14),
-            NetworkSmallButton(
+            if (secondaryLabel != null) ...[
+              ConsoleSmallButton(
+                label: secondaryLabel!,
+                onPressed: onSecondary,
+              ),
+              const SizedBox(width: 10),
+            ],
+            ConsoleSmallButton(
               key: actionKey,
               label: actionLabel,
               onPressed: onAction,
@@ -591,9 +637,9 @@ class NetworkBanner extends StatelessWidget {
 
 /// A small bordered button — the banner's Cancel / Try again, and the join
 /// sheet's Cancel.
-class NetworkSmallButton extends StatelessWidget {
-  /// Creates a [NetworkSmallButton].
-  const NetworkSmallButton({
+class ConsoleSmallButton extends StatelessWidget {
+  /// Creates a [ConsoleSmallButton].
+  const ConsoleSmallButton({
     required this.label,
     required this.onPressed,
     this.large = false,
@@ -641,9 +687,9 @@ class NetworkSmallButton extends StatelessWidget {
 
 /// The face when there is nothing to list: a bordered, empty card carrying one
 /// line of explanation.
-class NetworkEmptyCard extends StatelessWidget {
-  /// Creates a [NetworkEmptyCard].
-  const NetworkEmptyCard({required this.message, super.key});
+class ConsoleEmptyCard extends StatelessWidget {
+  /// Creates a [ConsoleEmptyCard].
+  const ConsoleEmptyCard({required this.message, super.key});
 
   /// Why the list is empty.
   final String message;
@@ -676,7 +722,7 @@ class NetworkEmptyCard extends StatelessWidget {
 /// Returns true when the destructive button is chosen. Disconnect has no
 /// confirm of its own: it is undone by tapping the row again, while this is
 /// not.
-Future<bool> showNetworkForgetDialog(
+Future<bool> showConsoleForgetDialog(
   BuildContext context, {
   required String title,
   required String body,
@@ -718,7 +764,7 @@ Future<bool> showNetworkForgetDialog(
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  NetworkSmallButton(
+                  ConsoleSmallButton(
                     label: l10n.networkKeepItAction,
                     large: true,
                     onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -775,4 +821,294 @@ class _DestructiveButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A group heading above a card — the mockups' small, letter-spaced caption.
+class ConsoleGroupLabel extends StatelessWidget {
+  /// Creates a [ConsoleGroupLabel].
+  const ConsoleGroupLabel(this.text, {super.key});
+
+  /// The heading, rendered in caps.
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text.toUpperCase(),
+      style: TextStyle(
+        color: context.surface.textMuted,
+        fontSize: 13,
+        letterSpacing: 1.2,
+      ),
+    );
+  }
+}
+
+/// A labelled horizontal bar with a numeric readout — the console's form of a
+/// calibration control (a MIDI mapping's travel or threshold).
+///
+/// A bar rather than a knob: these are set once with a finger on a touch
+/// panel, and a knob's rotational gesture is the wrong shape for that. The
+/// caret marks the value so the bar reads as a scale rather than a meter.
+class ConsoleValueBar extends StatelessWidget {
+  /// Creates a [ConsoleValueBar].
+  const ConsoleValueBar({
+    required this.label,
+    required this.value,
+    required this.readout,
+    required this.onChanged,
+    super.key,
+  });
+
+  /// Caption down the left — LO, HI, THRESH.
+  final String label;
+
+  /// Normalized `0..1` position.
+  final double value;
+
+  /// What the value is, in its own units.
+  final String readout;
+
+  /// Called with the new normalized value as the finger moves.
+  final ValueChanged<double> onChanged;
+
+  static const double _height = 44;
+  static const double _labelWidth = 92;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Row(
+      children: [
+        SizedBox(
+          width: _labelWidth,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: surface.textMuted,
+              fontSize: 13,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              void report(Offset local) => onChanged(
+                (local.dx / constraints.maxWidth).clamp(0.0, 1.0),
+              );
+              return Semantics(
+                slider: true,
+                label: label,
+                value: readout,
+                child: GestureDetector(
+                  onTapDown: (details) => report(details.localPosition),
+                  onHorizontalDragUpdate: (details) =>
+                      report(details.localPosition),
+                  child: Container(
+                    height: _height,
+                    decoration: BoxDecoration(
+                      color: surface.background,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: surface.line),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(9),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: FractionallySizedBox(
+                          widthFactor: value.clamp(0.0, 1.0),
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: surface.accentSurface,
+                              border: Border(
+                                right: BorderSide(color: surface.accent),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(width: 14),
+        SizedBox(
+          width: 44,
+          child: Text(
+            readout,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              color: surface.textSecondary,
+              fontSize: 14,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// One choice in a [ConsoleSegmented].
+@immutable
+class ConsoleSegment<T> {
+  /// Creates a [ConsoleSegment].
+  const ConsoleSegment({required this.value, required this.label});
+
+  /// The value this segment picks.
+  final T value;
+
+  /// Its caption.
+  final String label;
+}
+
+/// A two-or-three-way choice drawn as adjoining pills — Toggle / Momentary.
+///
+/// Distinct from the tab strip, which navigates: this one sets a value, so the
+/// selected segment is filled rather than tinted.
+class ConsoleSegmented<T> extends StatelessWidget {
+  /// Creates a [ConsoleSegmented].
+  const ConsoleSegmented({
+    required this.options,
+    required this.selected,
+    required this.onChanged,
+    super.key,
+  });
+
+  /// The choices, in display order.
+  final List<ConsoleSegment<T>> options;
+
+  /// The current value.
+  final T selected;
+
+  /// Called with the chosen value.
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final option in options) ...[
+          if (option != options.first) const SizedBox(width: 8),
+          Semantics(
+            button: true,
+            selected: option.value == selected,
+            child: Material(
+              color: option.value == selected
+                  ? surface.accent
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () => onChanged(option.value),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 17,
+                    vertical: 10,
+                  ),
+                  child: Text(
+                    option.label,
+                    style: TextStyle(
+                      color: option.value == selected
+                          ? surface.onAccent
+                          : surface.textSecondary,
+                      fontSize: 16,
+                      fontWeight: option.value == selected
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// One entry in a [showConsolePickerSheet].
+@immutable
+class ConsolePickerOption<T> {
+  /// Creates a [ConsolePickerOption].
+  const ConsolePickerOption({required this.value, required this.label});
+
+  /// What choosing this returns.
+  final T value;
+
+  /// Its caption.
+  final String label;
+}
+
+/// Asks for one of [options], as a sheet of the console's own rows.
+///
+/// Not `PopupMenuButton`: a Material menu opens a small floating card wherever
+/// the tap landed, sized for a mouse. Every list in this tray is the same
+/// 70px row on a card, and a target picker is a list like any other.
+Future<T?> showConsolePickerSheet<T>(
+  BuildContext context, {
+  required String title,
+  required List<ConsolePickerOption<T>> options,
+  T? selected,
+}) {
+  final surface = context.surface;
+  return showModalBottomSheet<T>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    barrierColor: surface.scrim,
+    isScrollControlled: true,
+    constraints: const BoxConstraints(),
+    builder: (sheetContext) => DecoratedBox(
+      decoration: BoxDecoration(
+        color: surface.card,
+        border: Border(top: BorderSide(color: surface.borderStrong)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(19, 20, 19, 19),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: surface.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 13),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: ConsoleCard(
+                    children: [
+                      for (final option in options)
+                        ConsoleRow(
+                          key: Key('console_picker_${option.label}'),
+                          title: option.label,
+                          selected: option.value == selected,
+                          showDisclosure: false,
+                          divider: option != options.last,
+                          onTap: () =>
+                              Navigator.of(sheetContext).pop(option.value),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 }

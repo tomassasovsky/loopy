@@ -4,8 +4,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/bluetooth/bluetooth_cubit.dart';
 import 'package:segno/bluetooth/bluetooth_tray_body.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/network/network_surface.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/wifi/wifi_cubit.dart';
 import 'package:segno/wifi/wifi_tray_body.dart';
@@ -216,7 +216,7 @@ void main() {
         expect(find.byKey(const Key('wifi_power')), findsOneWidget);
         // No list, and no rescan button for a radio that cannot scan.
         expect(find.byKey(const Key('wifi_scan')), findsNothing);
-        expect(find.byType(NetworkCard), findsNothing);
+        expect(find.byType(ConsoleCard), findsNothing);
       },
     );
 
@@ -228,7 +228,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(client.calls, contains('setEnabled:false'));
-      expect(find.byType(NetworkCard), findsNothing);
+      expect(find.byType(ConsoleCard), findsNothing);
     });
 
     testWidgets(
@@ -242,7 +242,7 @@ void main() {
         await tester.tap(find.byKey(const Key('wifi_network_Studio-5G')));
         await tester.pumpAndSettle();
 
-        expect(find.byType(NetworkExpandedRow), findsOneWidget);
+        expect(find.byType(ConsoleExpandedRow), findsOneWidget);
         expect(find.byKey(const Key('wifi_disconnect')), findsOneWidget);
         expect(find.byKey(const Key('wifi_forget')), findsOneWidget);
 
@@ -407,7 +407,7 @@ void main() {
 
       expect(find.byKey(const Key('bluetooth_power')), findsOneWidget);
       expect(find.byKey(const Key('bluetooth_scan')), findsNothing);
-      expect(find.byType(NetworkCard), findsNothing);
+      expect(find.byType(ConsoleCard), findsNothing);
     });
   });
 }

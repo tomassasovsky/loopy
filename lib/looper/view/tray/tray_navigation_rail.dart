@@ -43,7 +43,10 @@ class TrayNavigationRail extends StatelessWidget {
   static IconData _iconFor(SettingsTrayDestination destination) =>
       switch (destination) {
         SettingsTrayDestination.home => Icons.tune,
-        SettingsTrayDestination.pedal => Icons.piano_outlined,
+        // The mockups' Control glyph: a foot controller, not a keyboard —
+        // the domain covers the floor pedal and whatever MIDI box is beside
+        // it, neither of which is a piano.
+        SettingsTrayDestination.control => Icons.videogame_asset_outlined,
         SettingsTrayDestination.tuner => Icons.graphic_eq,
         // An antenna, not a WiFi fan or a Bluetooth rune: the entry is both
         // radios, and either radio's own glyph would read as only that one.
@@ -57,7 +60,7 @@ class TrayNavigationRail extends StatelessWidget {
     SettingsTrayDestination destination,
   ) => switch (destination) {
     SettingsTrayDestination.home => l10n.trayHomeLabel,
-    SettingsTrayDestination.pedal => l10n.trayPedalLabel,
+    SettingsTrayDestination.control => l10n.trayControlLabel,
     SettingsTrayDestination.tuner => l10n.trayTunerLabel,
     SettingsTrayDestination.network => l10n.trayNetworkLabel,
   };
