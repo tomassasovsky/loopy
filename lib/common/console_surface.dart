@@ -85,6 +85,7 @@ class ConsoleRow extends StatelessWidget {
     this.indented = false,
     this.centred = false,
     this.leading,
+    this.valueColor,
     super.key,
   });
 
@@ -126,6 +127,11 @@ class ConsoleRow extends StatelessWidget {
 
   /// Optional glyph before the title — a state dot, in the mockups.
   final Widget? leading;
+
+  /// Overrides the value's colour. A missing target takes the warning tone:
+  /// in the muted grey of an empty slot it reads as "nothing set here", which
+  /// is a different (and wrong) fact.
+  final Color? valueColor;
 
   @override
   Widget build(BuildContext context) {
@@ -190,7 +196,10 @@ class ConsoleRow extends StatelessWidget {
                 padding: const EdgeInsets.only(left: 14),
                 child: Text(
                   status,
-                  style: TextStyle(color: surface.textSecondary, fontSize: 14),
+                  style: TextStyle(
+                    color: valueColor ?? surface.textSecondary,
+                    fontSize: 14,
+                  ),
                 ),
               ),
             if (showDisclosure)
@@ -1307,4 +1316,89 @@ Future<T?> showConsolePickerSheet<T>(
       ),
     ),
   );
+}
+
+/// The design system's `MiniToggleGroup`: a small bordered pair of segments,
+/// the chosen one filled with the control tone rather than the accent.
+///
+/// Distinct from [ConsoleSegmented], which is the loud form used where the
+/// choice IS the content (a mapping's Toggle/Momentary). This one is a
+/// qualifier sitting beside a group caption — the pedal's A/B bank, the same
+/// control the stage header uses — and shouting it in accent would outweigh
+/// the group it labels.
+class ConsoleMiniToggle<T> extends StatelessWidget {
+  /// Creates a [ConsoleMiniToggle].
+  const ConsoleMiniToggle({
+    required this.options,
+    required this.selected,
+    required this.onChanged,
+    this.semanticLabel,
+    super.key,
+  });
+
+  /// The choices, in display order. Two or three at most: each segment is
+  /// sized for a single character.
+  final List<ConsoleSegment<T>> options;
+
+  /// The current value.
+  final T selected;
+
+  /// Called with the chosen value.
+  final ValueChanged<T> onChanged;
+
+  /// Names what the group is choosing, since the segments are bare letters.
+  final String? semanticLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Semantics(
+      label: semanticLabel,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: surface.line),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(1),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(9),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final option in options)
+                  Semantics(
+                    button: true,
+                    selected: option.value == selected,
+                    child: Material(
+                      color: option.value == selected
+                          ? surface.control
+                          : Colors.transparent,
+                      child: InkWell(
+                        onTap: () => onChanged(option.value),
+                        child: SizedBox(
+                          width: 38,
+                          height: 31,
+                          child: Center(
+                            child: Text(
+                              option.label,
+                              style: TextStyle(
+                                color: option.value == selected
+                                    ? surface.textPrimary
+                                    : surface.textMuted,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

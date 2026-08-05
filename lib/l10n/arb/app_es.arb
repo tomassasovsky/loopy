@@ -1343,6 +1343,35 @@
     "@midiControlThreshold": {
         "description": "Caption on the value a switch mapping fires at."
     },
+    "pedalControlTransportGroup": "Interruptores de transporte",
+    "@pedalControlTransportGroup": {
+        "description": "Group heading over the four transport footswitch cards."
+    },
+    "pedalControlTrackGroup": "Interruptores de pista",
+    "@pedalControlTrackGroup": {
+        "description": "Group heading over the per-bank track footswitch rows."
+    },
+    "pedalControlAssign": "Asignar {name}",
+    "@pedalControlAssign": {
+        "description": "Group heading over the target list, naming the switch being assigned.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "pedalControlAssignBank": "Asignar {name} · banco {bank}",
+    "@pedalControlAssignBank": {
+        "description": "Group heading over the target list for a bank-keyed switch, naming the switch and the bank the edit lands in.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            },
+            "bank": {
+                "type": "String"
+            }
+        }
+    },
     "trayNetworkLabel": "Red",
     "@trayNetworkLabel": {
         "description": "Navigation rail entry for the settings tray's Network face, which holds the WiFi and Bluetooth tabs."
@@ -1405,7 +1434,7 @@
     },
     "trayPedalLabel": "Pedal",
     "@trayPedalLabel": {
-        "description": "Navigation rail entry for the settings tray's pedal-assignment face. Deliberately shorter than pedalAssignTitle, which titles the face itself \u2014 rail entries are single words."
+        "description": "Navigation rail entry for the settings tray's pedal-assignment face. Deliberately shorter than pedalAssignTitle, which titles the face itself — rail entries are single words."
     },
     "trayTunerLabel": "Afinador",
     "@trayTunerLabel": {
