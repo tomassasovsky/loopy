@@ -9,6 +9,15 @@ import 'package:segno/theme/surface_theme.dart';
 
 void main() {
   group('AppTheme', () {
+    /// WCAG relative contrast of [fg] against the [bg] it sits on.
+    double ratio(Color fg, Color bg) {
+      final a = fg.computeLuminance();
+      final b = bg.computeLuminance();
+      final hi = math.max(a, b);
+      final lo = math.min(a, b);
+      return (hi + 0.05) / (lo + 0.05);
+    }
+
     void expectRoutingGraphMatchesSurface(
       RoutingGraphTheme? rg,
       SurfaceTheme surface,
@@ -54,16 +63,6 @@ void main() {
     // WCAG 1.4.3 / 1.4.11: the high-contrast palette must be strictly brighter
     // than the default so the OS "increase contrast" preference helps.
     test('high-contrast text/line tokens out-contrast the default theme', () {
-      double luminance(Color c) => c.computeLuminance();
-      // Relative contrast of text/line against the card it sits on.
-      double ratio(Color fg, Color bg) {
-        final a = luminance(fg);
-        final b = luminance(bg);
-        final hi = math.max(a, b);
-        final lo = math.min(a, b);
-        return (hi + 0.05) / (lo + 0.05);
-      }
-
       const dark = SurfaceTheme.dark;
       const hc = SurfaceTheme.highContrast;
       // Dimmed-label text clears AA (>= 4.5:1) on the default card already...
@@ -84,14 +83,6 @@ void main() {
     });
 
     test('HC meter/indicator idle tones clear 3:1 on the track tile', () {
-      double ratio(Color fg, Color bg) {
-        final a = fg.computeLuminance();
-        final b = bg.computeLuminance();
-        final hi = math.max(a, b);
-        final lo = math.min(a, b);
-        return (hi + 0.05) / (lo + 0.05);
-      }
-
       final looper = AppTheme.highContrast.extension<LooperTheme>()!;
       // WCAG 1.4.11: the empty-meter groove and the idle indicator are the
       // dimmest non-text components on the tile; both must clear 3:1 in HC.
@@ -153,5 +144,90 @@ void main() {
         isNotNull,
       );
     });
+
+    // The ColorScheme carries hand-written copies of SurfaceTheme tokens
+    // (Material widgets resolve from the scheme, not the extension). Pin them
+    // so a palette change that misses a mirror fails here instead of drifting
+    // silently — three of these had to be hand-synced in the #499 migration.
+    test('the ColorScheme mirrors of SurfaceTheme tokens stay in sync', () {
+      expect(AppTheme.neon.colorScheme.primary, SurfaceTheme.dark.textPrimary);
+      expect(AppTheme.neon.colorScheme.secondary, SurfaceTheme.dark.accent);
+      expect(AppTheme.neon.colorScheme.surface, SurfaceTheme.dark.surface);
+      expect(
+        AppTheme.highContrast.colorScheme.primary,
+        SurfaceTheme.highContrast.textPrimary,
+      );
+      expect(
+        AppTheme.highContrast.colorScheme.secondary,
+        SurfaceTheme.highContrast.accent,
+      );
+      expect(
+        AppTheme.highContrast.colorScheme.surface,
+        SurfaceTheme.highContrast.surface,
+      );
+    });
+
+    // SurfaceTheme carries 40+ colour fields; `lerp` and `copyWith` list every
+    // one by hand, so a field that is dropped (or crossed with its neighbour)
+    // is invisible to the per-token tests above. Lerping to the endpoints
+    // catches both without naming a single field.
+    test('lerp reaches both endpoints for every colour field', () {
+      const dark = SurfaceTheme.dark;
+      const hc = SurfaceTheme.highContrast;
+      expect(_colors(dark.lerp(hc, 0)), _colors(dark));
+      expect(_colors(dark.lerp(hc, 1)), _colors(hc));
+      // A no-op copyWith must likewise preserve every field.
+      expect(_colors(dark.copyWith()), _colors(dark));
+    });
   });
 }
+
+/// Every colour field of [s], in declaration order.
+///
+/// `lerp`/`copyWith` list all 40+ fields by hand, so a dropped or crossed
+/// field is invisible to per-token assertions. Comparing this projection at
+/// the lerp endpoints catches both — keep it in sync when a token is added.
+List<Color> _colors(SurfaceTheme s) => [
+  s.background,
+  s.surface,
+  s.card,
+  s.cardHigh,
+  s.line,
+  s.control,
+  s.controlStrong,
+  s.scrim,
+  s.borderHairline,
+  s.borderSubtle,
+  s.borderStrong,
+  s.accent,
+  s.onAccent,
+  s.accentSurface,
+  s.accentAlt,
+  s.warning,
+  s.success,
+  s.rec,
+  s.recSurface,
+  s.recTint,
+  s.recLine,
+  s.recDeep,
+  s.textPrimary,
+  s.textSecondary,
+  s.textTertiary,
+  s.textMuted,
+  s.wetRoute,
+  s.dryRoute,
+  ...s.lanePalette,
+  s.ledOff,
+  s.ledGreen,
+  s.ledRed,
+  s.ledAmber,
+  s.ledBlue,
+  s.ringGlow,
+  s.chromeGradientTop,
+  s.chromeGradientBottom,
+  s.chromeBar,
+  s.meterTrack,
+  s.pageGlow,
+  s.knobFaceTop,
+  s.knobFaceBottom,
+];

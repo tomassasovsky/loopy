@@ -156,10 +156,9 @@ void main() {
             RepositoryProvider<LooperRepository>.value(value: repository),
             RepositoryProvider<PerformanceRepository>.value(value: performance),
             // TracksView builds a SettingsTrayCubit that requires a
-            // SettingsRepository; back it with the in-memory store.
-            RepositoryProvider<SettingsRepository>(
-              create: (_) => SettingsRepository(store: FakeKeyValueStore()),
-            ),
+            // SettingsRepository; share the fixture the cubits already use so
+            // the tray reads the same store.
+            RepositoryProvider<SettingsRepository>.value(value: settings),
           ],
           child: MultiBlocProvider(
             providers: [

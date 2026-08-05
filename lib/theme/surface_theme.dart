@@ -7,8 +7,8 @@ import 'package:flutter/material.dart';
 /// [ThemeData] via a [ThemeExtension] so widgets resolve them from
 /// `Theme.of(context)` instead of reading module-level constants.
 ///
-/// Values are sourced from the Segno design system (`segno-ui.pen`, #499):
-/// the `.pen` token set is authoritative and this class mirrors it.
+/// Values are sourced from the Segno design system (issue #499): the design
+/// file's token set is authoritative and this class mirrors it.
 ///
 /// Read it ergonomically with the [SurfaceThemeX.surface] extension:
 /// `context.surface.card`, `context.surface.wetRoute`, etc.

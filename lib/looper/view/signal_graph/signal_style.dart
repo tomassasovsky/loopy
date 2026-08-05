@@ -25,9 +25,8 @@ RoundedRectangleBorder signalMenuShape(SurfaceTheme surface) =>
     );
 
 /// A monospace text style ([SurfaceTheme.monoFont]) for **numerics and
-/// machine readouts
-/// only** — dB values, `%`, counts, channel ids. Section labels and prose use
-/// [signalLabel] instead.
+/// machine readouts only** — dB values, `%`, counts, channel ids. Section
+/// labels and prose use [signalLabel] instead.
 TextStyle signalMono({
   required Color color,
   double size = 11,
