@@ -160,6 +160,8 @@
     "a11yRenameTrack": "Renombrar {name}",
     "renameTrackTitle": "Renombrar pista {trackNumber}",
     "cancel": "Cancelar",
+    "fxParamResetLabel": "Restablecer",
+    "fxParamSetLabel": "Aplicar",
     "save": "Guardar",
     "trackRoutingTitle": "Enrutamiento de {trackName}",
     "trackSettingsTooltip": "Ajustes de pista",
