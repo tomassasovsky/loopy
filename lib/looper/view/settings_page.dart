@@ -354,12 +354,7 @@ class _SettingsRail extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 9),
-              Text(
-                l10n.settingsKicker,
-                style: context.setupKicker.copyWith(
-                  color: context.surface.textSecondary,
-                ),
-              ),
+              Text(l10n.settingsKicker, style: context.setupKicker),
             ],
           ),
           const SizedBox(height: 28),
@@ -409,10 +404,10 @@ class _SectionTab extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 4),
         child: Material(
           color: selected ? context.surface.cardHigh : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(SurfaceTheme.radius10),
           child: InkWell(
             key: Key('settings_tab_${section.name}'),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(SurfaceTheme.radius10),
             onTap: onTap,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),

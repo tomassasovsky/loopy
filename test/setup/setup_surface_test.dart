@@ -1,4 +1,4 @@
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
+import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/setup/setup_surface.dart';
@@ -42,7 +42,7 @@ void main() {
       );
       expect(dark.setupBody.color, SurfaceTheme.dark.textSecondary);
       expect(dark.setupTitle.color, SurfaceTheme.dark.textPrimary);
-      expect(dark.setupKicker.color, SurfaceTheme.dark.textTertiary);
+      expect(dark.setupKicker.color, SurfaceTheme.dark.textSecondary);
       expect(dark.setupSliderTheme.activeTrackColor, SurfaceTheme.dark.accent);
     });
 
@@ -54,7 +54,7 @@ void main() {
       );
       expect(hc.setupBody.color, SurfaceTheme.highContrast.textSecondary);
       expect(hc.setupTitle.color, SurfaceTheme.highContrast.textPrimary);
-      expect(hc.setupKicker.color, SurfaceTheme.highContrast.textTertiary);
+      expect(hc.setupKicker.color, SurfaceTheme.highContrast.textSecondary);
       expect(
         hc.setupSliderTheme.activeTrackColor,
         SurfaceTheme.highContrast.accent,
@@ -64,8 +64,9 @@ void main() {
     testWidgets('the kicker clears AA against the card it sits on', (
       tester,
     ) async {
-      // Regression: the kicker used to hold the pre-WCAG-lift tertiary
-      // (0xFF5B5D67, ~2.6:1) long after the token itself was raised.
+      // The kicker is the smallest, widest-tracked text on these surfaces, so
+      // it is the first thing that stops being readable if the token it
+      // resolves ever drops a tier.
       final context = await _pump(
         tester,
         AppTheme.neon,
@@ -106,21 +107,31 @@ void main() {
     Color borderOf(WidgetTester tester, Key key) =>
         decorationOf(tester, key).border!.top.color;
 
-    testWidgets('an unselected card lifts on hover and again on press', (
+    // The exact tiers, not merely "something changed": an earlier version of
+    // this test used isNot() and stayed green when the two were swapped.
+    final restFill = SurfaceTheme.dark.card;
+    final hoverFill = Color.alphaBlend(
+      SurfaceTheme.dark.borderHairline,
+      SurfaceTheme.dark.card,
+    );
+    final pressFill = Color.alphaBlend(
+      SurfaceTheme.dark.borderSubtle,
+      SurfaceTheme.dark.card,
+    );
+
+    testWidgets('an unselected card lifts one tier on hover, two on press', (
       tester,
     ) async {
       await _pump(tester, AppTheme.neon, rowOf());
-      final rest = fillOf(tester, const Key('opt1'));
-      expect(rest, SurfaceTheme.dark.card);
+      expect(fillOf(tester, const Key('opt1')), restFill);
 
       final pointer = TestPointer(1, PointerDeviceKind.mouse);
       final centre = tester.getCenter(find.byKey(const Key('opt1')));
       await tester.sendEventToBinding(pointer.hover(centre));
       await tester.pumpAndSettle();
-      final hovered = fillOf(tester, const Key('opt1'));
       expect(
-        hovered,
-        isNot(rest),
+        fillOf(tester, const Key('opt1')),
+        hoverFill,
         reason: 'hover must be visible — this is a desktop app',
       );
 
@@ -128,12 +139,70 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         fillOf(tester, const Key('opt1')),
-        isNot(hovered),
-        reason: 'pressed is a deeper tier than hover',
+        pressFill,
+        reason: 'pressed is the deeper tier',
       );
+    });
 
+    testWidgets('the pressed and hover tiers both release', (tester) async {
+      // Deleting onExit/onPointerUp entirely once left every card permanently
+      // lit and still passed: a state that never clears is the real failure
+      // mode here, so assert the way back down, not just the way up.
+      await _pump(tester, AppTheme.neon, rowOf());
+      final pointer = TestPointer(4, PointerDeviceKind.mouse);
+      final centre = tester.getCenter(find.byKey(const Key('opt1')));
+
+      await tester.sendEventToBinding(pointer.hover(centre));
+      await tester.sendEventToBinding(pointer.down(centre));
+      await tester.pumpAndSettle();
+      expect(fillOf(tester, const Key('opt1')), pressFill);
+
+      // Releasing drops back to hover — the pointer is still over the card.
       await tester.sendEventToBinding(pointer.up());
       await tester.pumpAndSettle();
+      expect(fillOf(tester, const Key('opt1')), hoverFill);
+
+      // Leaving drops back to rest.
+      await tester.sendEventToBinding(pointer.hover(const Offset(5, 5)));
+      await tester.pumpAndSettle();
+      expect(fillOf(tester, const Key('opt1')), restFill);
+    });
+
+    testWidgets('a cancelled press clears the pressed tier', (tester) async {
+      await _pump(tester, AppTheme.neon, rowOf());
+      final pointer = TestPointer(5, PointerDeviceKind.mouse);
+      final centre = tester.getCenter(find.byKey(const Key('opt1')));
+
+      await tester.sendEventToBinding(pointer.hover(centre));
+      await tester.sendEventToBinding(pointer.down(centre));
+      await tester.pumpAndSettle();
+      expect(fillOf(tester, const Key('opt1')), pressFill);
+
+      await tester.sendEventToBinding(pointer.cancel());
+      await tester.pumpAndSettle();
+      expect(fillOf(tester, const Key('opt1')), hoverFill);
+    });
+
+    testWidgets('a non-primary press does not reach the pressed tier', (
+      tester,
+    ) async {
+      await _pump(tester, AppTheme.neon, rowOf());
+      final pointer = TestPointer(6, PointerDeviceKind.mouse);
+      final centre = tester.getCenter(find.byKey(const Key('opt1')));
+
+      await tester.sendEventToBinding(
+        pointer.down(centre, buttons: kSecondaryButton),
+      );
+      await tester.pumpAndSettle();
+      // A mouse positioned to right-click is genuinely hovering, so the hover
+      // tier is correct here — what must not happen is the pressed tier, which
+      // would promise an activation that a secondary click never delivers.
+      expect(
+        fillOf(tester, const Key('opt1')),
+        hoverFill,
+        reason: 'a right-click must not light the card as pressed',
+      );
+      await tester.sendEventToBinding(pointer.up());
     });
 
     testWidgets('hover never borrows the accent that means selected', (

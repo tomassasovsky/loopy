@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show kPrimaryButton;
 import 'package:flutter/material.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/theme/surface_theme.dart';
@@ -5,21 +6,20 @@ import 'package:segno/theme/surface_theme.dart';
 /// Tabular figures keep numeric values vertically aligned in status tables.
 const _setupNumerals = [FontFeature.tabularFigures()];
 
-/// Shared typography and control styling for stepped setup surfaces (audio
+/// Shared text and control tokens for stepped setup surfaces (audio
 /// onboarding, settings, the tray panels).
 ///
 /// These resolve from [SurfaceTheme] rather than carrying literal colours.
-/// They used to be `const` styles holding hand-copied hexes, which meant two
-/// bugs at once: the copies drifted from the tokens they named (the kicker
-/// still held the pre-WCAG-lift tertiary, ~2.6:1), and — because the colour
-/// was baked in — none of this text responded to the high-contrast variant.
-extension SetupTypography on BuildContext {
+/// They used to be `const` styles holding hand-copied hexes, so none of this
+/// text responded to the high-contrast variant: the palette swapped around it
+/// while the copy stayed on dark-variant colours.
+extension SetupSurfaceTokens on BuildContext {
   /// The small, wide-tracked section kicker above a group title.
   TextStyle get setupKicker => TextStyle(
     fontSize: 11,
     fontWeight: FontWeight.w700,
     letterSpacing: 1.8,
-    color: surface.textTertiary,
+    color: surface.textSecondary,
   );
 
   /// The page title on a setup/settings surface.
@@ -34,8 +34,8 @@ extension SetupTypography on BuildContext {
   TextStyle get setupBody =>
       TextStyle(color: surface.textSecondary, fontSize: 14, height: 1.45);
 
-  /// The accent-tinted slider styling shared by the effect-chain editors (lane
-  /// strips and per-input monitors) — a thin track with a small accent thumb.
+  /// The accent-tinted slider styling — a thin track with a small accent
+  /// thumb. Used by the tempo section's click-level slider.
   SliderThemeData get setupSliderTheme => SliderThemeData(
     trackHeight: 3,
     activeTrackColor: surface.accent,
@@ -57,10 +57,7 @@ class SetupGroupLabel extends StatelessWidget {
     final surface = context.surface;
     return Row(
       children: [
-        Text(
-          label,
-          style: context.setupKicker.copyWith(color: surface.textSecondary),
-        ),
+        Text(label, style: context.setupKicker),
         const SizedBox(width: 10),
         Expanded(child: Divider(color: surface.line, height: 1)),
       ],
@@ -92,7 +89,7 @@ class SetupToggleRow extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(18, 14, 12, 14),
       decoration: BoxDecoration(
         color: surface.card,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
         border: Border.all(color: surface.line),
       ),
       child: Row(
@@ -231,7 +228,11 @@ class _OptionCardState<T> extends State<_OptionCard<T>> {
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: Listener(
-        onPointerDown: (_) => setState(() => _pressed = true),
+        // Primary button only: a right- or middle-click lights a card that
+        // will never activate.
+        onPointerDown: (e) {
+          if (e.buttons == kPrimaryButton) setState(() => _pressed = true);
+        },
         onPointerUp: (_) => setState(() => _pressed = false),
         onPointerCancel: (_) => setState(() => _pressed = false),
         child: FocusableTapTarget(
@@ -256,7 +257,7 @@ class _OptionCardState<T> extends State<_OptionCard<T>> {
                     : const Color(0x00000000),
                 selected ? surface.cardHigh : surface.card,
               ),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(SurfaceTheme.radius12),
               border: Border.all(
                 color: selected
                     ? surface.accent
@@ -346,6 +347,10 @@ class SetupChannelChips extends StatelessWidget {
   }
 }
 
+// TODO(tomassasovsky): no hover/pressed tier — unlike [_OptionCard] above.
+// Stage 3 of #499 lifts the shared state layer into FocusableTapTarget (which
+// already tracks the pointer for its focus ring) and adopts it here, rather
+// than repeating the MouseRegion/Listener pair per widget.
 class _ChannelChip extends StatelessWidget {
   const _ChannelChip({
     required this.label,
@@ -371,7 +376,7 @@ class _ChannelChip extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: selected ? surface.cardHigh : surface.card,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(SurfaceTheme.radius10),
           border: Border.all(
             color: selected ? surface.accent : surface.line,
             width: selected ? 1.5 : 1,
@@ -423,15 +428,15 @@ class SetupNavRow extends StatelessWidget {
     final enabled = onTap != null;
     return Material(
       color: surface.card,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
       child: InkWell(
         key: rowKey,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.fromLTRB(18, 14, 14, 14),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
             border: Border.all(color: surface.line),
           ),
           child: Row(
@@ -487,7 +492,7 @@ class SetupInfoTable extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: surface.card,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
         border: Border.all(color: surface.line),
       ),
       child: Column(
@@ -557,15 +562,15 @@ class SetupTrackNameRow extends StatelessWidget {
     final surface = context.surface;
     return Material(
       color: surface.card,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
       child: InkWell(
         key: rowKey,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
             border: Border.all(color: surface.line),
           ),
           child: Row(
@@ -657,7 +662,7 @@ class SetupTrackLengthPresetRow extends StatelessWidget {
     final valueLabel = bars <= 0 ? autoLabel : barsLabel(bars);
     return Material(
       color: surface.card,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
       child: PopupMenuButton<int>(
         key: rowKey,
         initialValue: bars,
@@ -673,7 +678,7 @@ class SetupTrackLengthPresetRow extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
             border: Border.all(color: surface.line),
           ),
           child: Row(
@@ -769,7 +774,7 @@ class SetupTrackOneShotRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
         color: surface.card,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
         border: Border.all(color: surface.line),
       ),
       child: Row(
