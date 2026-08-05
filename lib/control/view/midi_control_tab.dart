@@ -269,8 +269,9 @@ class _MappingList extends StatelessWidget {
         divider: !open,
         onTap: () => onToggle(binding.key),
       ),
-      if (open)
-        _MappingEditor(
+      ConsoleExpansion(
+        expanded: open,
+        child: _MappingEditor(
           binding: binding,
           capture: capture,
           onChanged: (next) =>
@@ -282,6 +283,7 @@ class _MappingList extends StatelessWidget {
           ),
           onRemove: () => unawaited(cubit.removeControllerBinding(binding)),
         ),
+      ),
     ];
   }
 

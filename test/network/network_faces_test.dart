@@ -242,7 +242,9 @@ void main() {
         await tester.tap(find.byKey(const Key('wifi_network_Studio-5G')));
         await tester.pumpAndSettle();
 
-        expect(find.byType(ConsoleExpandedRow), findsOneWidget);
+        // Every row is a ConsoleExpandedRow now (it owns the open/close
+        // animation); only the open one has an action strip.
+        expect(find.byKey(const Key('console_row_actions')), findsOneWidget);
         expect(find.byKey(const Key('wifi_disconnect')), findsOneWidget);
         expect(find.byKey(const Key('wifi_forget')), findsOneWidget);
 
@@ -251,6 +253,59 @@ void main() {
         expect(client.calls, contains('disconnect'));
       },
     );
+
+    testWidgets('the actions grow in rather than appearing', (tester) async {
+      await pumpWifi(tester, _FakeWifiClient());
+
+      // The strip's own box keeps its natural height throughout — it is the
+      // clip around it that grows, so that is what gets measured.
+      Size clipHeight() => tester.getSize(
+        find
+            .ancestor(
+              of: find.byKey(const Key('console_row_actions')),
+              matching: find.byType(ClipRect),
+            )
+            .first,
+      );
+
+      await tester.tap(find.byKey(const Key('wifi_network_Studio-5G')));
+      await tester.pump();
+      final opening = clipHeight();
+
+      await tester.pump(const Duration(milliseconds: 90));
+      final midway = clipHeight();
+      await tester.pumpAndSettle();
+      final open = clipHeight();
+
+      // A strip that snapped open would report its full height on the first
+      // frame; this one is still growing three frames in.
+      expect(opening.height, lessThan(open.height));
+      expect(midway.height, greaterThan(opening.height));
+      expect(midway.height, lessThanOrEqualTo(open.height));
+    });
+
+    testWidgets('the actions shrink away rather than vanishing', (
+      tester,
+    ) async {
+      await pumpWifi(tester, _FakeWifiClient());
+      await tester.tap(find.byKey(const Key('wifi_network_Studio-5G')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('wifi_network_Studio-5G')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+
+      // Mid-close the chips are still on screen, shrinking with the strip —
+      // a row that dropped them on the first frame would leave an empty gap
+      // collapsing behind them.
+      expect(find.byKey(const Key('wifi_disconnect')), findsOneWidget);
+
+      await tester.pumpAndSettle();
+
+      // ...and once it is shut, nothing of the strip is left to tap.
+      expect(find.byKey(const Key('wifi_disconnect')), findsNothing);
+      expect(find.byKey(const Key('console_row_actions')), findsNothing);
+    });
 
     testWidgets('forgetting confirms first', (tester) async {
       final client = _FakeWifiClient();

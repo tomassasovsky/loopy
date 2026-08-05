@@ -219,32 +219,36 @@ class _BluetoothTrayBodyState extends State<BluetoothTrayBody> {
       onTap: busy && !expandable ? null : toggle,
     );
 
-    if (!open) return row;
-
+    // Always the expanded form — see the WiFi body: it owns the animation.
     return ConsoleExpandedRow(
+      expanded: open,
       row: row,
       actions: [
-        if (device.connected)
+        if (open) ...[
+          if (device.connected)
+            ConsoleActionChip(
+              key: const Key('bluetooth_disconnect'),
+              label: l10n.bluetoothDisconnectAction,
+              icon: Icons.link_off,
+              onPressed: busy
+                  ? null
+                  : () => unawaited(cubit.disconnect(device)),
+            )
+          else if (device.inRange)
+            ConsoleActionChip(
+              key: const Key('bluetooth_connect'),
+              label: l10n.bluetoothConnectAction,
+              icon: Icons.bluetooth_connected,
+              onPressed: busy ? null : () => unawaited(cubit.connect(device)),
+            ),
           ConsoleActionChip(
-            key: const Key('bluetooth_disconnect'),
-            label: l10n.bluetoothDisconnectAction,
-            icon: Icons.link_off,
-            onPressed: busy ? null : () => unawaited(cubit.disconnect(device)),
-          )
-        else if (device.inRange)
-          ConsoleActionChip(
-            key: const Key('bluetooth_connect'),
-            label: l10n.bluetoothConnectAction,
-            icon: Icons.bluetooth_connected,
-            onPressed: busy ? null : () => unawaited(cubit.connect(device)),
+            key: const Key('bluetooth_forget'),
+            label: l10n.bluetoothForgetAction,
+            icon: Icons.delete_outline,
+            destructive: true,
+            onPressed: busy ? null : () => unawaited(_forget(cubit, device)),
           ),
-        ConsoleActionChip(
-          key: const Key('bluetooth_forget'),
-          label: l10n.bluetoothForgetAction,
-          icon: Icons.delete_outline,
-          destructive: true,
-          onPressed: busy ? null : () => unawaited(_forget(cubit, device)),
-        ),
+        ],
       ],
     );
   }

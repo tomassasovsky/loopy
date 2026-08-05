@@ -225,37 +225,43 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
       onTap: state.busy && !expandable ? null : toggle,
     );
 
-    if (!open) return row;
-
+    // Always the expanded form, open or shut: it owns the open/close
+    // animation, and a widget that only exists while open cannot animate
+    // into existence.
     return ConsoleExpandedRow(
+      expanded: open,
       row: row,
       actions: [
-        if (data.connected)
-          ConsoleActionChip(
-            key: const Key('wifi_disconnect'),
-            label: l10n.wifiDisconnectTitle,
-            icon: Icons.link_off,
-            onPressed: state.busy ? null : () => unawaited(cubit.disconnect()),
-          )
-        else if (data.joinable)
-          ConsoleActionChip(
-            key: const Key('wifi_connect'),
-            label: l10n.wifiJoinAction,
-            icon: Icons.wifi,
-            onPressed: state.busy
-                ? null
-                : () => unawaited(cubit.connect(data.ssid)),
-          ),
-        if (data.saved)
-          ConsoleActionChip(
-            key: const Key('wifi_forget'),
-            label: l10n.wifiForgetAction,
-            icon: Icons.delete_outline,
-            destructive: true,
-            onPressed: state.busy
-                ? null
-                : () => unawaited(_forget(cubit, data.ssid)),
-          ),
+        if (open) ...[
+          if (data.connected)
+            ConsoleActionChip(
+              key: const Key('wifi_disconnect'),
+              label: l10n.wifiDisconnectTitle,
+              icon: Icons.link_off,
+              onPressed: state.busy
+                  ? null
+                  : () => unawaited(cubit.disconnect()),
+            )
+          else if (data.joinable)
+            ConsoleActionChip(
+              key: const Key('wifi_connect'),
+              label: l10n.wifiJoinAction,
+              icon: Icons.wifi,
+              onPressed: state.busy
+                  ? null
+                  : () => unawaited(cubit.connect(data.ssid)),
+            ),
+          if (data.saved)
+            ConsoleActionChip(
+              key: const Key('wifi_forget'),
+              label: l10n.wifiForgetAction,
+              icon: Icons.delete_outline,
+              destructive: true,
+              onPressed: state.busy
+                  ? null
+                  : () => unawaited(_forget(cubit, data.ssid)),
+            ),
+        ],
       ],
     );
   }
