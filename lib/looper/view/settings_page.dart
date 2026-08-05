@@ -404,10 +404,10 @@ class _SectionTab extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 4),
         child: Material(
           color: selected ? context.surface.cardHigh : Colors.transparent,
-          borderRadius: BorderRadius.circular(SurfaceTheme.radius10),
+          borderRadius: BorderRadius.circular(10),
           child: InkWell(
             key: Key('settings_tab_${section.name}'),
-            borderRadius: BorderRadius.circular(SurfaceTheme.radius10),
+            borderRadius: BorderRadius.circular(10),
             onTap: onTap,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),

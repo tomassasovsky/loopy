@@ -89,7 +89,7 @@ class SetupToggleRow extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(18, 14, 12, 14),
       decoration: BoxDecoration(
         color: surface.card,
-        borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: surface.line),
       ),
       child: Row(
@@ -257,7 +257,7 @@ class _OptionCardState<T> extends State<_OptionCard<T>> {
                     : const Color(0x00000000),
                 selected ? surface.cardHigh : surface.card,
               ),
-              borderRadius: BorderRadius.circular(SurfaceTheme.radius12),
+              borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: selected
                     ? surface.accent
@@ -376,7 +376,7 @@ class _ChannelChip extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: selected ? surface.cardHigh : surface.card,
-          borderRadius: BorderRadius.circular(SurfaceTheme.radius10),
+          borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: selected ? surface.accent : surface.line,
             width: selected ? 1.5 : 1,
@@ -428,15 +428,15 @@ class SetupNavRow extends StatelessWidget {
     final enabled = onTap != null;
     return Material(
       color: surface.card,
-      borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
+      borderRadius: BorderRadius.circular(14),
       child: InkWell(
         key: rowKey,
-        borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
+        borderRadius: BorderRadius.circular(14),
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.fromLTRB(18, 14, 14, 14),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(color: surface.line),
           ),
           child: Row(
@@ -492,7 +492,7 @@ class SetupInfoTable extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: surface.card,
-        borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: surface.line),
       ),
       child: Column(
@@ -562,15 +562,15 @@ class SetupTrackNameRow extends StatelessWidget {
     final surface = context.surface;
     return Material(
       color: surface.card,
-      borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
+      borderRadius: BorderRadius.circular(14),
       child: InkWell(
         key: rowKey,
-        borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
+        borderRadius: BorderRadius.circular(14),
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(color: surface.line),
           ),
           child: Row(
@@ -662,7 +662,7 @@ class SetupTrackLengthPresetRow extends StatelessWidget {
     final valueLabel = bars <= 0 ? autoLabel : barsLabel(bars);
     return Material(
       color: surface.card,
-      borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
+      borderRadius: BorderRadius.circular(14),
       child: PopupMenuButton<int>(
         key: rowKey,
         initialValue: bars,
@@ -678,7 +678,7 @@ class SetupTrackLengthPresetRow extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(color: surface.line),
           ),
           child: Row(
@@ -774,7 +774,7 @@ class SetupTrackOneShotRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
         color: surface.card,
-        borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: surface.line),
       ),
       child: Row(
