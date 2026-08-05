@@ -11,6 +11,8 @@
 /// became the second caller; it started life as the Network domain's own.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
@@ -228,7 +230,8 @@ class ConsoleDisclosure extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedRotation(
-      duration: const Duration(milliseconds: 160),
+      duration: consoleMotion(context),
+      curve: Curves.easeOutCubic,
       turns: expanded ? 0.25 : 0,
       child: Icon(
         Icons.arrow_right,
@@ -246,42 +249,192 @@ class ConsoleExpandedRow extends StatelessWidget {
   const ConsoleExpandedRow({
     required this.row,
     required this.actions,
+    this.expanded = true,
     super.key,
   });
 
-  /// The row, built with `expanded: true`.
+  /// The row, built with the same `expanded` flag so its disclosure marker
+  /// turns in step with the strip opening.
   final Widget row;
 
-  /// Action chips, in reading order.
+  /// Action chips, in reading order. Built only while [expanded]; the strip
+  /// animates down to nothing when they go.
   final List<Widget> actions;
+
+  /// Whether the actions are showing.
+  ///
+  /// Kept as a flag rather than swapping this widget in and out at the call
+  /// site: a row that only exists while open cannot animate INTO existence,
+  /// and the tint would snap on a frame before the strip started moving.
+  final bool expanded;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    return DecoratedBox(
+    final motion = consoleMotion(context);
+    return AnimatedContainer(
+      duration: motion,
+      curve: expanded ? Curves.easeOutCubic : Curves.easeInCubic,
       decoration: BoxDecoration(
-        color: surface.control,
+        color: expanded ? surface.control : Colors.transparent,
         borderRadius: BorderRadius.circular(_cardRadius),
-        border: Border.all(color: surface.borderSubtle),
+      ),
+      // The border is painted OVER the row, not around it. A border in
+      // `decoration` insets whatever it wraps, so the title and its chips
+      // would step a pixel sideways and back every time the row opened —
+      // which is exactly the kind of movement an open should not have.
+      foregroundDecoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(_cardRadius),
+        border: Border.all(
+          color: expanded ? surface.borderSubtle : Colors.transparent,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
           row,
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                for (final action in actions) ...[
-                  if (action != actions.first) const SizedBox(width: 10),
-                  action,
+          ConsoleExpansion(
+            expanded: expanded,
+            child: Padding(
+              key: const Key('console_row_actions'),
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  for (final action in actions) ...[
+                    if (action != actions.first) const SizedBox(width: 10),
+                    action,
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// How long an open/close takes on the console's surfaces.
+///
+/// One value, because a row whose tint arrives at a different speed from the
+/// strip inside it reads as two things happening rather than one.
+const Duration kConsoleMotion = Duration(milliseconds: 180);
+
+/// [kConsoleMotion], or nothing where the platform asks for no motion.
+Duration consoleMotion(BuildContext context) =>
+    MediaQuery.disableAnimationsOf(context) ? Duration.zero : kConsoleMotion;
+
+/// Grows [child] in from nothing and shrinks it away again.
+///
+/// Height only: the width is the row's, and animating that too would drag the
+/// card's edge around. The content is clipped while it moves, so a chip strip
+/// slides out from under the row it belongs to rather than overflowing it.
+///
+/// Stateful rather than an [AnimatedSize] over a swapped child, because
+/// closing has to animate too: a caller that stops building its actions the
+/// moment a row shuts would leave this shrinking an empty box, which reads as
+/// the chips vanishing and the gap collapsing afterwards. The last child is
+/// held for exactly as long as the close takes, then dropped — so a shut row
+/// has nothing of its own in the tree, and nothing tappable.
+class ConsoleExpansion extends StatefulWidget {
+  /// Creates a [ConsoleExpansion].
+  const ConsoleExpansion({
+    required this.expanded,
+    required this.child,
+    super.key,
+  });
+
+  /// Whether [child] is showing.
+  final bool expanded;
+
+  /// The block that grows and shrinks.
+  final Widget child;
+
+  @override
+  State<ConsoleExpansion> createState() => _ConsoleExpansionState();
+}
+
+class _ConsoleExpansionState extends State<ConsoleExpansion>
+    with SingleTickerProviderStateMixin {
+  /// Built in [initState], not as a `late final` initialiser: a lazy field is
+  /// created on first TOUCH, and a row that closes without ever having opened
+  /// touches it first in [dispose] — where creating a ticker looks up
+  /// `TickerMode` on an element that is already going away.
+  late final AnimationController _controller;
+
+  /// Opens fast and settles; closes without the overshooting ease-out, which
+  /// on the way back looks like the strip hesitating before it goes.
+  late final CurvedAnimation _size;
+
+  /// The content fades over the back half of the growth and the front half of
+  /// the shrink, so it is never fully lit while the box is still short.
+  late final CurvedAnimation _fade;
+
+  /// The child to keep drawing while closing. Null once the close finishes.
+  Widget? _closing;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: kConsoleMotion,
+      value: widget.expanded ? 1 : 0,
+    );
+    _size = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    _fade = CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0.35, 1),
+      reverseCurve: const Interval(0.45, 1),
+    );
+  }
+
+  @override
+  void didUpdateWidget(ConsoleExpansion old) {
+    super.didUpdateWidget(old);
+    if (widget.expanded == old.expanded) return;
+    if (widget.expanded) {
+      _closing = null;
+      unawaited(_controller.forward());
+    } else {
+      // Hold what was showing so the close has something to shrink.
+      _closing = old.child;
+      unawaited(
+        _controller.reverse().whenComplete(() {
+          if (mounted) setState(() => _closing = null);
+        }),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _size.dispose();
+    _fade.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.value = widget.expanded ? 1 : 0;
+    }
+    final child = widget.expanded ? widget.child : _closing;
+    if (child == null) return const SizedBox(width: double.infinity);
+    return ClipRect(
+      child: SizeTransition(
+        sizeFactor: _size,
+        // Anchored to the top: the strip slides out from under its row rather
+        // than growing from the middle.
+        alignment: Alignment.topCenter,
+        child: FadeTransition(opacity: _fade, child: child),
       ),
     );
   }
