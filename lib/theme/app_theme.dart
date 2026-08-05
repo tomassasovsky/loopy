@@ -221,9 +221,6 @@ abstract final class AppTheme {
     colorScheme: scheme,
     fontFamily: SurfaceTheme.displayFont,
     appBarTheme: AppBarTheme(backgroundColor: scheme.surfaceContainerHighest),
-    splashFactory: NoSplash.splashFactory,
-    splashColor: Colors.transparent,
-    highlightColor: Colors.transparent,
     pageTransitionsTheme: const PageTransitionsTheme(
       builders: {
         TargetPlatform.android: FadeScalePageTransitionsBuilder(),
