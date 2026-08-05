@@ -375,7 +375,7 @@ class NetworkFaceHeader extends StatelessWidget {
           ),
           if (line != null) ...[
             const SizedBox(width: 12),
-            Flexible(
+            Expanded(
               child: Text(
                 line,
                 maxLines: 1,

@@ -47,6 +47,21 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 - **macOS app run/build:** flavor schemes required.
   `flutter build macos --debug --flavor development -t lib/main_development.dart`
   Run: `flutter run -d macos --flavor development -t lib/main_development.dart`
+- **Fake radios (desktop only):** WiFi and Bluetooth are appliance helpers
+  (`segno-wifi-ctl` / `segno-bt-ctl`, Linux-only), so on macOS the tray's
+  Network face can only ever say "no WiFi on this build". Add
+  `--dart-define=SEGNO_FAKE_RADIOS=true` to run the whole domain against
+  in-memory stacks:
+  ```sh
+  flutter run -d macos --flavor development -t lib/main_development.dart \
+    --dart-define=SEGNO_FAKE_RADIOS=true
+  ```
+  They start associated, and carry the row states the mockups draw: a saved
+  network in range, a saved one out of range, an open one, plus a connected
+  Bluetooth device, a paired-but-absent one, and a fresh one. `segno123` is
+  the passphrase that works (anything else fails the way the supplicant
+  does); `Page turner` always refuses to pair. Off by default, so a shipped
+  build can never present invented networks as real.
 
 ---
 
