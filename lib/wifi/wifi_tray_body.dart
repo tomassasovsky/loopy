@@ -12,19 +12,51 @@ import 'package:segno/wifi/wifi_error_message.dart';
 import 'package:segno/wifi/wifi_network_visibility.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
-/// In-tray WiFi face — fills the Control Center radio division until Back.
-class WifiTrayPanel extends StatefulWidget {
-  /// Creates a [WifiTrayPanel].
-  const WifiTrayPanel({required this.onBack, super.key});
-
-  /// Returns to the tray home tiles (does not dismiss the tray).
-  final VoidCallback onBack;
+/// The WiFi tab's body — status, error, and the scannable network list.
+///
+/// Chrome-less by design: this is one tab of the tray's Network domain (#498),
+/// and the domain owns the single [HostTrayChromeBar] above the tab strip.
+/// A body that carried its own title bar would stack a second one under the
+/// domain's. The scan control that used to live in this widget's chrome is
+/// [WifiScanAction], which the domain hoists into that one bar while WiFi is
+/// the showing tab.
+class WifiTrayBody extends StatefulWidget {
+  /// Creates a [WifiTrayBody].
+  const WifiTrayBody({super.key});
 
   @override
-  State<WifiTrayPanel> createState() => _WifiTrayPanelState();
+  State<WifiTrayBody> createState() => _WifiTrayBodyState();
 }
 
-class _WifiTrayPanelState extends State<WifiTrayPanel> {
+/// The WiFi tab's chrome action: rescan, hidden while the platform has no
+/// WiFi support at all.
+///
+/// A widget rather than a builder callback on the panel: it reads [WifiCubit]
+/// itself, so knowledge of when a scan is possible stays in the WiFi feature
+/// instead of being restated by whatever chrome happens to host it.
+class WifiScanAction extends StatelessWidget {
+  /// Creates a [WifiScanAction].
+  const WifiScanAction({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final state = context.watch<WifiCubit>().state;
+    final cubit = context.read<WifiCubit>();
+    if (!state.supported) return const SizedBox.shrink();
+    return HostChromeIconButton(
+      key: const Key('wifi_scan'),
+      icon: Icons.refresh,
+      spinner: state.scanning,
+      tooltip: state.scanning ? l10n.wifiScanningSubtitle : l10n.wifiScanTitle,
+      onPressed: state.scanning || state.busy
+          ? null
+          : () => unawaited(cubit.scan()),
+    );
+  }
+}
+
+class _WifiTrayBodyState extends State<WifiTrayBody> {
   @override
   void initState() {
     super.initState();
@@ -44,29 +76,10 @@ class _WifiTrayPanelState extends State<WifiTrayPanel> {
     final cubit = context.read<WifiCubit>();
 
     return KeyedSubtree(
-      key: const Key('wifi_tray_panel'),
+      key: const Key('wifi_tray_body'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          HostTrayChromeBar(
-            backKey: const Key('wifi_back'),
-            title: l10n.trayWifiLabel,
-            onBack: widget.onBack,
-            trailing: state.supported
-                ? HostChromeIconButton(
-                    key: const Key('wifi_scan'),
-                    icon: Icons.refresh,
-                    spinner: state.scanning,
-                    tooltip: state.scanning
-                        ? l10n.wifiScanningSubtitle
-                        : l10n.wifiScanTitle,
-                    onPressed: state.scanning || state.busy
-                        ? null
-                        : () => unawaited(cubit.scan()),
-                  )
-                : null,
-          ),
-          const SizedBox(height: 12),
           if (!state.supported)
             Expanded(
               child: Center(

@@ -1340,6 +1340,10 @@
     "@trayBluetoothLabel": {
         "description": "Label for the settings tray's Bluetooth shortcut button (stub — no real functionality yet)."
     },
+    "trayNetworkLabel": "Network",
+    "@trayNetworkLabel": {
+        "description": "Navigation rail entry for the settings tray's Network face, which holds the WiFi and Bluetooth tabs."
+    },
     "trayHomeLabel": "Controls",
     "@trayHomeLabel": {
         "description": "Navigation rail entry for the settings tray's home face — the quick-access tiles and brightness slider."

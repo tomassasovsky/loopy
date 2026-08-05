@@ -8,19 +8,47 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/setup/setup_surface.dart';
 import 'package:segno/theme/theme.dart';
 
-/// In-tray Bluetooth face — fills the Control Center radio division until Back.
-class BluetoothTrayPanel extends StatefulWidget {
-  /// Creates a [BluetoothTrayPanel].
-  const BluetoothTrayPanel({required this.onBack, super.key});
-
-  /// Returns to the tray home tiles (does not dismiss the tray).
-  final VoidCallback onBack;
+/// The Bluetooth tab's body — adapter status, the two radio toggles, and the
+/// discovered-device list.
+///
+/// Chrome-less for the same reason as `WifiTrayBody`: the tray's Network
+/// domain (#498) owns the one chrome bar above the tab strip, and hoists this
+/// tab's [BluetoothScanAction] into it while Bluetooth is showing.
+class BluetoothTrayBody extends StatefulWidget {
+  /// Creates a [BluetoothTrayBody].
+  const BluetoothTrayBody({super.key});
 
   @override
-  State<BluetoothTrayPanel> createState() => _BluetoothTrayPanelState();
+  State<BluetoothTrayBody> createState() => _BluetoothTrayBodyState();
 }
 
-class _BluetoothTrayPanelState extends State<BluetoothTrayPanel> {
+/// The Bluetooth tab's chrome action: rescan, hidden when the platform has no
+/// Bluetooth support.
+class BluetoothScanAction extends StatelessWidget {
+  /// Creates a [BluetoothScanAction].
+  const BluetoothScanAction({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final state = context.watch<BluetoothCubit>().state;
+    final cubit = context.read<BluetoothCubit>();
+    if (!state.supported) return const SizedBox.shrink();
+    return HostChromeIconButton(
+      key: const Key('bluetooth_scan'),
+      icon: Icons.refresh,
+      spinner: state.scanning,
+      tooltip: state.scanning
+          ? l10n.bluetoothScanningSubtitle
+          : l10n.bluetoothScanTitle,
+      onPressed: state.scanning || state.busy
+          ? null
+          : () => unawaited(cubit.scan()),
+    );
+  }
+}
+
+class _BluetoothTrayBodyState extends State<BluetoothTrayBody> {
   @override
   void initState() {
     super.initState();
@@ -41,29 +69,10 @@ class _BluetoothTrayPanelState extends State<BluetoothTrayPanel> {
     final alias = state.status.alias.isEmpty ? 'Segno' : state.status.alias;
 
     return KeyedSubtree(
-      key: const Key('bluetooth_tray_panel'),
+      key: const Key('bluetooth_tray_body'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          HostTrayChromeBar(
-            backKey: const Key('bluetooth_back'),
-            title: l10n.trayBluetoothLabel,
-            onBack: widget.onBack,
-            trailing: state.supported
-                ? HostChromeIconButton(
-                    key: const Key('bluetooth_scan'),
-                    icon: Icons.refresh,
-                    spinner: state.scanning,
-                    tooltip: state.scanning
-                        ? l10n.bluetoothScanningSubtitle
-                        : l10n.bluetoothScanTitle,
-                    onPressed: state.scanning || state.busy
-                        ? null
-                        : () => unawaited(cubit.scan()),
-                  )
-                : null,
-          ),
-          const SizedBox(height: 12),
           if (!state.supported)
             Expanded(
               child: Center(

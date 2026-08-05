@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/appliance/host_page_chrome.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -16,6 +17,7 @@ import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
+import 'package:segno/network/network_tab.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:wifi_repository/wifi_repository.dart';
@@ -276,8 +278,9 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(wifiClient.enabled, isTrue);
-        expect(cubit.state.destination, SettingsTrayDestination.wifi);
-        expect(find.byKey(const Key('wifi_tray_panel')), findsOneWidget);
+        expect(cubit.state.destination, SettingsTrayDestination.network);
+        expect(cubit.state.networkTab, NetworkTab.wifi);
+        expect(find.byKey(const Key('wifi_tray_body')), findsOneWidget);
       },
     );
 
@@ -292,11 +295,12 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(cubit.state.dragProgress, 1);
-        expect(cubit.state.destination, SettingsTrayDestination.wifi);
-        expect(find.byKey(const Key('wifi_tray_panel')), findsOneWidget);
+        expect(cubit.state.destination, SettingsTrayDestination.network);
+        expect(cubit.state.networkTab, NetworkTab.wifi);
+        expect(find.byKey(const Key('wifi_tray_body')), findsOneWidget);
         expect(find.byKey(const Key('settingsTray_wifi')), findsNothing);
 
-        await tester.tap(find.byKey(const Key('wifi_back')));
+        await tester.tap(find.byKey(const Key('network_back')));
         await tester.pumpAndSettle();
         expect(cubit.state.destination, SettingsTrayDestination.home);
         expect(find.byKey(const Key('settingsTray_wifi')), findsOneWidget);
@@ -331,8 +335,9 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(bluetoothClient.powered, isTrue);
-        expect(cubit.state.destination, SettingsTrayDestination.bluetooth);
-        expect(find.byKey(const Key('bluetooth_tray_panel')), findsOneWidget);
+        expect(cubit.state.destination, SettingsTrayDestination.network);
+        expect(cubit.state.networkTab, NetworkTab.bluetooth);
+        expect(find.byKey(const Key('bluetooth_tray_body')), findsOneWidget);
       },
     );
 
@@ -351,11 +356,12 @@ void main() {
         expect(cubit.state.dragProgress, 1);
         expect(
           cubit.state.destination,
-          SettingsTrayDestination.bluetooth,
+          SettingsTrayDestination.network,
         );
-        expect(find.byKey(const Key('bluetooth_tray_panel')), findsOneWidget);
+        expect(cubit.state.networkTab, NetworkTab.bluetooth);
+        expect(find.byKey(const Key('bluetooth_tray_body')), findsOneWidget);
 
-        await tester.tap(find.byKey(const Key('bluetooth_back')));
+        await tester.tap(find.byKey(const Key('network_back')));
         await tester.pumpAndSettle();
         expect(cubit.state.destination, SettingsTrayDestination.home);
       },
@@ -440,6 +446,107 @@ void main() {
     );
   });
 
+  group('the Network domain', () {
+    Future<void> openNetwork(WidgetTester tester) async {
+      cubit.openWifi();
+      await pump(tester);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'both radios sit under one chrome bar and one tab strip',
+      (tester) async {
+        await openNetwork(tester);
+        final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+
+        // The whole point of splitting chrome from body: two panels that each
+        // carried their own title bar would stack two bars under one domain.
+        expect(find.byType(HostTrayChromeBar), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byType(HostTrayChromeBar),
+            matching: find.text(l10n.trayNetworkLabel),
+          ),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('network_tabs')), findsOneWidget);
+        expect(find.byKey(const Key('wifi_tray_body')), findsOneWidget);
+        expect(find.byKey(const Key('bluetooth_tray_body')), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'the tab strip swaps the body without leaving the domain',
+      (tester) async {
+        await openNetwork(tester);
+        final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+
+        await tester.tap(
+          find.descendant(
+            of: find.byKey(const Key('network_tabs')),
+            matching: find.text(l10n.trayBluetoothLabel),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(cubit.state.destination, SettingsTrayDestination.network);
+        expect(cubit.state.networkTab, NetworkTab.bluetooth);
+        expect(cubit.state.dragProgress, 1);
+        expect(find.byKey(const Key('bluetooth_tray_body')), findsOneWidget);
+        expect(find.byKey(const Key('wifi_tray_body')), findsNothing);
+        expect(find.byType(HostTrayChromeBar), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      "the chrome action is the showing tab's, not the domain's",
+      (tester) async {
+        await openNetwork(tester);
+        final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+
+        // Scanning is a per-radio verb, so the shared bar has to ask the
+        // showing tab for its action rather than owning one.
+        expect(find.byKey(const Key('wifi_scan')), findsOneWidget);
+        expect(find.byKey(const Key('bluetooth_scan')), findsNothing);
+
+        await tester.tap(
+          find.descendant(
+            of: find.byKey(const Key('network_tabs')),
+            matching: find.text(l10n.trayBluetoothLabel),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('bluetooth_scan')), findsOneWidget);
+        expect(find.byKey(const Key('wifi_scan')), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'returning to the domain lands on the tab it was left on',
+      (tester) async {
+        await openNetwork(tester);
+        final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+
+        await tester.tap(
+          find.descendant(
+            of: find.byKey(const Key('network_tabs')),
+            matching: find.text(l10n.trayBluetoothLabel),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('settingsTrayRail_home')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('settingsTrayRail_network')));
+        await tester.pumpAndSettle();
+
+        expect(cubit.state.networkTab, NetworkTab.bluetooth);
+        expect(find.byKey(const Key('bluetooth_tray_body')), findsOneWidget);
+      },
+    );
+  });
+
   group('navigation rail', () {
     testWidgets('renders one item per in-tray destination', (tester) async {
       cubit.open();
@@ -462,11 +569,11 @@ void main() {
       await pump(tester);
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('settingsTrayRail_bluetooth')));
+      await tester.tap(find.byKey(const Key('settingsTrayRail_network')));
       await tester.pumpAndSettle();
 
-      expect(cubit.state.destination, SettingsTrayDestination.bluetooth);
-      expect(find.byKey(const Key('bluetooth_tray_panel')), findsOneWidget);
+      expect(cubit.state.destination, SettingsTrayDestination.network);
+      expect(find.byKey(const Key('wifi_tray_body')), findsOneWidget);
       expect(cubit.state.dragProgress, 1);
 
       await tester.tap(find.byKey(const Key('settingsTrayRail_home')));
@@ -493,7 +600,7 @@ void main() {
       // completely different (correct) reason.
       final rail = tester.getRect(find.byType(TrayNavigationRail));
       final lastItem = tester.getRect(
-        find.byKey(const Key('settingsTrayRail_bluetooth')),
+        find.byKey(const Key('settingsTrayRail_network')),
       );
       final tapPoint = Offset(rail.center.dx, lastItem.bottom + 40);
       // Assert the point really is rail background before tapping, so a

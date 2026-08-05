@@ -13,9 +13,9 @@ import 'package:segno/theme/theme.dart';
 /// message the old `showComingSoonStub` dialog carried, in a place that does
 /// not interrupt.
 ///
-/// Placement here is provisional: its two siblings (`WifiTrayPanel`,
-/// `BluetoothTrayPanel`) live in their own feature folders, and this face
-/// should move to `lib/tuner/` once there is a tuner behind it.
+/// Placement here is provisional: the Network domain's two bodies
+/// (`WifiTrayBody`, `BluetoothTrayBody`) live in their own feature folders,
+/// and this face should move to `lib/tuner/` once there is a tuner behind it.
 class TunerTrayPanel extends StatelessWidget {
   /// Creates a [TunerTrayPanel].
   const TunerTrayPanel({required this.onBack, super.key});

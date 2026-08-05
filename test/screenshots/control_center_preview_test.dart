@@ -244,7 +244,7 @@ void main() {
     );
   }, skip: !hasFonts);
 
-  testWidgets('wifi expands in tray', (tester) async {
+  testWidgets('Network face, WiFi tab', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
     final cubit = SettingsTrayCubit(settings: settings)..openWifi();
@@ -258,11 +258,11 @@ void main() {
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_wifi.png'),
+      matchesGoldenFile('goldens/control_center_network_wifi.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('bluetooth expands in tray', (tester) async {
+  testWidgets('Network face, Bluetooth tab', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
     final cubit = SettingsTrayCubit(settings: settings)..openBluetooth();
@@ -276,7 +276,7 @@ void main() {
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_bluetooth.png'),
+      matchesGoldenFile('goldens/control_center_network_bluetooth.png'),
     );
   }, skip: !hasFonts);
 }

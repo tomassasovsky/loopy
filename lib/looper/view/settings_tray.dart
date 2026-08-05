@@ -15,7 +15,7 @@ import 'package:wifi_repository/wifi_repository.dart';
 /// pull-tab [_TrayHandle] pinned at the top edge at all times — tap or drag
 /// it down to reveal a near-fullscreen translucent sheet. The open sheet is a
 /// [TrayPanel]: a persistent navigation rail down the left, and the
-/// destination it selects (home tiles + brightness, Tuner, WiFi, Bluetooth)
+/// destination it selects (home tiles + brightness, Pedal, Tuner, Network)
 /// filling the rest. Tap the scrim or drag the handle back up to dismiss.
 ///
 /// Hand-rolled (not the `anydrawer` package's route-based drawer): the
