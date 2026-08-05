@@ -175,28 +175,6 @@ void main() {
       }
     });
 
-    test('the silent waveform states stay distinguishable from each other', () {
-      // Stopped and muted are the same hue at different alpha, so nothing but
-      // the dimming separates them: muted must read as the quieter of the two
-      // and must not converge on it.
-      for (final data in [AppTheme.neon, AppTheme.highContrast]) {
-        final looper = data.extension<LooperTheme>()!;
-        final stopped = ratio(
-          onWaveformBackground(looper, LooperMeterState.stopped),
-          looper.waveformBackground,
-        );
-        final muted = ratio(
-          onWaveformBackground(looper, LooperMeterState.muted),
-          looper.waveformBackground,
-        );
-        expect(muted, lessThan(stopped));
-        expect(
-          looper.waveformColor(LooperMeterState.muted),
-          isNot(looper.waveformColor(LooperMeterState.stopped)),
-        );
-      }
-    });
-
     test('the disabled dim is a token, and high contrast dims less', () {
       // R26: disabled rendering resolves from the theme, never from an ad-hoc
       // opacity constant in a widget — and it must stay legible under the

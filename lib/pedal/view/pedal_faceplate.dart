@@ -169,14 +169,14 @@ class _ScreenWaveformState extends State<_ScreenWaveform> {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: Colors.black,
-      child: WaveformView(
-        samples: _samples,
-        progress: _progress,
-        selectedTrack: _selectedTrack,
-        state: _state,
-      ),
+    // No backdrop of our own: WaveformView paints the themed
+    // `waveformBackground`, which is what its state colours are contrast-tested
+    // against. A hard-coded black here would drift from that token.
+    return WaveformView(
+      samples: _samples,
+      progress: _progress,
+      selectedTrack: _selectedTrack,
+      state: _state,
     );
   }
 }

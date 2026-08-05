@@ -132,6 +132,81 @@ void main() {
     expect(find.byType(WaveformView), findsOneWidget);
   });
 
+  testWidgets('the playhead keeps a gutter cut through the waveform', (
+    tester,
+  ) async {
+    // Regression: the playhead is hard-coded white, and the not-sounding
+    // states are white too (opaque white in high contrast) — without a gutter
+    // in the background colour the playhead is invisible wherever a bar
+    // covers it, which is most of the height on a loud loop.
+    //
+    // Empty samples so the paint calls are exactly enumerable: baseline,
+    // then the gutter, then the playhead itself.
+    final hc = AppTheme.highContrast.extension<LooperTheme>()!;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.highContrast,
+        home: Scaffold(
+          body: WaveformView(
+            samples: Float32List(0),
+            progress: 0.5,
+            state: LooperMeterState.stopped,
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      tester.renderObject(find.byKey(const Key('waveform_view_paint'))),
+      paints
+        ..rect(
+          color: hc
+              .waveformColor(LooperMeterState.stopped)
+              .withValues(
+                alpha: 0.18,
+              ),
+        )
+        ..rect(color: hc.waveformBackground)
+        ..rect(color: const Color(0xFFFFFFFF)),
+      reason: 'the gutter must sit between the bars and the playhead',
+    );
+    // The state that made this necessary: waveform and playhead are the same
+    // white, so only the gutter separates them.
+    expect(
+      hc.waveformColor(LooperMeterState.stopped),
+      const Color(0xFFFFFFFF),
+    );
+  });
+
+  testWidgets('the view paints the themed waveform background itself', (
+    tester,
+  ) async {
+    // Both consumers rely on this rather than supplying their own backdrop —
+    // the alpha-carrying state colours composite against it, and it is what
+    // the contrast floors in test/theme are measured against.
+    for (final data in [AppTheme.neon, AppTheme.highContrast]) {
+      await pumpWaveform(tester, LooperMeterState.muted, theme: data);
+      // MaterialApp animates between themes, so the second pass is mid-lerp
+      // until it settles — assert on the arrived-at theme, not a frame of the
+      // transition.
+      await tester.pumpAndSettle();
+      final looper = data.extension<LooperTheme>()!;
+      expect(
+        tester
+            .widgetList<ColoredBox>(find.byType(ColoredBox))
+            .map((box) => box.color),
+        contains(looper.waveformBackground),
+      );
+      final paint = tester.widget<CustomPaint>(
+        find.byKey(const Key('waveform_view_paint')),
+      );
+      expect(
+        (paint.painter! as WaveformPainter).background,
+        looper.waveformBackground,
+      );
+    }
+  });
+
   group('waveformStateOf', () {
     ReadoutTrack track(
       String state, {
@@ -254,45 +329,54 @@ void main() {
   group('WaveformPainter.shouldRepaint', () {
     final samples = Float32List.fromList([0, 1]);
     const cyan = Color(0xFF00E5FF);
+    const black = Color(0xFF000000);
+
+    WaveformPainter painterOf({
+      Float32List? samples_,
+      Color color = cyan,
+      Color background = black,
+      double progress = 0,
+    }) => WaveformPainter(
+      samples: samples_ ?? samples,
+      color: color,
+      background: background,
+      progress: progress,
+    );
 
     test('does not repaint for the same list and color', () {
-      final painter = WaveformPainter(samples: samples, color: cyan);
-      expect(
-        painter.shouldRepaint(WaveformPainter(samples: samples, color: cyan)),
-        isFalse,
-      );
+      expect(painterOf().shouldRepaint(painterOf()), isFalse);
     });
 
     test('repaints on a new sample list', () {
-      final painter = WaveformPainter(samples: samples, color: cyan);
       expect(
-        painter.shouldRepaint(
-          WaveformPainter(samples: Float32List.fromList([0, 1]), color: cyan),
+        painterOf().shouldRepaint(
+          painterOf(samples_: Float32List.fromList([0, 1])),
         ),
         isTrue,
       );
     });
 
     test('repaints on a color change', () {
-      final painter = WaveformPainter(samples: samples, color: cyan);
       expect(
-        painter.shouldRepaint(
-          WaveformPainter(samples: samples, color: const Color(0xFFFF2D95)),
+        painterOf().shouldRepaint(painterOf(color: const Color(0xFFFF2D95))),
+        isTrue,
+      );
+    });
+
+    test('repaints on a background change', () {
+      // The background is not decoration: it is painted into the playhead
+      // gutter, so a stale one leaves the gutter the wrong colour.
+      expect(
+        painterOf().shouldRepaint(
+          painterOf(background: const Color(0xFF101014)),
         ),
         isTrue,
       );
     });
 
     test('repaints on a playhead change', () {
-      final painter = WaveformPainter(
-        samples: samples,
-        color: cyan,
-        progress: 0.2,
-      );
       expect(
-        painter.shouldRepaint(
-          WaveformPainter(samples: samples, color: cyan, progress: 0.5),
-        ),
+        painterOf(progress: 0.2).shouldRepaint(painterOf(progress: 0.5)),
         isTrue,
       );
     });
