@@ -205,13 +205,38 @@ class ConsoleRow extends StatelessWidget {
 
     final row = SizedBox(
       height: kConsoleRowHeight,
-      child: onTap == null ? content : InkWell(onTap: onTap, child: content),
+      child: onTap == null
+          ? content
+          // Scopes the ink to this row. Without a Material of its own the
+          // splash paints on whatever Material is above the tray, which the
+          // card's own fill then hides — a tap with no feedback at all.
+          : Material(
+              type: MaterialType.transparency,
+              child: InkWell(onTap: onTap, child: content),
+            ),
     );
 
-    if (!divider) return row;
-    return DecoratedBox(
+    // One animated box for BOTH the selection tint and the hairline, and the
+    // hairline goes while the row is open.
+    //
+    // Both used to be hard switches: the line under a row vanished on the
+    // frame the row was tapped and came back the frame it shut, flashing
+    // across a card whose tint was still fading. Painted as a
+    // `foregroundDecoration` so the 1px line never insets the row.
+    return AnimatedContainer(
+      duration: consoleMotion(context),
+      curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: surface.borderHairline)),
+        color: selected ? surface.accentSurface : Colors.transparent,
+      ),
+      foregroundDecoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: divider && !expanded
+                ? surface.borderHairline
+                : Colors.transparent,
+          ),
+        ),
       ),
       child: row,
     );
@@ -250,6 +275,7 @@ class ConsoleExpandedRow extends StatelessWidget {
     required this.row,
     required this.actions,
     this.expanded = true,
+    this.onTap,
     super.key,
   });
 
@@ -267,6 +293,14 @@ class ConsoleExpandedRow extends StatelessWidget {
   /// site: a row that only exists while open cannot animate INTO existence,
   /// and the tint would snap on a frame before the strip started moving.
   final bool expanded;
+
+  /// Toggles the row.
+  ///
+  /// Held HERE rather than on [row] so the press lights the whole card. An
+  /// ink well only ever splashes within its own box, so a tap handled by the
+  /// row would leave the strip below it dark — the card would light in two
+  /// halves. The chips have ink of their own and swallow their own taps.
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -289,28 +323,37 @@ class ConsoleExpandedRow extends StatelessWidget {
           color: expanded ? surface.borderSubtle : Colors.transparent,
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          row,
-          ConsoleExpansion(
-            expanded: expanded,
-            child: Padding(
-              key: const Key('console_row_actions'),
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  for (final action in actions) ...[
-                    if (action != actions.first) const SizedBox(width: 10),
-                    action,
-                  ],
-                ],
+      child: Material(
+        type: MaterialType.transparency,
+        // Clipped to the card, so a splash never squares off its corners.
+        borderRadius: BorderRadius.circular(_cardRadius),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(_cardRadius),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              row,
+              ConsoleExpansion(
+                expanded: expanded,
+                child: Padding(
+                  key: const Key('console_row_actions'),
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      for (final action in actions) ...[
+                        if (action != actions.first) const SizedBox(width: 10),
+                        action,
+                      ],
+                    ],
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -674,8 +717,8 @@ class ConsoleSwitch extends StatelessWidget {
         child: GestureDetector(
           onTap: enabled ? () => onChanged!(!value) : null,
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 160),
-            curve: Curves.easeOut,
+            duration: consoleMotion(context),
+            curve: Curves.easeOutCubic,
             width: 53,
             height: 31,
             padding: const EdgeInsets.all(3),
@@ -685,8 +728,8 @@ class ConsoleSwitch extends StatelessWidget {
               border: Border.all(color: value ? surface.accent : surface.line),
             ),
             child: AnimatedAlign(
-              duration: const Duration(milliseconds: 160),
-              curve: Curves.easeOut,
+              duration: consoleMotion(context),
+              curve: Curves.easeOutCubic,
               alignment: value ? Alignment.centerRight : Alignment.centerLeft,
               child: Container(
                 width: 25,

@@ -221,15 +221,17 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
       subtitle: data.subtitle,
       value: data.value,
       expanded: open,
-      divider: !last && !open,
-      onTap: state.busy && !expandable ? null : toggle,
+      divider: !last,
     );
+
+    final onTap = state.busy && !expandable ? null : toggle;
 
     // Always the expanded form, open or shut: it owns the open/close
     // animation, and a widget that only exists while open cannot animate
     // into existence.
     return ConsoleExpandedRow(
       expanded: open,
+      onTap: onTap,
       row: row,
       actions: [
         if (open) ...[

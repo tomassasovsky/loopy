@@ -215,13 +215,15 @@ class _BluetoothTrayBodyState extends State<BluetoothTrayBody> {
       subtitle: _deviceSubtitle(l10n, device),
       value: _deviceValue(l10n, device),
       expanded: open,
-      divider: !last && !open,
-      onTap: busy && !expandable ? null : toggle,
+      divider: !last,
     );
+
+    final onTap = busy && !expandable ? null : toggle;
 
     // Always the expanded form — see the WiFi body: it owns the animation.
     return ConsoleExpandedRow(
       expanded: open,
+      onTap: onTap,
       row: row,
       actions: [
         if (open) ...[
