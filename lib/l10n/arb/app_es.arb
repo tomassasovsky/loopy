@@ -1053,6 +1053,173 @@
     "@trayBluetoothLabel": {
         "description": "Label for the settings tray's Bluetooth shortcut button (stub — no real functionality yet)."
     },
+    "networkRescanTooltip": "Reescanear",
+    "@networkRescanTooltip": {
+        "description": "Tooltip on the Network face's rescan button, shared by the WiFi and Bluetooth tabs."
+    },
+    "networkTryAgainAction": "Reintentar",
+    "@networkTryAgainAction": {
+        "description": "Button on the Network failure banner; retries the action that failed."
+    },
+    "networkKeepItAction": "Conservar",
+    "@networkKeepItAction": {
+        "description": "Dismissive button on the Network forget-confirmation dialog — keeps the saved credential."
+    },
+    "wifiNotInRange": "fuera de alcance",
+    "@wifiNotInRange": {
+        "description": "Subtitle on a saved WiFi row the last scan did not see."
+    },
+    "wifiSecuritySecured": "WPA2",
+    "@wifiSecuritySecured": {
+        "description": "Security label for a passphrase-protected WiFi network."
+    },
+    "wifiSecurityOpen": "abierta",
+    "@wifiSecurityOpen": {
+        "description": "Security label for a WiFi network that needs no passphrase."
+    },
+    "wifiJoinSheetTitle": "Conectar a {ssid}",
+    "@wifiJoinSheetTitle": {
+        "description": "Title of the WiFi passphrase sheet, naming the network being joined.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiPassphraseTooShort": "Una contraseña WPA2 tiene al menos 8 caracteres.",
+    "@wifiPassphraseTooShort": {
+        "description": "Error under the passphrase field when the typed passphrase is too short to be valid."
+    },
+    "wifiJoiningMessage": "Conectando a {ssid}…",
+    "@wifiJoiningMessage": {
+        "description": "Banner message while a WiFi association is in flight.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiHeaderJoining": "conectando a {ssid}",
+    "@wifiHeaderJoining": {
+        "description": "Live status beside the WiFi title while an association is in flight.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiHeaderJoinFailed": "no se pudo conectar",
+    "@wifiHeaderJoinFailed": {
+        "description": "Live status beside the WiFi title after a failed association."
+    },
+    "wifiForgetConfirmTitle": "¿Olvidar «{ssid}»?",
+    "@wifiForgetConfirmTitle": {
+        "description": "Title of the WiFi forget-confirmation dialog.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiForgetConfirmBody": "La contraseña se elimina de esta consola. Volver a conectarse requiere escribirla.",
+    "@wifiForgetConfirmBody": {
+        "description": "Body of the WiFi forget-confirmation dialog."
+    },
+    "wifiForgetConfirmAction": "Olvidar red",
+    "@wifiForgetConfirmAction": {
+        "description": "Destructive button on the WiFi forget-confirmation dialog."
+    },
+    "bluetoothConnectedLabel": "conectado",
+    "@bluetoothConnectedLabel": {
+        "description": "Right-hand state word on a Bluetooth row for the device in use."
+    },
+    "bluetoothPairedLabel": "vinculado",
+    "@bluetoothPairedLabel": {
+        "description": "Right-hand state word on a Bluetooth row for a known but unconnected device."
+    },
+    "bluetoothNotInRange": "fuera de alcance",
+    "@bluetoothNotInRange": {
+        "description": "Subtitle on a paired Bluetooth row the last scan did not see."
+    },
+    "bluetoothDiscoverableDevice": "detectable",
+    "@bluetoothDiscoverableDevice": {
+        "description": "Subtitle on a Bluetooth row for a device that is advertising itself."
+    },
+    "bluetoothConnectAction": "Conectar",
+    "@bluetoothConnectAction": {
+        "description": "Action inside an opened Bluetooth row; connects the device."
+    },
+    "bluetoothDisconnectAction": "Desconectar",
+    "@bluetoothDisconnectAction": {
+        "description": "Action inside an opened Bluetooth row; drops the connection but keeps the pairing."
+    },
+    "bluetoothForgetAction": "Olvidar",
+    "@bluetoothForgetAction": {
+        "description": "Action inside an opened Bluetooth row; removes the pairing."
+    },
+    "bluetoothPairingMessage": "Vinculando con {name}… confirmá en el dispositivo.",
+    "@bluetoothPairingMessage": {
+        "description": "Banner message while a Bluetooth pairing is waiting on the device.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "bluetoothHeaderPairing": "vinculando con {name}",
+    "@bluetoothHeaderPairing": {
+        "description": "Live status beside the Bluetooth title while a pairing is in flight.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "bluetoothHeaderFailed": "no se pudo vincular",
+    "@bluetoothHeaderFailed": {
+        "description": "Live status beside the Bluetooth title after a failed pairing."
+    },
+    "bluetoothForgetConfirmTitle": "¿Olvidar «{name}»?",
+    "@bluetoothForgetConfirmTitle": {
+        "description": "Title of the Bluetooth forget-confirmation dialog.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "bluetoothForgetConfirmBody": "La vinculación se elimina de esta consola. El dispositivo debe volver a modo de vinculación para reconectarse.",
+    "@bluetoothForgetConfirmBody": {
+        "description": "Body of the Bluetooth forget-confirmation dialog."
+    },
+    "bluetoothForgetConfirmAction": "Olvidar dispositivo",
+    "@bluetoothForgetConfirmAction": {
+        "description": "Destructive button on the Bluetooth forget-confirmation dialog."
+    },
+    "bluetoothPairFailed": "El dispositivo rechazó la conexión o expiró.",
+    "@bluetoothPairFailed": {
+        "description": "Banner message after a Bluetooth pairing attempt fails."
+    },
+    "wifiRowConnected": "conectada",
+    "@wifiRowConnected": {
+        "description": "Right-hand state word on the WiFi row for the network in use."
+    },
+    "wifiRowSaved": "guardada",
+    "@wifiRowSaved": {
+        "description": "Right-hand state word on a WiFi row whose passphrase this console already holds."
+    },
+    "wifiRowOpen": "abierta",
+    "@wifiRowOpen": {
+        "description": "Right-hand state word on a WiFi row for a network with no passphrase."
+    },
+    "wifiForgetAction": "Olvidar",
+    "@wifiForgetAction": {
+        "description": "Action inside an opened WiFi row; removes the saved network."
+    },
+    "trayNetworkLabel": "Red",
+    "@trayNetworkLabel": {
+        "description": "Navigation rail entry for the settings tray's Network face, which holds the WiFi and Bluetooth tabs."
+    },
     "trayHomeLabel": "Controles",
     "@trayHomeLabel": {
         "description": "Navigation rail entry for the settings tray's home face — the quick-access tiles and brightness slider."

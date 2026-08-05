@@ -86,7 +86,10 @@ class _Pill extends StatelessWidget {
   final VoidCallback onTap;
   final SurfaceTheme surface;
 
-  static const double _radius = 7;
+  /// Design-system `Tab`: 8px radius, 10/17 padding, 16px label — the metrics
+  /// the mockups draw for every tab strip in the console, not just this one.
+  /// The earlier 7/13/14-7 values were guessed before the strip had a design.
+  static const double _radius = 8;
 
   @override
   Widget build(BuildContext context) {
@@ -100,19 +103,20 @@ class _Pill extends StatelessWidget {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
           curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(_radius),
-            color: selected
-                ? surface.accent.withValues(alpha: 0.18)
-                : Colors.transparent,
+            // The flat accent-surface token, not a translucent accent: the
+            // strip sits on several different backgrounds and an alpha tint
+            // reads as a different colour on each.
+            color: selected ? surface.accentSurface : Colors.transparent,
           ),
           child: Text(
             label,
             style: TextStyle(
               color: selected ? surface.accent : surface.textSecondary,
-              fontSize: 13,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              fontSize: 16,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
             ),
           ),
         ),

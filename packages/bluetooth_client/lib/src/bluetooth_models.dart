@@ -72,13 +72,24 @@ class BluetoothStatus extends Equatable {
 @immutable
 class BluetoothDevice extends Equatable {
   /// Creates a [BluetoothDevice].
-  const BluetoothDevice({required this.name, required this.address});
+  const BluetoothDevice({
+    required this.name,
+    required this.address,
+    this.paired = false,
+    this.connected = false,
+    this.inRange = true,
+    this.kind = '',
+  });
 
   /// Parses one device object.
   factory BluetoothDevice.fromJson(Map<String, dynamic> json) =>
       BluetoothDevice(
         name: '${json['name'] ?? ''}',
         address: '${json['address'] ?? ''}',
+        paired: json['paired'] == true,
+        connected: json['connected'] == true,
+        inRange: json['inRange'] != false,
+        kind: '${json['kind'] ?? ''}',
       );
 
   /// Display name (falls back to address in the helper).
@@ -87,6 +98,25 @@ class BluetoothDevice extends Equatable {
   /// Bluetooth address.
   final String address;
 
+  /// Whether this console holds a pairing for the device, so it can connect
+  /// without the device being put back into pairing mode — and so forgetting
+  /// it is a destructive act worth confirming.
+  final bool paired;
+
+  /// Whether the device is connected right now.
+  final bool connected;
+
+  /// Whether the last scan saw the device.
+  ///
+  /// Paired devices are listed even when they are out of range, for the same
+  /// reason saved WiFi networks are: a pairing you cannot see is still a
+  /// pairing you may want to drop.
+  final bool inRange;
+
+  /// bluez device class hint ("headphones", "keyboard", …), shown as the row's
+  /// subtitle. Empty when the helper reports none.
+  final String kind;
+
   @override
-  List<Object?> get props => [name, address];
+  List<Object?> get props => [name, address, paired, connected, inRange, kind];
 }

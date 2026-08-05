@@ -10,6 +10,7 @@ class WifiState extends Equatable {
     this.scanning = false,
     this.busy = false,
     this.connectingSsid,
+    this.failedSsid,
     this.disconnecting = false,
     this.errorMessage,
   });
@@ -32,6 +33,11 @@ class WifiState extends Equatable {
   /// SSID currently being joined, if any.
   final String? connectingSsid;
 
+  /// SSID whose last join attempt failed, if any. Kept so the failure banner's
+  /// "Try again" can reopen the passphrase sheet for the network that failed
+  /// rather than starting from the list again.
+  final String? failedSsid;
+
   /// True while disconnect (or forget-of-active) is in flight.
   final bool disconnecting;
 
@@ -46,6 +52,7 @@ class WifiState extends Equatable {
     bool? scanning,
     bool? busy,
     String? connectingSsid,
+    String? failedSsid,
     bool? disconnecting,
     String? errorMessage,
     bool clearError = false,
@@ -59,6 +66,9 @@ class WifiState extends Equatable {
     connectingSsid: clearConnectingSsid
         ? null
         : (connectingSsid ?? this.connectingSsid),
+    // Tied to the error it explains: clearing one clears the other, so a
+    // stale SSID can never outlive the message that named it.
+    failedSsid: clearError ? null : (failedSsid ?? this.failedSsid),
     disconnecting: disconnecting ?? this.disconnecting,
     errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
   );
@@ -71,6 +81,7 @@ class WifiState extends Equatable {
     scanning,
     busy,
     connectingSsid,
+    failedSsid,
     disconnecting,
     errorMessage,
   ];

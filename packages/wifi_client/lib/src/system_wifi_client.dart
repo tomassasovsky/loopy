@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:wifi_client/src/fake_wifi_client.dart';
 import 'package:wifi_client/src/unsupported_wifi_client.dart';
 import 'package:wifi_client/src/wifi_client.dart';
 import 'package:wifi_client/src/wifi_models.dart';
@@ -80,6 +81,10 @@ class SystemWifiClient implements WifiClient {
 
 /// Factory: real helper on Linux when present, else unsupported.
 WifiClient createWifiClient() {
+  // Checked before the platform test, so a desktop dev build can exercise the
+  // Network face at all: the helper is Linux-only, and without this every
+  // path past "no WiFi on this build" is unreachable off the appliance.
+  if (kFakeRadios) return FakeWifiClient();
   if (!Platform.isLinux) return const UnsupportedWifiClient();
   const system = SystemWifiClient();
   if (!File(system.helperPath).existsSync()) {

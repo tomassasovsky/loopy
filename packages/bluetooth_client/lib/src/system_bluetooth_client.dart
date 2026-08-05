@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:bluetooth_client/src/bluetooth_client.dart';
 import 'package:bluetooth_client/src/bluetooth_models.dart';
+import 'package:bluetooth_client/src/fake_bluetooth_client.dart';
 import 'package:bluetooth_client/src/unsupported_bluetooth_client.dart';
 
 /// Production [BluetoothClient]: shells out to `/usr/bin/segno-bt-ctl`.
@@ -55,6 +56,18 @@ class SystemBluetoothClient implements BluetoothClient {
     return _run(args);
   }
 
+  @override
+  Future<void> pair(String address) => _run(['pair', address]);
+
+  @override
+  Future<void> connect(String address) => _run(['connect', address]);
+
+  @override
+  Future<void> disconnect(String address) => _run(['disconnect', address]);
+
+  @override
+  Future<void> forget(String address) => _run(['forget', address]);
+
   Future<Object?> _runJson(List<String> args) async {
     final result = await _run(args);
     final text = result.stdout.toString().trim();
@@ -80,6 +93,9 @@ class SystemBluetoothClient implements BluetoothClient {
 
 /// Factory: real helper on Linux when present, else unsupported.
 BluetoothClient createBluetoothClient() {
+  // See `createWifiClient`: the fake wins everywhere when the build asks for
+  // it, so both radios in the Network domain are driven the same way.
+  if (kFakeRadios) return FakeBluetoothClient();
   if (!Platform.isLinux) return const UnsupportedBluetoothClient();
   const system = SystemBluetoothClient();
   if (!File(system.helperPath).existsSync()) {

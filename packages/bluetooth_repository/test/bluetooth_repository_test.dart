@@ -28,6 +28,18 @@ class _FakeClient implements BluetoothClient {
 
   @override
   Future<void> setAdvertising({required bool enabled}) async {}
+
+  @override
+  Future<void> pair(String address) async {}
+
+  @override
+  Future<void> connect(String address) async {}
+
+  @override
+  Future<void> disconnect(String address) async {}
+
+  @override
+  Future<void> forget(String address) async {}
 }
 
 void main() {

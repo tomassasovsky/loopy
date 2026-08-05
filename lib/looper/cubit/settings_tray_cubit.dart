@@ -3,12 +3,13 @@ import 'package:brightness_client/brightness_client.dart';
 import 'package:equatable/equatable.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/software_brightness.dart';
+import 'package:segno/network/network_tab.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'settings_tray_state.dart';
 
 /// Drives the console's slide-down quick-access tray (Settings / Signal
-/// graph / WiFi / Bluetooth / Tuner / brightness) — the touch-reachable
+/// graph / Network / Tuner / brightness) — the touch-reachable
 /// counterpart to the `S`/`G` keyboard shortcuts on console/kiosk builds,
 /// where the on-screen toolbar is hidden entirely.
 ///
@@ -99,21 +100,27 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
     }
   }
 
-  /// Expands the in-tray WiFi panel (tray stays open).
-  void openWifi() => emit(
+  /// Expands the in-tray Network panel on its WiFi tab (tray stays open).
+  void openWifi() => _openNetwork(NetworkTab.wifi);
+
+  /// Expands the in-tray Network panel on its Bluetooth tab (tray stays open).
+  void openBluetooth() => _openNetwork(NetworkTab.bluetooth);
+
+  /// The radio shortcuts both land on the same face — they differ only in
+  /// which tab of it they land on, which is exactly what merging the two
+  /// rail entries into one Network domain (#498) means.
+  void _openNetwork(NetworkTab tab) => emit(
     state.copyWith(
       dragProgress: 1,
-      destination: SettingsTrayDestination.wifi,
+      destination: SettingsTrayDestination.network,
+      networkTab: tab,
     ),
   );
 
-  /// Expands the in-tray Bluetooth panel (tray stays open).
-  void openBluetooth() => emit(
-    state.copyWith(
-      dragProgress: 1,
-      destination: SettingsTrayDestination.bluetooth,
-    ),
-  );
+  /// Switches the Network face's tab. Does not touch
+  /// [SettingsTrayState.destination]:
+  /// the tab strip is only reachable while Network is already showing.
+  void showNetworkTab(NetworkTab tab) => emit(state.copyWith(networkTab: tab));
 
   /// Returns from an expanded panel to the tile grid.
   void showHome() =>

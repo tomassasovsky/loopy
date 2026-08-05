@@ -45,8 +45,9 @@ class TrayNavigationRail extends StatelessWidget {
         SettingsTrayDestination.home => Icons.tune,
         SettingsTrayDestination.pedal => Icons.piano_outlined,
         SettingsTrayDestination.tuner => Icons.graphic_eq,
-        SettingsTrayDestination.wifi => Icons.wifi,
-        SettingsTrayDestination.bluetooth => Icons.bluetooth,
+        // An antenna, not a WiFi fan or a Bluetooth rune: the entry is both
+        // radios, and either radio's own glyph would read as only that one.
+        SettingsTrayDestination.network => Icons.settings_input_antenna,
       };
 
   /// The caption for [destination]. Exhaustive for the same reason as
@@ -58,8 +59,7 @@ class TrayNavigationRail extends StatelessWidget {
     SettingsTrayDestination.home => l10n.trayHomeLabel,
     SettingsTrayDestination.pedal => l10n.trayPedalLabel,
     SettingsTrayDestination.tuner => l10n.trayTunerLabel,
-    SettingsTrayDestination.wifi => l10n.trayWifiLabel,
-    SettingsTrayDestination.bluetooth => l10n.trayBluetoothLabel,
+    SettingsTrayDestination.network => l10n.trayNetworkLabel,
   };
 
   @override

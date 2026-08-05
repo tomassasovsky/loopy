@@ -81,10 +81,42 @@ class _PreviewWifiClient implements WifiClient {
 
   @override
   Future<List<WifiNetwork>> scan() async => const [
-    WifiNetwork(ssid: 'Studio-5G', signal: -48, secured: true),
+    WifiNetwork(ssid: 'Studio-5G', signal: -48, secured: true, saved: true),
+    WifiNetwork(
+      ssid: 'Studio-Backline',
+      signal: -70,
+      secured: true,
+      saved: true,
+      inRange: false,
+    ),
     WifiNetwork(ssid: 'Studio-Guest', signal: -62, secured: true),
     WifiNetwork(ssid: 'Cafe Free', signal: -71, secured: false),
   ];
+
+  @override
+  Future<void> connect(String ssid, {String? psk}) async {}
+
+  @override
+  Future<void> disconnect() async {}
+
+  @override
+  Future<void> forget(String ssid) async {}
+
+  @override
+  Future<void> setEnabled({required bool enabled}) async {}
+}
+
+/// Radio present but switched off — the mockups' `wifi-off` / `bluetooth-off`.
+class _PreviewWifiOffClient implements WifiClient {
+  @override
+  bool get isSupported => true;
+
+  @override
+  Future<WifiStatus> status() async =>
+      const WifiStatus(supported: true, enabled: false, connected: false);
+
+  @override
+  Future<List<WifiNetwork>> scan() async => const [];
 
   @override
   Future<void> connect(String ssid, {String? psk}) async {}
@@ -124,6 +156,18 @@ class _PreviewBluetoothHomeClient implements BluetoothClient {
 
   @override
   Future<void> setAdvertising({required bool enabled}) async {}
+
+  @override
+  Future<void> pair(String address) async {}
+
+  @override
+  Future<void> connect(String address) async {}
+
+  @override
+  Future<void> disconnect(String address) async {}
+
+  @override
+  Future<void> forget(String address) async {}
 }
 
 class _PreviewBluetoothClient implements BluetoothClient {
@@ -141,8 +185,20 @@ class _PreviewBluetoothClient implements BluetoothClient {
 
   @override
   Future<List<BluetoothDevice>> scan() async => const [
-    BluetoothDevice(name: 'Tomas’s iPhone', address: 'AA:BB:CC:11:22:33'),
-    BluetoothDevice(name: 'AirPods Pro', address: 'DD:EE:FF:44:55:66'),
+    BluetoothDevice(
+      name: 'WH-1000XM4',
+      address: 'AA:BB:CC:11:22:33',
+      paired: true,
+      connected: true,
+      kind: 'headphones',
+    ),
+    BluetoothDevice(
+      name: 'Page turner',
+      address: 'DD:EE:FF:44:55:66',
+      paired: true,
+      inRange: false,
+    ),
+    BluetoothDevice(name: 'AirTurn BT-200', address: '11:22:33:44:55:66'),
   ];
 
   @override
@@ -153,6 +209,18 @@ class _PreviewBluetoothClient implements BluetoothClient {
 
   @override
   Future<void> setAdvertising({required bool enabled}) async {}
+
+  @override
+  Future<void> pair(String address) async {}
+
+  @override
+  Future<void> connect(String address) async {}
+
+  @override
+  Future<void> disconnect(String address) async {}
+
+  @override
+  Future<void> forget(String address) async {}
 }
 
 void main() {
@@ -244,7 +312,7 @@ void main() {
     );
   }, skip: !hasFonts);
 
-  testWidgets('wifi expands in tray', (tester) async {
+  testWidgets('Network face, WiFi tab', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
     final cubit = SettingsTrayCubit(settings: settings)..openWifi();
@@ -258,11 +326,11 @@ void main() {
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_wifi.png'),
+      matchesGoldenFile('goldens/control_center_network_wifi.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('bluetooth expands in tray', (tester) async {
+  testWidgets('Network face, Bluetooth tab', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
     final cubit = SettingsTrayCubit(settings: settings)..openBluetooth();
@@ -276,7 +344,120 @@ void main() {
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_bluetooth.png'),
+      matchesGoldenFile('goldens/control_center_network_bluetooth.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Network face, WiFi switched off', (tester) async {
+    await size(tester);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final cubit = SettingsTrayCubit(settings: settings)..openWifi();
+    addTearDown(cubit.close);
+
+    await pumpTray(
+      tester,
+      cubit: cubit,
+      wifi: WifiRepository(client: _PreviewWifiOffClient()),
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_network_wifi_off.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Network face, WiFi row opened', (tester) async {
+    await size(tester);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final cubit = SettingsTrayCubit(settings: settings)..openWifi();
+    addTearDown(cubit.close);
+
+    await pumpTray(
+      tester,
+      cubit: cubit,
+      wifi: WifiRepository(client: _PreviewWifiClient()),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('wifi_network_Studio-5G')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_network_wifi_expanded.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Network face, WiFi forget confirmation', (tester) async {
+    await size(tester);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final cubit = SettingsTrayCubit(settings: settings)..openWifi();
+    addTearDown(cubit.close);
+
+    await pumpTray(
+      tester,
+      cubit: cubit,
+      wifi: WifiRepository(client: _PreviewWifiClient()),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('wifi_network_Studio-5G')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('wifi_forget')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      // The dialog is an overlay entry ABOVE the Scaffold, so capturing the
+      // Scaffold alone would photograph the face without the dialog on it.
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/control_center_network_wifi_forget.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Network face, WiFi join sheet', (tester) async {
+    await size(tester);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final cubit = SettingsTrayCubit(settings: settings)..openWifi();
+    addTearDown(cubit.close);
+
+    await pumpTray(
+      tester,
+      cubit: cubit,
+      wifi: WifiRepository(client: _PreviewWifiClient()),
+    );
+    await tester.pumpAndSettle();
+    // An unsaved, secured network is the one that needs a passphrase.
+    await tester.tap(find.byKey(const Key('wifi_network_Studio-Guest')));
+    // Pumped rather than settled: the sheet's caret blinks forever, so
+    // `pumpAndSettle` would never return.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    for (final key in ['s', 'e', 'g', 'n', 'o']) {
+      await tester.tap(find.widgetWithText(InkWell, key).first);
+      await tester.pump();
+    }
+    await tester.pump(const Duration(milliseconds: 200));
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/control_center_network_wifi_join.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Network face, Bluetooth row opened', (tester) async {
+    await size(tester);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final cubit = SettingsTrayCubit(settings: settings)..openBluetooth();
+    addTearDown(cubit.close);
+
+    await pumpTray(
+      tester,
+      cubit: cubit,
+      bluetooth: BluetoothRepository(client: _PreviewBluetoothClient()),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('bluetooth_device_AA:BB:CC:11:22:33')),
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_network_bt_expanded.png'),
     );
   }, skip: !hasFonts);
 }

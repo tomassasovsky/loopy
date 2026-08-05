@@ -19,4 +19,19 @@ abstract class BluetoothClient {
 
   /// LE advertise + discoverable on/off (broadcast as "Segno").
   Future<void> setAdvertising({required bool enabled});
+
+  /// Pairs (and trusts) [address], then connects it.
+  ///
+  /// Long-running by nature: bluez waits on the device to confirm, which is
+  /// why the console shows a cancellable banner while this is outstanding.
+  Future<void> pair(String address);
+
+  /// Connects an already-paired [address].
+  Future<void> connect(String address);
+
+  /// Drops the connection to [address], keeping the pairing.
+  Future<void> disconnect(String address);
+
+  /// Removes the pairing for [address] entirely.
+  Future<void> forget(String address);
 }
