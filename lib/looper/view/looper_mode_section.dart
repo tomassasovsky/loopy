@@ -38,7 +38,7 @@ class LooperModeSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(l10n.looperModeIntro, style: setupBody),
+        Text(l10n.looperModeIntro, style: context.setupBody),
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.looperModeGroupLabel),
         const SizedBox(height: 12),

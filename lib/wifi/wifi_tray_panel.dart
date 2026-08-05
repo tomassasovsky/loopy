@@ -79,7 +79,7 @@ class _WifiTrayPanelState extends State<WifiTrayPanel> {
                       ? wifiErrorMessage(l10n, state.errorMessage)
                       : l10n.wifiUnsupportedBody,
                   textAlign: TextAlign.center,
-                  style: setupBody,
+                  style: context.setupBody,
                 ),
               ),
             )
@@ -89,7 +89,7 @@ class _WifiTrayPanelState extends State<WifiTrayPanel> {
               const SizedBox(height: 8),
               Text(
                 wifiErrorMessage(l10n, state.errorMessage),
-                style: setupBody.copyWith(fontSize: 12),
+                style: context.setupBody.copyWith(fontSize: 12),
               ),
             ],
             const SizedBox(height: 16),
@@ -99,7 +99,10 @@ class _WifiTrayPanelState extends State<WifiTrayPanel> {
               child: state.networks.isEmpty && !state.scanning
                   ? Align(
                       alignment: Alignment.topLeft,
-                      child: Text(l10n.wifiEmptyNetworks, style: setupBody),
+                      child: Text(
+                        l10n.wifiEmptyNetworks,
+                        style: context.setupBody,
+                      ),
                     )
                   : DecoratedBox(
                       decoration: BoxDecoration(

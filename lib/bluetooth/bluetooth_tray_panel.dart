@@ -70,7 +70,7 @@ class _BluetoothTrayPanelState extends State<BluetoothTrayPanel> {
                 child: Text(
                   l10n.bluetoothUnsupportedBody,
                   textAlign: TextAlign.center,
-                  style: setupBody,
+                  style: context.setupBody,
                 ),
               ),
             )
@@ -146,7 +146,7 @@ class _BluetoothTrayPanelState extends State<BluetoothTrayPanel> {
               const SizedBox(height: 8),
               Text(
                 state.errorMessage!,
-                style: setupBody.copyWith(fontSize: 12),
+                style: context.setupBody.copyWith(fontSize: 12),
               ),
             ],
             const SizedBox(height: 16),
@@ -156,7 +156,10 @@ class _BluetoothTrayPanelState extends State<BluetoothTrayPanel> {
               child: state.devices.isEmpty && !state.scanning
                   ? Align(
                       alignment: Alignment.topLeft,
-                      child: Text(l10n.bluetoothEmptyDevices, style: setupBody),
+                      child: Text(
+                        l10n.bluetoothEmptyDevices,
+                        style: context.setupBody,
+                      ),
                     )
                   : DecoratedBox(
                       decoration: BoxDecoration(

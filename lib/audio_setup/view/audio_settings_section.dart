@@ -45,7 +45,7 @@ class AudioSettingsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(l10n.audioSettingsIntro, style: setupBody),
+        Text(l10n.audioSettingsIntro, style: context.setupBody),
         const SizedBox(height: 28),
         // Engine errors are surfaced here (the only audio surface now that the
         // wizard is gone): a failed open/start from a setting change shows its
@@ -151,7 +151,7 @@ class AudioSettingsSection extends StatelessWidget {
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.recordingGroupLabel),
         const SizedBox(height: 12),
-        Text(l10n.maxLoopLengthIntro, style: setupBody),
+        Text(l10n.maxLoopLengthIntro, style: context.setupBody),
         const SizedBox(height: 12),
         SetupOptionRow<int>(
           selected: state.maxLoopMinutes,
@@ -195,7 +195,7 @@ class AudioSettingsSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        Text(l10n.defaultLoopLengthIntro, style: setupBody),
+        Text(l10n.defaultLoopLengthIntro, style: context.setupBody),
         const SizedBox(height: 12),
         SetupOptionRow<int>(
           selected: context.watch<RecordOptionsCubit>().state.defaultMultiple,
@@ -420,7 +420,7 @@ class _NoAsioDriverMessage extends StatelessWidget {
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 6),
-              Text(l10n.noAsioDriverMessage, style: setupBody),
+              Text(l10n.noAsioDriverMessage, style: context.setupBody),
               const SizedBox(height: 6),
               const _Asio4AllLink(),
             ],

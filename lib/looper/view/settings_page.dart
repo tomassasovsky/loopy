@@ -172,7 +172,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final defaultMode = context.watch<ControlCubit>().state.defaultMode;
     final refreshHz = context.watch<RefreshRateCubit>().state;
     return [
-      Text(l10n.settingsViewIntro, style: setupBody),
+      Text(l10n.settingsViewIntro, style: context.setupBody),
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.viewGroupLabel),
       const SizedBox(height: 12),
@@ -206,7 +206,7 @@ class _SettingsPageState extends State<SettingsPage> {
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.looperGroupLabel),
       const SizedBox(height: 12),
-      Text(l10n.defaultModeIntro, style: setupBody),
+      Text(l10n.defaultModeIntro, style: context.setupBody),
       const SizedBox(height: 12),
       SetupOptionRow<InteractionMode>(
         selected: defaultMode,
@@ -227,7 +227,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       ),
       const SizedBox(height: 20),
-      Text(l10n.refreshRateIntro, style: setupBody),
+      Text(l10n.refreshRateIntro, style: context.setupBody),
       const SizedBox(height: 12),
       SetupOptionRow<int>(
         selected: refreshHz,
@@ -267,7 +267,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final tracks = context.watch<TracksCubit>();
     final looperTracks = context.watch<LooperBloc>().state.tracks;
     return [
-      Text(l10n.tracksIntro, style: setupBody),
+      Text(l10n.tracksIntro, style: context.setupBody),
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.tracksGroupLabel),
       const SizedBox(height: 12),
@@ -308,7 +308,7 @@ class _SettingsPageState extends State<SettingsPage> {
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.oneShotGroupLabel),
       const SizedBox(height: 12),
-      Text(l10n.oneShotIntro, style: setupBody),
+      Text(l10n.oneShotIntro, style: context.setupBody),
       const SizedBox(height: 12),
       for (var i = 0; i < looperTracks.length; i++) ...[
         SetupTrackOneShotRow(
@@ -354,16 +354,11 @@ class _SettingsRail extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 9),
-              Text(
-                l10n.settingsKicker,
-                style: setupKicker.copyWith(
-                  color: context.surface.textSecondary,
-                ),
-              ),
+              Text(l10n.settingsKicker, style: context.setupKicker),
             ],
           ),
           const SizedBox(height: 28),
-          Text(l10n.settingsTitle, style: setupTitle),
+          Text(l10n.settingsTitle, style: context.setupTitle),
           const SizedBox(height: 20),
           for (final section in SettingsSection.values)
             // The Updates tab appears only where in-app updates are supported

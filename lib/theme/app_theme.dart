@@ -150,6 +150,13 @@ abstract final class AppTheme {
     required LooperTheme looper,
   }) => _base(scheme).copyWith(
     scaffoldBackgroundColor: scaffoldBackground,
+    // The design system's hover/pressed tiers as the app-wide ink defaults, so
+    // stock InkWells answer the pointer without each call site restating it
+    // (#499). Widgets that paint their own state layer — the setup option
+    // cards — resolve the same tokens directly.
+    hoverColor: surface.borderHairline,
+    highlightColor: surface.borderSubtle,
+    focusColor: surface.accent.withValues(alpha: 0.24),
     chipTheme: ChipThemeData(
       backgroundColor: scheme.surfaceContainerHighest,
       selectedColor: scheme.primary,
