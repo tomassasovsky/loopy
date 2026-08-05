@@ -80,11 +80,16 @@ void main() {
     ]);
     // The Signal surface's bundled typefaces, so its mono readouts and grotesk
     // headings render as text (not Ahem boxes) under golden capture.
-    await _loadFont('Space Grotesk', ['assets/fonts/SpaceGrotesk.ttf']);
-    await _loadFont('IBM Plex Mono', [
-      'assets/fonts/IBMPlexMono-Regular.ttf',
-      'assets/fonts/IBMPlexMono-Medium.ttf',
-      'assets/fonts/IBMPlexMono-SemiBold.ttf',
+    await _loadFont('Inter', [
+      'assets/fonts/Inter-Regular.ttf',
+      'assets/fonts/Inter-Medium.ttf',
+      'assets/fonts/Inter-SemiBold.ttf',
+      'assets/fonts/Inter-Bold.ttf',
+    ]);
+    await _loadFont('JetBrains Mono', [
+      'assets/fonts/JetBrainsMono-Regular.ttf',
+      'assets/fonts/JetBrainsMono-Medium.ttf',
+      'assets/fonts/JetBrainsMono-SemiBold.ttf',
     ]);
   });
 

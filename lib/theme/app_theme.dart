@@ -24,7 +24,7 @@ RoutingGraphTheme routingGraphThemeFromSurface(SurfaceTheme s) =>
 
 /// Track meter (peak bar) color per meter state while in **record** mode.
 const _recordMeterColors = <LooperMeterState, Color>{
-  LooperMeterState.empty: Color(0xFF2C313A), // not shown (empty = no bar)
+  LooperMeterState.empty: Color(0xFF2E2E31), // not shown (empty = no bar)
   LooperMeterState.recording: Color(0xFFFF1744),
   LooperMeterState.overdubbing: Color(0xFFFF1744),
   LooperMeterState.playing: Color(0xFF4CDA4A),
@@ -36,7 +36,7 @@ const _recordMeterColors = <LooperMeterState, Color>{
 
 /// Track meter (peak bar) color per meter state while in **mute** mode.
 const _muteMeterColors = <LooperMeterState, Color>{
-  LooperMeterState.empty: Color(0xFF2C313A),
+  LooperMeterState.empty: Color(0xFF2E2E31),
   LooperMeterState.recording: Color(0xFFFF1744),
   LooperMeterState.overdubbing: Color(0xFFFF1744),
   LooperMeterState.playing: Color(0xFF4CDA4A),
@@ -48,7 +48,7 @@ const _muteMeterColors = <LooperMeterState, Color>{
 /// theme: the empty/idle tone clears the 3:1 non-text threshold (1.4.11)
 /// against the brighter tile, and play/record stay vivid.
 const _hcRecordMeterColors = <LooperMeterState, Color>{
-  LooperMeterState.empty: Color(0xFF6B6D78),
+  LooperMeterState.empty: Color(0xFF6E6E6E),
   LooperMeterState.recording: Color(0xFFFF5470),
   LooperMeterState.overdubbing: Color(0xFFFF5470),
   LooperMeterState.playing: Color(0xFF6EE77F),
@@ -58,7 +58,7 @@ const _hcRecordMeterColors = <LooperMeterState, Color>{
 };
 
 const _hcMuteMeterColors = <LooperMeterState, Color>{
-  LooperMeterState.empty: Color(0xFF6B6D78),
+  LooperMeterState.empty: Color(0xFF6E6E6E),
   LooperMeterState.recording: Color(0xFFFF5470),
   LooperMeterState.overdubbing: Color(0xFFFF5470),
   LooperMeterState.playing: Color(0xFF6EE77F),
@@ -69,7 +69,7 @@ const _hcMuteMeterColors = <LooperMeterState, Color>{
 /// Per-track status-indicator colors: a dim `idle` that still reads above the
 /// tile surface, reusing the meter green/red for the play/record states.
 const _indicatorColors = <TrackIndicator, Color>{
-  TrackIndicator.idle: Color(0xFF3A3F49), // dim, above tileBackground
+  TrackIndicator.idle: Color(0xFF3D3F43), // dim, above tileBackground
   TrackIndicator.play: Color(0xFF4CDA4A), // meter green
   TrackIndicator.record: Color(0xFFFF1744), // meter red
 };
@@ -78,7 +78,7 @@ const _indicatorColors = <TrackIndicator, Color>{
 /// "empty" tone so it clears the 3:1 non-text threshold (1.4.11) against the
 /// brighter tile, and play/record stay vivid.
 const _hcIndicatorColors = <TrackIndicator, Color>{
-  TrackIndicator.idle: Color(0xFF6B6D78),
+  TrackIndicator.idle: Color(0xFF6E6E6E),
   TrackIndicator.play: Color(0xFF6EE77F),
   TrackIndicator.record: Color(0xFFFF5470),
 };
@@ -91,17 +91,17 @@ abstract final class AppTheme {
     const scheme = ColorScheme.dark(
       primary: Color(0xFFF3F4F7), // SurfaceTheme.dark.textPrimary
       secondary: Color(0xFF3B82F6), // SurfaceTheme.dark.accent
-      surface: Color(0xFF0D0D11), // SurfaceTheme.dark.surface
+      surface: Color(0xFF141417), // SurfaceTheme.dark.surface
     );
     return _themed(
       scheme: scheme,
-      scaffoldBackground: const Color(0xFF06060A),
+      scaffoldBackground: const Color(0xFF060607),
       surface: SurfaceTheme.dark,
       looper: const LooperTheme(
         tileBackground: Colors.black,
-        tileBorder: Color(0xFF22222E),
+        tileBorder: Color(0xFF17171B),
         waveformColor: Color(0xFF00E5FF),
-        waveformBackground: Color(0xFF06060A),
+        waveformBackground: Color(0xFF060607),
         recordColor: Color(0xFFFF1744),
         fxColor: Color(0xFF3B82F6),
         recordMeterColors: _recordMeterColors,
@@ -127,8 +127,8 @@ abstract final class AppTheme {
       scaffoldBackground: const Color(0xFF000000),
       surface: SurfaceTheme.highContrast,
       looper: const LooperTheme(
-        tileBackground: Color(0xFF0A0A12),
-        tileBorder: Color(0xFF7A7C88),
+        tileBackground: Color(0xFF0A0A0B),
+        tileBorder: Color(0xFF7A7A80),
         waveformColor: Color(0xFF4DEEFF),
         waveformBackground: Color(0xFF000000),
         recordColor: Color(0xFFFF5470),
@@ -138,7 +138,7 @@ abstract final class AppTheme {
         indicatorColors: _hcIndicatorColors,
         // SurfaceTheme.highContrast.textSecondary — brighter than the neon
         // theme's white70 to clear the HC contrast threshold.
-        toolbarIconColor: Color(0xFFD6D8E0),
+        toolbarIconColor: Color(0xFFD8D8D8),
       ),
     );
   }
