@@ -19,11 +19,12 @@ issue: 499
 > app's type system, so the result earns a human merge.
 > Related: #495 (Figma design-system track, a separate export target).
 
-> **Status — Stages 0, 1 and 2 have landed. Stage 3 is all that remains.**
+> **Status — Stages 0, 1, 2 and 3b have landed. 3a, 3c and 3d remain.**
 > Stage 0 is complete except the HC theme axis (see the stage list); Stage 1
-> merged as #502; Stage 2 merged as #503. Read the stage list before the
-> reconciliation table — the table is now a record of decisions already
-> executed in code, not a to-do list.
+> merged as #502; Stage 2 merged as #503; **stage 3b merged as #512**, retiring
+> the single cyan `waveformColor` for a per-state table. Read the stage list
+> before the reconciliation table — the table is now a record of decisions
+> already executed in code, not a to-do list.
 
 ## What exists on each side
 
@@ -332,28 +333,52 @@ touched twice.
   the rejected alternatives were rejected for a reason that also rejects
   most obvious substitutes. `SignalKnob` also serves the mix level and is
   **out of scope**. Tracked as #505.
-- **3b — state-coloured waveform. → [part-3b plan](2026-08-05-chore-segno-ds-reconcile-part-3b-plan.md) (canonical).**
-  The `LooperTheme` API change from a single `waveformColor` to per-state
-  colouring, with HC counterparts. This is the veto row from the table,
-  decided; it is the most visible change in the app and the only one that
-  alters a theme *contract* rather than a value. **Start here** — it is the
-  only slice with no open direction call and no #442 overlap.
+  **Sequencing decided 2026-08-05: 3a lands first; #442 part 4 restyles what
+  it produces.** This is the opposite of the recommendation below — taken
+  knowingly, accepting that the rack surface gets written twice, because part
+  4 depends on the unstarted part 3 and 3a should not wait on it.
+- **3b — state-coloured waveform. ✅ Merged as #512.**
+  ([part-3b plan](2026-08-05-chore-segno-ds-reconcile-part-3b-plan.md).)
+  `LooperTheme.waveformColor` became a per-`LooperMeterState` table with HC
+  counterparts; colour resolves from the **cursor** track, which the second
+  window derives from the `PerformanceReadout` it already receives (no window
+  channel change). Two things worth carrying forward:
+  - `empty` reads as `stopped`, deliberately **not** as the meter's dim empty
+    groove. The meter can afford a near-invisible empty because it draws no
+    bar there; the waveform paints the *mixed output*, so a dim empty blacks
+    out the mix whenever the cursor sits on a fresh track.
+  - The playhead is hard-coded white and now needs a background-coloured
+    gutter to stay visible, because three of six states are white. The old
+    cyan had been carrying that separation on hue alone.
+  - **No golden renders a waveform** — not `tracks`, not `settings_view_tracks`.
+    The suite never covered this surface; per-state colour is pinned by
+    exact-value widget assertions instead. Do not assume 3d will catch a
+    waveform regression.
 - **3c — remaining screen consumers.** Everything else that reads
   `context.surface`, plus the REC pill moving to `rec`. Establish the
   current consumer list yourself — it moves as PRs land, and the counts in
   "Blast radius" above were measured before Stages 1–2.
 - **3d — final golden regen + eyeball**, per the strategy below.
 
-**Gate before 3c — surfaces the DS does not cover.** The reskin assumes a
-design exists for every screen. It does not. The routing graph is handled
-above (no live screen uses it). Not handled, and with no prototype screen to
-build from: the **pedal faceplate** (`PedalFaceplate`/`PedalPlate`/
-`BankSwitch` — the virtual hardware with LEDs and silkscreen; the prototype's
-Control page is a settings list instead) and **desktop window chrome**
-(`SegnoWindowChromeShell`, `SegnoWindowTitleBar`, the `HostChrome*` family —
-the prototype is a 1920×1080 appliance view with no title bar). Each needs a
-"keep as-is, out of scope" or "needs design first" call. Do not guess; the
-answer changes the size of 3c.
+**Gate before 3c — surfaces the DS does not cover. ✅ Called 2026-08-05: both
+keep as-is, out of scope.** The reskin assumes a design exists for every
+screen. It does not. The routing graph is handled above (no live screen uses
+it). The two the DS never covered:
+
+- **Pedal faceplate** (`PedalFaceplate`/`PedalPlate`/`BankSwitch`) — **keep
+  as-is.** It is a replica of physical hardware: its LEDs, silkscreen and
+  proportions mirror the real top plate, so restyling it desyncs the simulator
+  from the thing it simulates. The prototype's Control page is a settings list,
+  not a faceplate, so there is nothing to reconcile *against*. Its LED palette
+  is already frozen by the non-goals.
+- **Desktop window chrome** (`SegnoWindowChromeShell`, `SegnoWindowTitleBar`,
+  the `HostChrome*` family) — **keep as-is.** The prototype is a 1920×1080
+  appliance view with no title bar at all, so adopting it would mean inventing
+  a design, not applying one. That is new design work, not reconciliation.
+
+Both are *out of 3c's scope*, not "fine forever" — if either should be
+designed, file it as its own piece of work rather than smuggling it into the
+reskin.
 
 **Overlap to reconcile, not duplicate.** #491 applies the mockups to the
 tray rail and tabs and adds `docs/design/console-prototype.html` — the source
@@ -380,8 +405,12 @@ crossed into #442 and should stop.**
 rack UI"; 3a redesigns the FX parameter controls. Both rewrite the same rack
 surface, and part 4 additionally depends on part 3 (rack domain + migration),
 which is unstarted. Running them separately means writing that surface twice.
-Decide before starting either: fold 3a into part 4, or land part 4 first and
-let 3a restyle what it produces. Do not run them in parallel.
+
+**Decided 2026-08-05: 3a lands first, and #442 part 4 restyles on top of it.**
+The cost is accepted explicitly — part 4 will rewrite the parameter surface 3a
+produces, and that is the trade for not blocking 3a behind the unstarted part
+3. Two consequences for whoever picks up part 4: treat 3a's parameter controls
+as *replaceable*, not as a contract, and do not run the two in parallel.
 
 **Numbering.** Issues #504–#508 were filed as a parallel stage scheme over
 this same work before this plan was consulted. They duplicate stages 2–3 and
