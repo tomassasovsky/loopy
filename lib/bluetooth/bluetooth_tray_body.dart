@@ -4,8 +4,8 @@ import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:segno/bluetooth/bluetooth_cubit.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/network/network_surface.dart';
 
 /// The Bluetooth tab of the console's Network domain, drawn to
 /// `NETWORK / bluetooth`.
@@ -40,7 +40,7 @@ class _BluetoothTrayBodyState extends State<BluetoothTrayBody> {
 
   Future<void> _forget(BluetoothCubit cubit, BluetoothDevice device) async {
     final l10n = context.l10n;
-    final confirmed = await showNetworkForgetDialog(
+    final confirmed = await showConsoleForgetDialog(
       context,
       title: l10n.bluetoothForgetConfirmTitle(device.name),
       body: l10n.bluetoothForgetConfirmBody,
@@ -65,7 +65,7 @@ class _BluetoothTrayBodyState extends State<BluetoothTrayBody> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          NetworkFaceHeader(
+          ConsoleFaceHeader(
             title: l10n.trayBluetoothLabel,
             rescanKey: const Key('bluetooth_scan'),
             powerKey: const Key('bluetooth_power'),
@@ -85,17 +85,17 @@ class _BluetoothTrayBodyState extends State<BluetoothTrayBody> {
           ),
           const SizedBox(height: 14),
           if (!state.supported)
-            NetworkEmptyCard(message: l10n.bluetoothUnsupportedBody)
+            ConsoleEmptyCard(message: l10n.bluetoothUnsupportedBody)
           else if (on)
             Flexible(
               child: SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    NetworkCard(
+                    ConsoleCard(
                       children: [
                         if (pairing != null)
-                          NetworkBanner(
+                          ConsoleBanner(
                             actionKey: const Key('bluetooth_pair_cancel'),
                             message: l10n.bluetoothPairingMessage(
                               pairing.name,
@@ -104,7 +104,7 @@ class _BluetoothTrayBodyState extends State<BluetoothTrayBody> {
                             onAction: cubit.cancelPairing,
                           )
                         else if (error != null)
-                          NetworkBanner(
+                          ConsoleBanner(
                             actionKey: const Key('bluetooth_error_retry'),
                             failed: true,
                             message: l10n.bluetoothPairFailed,
@@ -115,13 +115,13 @@ class _BluetoothTrayBodyState extends State<BluetoothTrayBody> {
                       ],
                     ),
                     const SizedBox(height: 14),
-                    NetworkCard(
+                    ConsoleCard(
                       bordered: true,
                       children: [
-                        NetworkRow(
+                        ConsoleRow(
                           title: l10n.bluetoothDiscoverableTitle,
                           subtitle: l10n.bluetoothDiscoverableSubtitle,
-                          trailing: NetworkSwitch(
+                          trailing: ConsoleSwitch(
                             key: const Key('bluetooth_discoverable'),
                             value: state.status.discoverable,
                             semanticLabel: l10n.bluetoothDiscoverableTitle,
@@ -132,11 +132,11 @@ class _BluetoothTrayBodyState extends State<BluetoothTrayBody> {
                                   ),
                           ),
                         ),
-                        NetworkRow(
+                        ConsoleRow(
                           divider: false,
                           title: l10n.bluetoothAdvertiseTitle,
                           subtitle: l10n.bluetoothAdvertiseSubtitle,
-                          trailing: NetworkSwitch(
+                          trailing: ConsoleSwitch(
                             key: const Key('bluetooth_advertise'),
                             value: state.status.advertising,
                             semanticLabel: l10n.bluetoothAdvertiseTitle,
@@ -209,42 +209,48 @@ class _BluetoothTrayBodyState extends State<BluetoothTrayBody> {
       setState(() => _openAddress = open ? null : device.address);
     }
 
-    final row = NetworkRow(
+    final row = ConsoleRow(
       key: Key('bluetooth_device_${device.address}'),
       title: device.name,
       subtitle: _deviceSubtitle(l10n, device),
       value: _deviceValue(l10n, device),
       expanded: open,
-      divider: !last && !open,
-      onTap: busy && !expandable ? null : toggle,
+      divider: !last,
     );
 
-    if (!open) return row;
+    final onTap = busy && !expandable ? null : toggle;
 
-    return NetworkExpandedRow(
+    // Always the expanded form — see the WiFi body: it owns the animation.
+    return ConsoleExpandedRow(
+      expanded: open,
+      onTap: onTap,
       row: row,
       actions: [
-        if (device.connected)
-          NetworkActionChip(
-            key: const Key('bluetooth_disconnect'),
-            label: l10n.bluetoothDisconnectAction,
-            icon: Icons.link_off,
-            onPressed: busy ? null : () => unawaited(cubit.disconnect(device)),
-          )
-        else if (device.inRange)
-          NetworkActionChip(
-            key: const Key('bluetooth_connect'),
-            label: l10n.bluetoothConnectAction,
-            icon: Icons.bluetooth_connected,
-            onPressed: busy ? null : () => unawaited(cubit.connect(device)),
+        if (open) ...[
+          if (device.connected)
+            ConsoleActionChip(
+              key: const Key('bluetooth_disconnect'),
+              label: l10n.bluetoothDisconnectAction,
+              icon: Icons.link_off,
+              onPressed: busy
+                  ? null
+                  : () => unawaited(cubit.disconnect(device)),
+            )
+          else if (device.inRange)
+            ConsoleActionChip(
+              key: const Key('bluetooth_connect'),
+              label: l10n.bluetoothConnectAction,
+              icon: Icons.bluetooth_connected,
+              onPressed: busy ? null : () => unawaited(cubit.connect(device)),
+            ),
+          ConsoleActionChip(
+            key: const Key('bluetooth_forget'),
+            label: l10n.bluetoothForgetAction,
+            icon: Icons.delete_outline,
+            destructive: true,
+            onPressed: busy ? null : () => unawaited(_forget(cubit, device)),
           ),
-        NetworkActionChip(
-          key: const Key('bluetooth_forget'),
-          label: l10n.bluetoothForgetAction,
-          icon: Icons.delete_outline,
-          destructive: true,
-          onPressed: busy ? null : () => unawaited(_forget(cubit, device)),
-        ),
+        ],
       ],
     );
   }

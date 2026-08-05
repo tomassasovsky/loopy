@@ -1,6 +1,7 @@
 @Tags(['screenshots'])
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:bluetooth_repository/bluetooth_repository.dart';
@@ -8,7 +9,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart';
+import 'package:midi_device_repository/midi_device_repository.dart';
+import 'package:pedal_repository/pedal_repository.dart';
+import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/control/control_tab.dart';
+import 'package:segno/control/view/control_tray_panel.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/view/settings_tray.dart';
@@ -460,4 +469,76 @@ void main() {
       matchesGoldenFile('goldens/control_center_network_bt_expanded.png'),
     );
   }, skip: !hasFonts);
+
+  testWidgets('Control face, Pedal tab', (tester) async {
+    await size(tester);
+    // An explicit (empty) ticker: the default 16ms poll timer outlives the
+    // widget tree, and the binding fails a test that leaves one pending.
+    final looper = LooperRepository(
+      engine: FakeAudioEngine(),
+      ticker: const Stream<void>.empty(),
+      reconnectTicker: const Stream<void>.empty(),
+    );
+    addTearDown(looper.dispose);
+    final performance = PerformanceRepository(
+      engine: FakeAudioEngine(),
+      exportsRoot: () async => '.',
+    );
+    addTearDown(performance.dispose);
+    final control = ControlCubit(
+      looper: looper,
+      pedal: PedalRepository(const NoopPedalTransport()),
+      settings: SettingsRepository(store: FakeKeyValueStore()),
+      performance: performance,
+      keepAliveInterval: Duration.zero,
+      mappingsWriteDebounce: Duration.zero,
+    );
+    addTearDown(() => unawaited(control.close()));
+    final midiDevices = MidiDeviceRepository(
+      source: null,
+      settings: SettingsRepository(store: FakeKeyValueStore()),
+    );
+    // The repository polls for hotplug on a periodic timer; a screenshot must
+    // not leave one running past the widget tree.
+    addTearDown(() => unawaited(midiDevices.dispose()));
+    final midi = MidiSetupCubit(repository: midiDevices);
+    addTearDown(() => unawaited(midi.close()));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: _theme(),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: RepositoryProvider<LooperRepository>.value(
+          value: looper,
+          child: MultiBlocProvider(
+            providers: [
+              BlocProvider<ControlCubit>.value(value: control),
+              BlocProvider<MidiSetupCubit>.value(value: midi),
+            ],
+            child: Scaffold(
+              body: ColoredBox(
+                color: SurfaceTheme.dark.background,
+                child: const Padding(
+                  padding: EdgeInsets.fromLTRB(19, 19, 19, 41),
+                  child: ControlTrayPanel(
+                    tab: ControlTab.pedal,
+                    onTabChanged: _ignoreTab,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_control_pedal.png'),
+    );
+  }, skip: !hasFonts);
 }
+
+/// The golden pumps one tab; switching is covered by the widget tests.
+void _ignoreTab(ControlTab _) {}

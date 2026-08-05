@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/network/network_surface.dart';
 import 'package:segno/wifi/wifi_cubit.dart';
 import 'package:segno/wifi/wifi_error_message.dart';
 import 'package:segno/wifi/wifi_join_sheet.dart';
@@ -66,7 +66,7 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
 
   Future<void> _forget(WifiCubit cubit, String ssid) async {
     final l10n = context.l10n;
-    final confirmed = await showNetworkForgetDialog(
+    final confirmed = await showConsoleForgetDialog(
       context,
       title: l10n.wifiForgetConfirmTitle(ssid),
       body: l10n.wifiForgetConfirmBody,
@@ -91,7 +91,7 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          NetworkFaceHeader(
+          ConsoleFaceHeader(
             title: l10n.trayWifiLabel,
             rescanKey: const Key('wifi_scan'),
             powerKey: const Key('wifi_power'),
@@ -107,7 +107,7 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
           ),
           const SizedBox(height: 14),
           if (!state.supported)
-            NetworkEmptyCard(
+            ConsoleEmptyCard(
               // A helper that failed for a real reason says so; only a build
               // with no WiFi at all falls back to the generic line.
               message: error != null
@@ -117,17 +117,17 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
           else if (on)
             Flexible(
               child: SingleChildScrollView(
-                child: NetworkCard(
+                child: ConsoleCard(
                   children: [
                     if (connecting != null)
-                      NetworkBanner(
+                      ConsoleBanner(
                         actionKey: const Key('wifi_connect_cancel'),
                         message: l10n.wifiJoiningMessage(connecting),
                         actionLabel: l10n.cancel,
                         onAction: () => unawaited(cubit.cancelConnect()),
                       )
                     else if (error != null)
-                      NetworkBanner(
+                      ConsoleBanner(
                         actionKey: const Key('wifi_error_retry'),
                         failed: true,
                         message: wifiErrorMessage(l10n, error),
@@ -215,47 +215,55 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
       setState(() => _openSsid = open ? null : data.ssid);
     }
 
-    final row = NetworkRow(
+    final row = ConsoleRow(
       key: Key('wifi_network_${data.ssid}'),
       title: data.ssid,
       subtitle: data.subtitle,
       value: data.value,
       expanded: open,
-      divider: !last && !open,
-      onTap: state.busy && !expandable ? null : toggle,
+      divider: !last,
     );
 
-    if (!open) return row;
+    final onTap = state.busy && !expandable ? null : toggle;
 
-    return NetworkExpandedRow(
+    // Always the expanded form, open or shut: it owns the open/close
+    // animation, and a widget that only exists while open cannot animate
+    // into existence.
+    return ConsoleExpandedRow(
+      expanded: open,
+      onTap: onTap,
       row: row,
       actions: [
-        if (data.connected)
-          NetworkActionChip(
-            key: const Key('wifi_disconnect'),
-            label: l10n.wifiDisconnectTitle,
-            icon: Icons.link_off,
-            onPressed: state.busy ? null : () => unawaited(cubit.disconnect()),
-          )
-        else if (data.joinable)
-          NetworkActionChip(
-            key: const Key('wifi_connect'),
-            label: l10n.wifiJoinAction,
-            icon: Icons.wifi,
-            onPressed: state.busy
-                ? null
-                : () => unawaited(cubit.connect(data.ssid)),
-          ),
-        if (data.saved)
-          NetworkActionChip(
-            key: const Key('wifi_forget'),
-            label: l10n.wifiForgetAction,
-            icon: Icons.delete_outline,
-            destructive: true,
-            onPressed: state.busy
-                ? null
-                : () => unawaited(_forget(cubit, data.ssid)),
-          ),
+        if (open) ...[
+          if (data.connected)
+            ConsoleActionChip(
+              key: const Key('wifi_disconnect'),
+              label: l10n.wifiDisconnectTitle,
+              icon: Icons.link_off,
+              onPressed: state.busy
+                  ? null
+                  : () => unawaited(cubit.disconnect()),
+            )
+          else if (data.joinable)
+            ConsoleActionChip(
+              key: const Key('wifi_connect'),
+              label: l10n.wifiJoinAction,
+              icon: Icons.wifi,
+              onPressed: state.busy
+                  ? null
+                  : () => unawaited(cubit.connect(data.ssid)),
+            ),
+          if (data.saved)
+            ConsoleActionChip(
+              key: const Key('wifi_forget'),
+              label: l10n.wifiForgetAction,
+              icon: Icons.delete_outline,
+              destructive: true,
+              onPressed: state.busy
+                  ? null
+                  : () => unawaited(_forget(cubit, data.ssid)),
+            ),
+        ],
       ],
     );
   }

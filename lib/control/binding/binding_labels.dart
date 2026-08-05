@@ -1,5 +1,6 @@
 import 'package:controller_repository/controller_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/binding/fx_chain_lookup.dart';
@@ -12,6 +13,22 @@ import 'package:segno/l10n/l10n.dart';
 /// of one target would read as three different mappings. Shared by the pedal
 /// assignment screen (part 6b) and the MIDI-learn section (part 7), which is
 /// why they live next to the binding model rather than inside either feature.
+
+/// Names a footswitch as the hardware is silk-screened, so the console and
+/// the pedal agree about which switch is being talked about.
+String pedalButtonLabel(AppLocalizations l10n, PedalButton button) =>
+    switch (button) {
+      PedalButton.recPlay => l10n.pedalButtonRecPlay,
+      PedalButton.stop => l10n.pedalButtonStop,
+      PedalButton.undo => l10n.pedalButtonUndo,
+      PedalButton.clear => l10n.pedalButtonClear,
+      PedalButton.mode => l10n.pedalButtonMode,
+      PedalButton.bank => l10n.pedalButtonBank,
+      PedalButton.track1 => l10n.pedalButtonTrack(1),
+      PedalButton.track2 => l10n.pedalButtonTrack(2),
+      PedalButton.track3 => l10n.pedalButtonTrack(3),
+      PedalButton.track4 => l10n.pedalButtonTrack(4),
+    };
 
 /// Names the chain at [address] — its stage and position.
 String fxStageLabel(AppLocalizations l10n, FxAddress address) =>

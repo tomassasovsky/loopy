@@ -1216,6 +1216,197 @@
     "@wifiForgetAction": {
         "description": "Action inside an opened WiFi row; removes the saved network."
     },
+    "pedalControlUnassigned": "sin asignar",
+    "@pedalControlUnassigned": {
+        "description": "Shown on a footswitch card that drives nothing yet."
+    },
+    "pedalControlMissingTarget": "Destino faltante",
+    "@pedalControlMissingTarget": {
+        "description": "Shown on a footswitch card whose assignment points at something that no longer exists."
+    },
+    "pedalControlShowSlots": "Mostrar efectos individuales",
+    "@pedalControlShowSlots": {
+        "description": "Footer row that expands the pedal target list past whole chains to the effects inside them."
+    },
+    "pedalControlInChain": "en {chain}",
+    "@pedalControlInChain": {
+        "description": "Right-hand placement note on an individual-effect target row, naming the chain it sits in.",
+        "placeholders": {
+            "chain": {
+                "type": "String"
+            }
+        }
+    },
+    "trayControlLabel": "Control",
+    "@trayControlLabel": {
+        "description": "Navigation rail entry for the settings tray's Control face, which holds the Pedal and MIDI tabs."
+    },
+    "controlPedalTab": "Pedal",
+    "@controlPedalTab": {
+        "description": "Tab label for the footswitch half of the Control face."
+    },
+    "controlMidiTab": "MIDI",
+    "@controlMidiTab": {
+        "description": "Tab label for the external-MIDI half of the Control face."
+    },
+    "pedalButtonRecPlay": "Grabar / Reproducir",
+    "@pedalButtonRecPlay": {
+        "description": "Name of the record/play footswitch, as silk-screened on the pedal."
+    },
+    "pedalButtonStop": "Detener",
+    "@pedalButtonStop": {
+        "description": "Name of the stop footswitch."
+    },
+    "pedalButtonUndo": "Deshacer",
+    "@pedalButtonUndo": {
+        "description": "Name of the undo footswitch."
+    },
+    "pedalButtonClear": "Borrar",
+    "@pedalButtonClear": {
+        "description": "Name of the clear-all footswitch."
+    },
+    "pedalButtonMode": "Modo",
+    "@pedalButtonMode": {
+        "description": "Name of the mode footswitch."
+    },
+    "pedalButtonBank": "Banco",
+    "@pedalButtonBank": {
+        "description": "Name of the bank A/B footswitch."
+    },
+    "pedalButtonTrack": "Pista {number}",
+    "@pedalButtonTrack": {
+        "description": "Name of a per-track footswitch.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "midiControlDeviceGroup": "Controlador MIDI de pie",
+    "@midiControlDeviceGroup": {
+        "description": "Group heading over the MIDI device row on the Control face."
+    },
+    "midiControlDeviceRow": "Dispositivo",
+    "@midiControlDeviceRow": {
+        "description": "Row that opens the MIDI input device picker."
+    },
+    "midiControlNoDevice": "Ninguno",
+    "@midiControlNoDevice": {
+        "description": "Shown as the chosen MIDI device when none is selected."
+    },
+    "midiControlConnected": "Conectado: {device}",
+    "@midiControlConnected": {
+        "description": "Status line naming the connected MIDI device.",
+        "placeholders": {
+            "device": {
+                "type": "String"
+            }
+        }
+    },
+    "midiControlDisconnected": "Sin dispositivo MIDI conectado",
+    "@midiControlDisconnected": {
+        "description": "Status line when no MIDI input is open."
+    },
+    "midiControlReceiving": "Recibiendo MIDI",
+    "@midiControlReceiving": {
+        "description": "Status line once MIDI messages have arrived."
+    },
+    "midiControlWaiting": "Esperando entrada MIDI",
+    "@midiControlWaiting": {
+        "description": "Status line while a device is open but silent."
+    },
+    "midiControlFixedCcs": "CC 80 grabar · 81 detener · 82 deshacer · 83 borrar",
+    "@midiControlFixedCcs": {
+        "description": "The fixed transport CC map, shown under the MIDI status card."
+    },
+    "midiControlSweep": "barrido",
+    "@midiControlSweep": {
+        "description": "Right-hand kind word on a continuous MIDI mapping row."
+    },
+    "midiControlSwitch": "interruptor",
+    "@midiControlSwitch": {
+        "description": "Right-hand kind word on an on/off MIDI mapping row."
+    },
+    "midiControlMissingTarget": "Destino faltante",
+    "@midiControlMissingTarget": {
+        "description": "Subtitle on a MIDI mapping whose target no longer exists."
+    },
+    "midiControlLo": "MÍN",
+    "@midiControlLo": {
+        "description": "Caption on the low end of a sweep's travel."
+    },
+    "midiControlHi": "MÁX",
+    "@midiControlHi": {
+        "description": "Caption on the high end of a sweep's travel."
+    },
+    "midiControlThreshold": "UMBRAL",
+    "@midiControlThreshold": {
+        "description": "Caption on the value a switch mapping fires at."
+    },
+    "pedalControlTransportGroup": "Interruptores de transporte",
+    "@pedalControlTransportGroup": {
+        "description": "Group heading over the four transport footswitch cards."
+    },
+    "pedalControlTrackGroup": "Interruptores de pista",
+    "@pedalControlTrackGroup": {
+        "description": "Group heading over the per-bank track footswitch rows."
+    },
+    "pedalControlAssign": "Asignar {name}",
+    "@pedalControlAssign": {
+        "description": "Group heading over the target list, naming the switch being assigned.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "pedalControlAssignBank": "Asignar {name} · banco {bank}",
+    "@pedalControlAssignBank": {
+        "description": "Group heading over the target list for a bank-keyed switch, naming the switch and the bank the edit lands in.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            },
+            "bank": {
+                "type": "String"
+            }
+        }
+    },
+    "midiControlNoDeviceDetail": "Sin dispositivo MIDI — el looper funciona con teclado y mouse.",
+    "@midiControlNoDeviceDetail": {
+        "description": "Status line when no MIDI input device is selected at all."
+    },
+    "midiControlConnecting": "Abriendo {device}…",
+    "@midiControlConnecting": {
+        "description": "Status line while the selected MIDI device's port is being opened.",
+        "placeholders": {
+            "device": {
+                "type": "String"
+            }
+        }
+    },
+    "midiControlDeviceGone": "No se encuentra {device} — se reconectará al enchufarlo.",
+    "@midiControlDeviceGone": {
+        "description": "Status line when the selected MIDI device is absent; the selection is kept.",
+        "placeholders": {
+            "device": {
+                "type": "String"
+            }
+        }
+    },
+    "midiControlOpenFailed": "No se pudo abrir {device} (¿en uso por otra app?).",
+    "@midiControlOpenFailed": {
+        "description": "Status line when the selected MIDI device exists but its port could not be opened.",
+        "placeholders": {
+            "device": {
+                "type": "String"
+            }
+        }
+    },
+    "midiControlIdle": "No hay entrada MIDI conectada, así que estos mapeos están inactivos. Conectá el controlador o reaprendé una fila en el que estés usando.",
+    "@midiControlIdle": {
+        "description": "Notice at the head of the mapping list while no MIDI input is delivering."
+    },
     "trayNetworkLabel": "Red",
     "@trayNetworkLabel": {
         "description": "Navigation rail entry for the settings tray's Network face, which holds the WiFi and Bluetooth tabs."
@@ -1278,7 +1469,7 @@
     },
     "trayPedalLabel": "Pedal",
     "@trayPedalLabel": {
-        "description": "Navigation rail entry for the settings tray's pedal-assignment face. Deliberately shorter than pedalAssignTitle, which titles the face itself \u2014 rail entries are single words."
+        "description": "Navigation rail entry for the settings tray's pedal-assignment face. Deliberately shorter than pedalAssignTitle, which titles the face itself — rail entries are single words."
     },
     "trayTunerLabel": "Afinador",
     "@trayTunerLabel": {

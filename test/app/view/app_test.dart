@@ -5,6 +5,7 @@ import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
@@ -12,6 +13,7 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app.dart';
 import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/control/control.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/update/view/updates_settings_section.dart';
 import 'package:segno/visualizer/visualizer.dart';
@@ -193,6 +195,30 @@ void main() {
       );
       await tester.pumpAndSettle();
     }
+
+    testWidgets(
+      'ControlCubit is wired to the controller and MIDI device repositories',
+      (tester) async {
+        // External MIDI was inert for exactly this reason: both repositories
+        // were provided app-wide but never handed to the cubit that owns
+        // controller intent, so a learn returned before it started and stored
+        // mappings had nothing listening for their events.
+        await pumpApp(tester, NoopWaveformWindowService());
+
+        final control = tester
+            .element(find.byType(TracksView))
+            .read<ControlCubit>();
+        expect(control.state.controllerLearn, isNull);
+
+        control.learnControllerBinding(target: 'anything');
+        await tester.pump();
+
+        // A cubit with no controller returns before emitting anything.
+        expect(control.state.controllerLearn, isNotNull);
+        control.cancelControllerLearn();
+        await tester.pump();
+      },
+    );
 
     testWidgets('shows the startup update toast when a build is available', (
       tester,

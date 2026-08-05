@@ -1,11 +1,12 @@
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/bluetooth/bluetooth_cubit.dart';
 import 'package:segno/bluetooth/bluetooth_tray_body.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/network/network_surface.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/wifi/wifi_cubit.dart';
 import 'package:segno/wifi/wifi_tray_body.dart';
@@ -216,7 +217,7 @@ void main() {
         expect(find.byKey(const Key('wifi_power')), findsOneWidget);
         // No list, and no rescan button for a radio that cannot scan.
         expect(find.byKey(const Key('wifi_scan')), findsNothing);
-        expect(find.byType(NetworkCard), findsNothing);
+        expect(find.byType(ConsoleCard), findsNothing);
       },
     );
 
@@ -228,7 +229,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(client.calls, contains('setEnabled:false'));
-      expect(find.byType(NetworkCard), findsNothing);
+      expect(find.byType(ConsoleCard), findsNothing);
     });
 
     testWidgets(
@@ -242,7 +243,9 @@ void main() {
         await tester.tap(find.byKey(const Key('wifi_network_Studio-5G')));
         await tester.pumpAndSettle();
 
-        expect(find.byType(NetworkExpandedRow), findsOneWidget);
+        // Every row is a ConsoleExpandedRow now (it owns the open/close
+        // animation); only the open one has an action strip.
+        expect(find.byKey(const Key('console_row_actions')), findsOneWidget);
         expect(find.byKey(const Key('wifi_disconnect')), findsOneWidget);
         expect(find.byKey(const Key('wifi_forget')), findsOneWidget);
 
@@ -251,6 +254,121 @@ void main() {
         expect(client.calls, contains('disconnect'));
       },
     );
+
+    testWidgets('the actions grow in rather than appearing', (tester) async {
+      await pumpWifi(tester, _FakeWifiClient());
+
+      // The strip's own box keeps its natural height throughout — it is the
+      // clip around it that grows, so that is what gets measured.
+      Size clipHeight() => tester.getSize(
+        find
+            .ancestor(
+              of: find.byKey(const Key('console_row_actions')),
+              matching: find.byType(ClipRect),
+            )
+            .first,
+      );
+
+      await tester.tap(find.byKey(const Key('wifi_network_Studio-5G')));
+      await tester.pump();
+      final opening = clipHeight();
+
+      await tester.pump(const Duration(milliseconds: 90));
+      final midway = clipHeight();
+      await tester.pumpAndSettle();
+      final open = clipHeight();
+
+      // A strip that snapped open would report its full height on the first
+      // frame; this one is still growing three frames in.
+      expect(opening.height, lessThan(open.height));
+      expect(midway.height, greaterThan(opening.height));
+      expect(midway.height, lessThanOrEqualTo(open.height));
+    });
+
+    testWidgets('the whole open card takes the press, not just its row', (
+      tester,
+    ) async {
+      await pumpWifi(tester, _FakeWifiClient());
+      await tester.tap(find.byKey(const Key('wifi_network_Studio-5G')));
+      await tester.pumpAndSettle();
+
+      // One ink well over the card — row AND action strip — so a press
+      // lights the whole thing rather than its top 70px.
+      final ink = find.ancestor(
+        of: find.byKey(const Key('console_row_actions')),
+        matching: find.byType(InkWell),
+      );
+      expect(ink, findsOneWidget);
+      final card = tester.getSize(
+        find.ancestor(
+          of: find.byKey(const Key('console_row_actions')),
+          matching: find.byType(ConsoleExpandedRow),
+        ),
+      );
+      expect(tester.getSize(ink.first).height, card.height);
+      expect(tester.getSize(ink.first).height, greaterThan(kConsoleRowHeight));
+    });
+
+    testWidgets('the divider fades with the row instead of snapping', (
+      tester,
+    ) async {
+      await pumpWifi(tester, _FakeWifiClient());
+
+      // The hairline's PAINTED colour, read off the render object so this
+      // sees the interpolated value rather than the target.
+      Color? hairline() {
+        for (final box in tester.renderObjectList<RenderDecoratedBox>(
+          find.descendant(
+            of: find.byKey(const Key('wifi_network_Studio-5G')),
+            matching: find.byType(DecoratedBox),
+          ),
+        )) {
+          final decoration = box.decoration;
+          if (decoration is BoxDecoration && decoration.border != null) {
+            return decoration.border!.bottom.color;
+          }
+        }
+        return null;
+      }
+
+      final shut = hairline();
+      expect(shut, isNotNull);
+      expect(shut!.a, greaterThan(0));
+
+      await tester.tap(find.byKey(const Key('wifi_network_Studio-5G')));
+      await tester.pump();
+
+      // Frame one: still (nearly) its old colour. Snapping to transparent
+      // here is the flicker — a line disappearing under a tint that is
+      // itself still fading in.
+      expect(hairline()!.a, greaterThan(0));
+
+      await tester.pumpAndSettle();
+      expect(hairline()!.a, 0);
+    });
+
+    testWidgets('the actions shrink away rather than vanishing', (
+      tester,
+    ) async {
+      await pumpWifi(tester, _FakeWifiClient());
+      await tester.tap(find.byKey(const Key('wifi_network_Studio-5G')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('wifi_network_Studio-5G')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+
+      // Mid-close the chips are still on screen, shrinking with the strip —
+      // a row that dropped them on the first frame would leave an empty gap
+      // collapsing behind them.
+      expect(find.byKey(const Key('wifi_disconnect')), findsOneWidget);
+
+      await tester.pumpAndSettle();
+
+      // ...and once it is shut, nothing of the strip is left to tap.
+      expect(find.byKey(const Key('wifi_disconnect')), findsNothing);
+      expect(find.byKey(const Key('console_row_actions')), findsNothing);
+    });
 
     testWidgets('forgetting confirms first', (tester) async {
       final client = _FakeWifiClient();
@@ -407,7 +525,7 @@ void main() {
 
       expect(find.byKey(const Key('bluetooth_power')), findsOneWidget);
       expect(find.byKey(const Key('bluetooth_scan')), findsNothing);
-      expect(find.byType(NetworkCard), findsNothing);
+      expect(find.byType(ConsoleCard), findsNothing);
     });
   });
 }
