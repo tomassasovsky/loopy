@@ -296,9 +296,69 @@ void main() {
 
       expect(find.byKey(const Key('midi_device_row')), findsOneWidget);
       expect(find.byKey(const Key('midi_status_connection')), findsOneWidget);
-      expect(find.byKey(const Key('midi_status_traffic')), findsOneWidget);
+      // No device in this harness, so no traffic line and an idle notice.
+      expect(find.byKey(const Key('midi_status_traffic')), findsNothing);
+      expect(find.byKey(const Key('midi_idle_notice')), findsOneWidget);
       expect(find.text(l10n.midiControlFixedCcs), findsOneWidget);
       expect(find.byKey(const Key('midi_mapping_empty')), findsOneWidget);
+    });
+
+    testWidgets('each device fault says what it actually is', (tester) async {
+      // The repository tells four states apart; a face that calls them all
+      // "no MIDI device" sends the operator looking in the wrong place.
+      for (final probe in [
+        (
+          // `none` is the default, spelled out so the case list reads as
+          // four states rather than three and a blank.
+          const MidiConnection(),
+          (AppLocalizations l) => l.midiControlNoDeviceDetail,
+        ),
+        (
+          const MidiConnection(
+            status: MidiConnectionStatus.deviceGone,
+            selectedId: 'p',
+            selectedName: 'Nektar Pacer',
+          ),
+          (AppLocalizations l) => l.midiControlDeviceGone('Nektar Pacer'),
+        ),
+        (
+          const MidiConnection(
+            status: MidiConnectionStatus.error,
+            selectedId: 'p',
+            selectedName: 'Nektar Pacer',
+          ),
+          (AppLocalizations l) => l.midiControlOpenFailed('Nektar Pacer'),
+        ),
+      ]) {
+        when(() => midiDevices.connection).thenReturn(probe.$1);
+        await pump(tester, tab: ControlTab.midi);
+
+        expect(find.text(probe.$2(l10n)), findsOneWidget);
+        // ...and the mappings say why they cannot fire.
+        expect(find.byKey(const Key('midi_idle_notice')), findsOneWidget);
+        // No traffic line while there is nothing to carry traffic.
+        expect(find.byKey(const Key('midi_status_traffic')), findsNothing);
+      }
+    });
+
+    testWidgets('a connected device reports its traffic and no idle notice', (
+      tester,
+    ) async {
+      when(() => midiDevices.connection).thenReturn(
+        const MidiConnection(
+          status: MidiConnectionStatus.connected,
+          selectedId: 'p',
+          selectedName: 'Nektar Pacer',
+        ),
+      );
+      await pump(tester, tab: ControlTab.midi);
+
+      expect(
+        find.text(l10n.midiControlConnected('Nektar Pacer')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('midi_status_traffic')), findsOneWidget);
+      expect(find.byKey(const Key('midi_idle_notice')), findsNothing);
     });
 
     testWidgets('a mapping opens to its calibration and actions', (
