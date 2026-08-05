@@ -346,6 +346,15 @@ class App extends StatelessWidget {
                 pedal: pedalRepo,
                 settings: context.read<SettingsRepository>(),
                 performance: context.read<PerformanceRepository>(),
+                // Without these, external MIDI is inert end to end: a learn
+                // returns before it starts (no source to capture from),
+                // stored mappings never fire (nothing subscribes to the
+                // repository's binding events), and a device coming back
+                // never re-arms them. Both repositories are already provided
+                // app-wide — they were simply never handed to the one cubit
+                // that owns controller intent.
+                controller: context.read<ControllerRepository>(),
+                midiDevices: context.read<MidiDeviceRepository>(),
               );
               unawaited(cubit.load()); // boot-default mode restore
               return cubit;
