@@ -108,6 +108,23 @@ class _PedalFaceplateState extends State<PedalFaceplate> {
   }
 }
 
+/// The meter state the 7" waveform colours itself by: the [cursor] track's
+/// transport state, with muted overlaying it — so the stroke and the track name
+/// drawn over it describe the same track.
+///
+/// A cursor that names no live track reads as empty rather than throwing: the
+/// cursor is an index owned by the control layer, and it can point past the
+/// track list while the engine is starting or after a rig change.
+@visibleForTesting
+LooperMeterState waveformStateOfCursor(LooperState looper, int cursor) {
+  for (final track in looper.tracks) {
+    if (track.channel == cursor) {
+      return LooperMeterState.of(track.state, muted: track.muted);
+    }
+  }
+  return LooperMeterState.empty;
+}
+
 /// The live output waveform in the 7" aperture, polled from the looper on a
 /// display-rate timer (mirrors what the waveform sub-window is fed).
 class _ScreenWaveform extends StatefulWidget {
@@ -123,6 +140,7 @@ class _ScreenWaveformState extends State<_ScreenWaveform> {
   Float32List _samples = Float32List(0);
   double _progress = 0;
   String _selectedTrack = '';
+  LooperMeterState _state = LooperMeterState.empty;
 
   @override
   void initState() {
@@ -134,12 +152,12 @@ class _ScreenWaveformState extends State<_ScreenWaveform> {
     if (!mounted) return;
     final looper = context.read<LooperRepository>();
     final tracks = context.read<TracksCubit>();
+    final cursor = context.read<ControlCubit>().state.cursor;
     setState(() {
       _samples = looper.readWaveform();
       _progress = looper.state.transport.progress;
-      _selectedTrack = tracks.state.nameOf(
-        context.read<ControlCubit>().state.cursor,
-      );
+      _selectedTrack = tracks.state.nameOf(cursor);
+      _state = waveformStateOfCursor(looper.state, cursor);
     });
   }
 
@@ -157,6 +175,7 @@ class _ScreenWaveformState extends State<_ScreenWaveform> {
         samples: _samples,
         progress: _progress,
         selectedTrack: _selectedTrack,
+        state: _state,
       ),
     );
   }

@@ -5,14 +5,14 @@ import 'package:segno/theme/theme.dart';
 
 /// Paints a mirrored, centered loop waveform from peak [samples] (index 0 =
 /// loop start, each in `0..1`) with a white playhead bar at [progress]
-/// (`0..1`). Colors default to the active [LooperTheme]. Repaints on a new list
-/// or progress is supplied.
+/// (`0..1`). The stroke colour comes from the active [LooperTheme]'s waveform
+/// table, keyed by [state]. Repaints on a new list or progress is supplied.
 class WaveformView extends StatelessWidget {
   /// Creates a [WaveformView].
   const WaveformView({
     required this.samples,
+    required this.state,
     this.progress = 0,
-    this.color,
     this.semanticLabel,
     this.selectedTrack,
     super.key,
@@ -24,8 +24,11 @@ class WaveformView extends StatelessWidget {
   /// Playhead position in `0..1`; the white bar is hidden when `<= 0`.
   final double progress;
 
-  /// Stroke color; defaults to [LooperTheme.waveformColor].
-  final Color? color;
+  /// The transport state the stroke colour speaks for — the [selectedTrack]'s,
+  /// so the colour and the name label describe the same track. Required: the
+  /// waveform is part of the transport legend, so there is no such thing as
+  /// "the waveform colour" without a state to resolve it against.
+  final LooperMeterState state;
 
   /// Accessible name for the otherwise-opaque waveform (WCAG 1.1.1). When set,
   /// the view is exposed to screen readers with this label and a playhead-
@@ -45,7 +48,7 @@ class WaveformView extends StatelessWidget {
       painter: WaveformPainter(
         samples: samples,
         progress: progress,
-        color: color ?? looper?.waveformColor ?? Colors.tealAccent,
+        color: looper?.waveformColor(state) ?? Colors.tealAccent,
       ),
       size: Size.infinite,
     );

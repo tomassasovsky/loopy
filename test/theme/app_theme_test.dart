@@ -105,6 +105,98 @@ void main() {
       );
     });
 
+    // #499 stage 3b. The waveform stopped/muted tones carry alpha, so their
+    // legibility is a property of what they sit on: composite before measuring
+    // or the numbers are fiction.
+    Color onWaveformBackground(LooperTheme looper, LooperMeterState state) =>
+        Color.alphaBlend(
+          looper.waveformColor(state),
+          looper.waveformBackground,
+        );
+
+    test('every waveform state clears 3:1 on its background', () {
+      // WCAG 1.4.11: the waveform is a non-text component, so every state it
+      // can be drawn in has to clear the 3:1 non-text threshold against its
+      // own background — including the alpha-dimmed "not sounding" set.
+      //
+      // No state is exempt, and `empty` least of all: this surface paints the
+      // mixed output, so it has a full waveform to show even when the cursor
+      // track is empty. A dim empty here blacks out the mix.
+      for (final data in [AppTheme.neon, AppTheme.highContrast]) {
+        final looper = data.extension<LooperTheme>()!;
+        for (final state in LooperMeterState.values) {
+          expect(
+            ratio(
+              onWaveformBackground(looper, state),
+              looper.waveformBackground,
+            ),
+            greaterThanOrEqualTo(3),
+            reason: 'waveform state $state is illegible on its background',
+          );
+        }
+      }
+    });
+
+    test('a silenced track reads visibly quieter than a merely idle one', () {
+      // muted and stopped/empty are separated by brightness alone — no hue does
+      // the work — so the step has to be a visible one. Exact inequality would
+      // not do: two dimmed whites can differ numerically and still render as
+      // the same grey. 1.5:1 is comfortably inside what reads as a step.
+      for (final data in [AppTheme.neon, AppTheme.highContrast]) {
+        final looper = data.extension<LooperTheme>()!;
+        final muted = onWaveformBackground(looper, LooperMeterState.muted);
+        final stopped = onWaveformBackground(looper, LooperMeterState.stopped);
+        expect(
+          muted.computeLuminance(),
+          lessThan(stopped.computeLuminance()),
+          reason: 'a muted track must not read louder than a stopped one',
+        );
+        expect(
+          ratio(stopped, muted),
+          greaterThanOrEqualTo(1.5),
+          reason: 'muted and stopped render as the same grey',
+        );
+      }
+    });
+
+    test('high contrast lifts every waveform state above the default', () {
+      // The HC set encodes a legibility decision, not a hue preference: a
+      // state that only passes in the default variant is not done.
+      final dark = AppTheme.neon.extension<LooperTheme>()!;
+      final hc = AppTheme.highContrast.extension<LooperTheme>()!;
+      for (final state in LooperMeterState.values) {
+        expect(
+          ratio(onWaveformBackground(hc, state), hc.waveformBackground),
+          greaterThan(
+            ratio(onWaveformBackground(dark, state), dark.waveformBackground),
+          ),
+          reason: 'high contrast must out-contrast the default for $state',
+        );
+      }
+    });
+
+    test('the silent waveform states stay distinguishable from each other', () {
+      // Stopped and muted are the same hue at different alpha, so nothing but
+      // the dimming separates them: muted must read as the quieter of the two
+      // and must not converge on it.
+      for (final data in [AppTheme.neon, AppTheme.highContrast]) {
+        final looper = data.extension<LooperTheme>()!;
+        final stopped = ratio(
+          onWaveformBackground(looper, LooperMeterState.stopped),
+          looper.waveformBackground,
+        );
+        final muted = ratio(
+          onWaveformBackground(looper, LooperMeterState.muted),
+          looper.waveformBackground,
+        );
+        expect(muted, lessThan(stopped));
+        expect(
+          looper.waveformColor(LooperMeterState.muted),
+          isNot(looper.waveformColor(LooperMeterState.stopped)),
+        );
+      }
+    });
+
     test('the disabled dim is a token, and high contrast dims less', () {
       // R26: disabled rendering resolves from the theme, never from an ad-hoc
       // opacity constant in a widget — and it must stay legible under the
