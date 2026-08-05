@@ -109,7 +109,7 @@ class _PaneShell extends StatelessWidget {
                   ),
                   decoration: BoxDecoration(
                     color: surface.cardHigh,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(SurfaceTheme.radius10),
                     border: Border.all(color: surface.line),
                   ),
                   child: Text(
@@ -419,7 +419,9 @@ class _TracksPane extends _Pane {
                           vertical: 1,
                         ),
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(9),
+                          borderRadius: BorderRadius.circular(
+                            SurfaceTheme.radius9,
+                          ),
                           border: Border.all(color: surface.line),
                         ),
                         child: Text(

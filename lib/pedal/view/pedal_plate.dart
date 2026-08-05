@@ -187,7 +187,9 @@ class PedalPlate extends StatelessWidget {
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: surface.card,
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(
+                        SurfaceTheme.radius17,
+                      ),
                       border: Border.all(color: surface.line),
                     ),
                   ),
@@ -484,11 +486,11 @@ class _ScreenBezel extends StatelessWidget {
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: Colors.black,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius10),
         border: Border.all(color: context.surface.line, width: 2),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius7),
         child: child,
       ),
     );
@@ -629,7 +631,7 @@ class _FootswitchState extends State<_Footswitch> {
             key: Key('pedalFaceplate_footswitch_${widget.button.name}'),
             decoration: BoxDecoration(
               color: _down ? surface.cardHigh : surface.surface,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(SurfaceTheme.radius10),
               border: Border.all(
                 color: widget.selected ? surface.accent : surface.line,
                 width: _down || widget.selected ? 2 : 1,

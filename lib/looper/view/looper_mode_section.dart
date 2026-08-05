@@ -206,7 +206,7 @@ class _ModeListTile extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(18, 14, 14, 14),
         decoration: BoxDecoration(
           color: selected ? surface.cardHigh : surface.card,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
           border: Border.all(
             color: selected ? surface.accent : surface.line,
             width: selected ? 1.5 : 1,

@@ -82,7 +82,7 @@ class _InputRow extends StatelessWidget {
                 child: InkWell(
                   key: Key('signalInGate_${row.input}'),
                   onTap: onToggleGate,
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(SurfaceTheme.radius17),
                   child: Padding(
                     padding: const EdgeInsets.all(4),
                     child: SignalGateDot(on: on),
@@ -393,7 +393,7 @@ class _FeederChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: surface.cardHigh,
-        borderRadius: BorderRadius.circular(7),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius7),
         border: Border.all(color: surface.line),
       ),
       child: Text(
@@ -430,7 +430,7 @@ class _RowCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: surface.card,
-        borderRadius: BorderRadius.circular(11),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius11),
         border: Border.all(
           color: selected ? surface.accent : surface.line,
           width: selected ? 1.5 : 1,
@@ -624,7 +624,7 @@ class _CaptureBadge extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: surface.surface,
-          borderRadius: BorderRadius.circular(7),
+          borderRadius: BorderRadius.circular(SurfaceTheme.radius7),
           border: Border.all(color: surface.line),
         ),
         child: Text(
@@ -657,14 +657,14 @@ class _GateToggle extends StatelessWidget {
       child: InkWell(
         key: gateKey,
         onTap: onToggle,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius7),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
           decoration: BoxDecoration(
             color: on
                 ? surface.accent.withValues(alpha: 0.16)
                 : surface.surface,
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(SurfaceTheme.radius7),
             border: Border.all(
               color: on ? surface.accent.withValues(alpha: 0.5) : surface.line,
             ),

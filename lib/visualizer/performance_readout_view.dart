@@ -79,7 +79,7 @@ class _ReadoutHeader extends StatelessWidget {
           key: const Key('readout_mode'),
           decoration: BoxDecoration(
             color: surface.accent.withValues(alpha: 0.18),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(SurfaceTheme.radius10),
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -190,7 +190,7 @@ class _TrackCell extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: tint.withValues(alpha: track.state == 'empty' ? 0.06 : 0.2),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(SurfaceTheme.radius12),
           border: Border.all(
             // A pending (quantized) action is the one thing worth an outline:
             // it is about to happen and nothing else on screen says so.

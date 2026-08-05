@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:segno/theme/surface_theme.dart';
 import 'package:toastification/toastification.dart';
 
 /// Stable toast ids used by the app shell (and widget tests).
@@ -58,7 +59,7 @@ ToastificationItem showAppToast({
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
             color: scheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(SurfaceTheme.radius12),
             border: Border.all(color: scheme.outlineVariant),
             boxShadow: [
               BoxShadow(

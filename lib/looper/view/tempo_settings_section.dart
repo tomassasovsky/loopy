@@ -301,7 +301,7 @@ class _SignatureChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: selected ? surface.cardHigh : surface.card,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(SurfaceTheme.radius10),
           border: Border.all(
             color: selected ? surface.accent : surface.line,
             width: selected ? 1.5 : 1,

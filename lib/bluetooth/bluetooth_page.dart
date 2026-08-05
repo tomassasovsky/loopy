@@ -187,7 +187,7 @@ class _BluetoothControlStrip extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: surface.card,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius10),
         border: Border.all(color: surface.line),
       ),
       child: Padding(
@@ -290,7 +290,7 @@ class _BluetoothDeviceList extends StatelessWidget {
           DecoratedBox(
             decoration: BoxDecoration(
               color: surface.card,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(SurfaceTheme.radius10),
               border: Border.all(color: surface.line),
             ),
             child: Column(

@@ -99,7 +99,7 @@ class _TrayBrightnessSliderState extends State<TrayBrightnessSlider> {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 color: surface.accent.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(28),
+                borderRadius: BorderRadius.circular(SurfaceTheme.radiusPill),
                 border: Border.all(
                   color: Colors.white.withValues(alpha: 0.08),
                 ),

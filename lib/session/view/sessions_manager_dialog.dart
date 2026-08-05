@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/session/session.dart';
+import 'package:segno/theme/surface_theme.dart';
 import 'package:session_repository/session_repository.dart';
 
 /// Opens the **Sessions** popup — the single place to handle sessions (like
@@ -212,7 +213,7 @@ class _SessionCard extends StatelessWidget {
       color: isCurrent
           ? scheme.primaryContainer
           : scheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(SurfaceTheme.radius12),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () {

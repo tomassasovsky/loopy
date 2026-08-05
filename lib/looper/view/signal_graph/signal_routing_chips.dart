@@ -85,7 +85,7 @@ class _Chip extends StatelessWidget {
         child: InkWell(
           key: chipKey,
           onTap: onTap,
-          borderRadius: BorderRadius.circular(7),
+          borderRadius: BorderRadius.circular(SurfaceTheme.radius7),
           child: Semantics(
             button: true,
             label: semanticLabel,
@@ -93,7 +93,7 @@ class _Chip extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
                 color: surface.cardHigh,
-                borderRadius: BorderRadius.circular(7),
+                borderRadius: BorderRadius.circular(SurfaceTheme.radius7),
                 border: Border.all(color: surface.line),
               ),
               child: Text(
@@ -157,7 +157,7 @@ class _AddRouteButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(7),
+          borderRadius: BorderRadius.circular(SurfaceTheme.radius7),
           border: Border.all(color: surface.line),
         ),
         child: Text('+', style: signalMono(color: surface.textTertiary)),

@@ -280,7 +280,7 @@ class _TrayHandle extends StatelessWidget {
             height: 5,
             decoration: BoxDecoration(
               color: tint,
-              borderRadius: BorderRadius.circular(2.5),
+              borderRadius: BorderRadius.circular(SurfaceTheme.radius2),
             ),
           ),
         ),

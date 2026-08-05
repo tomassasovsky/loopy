@@ -126,7 +126,7 @@ class TrackColumn extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: looper.tileBackground,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
         border: Border.all(
           color: selected ? Colors.white : Colors.transparent,
           width: 3,
@@ -453,7 +453,7 @@ class _TrackIndicator extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: looper.indicatorColor(status),
-          borderRadius: BorderRadius.circular(2),
+          borderRadius: BorderRadius.circular(SurfaceTheme.radius2),
         ),
         child: const SizedBox(height: 5, width: double.infinity),
       ),
@@ -541,7 +541,7 @@ class _ChainOffPill extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       decoration: BoxDecoration(
         color: surface.background.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius7),
         border: Border.all(color: surface.warning),
       ),
       // The tile's own semantic label already reads the chain state, so this

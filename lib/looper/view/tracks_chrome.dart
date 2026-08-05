@@ -155,10 +155,10 @@ class AudioNotRunningBanner extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Material(
       color: scheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(SurfaceTheme.radius10),
       child: InkWell(
         key: const Key('tracks_audioNotRunning'),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius10),
         onTap: () => unawaited(openSegnoSettings()),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -270,7 +270,7 @@ class ModeIndicator extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.16),
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(SurfaceTheme.radius10),
           border: Border.all(color: color),
         ),
         child: Row(
@@ -312,7 +312,7 @@ class BankSwitch extends StatelessWidget {
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: looper.tileBackground,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius10),
         border: Border.all(color: looper.tileBorder),
       ),
       child: Row(
@@ -337,7 +337,7 @@ class BankSwitch extends StatelessWidget {
                 ),
                 decoration: BoxDecoration(
                   color: i == active ? accent : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(SurfaceTheme.radius8),
                 ),
                 child: Text(
                   String.fromCharCode(0x41 + i),

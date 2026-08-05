@@ -43,7 +43,7 @@ class _SignalLegend extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
               decoration: BoxDecoration(
                 color: surface.accent.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(5),
+                borderRadius: BorderRadius.circular(SurfaceTheme.radius7),
                 border: Border.all(
                   color: surface.accent.withValues(alpha: 0.55),
                 ),
@@ -131,7 +131,7 @@ class _NoActiveOutputsNotice extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: warning.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(9),
+          borderRadius: BorderRadius.circular(SurfaceTheme.radius9),
           border: Border.all(color: warning.withValues(alpha: 0.32)),
         ),
         child: Row(

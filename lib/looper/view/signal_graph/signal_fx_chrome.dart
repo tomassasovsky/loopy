@@ -184,7 +184,7 @@ class InheritedFxBadge extends StatelessWidget {
           key: badgeKey,
           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(7),
+            borderRadius: BorderRadius.circular(SurfaceTheme.radius7),
             border: Border.all(color: surface.line),
           ),
           child: Row(

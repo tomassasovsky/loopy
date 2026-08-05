@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 /// Which key layout the on-screen keyboard offers.
 enum OnScreenKeyboardLayout {
@@ -221,7 +222,9 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
     return ButtonStyle(
       padding: const WidgetStatePropertyAll(EdgeInsets.zero),
       shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(SurfaceTheme.radius8),
+        ),
       ),
       backgroundColor: selected
           ? WidgetStatePropertyAll(scheme.primaryContainer)

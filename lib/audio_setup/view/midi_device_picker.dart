@@ -61,7 +61,7 @@ class _MidiEmptyState extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: context.surface.card,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius12),
         border: Border.all(color: context.surface.line),
       ),
       child: Text(context.l10n.midiNoDevicesFound, style: context.setupBody),
@@ -96,7 +96,7 @@ class _MidiDropdown extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: context.surface.card,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(SurfaceTheme.radius12),
           border: Border.all(color: context.surface.line),
         ),
         child: DropdownButtonHideUnderline(
@@ -106,7 +106,7 @@ class _MidiDropdown extends StatelessWidget {
             value: value,
             isExpanded: true,
             dropdownColor: context.surface.cardHigh,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(SurfaceTheme.radius12),
             icon: Icon(Icons.expand_more, color: context.surface.textSecondary),
             style: TextStyle(color: context.surface.textPrimary, fontSize: 14),
             items: [

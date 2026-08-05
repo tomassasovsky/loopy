@@ -65,14 +65,14 @@ class FxBlockChip extends StatelessWidget {
       child: InkWell(
         key: chipKey,
         onTap: onTap,
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius9),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
             color: selected
                 ? surface.accent.withValues(alpha: 0.16)
                 : surface.cardHigh,
-            borderRadius: BorderRadius.circular(9),
+            borderRadius: BorderRadius.circular(SurfaceTheme.radius9),
             border: Border.all(
               color: selected ? surface.accent : surface.line,
               width: selected ? 1.5 : 1,

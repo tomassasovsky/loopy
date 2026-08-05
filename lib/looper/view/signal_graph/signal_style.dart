@@ -20,7 +20,7 @@ const double kSignalMaxGain = 2;
 /// with [SurfaceTheme.cardHigh] for the fill.
 RoundedRectangleBorder signalMenuShape(SurfaceTheme surface) =>
     RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(SurfaceTheme.radius10),
       side: BorderSide(color: surface.line),
     );
 

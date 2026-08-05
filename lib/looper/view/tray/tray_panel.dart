@@ -33,7 +33,9 @@ class TrayPanel extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
+        borderRadius: const BorderRadius.vertical(
+          bottom: Radius.circular(SurfaceTheme.radius24),
+        ),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
           child: DecoratedBox(

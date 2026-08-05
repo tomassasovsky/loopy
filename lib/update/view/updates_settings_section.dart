@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/setup/setup_surface.dart';
+import 'package:segno/theme/surface_theme.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 
 /// The "Updates" section of the settings surface: installed version + channel,
@@ -220,7 +221,7 @@ class _UpdateActionRow extends StatelessWidget {
         if (state.phase == UpdatePhase.downloading) ...[
           const SizedBox(height: 10),
           ClipRRect(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(SurfaceTheme.radius2),
             child: LinearProgressIndicator(
               key: const Key('settings_updates_progress'),
               value: state.progress,

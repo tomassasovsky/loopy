@@ -83,7 +83,7 @@ class SignalFxSummary extends StatelessWidget {
       child: InkWell(
         key: summaryKey,
         onTap: onEdit,
-        borderRadius: BorderRadius.circular(7),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius7),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 2),
           // Dimming happens per chip, exactly once: an outer wrapper here
@@ -150,7 +150,7 @@ class _SummaryChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: surface.cardHigh,
-        borderRadius: BorderRadius.circular(7),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius7),
         border: Border.all(color: surface.line),
       ),
       child: Row(
@@ -197,7 +197,7 @@ class _ChainOffChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(7),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius7),
         border: Border.all(color: surface.warning),
       ),
       child: Row(
@@ -242,7 +242,7 @@ class _StompChip extends StatelessWidget {
         key: Key('stomp_chip_$button'),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(7),
+          borderRadius: BorderRadius.circular(SurfaceTheme.radius7),
           border: Border.all(color: tone),
           color: held ? tone.withValues(alpha: 0.15) : null,
         ),
@@ -277,7 +277,7 @@ class _AddFxChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(7),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius7),
         border: Border.all(color: surface.line),
       ),
       child: Row(

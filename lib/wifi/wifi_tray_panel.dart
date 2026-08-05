@@ -107,7 +107,9 @@ class _WifiTrayPanelState extends State<WifiTrayPanel> {
                   : DecoratedBox(
                       decoration: BoxDecoration(
                         color: surface.card.withValues(alpha: 0.55),
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(
+                          SurfaceTheme.radius10,
+                        ),
                         border: Border.all(color: surface.line),
                       ),
                       child: Builder(
@@ -211,7 +213,7 @@ class _StatusCard extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: surface.card.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius10),
         border: Border.all(color: surface.line),
       ),
       child: Padding(

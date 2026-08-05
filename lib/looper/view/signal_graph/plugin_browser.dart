@@ -88,7 +88,7 @@ class _PluginBrowserDialogState extends State<_PluginBrowserDialog> {
     return Dialog(
       backgroundColor: surface.card,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius12),
         side: BorderSide(color: surface.line),
       ),
       child: SizedBox(
@@ -147,11 +147,11 @@ class _PluginBrowserDialogState extends State<_PluginBrowserDialog> {
                   filled: true,
                   fillColor: surface.surface,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(SurfaceTheme.radius8),
                     borderSide: BorderSide(color: surface.line),
                   ),
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(SurfaceTheme.radius8),
                     borderSide: BorderSide(color: surface.line),
                   ),
                 ),
@@ -242,7 +242,7 @@ class _PluginRow extends StatelessWidget {
       child: InkWell(
         key: Key('pluginBrowser_row_${descriptor.id}'),
         onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius8),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
           child: Row(
@@ -251,7 +251,7 @@ class _PluginRow extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                 decoration: BoxDecoration(
                   color: surface.accent.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(5),
+                  borderRadius: BorderRadius.circular(SurfaceTheme.radius7),
                 ),
                 child: Text(
                   isVst3 ? 'VST3' : 'CLAP',

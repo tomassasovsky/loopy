@@ -281,7 +281,7 @@ class _LiftedCard extends StatelessWidget {
           scale: 1.04,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(9),
+              borderRadius: BorderRadius.circular(SurfaceTheme.radius9),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.45),
@@ -358,7 +358,7 @@ class _DropSlot extends StatelessWidget {
                   height: height,
                   decoration: BoxDecoration(
                     color: surface.accent,
-                    borderRadius: BorderRadius.circular(2),
+                    borderRadius: BorderRadius.circular(SurfaceTheme.radius2),
                   ),
                 )
               : const SizedBox.shrink(),
@@ -417,7 +417,7 @@ class _DeviceCard extends StatelessWidget {
       width: cardWidth,
       decoration: BoxDecoration(
         color: surface.cardHigh,
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius9),
         border: Border.all(color: surface.line),
       ),
       child: Column(
@@ -432,7 +432,7 @@ class _DeviceCard extends StatelessWidget {
               decoration: BoxDecoration(
                 color: surface.accent.withValues(alpha: 0.10),
                 borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(8),
+                  top: Radius.circular(SurfaceTheme.radius8),
                 ),
                 border: Border(bottom: BorderSide(color: surface.line)),
               ),
@@ -723,7 +723,7 @@ class _PluginDeviceCard extends StatelessWidget {
       width: cardWidth,
       decoration: BoxDecoration(
         color: surface.cardHigh,
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius9),
         border: Border.all(color: surface.line),
       ),
       child: Column(
@@ -736,7 +736,7 @@ class _PluginDeviceCard extends StatelessWidget {
               decoration: BoxDecoration(
                 color: surface.accent.withValues(alpha: 0.10),
                 borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(8),
+                  top: Radius.circular(SurfaceTheme.radius8),
                 ),
                 border: Border(bottom: BorderSide(color: surface.line)),
               ),
@@ -909,7 +909,7 @@ class _PluginPlaceholderCard extends StatelessWidget {
       width: 150,
       decoration: BoxDecoration(
         color: surface.cardHigh,
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius9),
         border: Border.all(color: surface.textTertiary.withValues(alpha: 0.4)),
       ),
       child: Column(
@@ -920,7 +920,7 @@ class _PluginPlaceholderCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: surface.textTertiary.withValues(alpha: 0.10),
               borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(8),
+                top: Radius.circular(SurfaceTheme.radius8),
               ),
               border: Border(bottom: BorderSide(color: surface.line)),
             ),
@@ -1397,7 +1397,7 @@ class _ModeSwitch extends StatelessWidget {
           height: 36,
           decoration: BoxDecoration(
             color: surface.surface,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(SurfaceTheme.radius8),
             border: Border.all(color: surface.line),
           ),
           clipBehavior: Clip.antiAlias,
@@ -1505,7 +1505,7 @@ class _AddDeviceCard extends StatelessWidget {
       key: cardKey,
       width: 104,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius9),
         border: Border.all(color: surface.line),
       ),
       clipBehavior: Clip.antiAlias,

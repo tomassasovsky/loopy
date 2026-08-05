@@ -164,7 +164,9 @@ class _BluetoothTrayPanelState extends State<BluetoothTrayPanel> {
                   : DecoratedBox(
                       decoration: BoxDecoration(
                         color: surface.card.withValues(alpha: 0.55),
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(
+                          SurfaceTheme.radius10,
+                        ),
                         border: Border.all(color: surface.line),
                       ),
                       child: ListView.separated(

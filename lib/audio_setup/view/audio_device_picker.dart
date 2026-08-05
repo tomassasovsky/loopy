@@ -54,7 +54,7 @@ class AudioDevicePicker extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: context.surface.card,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(SurfaceTheme.radius12),
           border: Border.all(color: context.surface.line),
         ),
         child: DropdownButtonHideUnderline(
@@ -64,7 +64,7 @@ class AudioDevicePicker extends StatelessWidget {
             value: value,
             isExpanded: true,
             dropdownColor: context.surface.cardHigh,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(SurfaceTheme.radius12),
             icon: Icon(
               Icons.expand_more,
               color: context.surface.textSecondary,

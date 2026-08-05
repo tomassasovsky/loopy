@@ -194,6 +194,52 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// bundled under `assets/fonts/`.
   static const String monoFont = 'JetBrains Mono';
 
+  /// Corner radii, from `DS / 01 Foundations`.
+  ///
+  /// Geometry is deliberately **not** a themed field: a radius does not change
+  /// between [dark] and [highContrast], so making it one would only give the
+  /// two variants a way to drift. These sit beside the typefaces as plain
+  /// constants for the same reason.
+  ///
+  /// Named numerically rather than by t-shirt size. The ramp is ten steps
+  /// inside a 15px band, so `sm`/`md`/`lg` would imply a hierarchy that isn't
+  /// there — and numeric names make a call site's intent checkable against the
+  /// design at a glance.
+  static const double radius2 = 2;
+
+  /// Segments, parameter tiles. See [radius2].
+  static const double radius7 = 7;
+
+  /// Buttons, keypad keys. See [radius2].
+  static const double radius8 = 8;
+
+  /// Chips, FX blocks. See [radius2].
+  static const double radius9 = 9;
+
+  /// Fields, pill buttons. See [radius2].
+  static const double radius10 = 10;
+
+  /// Nav items. See [radius2].
+  static const double radius11 = 11;
+
+  /// Panels, slider tracks, toasts. See [radius2].
+  static const double radius12 = 12;
+
+  /// Cards, large tiles. See [radius2].
+  static const double radius14 = 14;
+
+  /// Dialogs, track columns. See [radius2].
+  static const double radius17 = 17;
+
+  /// Full-width sheets — the slide-down settings tray. Distinct from [radius17]
+  /// because a sheet spanning the console reads as under-rounded at a dialog's
+  /// radius. See [radius2].
+  static const double radius24 = 24;
+
+  /// Fully rounded ends — toggles, status chips. Large enough that any control
+  /// height it is applied to reads as a stadium.
+  static const double radiusPill = 999;
+
   @override
   SurfaceTheme copyWith({
     Color? background,

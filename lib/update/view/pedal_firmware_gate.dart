@@ -73,7 +73,7 @@ class _GateBody extends StatelessWidget {
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
             color: surface.card,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(SurfaceTheme.radius14),
             border: Border.all(color: surface.line),
           ),
           child: Column(

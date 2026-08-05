@@ -228,9 +228,9 @@ class HostActionChip extends StatelessWidget {
     final surface = context.surface;
     return Material(
       color: surface.background.withValues(alpha: 0.55),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(SurfaceTheme.radius8),
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius8),
         onTap: onPressed,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),

@@ -139,7 +139,7 @@ class _PedalEmptyState extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: context.surface.card,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius12),
         border: Border.all(color: context.surface.line),
       ),
       child: Text(context.l10n.pedalNoOutputs, style: context.setupBody),
@@ -184,7 +184,7 @@ class _PedalFirmwareUpdateBanner extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: context.surface.card,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(SurfaceTheme.radius12),
           border: Border.all(color: theme.colorScheme.primary),
         ),
         child: Column(
@@ -292,7 +292,7 @@ class _PedalStyledDropdown<T> extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
         color: context.surface.card,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius12),
         border: Border.all(color: context.surface.line),
       ),
       child: DropdownButtonHideUnderline(
@@ -302,7 +302,7 @@ class _PedalStyledDropdown<T> extends StatelessWidget {
           value: value,
           isExpanded: true,
           dropdownColor: context.surface.cardHigh,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(SurfaceTheme.radius12),
           icon: Icon(Icons.expand_more, color: context.surface.textSecondary),
           style: TextStyle(color: context.surface.textPrimary, fontSize: 14),
           items: items,

@@ -176,7 +176,7 @@ class _MappingRow extends StatelessWidget {
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: surface.cardHigh,
-          borderRadius: BorderRadius.circular(9),
+          borderRadius: BorderRadius.circular(SurfaceTheme.radius9),
           border: Border.all(
             // The established missing-target convention (R25) — the same
             // tertiary outline a broken pedal binding and an unavailable
@@ -459,7 +459,7 @@ class _Notice extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: surface.card,
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: BorderRadius.circular(SurfaceTheme.radius9),
         border: Border.all(color: surface.line),
       ),
       child: Row(

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 /// Opens the keyboard-shortcut legend for the Big Picture performance surface
 /// as a dismissible [AlertDialog] (Esc / tap-outside close it). Surfaced by the
@@ -137,7 +138,7 @@ class _ShortcutsHelpDialog extends StatelessWidget {
                 ),
                 decoration: BoxDecoration(
                   color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(SurfaceTheme.radius7),
                   border: Border.all(color: scheme.outlineVariant),
                 ),
                 child: Text(

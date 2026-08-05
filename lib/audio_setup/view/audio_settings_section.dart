@@ -13,6 +13,7 @@ import 'package:segno/looper/cubit/quantize_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/setup/setup_surface.dart';
+import 'package:segno/theme/surface_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// The audio controls embedded in the Tracks settings "Audio" section,
@@ -346,7 +347,7 @@ class _ErrorBanner extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: scheme.errorContainer,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(SurfaceTheme.radius12),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -410,7 +411,7 @@ class _NoAsioDriverMessage extends StatelessWidget {
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: scheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(SurfaceTheme.radius12),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
