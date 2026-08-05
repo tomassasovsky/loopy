@@ -19,6 +19,12 @@ issue: 499
 > app's type system, so the result earns a human merge.
 > Related: #495 (Figma design-system track, a separate export target).
 
+> **Status — Stages 0, 1 and 2 have landed. Stage 3 is all that remains.**
+> Stage 0 is complete except the HC theme axis (see the stage list); Stage 1
+> merged as #502; Stage 2 merged as #503. Read the stage list before the
+> reconciliation table — the table is now a record of decisions already
+> executed in code, not a to-do list.
+
 ## What exists on each side
 
 **The design system** (`segno-ui.pen`, above the imported screens at
@@ -58,7 +64,13 @@ semantics, different neutrals and a different type system.
   documentation of what ships.
 - **(c) reconcile per token** — split by domain.
 
-**Recommendation: (c), split cleanly by domain:**
+**The analysis recommended (c). The human chose (a), and (a) is what shipped
+in #502 — Inter and JetBrains Mono are bundled and live.** The recommendation
+below is preserved as the record of the reasoning, not as guidance; do not
+implement from it. Where it says "code wins" on type, the executed decision
+was the opposite.
+
+**Recommendation as analysed at the time: (c), split cleanly by domain:**
 
 1. **Colour: prototype wins.** The DS neutral ramp is the freshly designed
    direction, the deltas from shipped are 2–5 RGB points (imperceptible in
@@ -128,12 +140,28 @@ against the same side's card/raised surface.
 non-essential use only, never body copy; document that on the token**),
 `accent-surface` `#16233d`, `accent-alt` `#738cf2`, `success` `#30a46c`,
 `rec` / `rec-surface` / `rec-tint` `#e5484d21` / `rec-line` `#e5484d66` /
-`rec-deep` `#2a1214`, plus the number scales (type scale 12–26, radii 2–17 +
-pill, spacing 2–25, `row-h` 70, `control-h` 42, `nav-w` 180). Number scales
-are adopted as-needed, not as a bulk constant dump: when a widget needs one,
-it lands as a field on `SurfaceTheme` itself (the `disabledOpacity`
-precedent — same extension, no parallel metrics extension, no pixel params in
-widget APIs), and the `.pen` stays the documentation of the full scale.
+`rec-deep` `#2a1214`, plus the number scales (type scale 9–26, radii, spacing
+2–25, `row-h` 70, `control-h` 42, `nav-w` 180).
+
+**Geometry — superseded since this was written.** The radius scale was
+widened rather than the code snapped down onto it: the drift ran both ways
+(the code leaned on steps the DS never had, the DS defined steps the code
+used once), so the scale grew and was renamed numerically. `DS / 01
+Foundations` → Corner radius is authoritative; read it rather than the
+ranges above.
+
+Two things that fell out of attempting it, worth knowing before someone
+repeats them:
+
+- Geometry does not vary between `dark` and `highContrast`, so a themed
+  field buys nothing except a way for the two to drift. The typefaces are
+  already plain `static const` on `SurfaceTheme`; geometry sits naturally
+  beside them, which also keeps the constructor, `copyWith`, `lerp` and both
+  variants out of the diff.
+- Radius and spacing are **not** the same problem. Radius snapped cleanly.
+  Spacing's most common values have no equivalent in the DS scale at all, a
+  union would not be a scale, and unlike radius it moves layout rather than
+  corners. Measure before assuming one change covers both.
 
 ### Code-only domains — backfill into the DS (values from code, verbatim)
 
@@ -247,14 +275,24 @@ Each stage is its own PR against #499 (or a part-issue if the epic grows),
 `stage:*` kept current, goldens regenerated at most once per value-changing
 stage.
 
-- **Stage 0 — make the DS authoritative (`.pen` only, no code).** The DS
-  fonts stand as designed (`font-ui` Inter / `font-mono` JetBrains Mono —
-  under (a) the *code* migrates, not the `.pen`); delete the `--*`
-  family; add the HC theme axis; backfill the code-only domains; add
-  interaction-state specimens; rebuild `ParamSlider`/`NavItem` for i18n;
-  the stage pattern documents the state-coloured waveform (decided). Commit
-  `segno-ui.pen` (it is currently untracked).
-- **Stage 1 — token layer, colour + type.** `SurfaceTheme.dark`
+- **Stage 0 — make the DS authoritative (`.pen` only, no code). ✅ Done, with
+  one item outstanding.** The `--*` family is deleted, the code-only domains
+  are backfilled, and `segno-ui.pen` is tracked.
+  **Outstanding: the HC theme axis.** It was added and then removed, because
+  it had been written *replacing* the base values rather than sitting beside
+  them — all 57 colour tokens carried only an `HC` entry, so every board
+  silently rendered high-contrast as its only palette. The base values are
+  restored and the axis is gone.
+  Redoing it: register the standard values **first**, then add HC. Pencil
+  orders a theme axis by registration and resolves the first entry as the
+  default, so an HC-first axis makes high-contrast the default. `SetVariables`
+  will also not add a themeless base entry to a token whose array already
+  carries a themed one — not on merge, not on replace — so the tokens have to
+  be flattened to plain values before the axis is re-added. The HC values
+  themselves are recoverable verbatim from `SurfaceTheme.highContrast`.
+- **Stage 1 — token layer, colour + type. ✅ Merged as #502.** Inter and
+  JetBrains Mono are bundled in `assets/fonts/` and live;
+  `SurfaceTheme.dark` carries the DS ramp. `SurfaceTheme.dark`
   neutrals/text/warning take the DS values; new tokens added (control fills,
   border tiers, `text-muted`, accent/rec/success family);
   `LooperTheme.tileBorder` → `#17171b`; the re-tint set moves onto the
@@ -275,15 +313,80 @@ stage.
   HC re-derived per the rule; the missing relational floors added to
   `test/theme/`; **goldens regenerated once** and eyeballed.
   `routingGraphThemeFromSurface` is untouched (shape-stable).
-- **Stage 2 — vertical slice.** One screen adopts the *new* tokens end-to-end
-  (settings page: hairline/subtle border tiers, `bg-control` on controls,
-  interaction states via `WidgetState` mappings) to prove the extended ramp
-  before it spreads.
-- **Stage 3 — the rest.** Remaining screens + `signal_graph/`/`fx_editor/`
-  consumers; the **state-coloured waveform lands here (decided)** — the
-  `LooperTheme` API change from single `waveformColor` to per-state colouring
-  with HC counterparts; REC pill moves to `rec`; final golden regen +
-  eyeball.
+- **Stage 2 — vertical slice. ✅ Merged as #503.** The settings page adopted
+  the new tokens end-to-end, and hover/pressed landed as app-wide
+  `ThemeData` ink defaults plus per-surface `WidgetState` mappings.
+
+### Stage 3 — the rest
+
+The only outstanding stage, and too large for one PR: it spans ~51 view
+files, a `LooperTheme` API change, and a redesign of the FX parameter
+surface. Split into slices that can each go green on their own. Order is a
+recommendation, not a constraint — but 3a before 3c, or the FX screens get
+touched twice.
+
+- **3a — FX parameter surface.** Plugin parameters are not a token swap;
+  they are a redesign with its own spec (`DS / 06 FX parameter — spec`) and
+  decision record (`DS / 05 Dense params — options`). Rotaries are out for
+  plugin parameters — read board 05 before proposing a variation, because
+  the rejected alternatives were rejected for a reason that also rejects
+  most obvious substitutes. `SignalKnob` also serves the mix level and is
+  **out of scope**. Tracked as #505.
+- **3b — state-coloured waveform.** The `LooperTheme` API change from a
+  single `waveformColor` to per-state colouring, with HC counterparts. This
+  is the veto row from the table, decided; it is the most visible change in
+  the app and the only one that alters a theme *contract* rather than a
+  value.
+- **3c — remaining screen consumers.** Everything else that reads
+  `context.surface`, plus the REC pill moving to `rec`. Establish the
+  current consumer list yourself — it moves as PRs land, and the counts in
+  "Blast radius" above were measured before Stages 1–2.
+- **3d — final golden regen + eyeball**, per the strategy below.
+
+**Gate before 3c — surfaces the DS does not cover.** The reskin assumes a
+design exists for every screen. It does not. The routing graph is handled
+above (no live screen uses it). Not handled, and with no prototype screen to
+build from: the **pedal faceplate** (`PedalFaceplate`/`PedalPlate`/
+`BankSwitch` — the virtual hardware with LEDs and silkscreen; the prototype's
+Control page is a settings list instead) and **desktop window chrome**
+(`SegnoWindowChromeShell`, `SegnoWindowTitleBar`, the `HostChrome*` family —
+the prototype is a 1920×1080 appliance view with no title bar). Each needs a
+"keep as-is, out of scope" or "needs design first" call. Do not guess; the
+answer changes the size of 3c.
+
+**Overlap to reconcile, not duplicate.** #491 applies the mockups to the
+tray rail and tabs and adds `docs/design/console-prototype.html` — the source
+the 96 `.pen` screens were imported from. Part of 3c's territory is already
+in flight there; check its state before starting.
+
+### Stage 3 does not own this surface alone — read this first
+
+Three tracks are live over the same files. Sequence them; do not let a Stage 3
+session discover this by hitting a conflict.
+
+| Track | Owns | State |
+|---|---|---|
+| **#442** Console UI redesign | IA, layout, the surfaces themselves — 9 parts, its own [execution guide](2026-08-03-feat-console-ui-fx-v3-redesign-execution-guide.md) with a live status table and a per-part `/build` workflow | parts 1, 2, 7 merged; 3, 4, 5, 6, 8, 9 pending |
+| **#499** this plan | the reskin only — tokens, colour, type, component parity | stages 0–2 landed; stage 3 outstanding |
+| **#498** | console IA reorganisation | see issue |
+
+This plan already declares "no IA/layout changes" as a non-goal, which is what
+keeps it complementary rather than competing. Honour that boundary: **if a
+Stage 3 slice finds itself moving a widget rather than restyling one, it has
+crossed into #442 and should stop.**
+
+**Known collision — 3a vs #442 part 4.** Part 4 is "FX panel: stage tabs +
+rack UI"; 3a redesigns the FX parameter controls. Both rewrite the same rack
+surface, and part 4 additionally depends on part 3 (rack domain + migration),
+which is unstarted. Running them separately means writing that surface twice.
+Decide before starting either: fold 3a into part 4, or land part 4 first and
+let 3a restyle what it produces. Do not run them in parallel.
+
+**Numbering.** Issues #504–#508 were filed as a parallel stage scheme over
+this same work before this plan was consulted. They duplicate stages 2–3 and
+should be closed or folded in; #505 is the exception, being the tracking issue
+for 3a. Two numbering schemes over one surface is what produced the "which
+stage 2?" ambiguity between this plan and #442.
 
 ## Golden-regeneration strategy
 
