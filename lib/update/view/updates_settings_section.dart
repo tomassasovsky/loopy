@@ -25,7 +25,7 @@ class UpdatesSettingsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(l10n.updatesIntro, style: setupBody),
+        Text(l10n.updatesIntro, style: context.setupBody),
         const SizedBox(height: 28),
         SetupInfoTable(
           rows: [
@@ -58,7 +58,7 @@ class UpdatesSettingsSection extends StatelessWidget {
         _CheckNowRow(state: state, onTap: cubit.check),
         if (state.phase == UpdatePhase.error && state.errorMessage != null) ...[
           const SizedBox(height: 8),
-          Text(state.errorMessage!, style: setupBody),
+          Text(state.errorMessage!, style: context.setupBody),
         ],
         if (state.available != null) ...[
           const SizedBox(height: 20),
@@ -200,10 +200,13 @@ class _UpdateActionRow extends StatelessWidget {
       children: [
         SetupGroupLabel(l10n.updatesAvailableTitle(version)),
         const SizedBox(height: 8),
-        Text(notes, style: setupBody),
+        Text(notes, style: context.setupBody),
         if (manifest.size > 0) ...[
           const SizedBox(height: 4),
-          Text(l10n.updatesSizeMb(_mb(manifest.size)), style: setupBody),
+          Text(
+            l10n.updatesSizeMb(_mb(manifest.size)),
+            style: context.setupBody,
+          ),
         ],
         const SizedBox(height: 12),
         SetupNavRow(

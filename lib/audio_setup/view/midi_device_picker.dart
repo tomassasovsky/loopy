@@ -43,7 +43,7 @@ class MidiDevicePicker extends StatelessWidget {
         const SizedBox(height: 12),
         const MidiActivityIndicator(),
         const SizedBox(height: 12),
-        Text(l10n.midiRequiredCcsHint, style: setupBody),
+        Text(l10n.midiRequiredCcsHint, style: context.setupBody),
       ],
     );
   }
@@ -64,7 +64,7 @@ class _MidiEmptyState extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: context.surface.line),
       ),
-      child: Text(context.l10n.midiNoDevicesFound, style: setupBody),
+      child: Text(context.l10n.midiNoDevicesFound, style: context.setupBody),
     );
   }
 }
@@ -184,7 +184,7 @@ class _MidiStatusLine extends StatelessWidget {
       child: Text(
         message,
         key: const Key('midiSettings_status'),
-        style: setupBody.copyWith(
+        style: context.setupBody.copyWith(
           color: isError ? Theme.of(context).colorScheme.error : null,
         ),
       ),
@@ -247,7 +247,7 @@ class _MidiActivityIndicatorState extends State<MidiActivityIndicator> {
                 color: color,
               ),
               const SizedBox(width: 8),
-              Text(label, style: setupBody.copyWith(color: color)),
+              Text(label, style: context.setupBody.copyWith(color: color)),
             ],
           ),
         ),

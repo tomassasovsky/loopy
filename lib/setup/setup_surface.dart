@@ -5,39 +5,46 @@ import 'package:segno/theme/surface_theme.dart';
 /// Tabular figures keep numeric values vertically aligned in status tables.
 const _setupNumerals = [FontFeature.tabularFigures()];
 
-/// Shared typography for stepped setup surfaces (audio onboarding, settings).
-/// These `const` tokens are used in `const` call sites; their colours mirror
-/// [SurfaceTheme.dark]'s `text*` tokens.
-const setupKicker = TextStyle(
-  fontSize: 11,
-  fontWeight: FontWeight.w700,
-  letterSpacing: 1.8,
-  color: Color(0xFF5B5D67), // SurfaceTheme.dark.textTertiary
-);
+/// Shared typography and control styling for stepped setup surfaces (audio
+/// onboarding, settings, the tray panels).
+///
+/// These resolve from [SurfaceTheme] rather than carrying literal colours.
+/// They used to be `const` styles holding hand-copied hexes, which meant two
+/// bugs at once: the copies drifted from the tokens they named (the kicker
+/// still held the pre-WCAG-lift tertiary, ~2.6:1), and — because the colour
+/// was baked in — none of this text responded to the high-contrast variant.
+extension SetupTypography on BuildContext {
+  /// The small, wide-tracked section kicker above a group title.
+  TextStyle get setupKicker => TextStyle(
+    fontSize: 11,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 1.8,
+    color: surface.textTertiary,
+  );
 
-const setupTitle = TextStyle(
-  color: Color(0xFFF3F4F7), // SurfaceTheme.dark.textPrimary
-  fontSize: 26,
-  fontWeight: FontWeight.w700,
-  letterSpacing: -0.5,
-);
+  /// The page title on a setup/settings surface.
+  TextStyle get setupTitle => TextStyle(
+    color: surface.textPrimary,
+    fontSize: 26,
+    fontWeight: FontWeight.w700,
+    letterSpacing: -0.5,
+  );
 
-const setupBody = TextStyle(
-  color: Color(0xFF989AA4), // SurfaceTheme.dark.textSecondary
-  fontSize: 14,
-  height: 1.45,
-);
+  /// Explanatory body copy under a title or control.
+  TextStyle get setupBody =>
+      TextStyle(color: surface.textSecondary, fontSize: 14, height: 1.45);
 
-/// The accent-tinted slider styling shared by the effect-chain editors (lane
-/// strips and per-input monitors) — a thin track with a small accent thumb.
-const setupSliderTheme = SliderThemeData(
-  trackHeight: 3,
-  activeTrackColor: Color(0xFF3B82F6), // SurfaceTheme.dark.accent
-  inactiveTrackColor: Color(0xFF272730), // SurfaceTheme.dark.line
-  thumbColor: Color(0xFF3B82F6),
-  overlayShape: RoundSliderOverlayShape(overlayRadius: 12),
-  thumbShape: RoundSliderThumbShape(enabledThumbRadius: 7),
-);
+  /// The accent-tinted slider styling shared by the effect-chain editors (lane
+  /// strips and per-input monitors) — a thin track with a small accent thumb.
+  SliderThemeData get setupSliderTheme => SliderThemeData(
+    trackHeight: 3,
+    activeTrackColor: surface.accent,
+    inactiveTrackColor: surface.line,
+    thumbColor: surface.accent,
+    overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+  );
+}
 
 /// Section label with a trailing rule, matching the audio setup controls.
 class SetupGroupLabel extends StatelessWidget {
@@ -50,7 +57,10 @@ class SetupGroupLabel extends StatelessWidget {
     final surface = context.surface;
     return Row(
       children: [
-        Text(label, style: setupKicker.copyWith(color: surface.textSecondary)),
+        Text(
+          label,
+          style: context.setupKicker.copyWith(color: surface.textSecondary),
+        ),
         const SizedBox(width: 10),
         Expanded(child: Divider(color: surface.line, height: 1)),
       ],
@@ -193,7 +203,7 @@ class SetupOptionRow<T> extends StatelessWidget {
   }
 }
 
-class _OptionCard<T> extends StatelessWidget {
+class _OptionCard<T> extends StatefulWidget {
   const _OptionCard({
     required this.option,
     required this.selected,
@@ -205,55 +215,88 @@ class _OptionCard<T> extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_OptionCard<T>> createState() => _OptionCardState<T>();
+}
+
+class _OptionCardState<T> extends State<_OptionCard<T>> {
+  bool _hovered = false;
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    return FocusableTapTarget(
-      key: option.optionKey,
-      onTap: onTap,
-      selected: selected,
-      borderRadius: 12,
-      child: AnimatedContainer(
-        duration: MediaQuery.disableAnimationsOf(context)
-            ? Duration.zero
-            : const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
-        decoration: BoxDecoration(
-          color: selected ? surface.cardHigh : surface.card,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: selected ? surface.accent : surface.line,
-            width: selected ? 1.5 : 1,
-          ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              option.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: selected ? surface.accent : surface.textPrimary,
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                fontFeatures: _setupNumerals,
+    final option = widget.option;
+    final selected = widget.selected;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Listener(
+        onPointerDown: (_) => setState(() => _pressed = true),
+        onPointerUp: (_) => setState(() => _pressed = false),
+        onPointerCancel: (_) => setState(() => _pressed = false),
+        child: FocusableTapTarget(
+          key: option.optionKey,
+          onTap: widget.onTap,
+          selected: selected,
+          borderRadius: 12,
+          child: AnimatedContainer(
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 160),
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+            decoration: BoxDecoration(
+              // Rest -> hover -> pressed lift one border tier at a time, so an
+              // unselected card answers the pointer without borrowing the
+              // accent that means "selected" (DS interaction states, #499).
+              color: Color.alphaBlend(
+                _pressed
+                    ? surface.borderSubtle
+                    : _hovered
+                    ? surface.borderHairline
+                    : const Color(0x00000000),
+                selected ? surface.cardHigh : surface.card,
+              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: selected
+                    ? surface.accent
+                    : (_hovered || _pressed)
+                    ? surface.borderStrong
+                    : surface.line,
+                width: selected ? 1.5 : 1,
               ),
             ),
-            if (option.sub.isNotEmpty) ...[
-              const SizedBox(height: 3),
-              Text(
-                option.sub,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: selected
-                      ? surface.accent.withValues(alpha: 0.7)
-                      : surface.textTertiary,
-                  fontSize: 10.5,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  option.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: selected ? surface.accent : surface.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    fontFeatures: _setupNumerals,
+                  ),
                 ),
-              ),
-            ],
-          ],
+                if (option.sub.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    option.sub,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: selected
+                          ? surface.accent.withValues(alpha: 0.7)
+                          : surface.textTertiary,
+                      fontSize: 10.5,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );

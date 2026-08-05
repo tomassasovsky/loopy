@@ -76,7 +76,7 @@ class PedalSettingsSection extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         if (!consoleMode) ...[
-          Text(l10n.pedalOutputHint, style: setupBody),
+          Text(l10n.pedalOutputHint, style: context.setupBody),
           const SizedBox(height: 24),
         ],
         // No hint line under this one: the assignment page opens with the
@@ -104,7 +104,7 @@ class PedalSettingsSection extends StatelessWidget {
             onSelected: cubit.selectFirmwareVersion,
           ),
           const SizedBox(height: 12),
-          Text(l10n.pedalFirmwareHint, style: setupBody),
+          Text(l10n.pedalFirmwareHint, style: context.setupBody),
         ],
         // The condition itself is the cubit's (it reads the repository's
         // resolved wire version) — this only renders the answer.
@@ -142,7 +142,7 @@ class _PedalEmptyState extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: context.surface.line),
       ),
-      child: Text(context.l10n.pedalNoOutputs, style: setupBody),
+      child: Text(context.l10n.pedalNoOutputs, style: context.setupBody),
     );
   }
 }
@@ -192,13 +192,13 @@ class _PedalFirmwareUpdateBanner extends StatelessWidget {
           children: [
             Text(
               l10n.pedalFirmwareUpdateTitle,
-              style: setupBody.copyWith(
+              style: context.setupBody.copyWith(
                 color: theme.colorScheme.primary,
                 fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 4),
-            Text(body, style: setupBody),
+            Text(body, style: context.setupBody),
           ],
         ),
       ),
@@ -405,7 +405,7 @@ class _PedalStatusLine extends StatelessWidget {
       child: Text(
         message,
         key: const Key('pedalSettings_status'),
-        style: setupBody.copyWith(
+        style: context.setupBody.copyWith(
           color: isError ? Theme.of(context).colorScheme.error : null,
         ),
       ),

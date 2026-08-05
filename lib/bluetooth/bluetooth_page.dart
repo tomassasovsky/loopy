@@ -100,7 +100,7 @@ class _BluetoothPageState extends State<BluetoothPage> {
                             padding: const EdgeInsets.all(20),
                             child: Text(
                               l10n.bluetoothUnsupportedBody,
-                              style: setupBody,
+                              style: context.setupBody,
                             ),
                           )
                         : LayoutBuilder(
@@ -142,7 +142,7 @@ class _BluetoothPageState extends State<BluetoothPage> {
                                         const SizedBox(height: 8),
                                         Text(
                                           state.errorMessage!,
-                                          style: setupBody.copyWith(
+                                          style: context.setupBody.copyWith(
                                             fontSize: 12,
                                           ),
                                         ),
@@ -285,7 +285,7 @@ class _BluetoothDeviceList extends StatelessWidget {
         SetupGroupLabel(l10n.bluetoothDevicesGroup),
         const SizedBox(height: 6),
         if (state.devices.isEmpty && !state.scanning)
-          Text(l10n.bluetoothEmptyDevices, style: setupBody)
+          Text(l10n.bluetoothEmptyDevices, style: context.setupBody)
         else
           DecoratedBox(
             decoration: BoxDecoration(

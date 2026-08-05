@@ -47,7 +47,7 @@ class MidiLearnSection extends StatelessWidget {
       children: [
         SetupGroupLabel(l10n.midiLearnGroup),
         const SizedBox(height: 12),
-        Text(l10n.midiLearnHint, style: setupBody),
+        Text(l10n.midiLearnHint, style: context.setupBody),
         if (!connected) ...[
           const SizedBox(height: 12),
           _Notice(

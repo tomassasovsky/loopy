@@ -112,7 +112,7 @@ class _WifiPageState extends State<WifiPage> {
                                       state.errorMessage,
                                     )
                                   : l10n.wifiUnsupportedBody,
-                              style: setupBody,
+                              style: context.setupBody,
                             ),
                           )
                         : LayoutBuilder(
@@ -159,7 +159,7 @@ class _WifiPageState extends State<WifiPage> {
                                             l10n,
                                             state.errorMessage,
                                           ),
-                                          style: setupBody.copyWith(
+                                          style: context.setupBody.copyWith(
                                             fontSize: 12,
                                           ),
                                         ),
@@ -403,7 +403,7 @@ class _WifiNetworkList extends StatelessWidget {
         SetupGroupLabel(l10n.wifiNetworksGroup),
         const SizedBox(height: 6),
         if (state.networks.isEmpty && !state.scanning)
-          Text(l10n.wifiEmptyNetworks, style: setupBody)
+          Text(l10n.wifiEmptyNetworks, style: context.setupBody)
         else
           DecoratedBox(
             decoration: BoxDecoration(
