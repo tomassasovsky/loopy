@@ -332,11 +332,12 @@ touched twice.
   the rejected alternatives were rejected for a reason that also rejects
   most obvious substitutes. `SignalKnob` also serves the mix level and is
   **out of scope**. Tracked as #505.
-- **3b — state-coloured waveform.** The `LooperTheme` API change from a
-  single `waveformColor` to per-state colouring, with HC counterparts. This
-  is the veto row from the table, decided; it is the most visible change in
-  the app and the only one that alters a theme *contract* rather than a
-  value.
+- **3b — state-coloured waveform. → [part-3b plan](2026-08-05-chore-segno-ds-reconcile-part-3b-plan.md) (canonical).**
+  The `LooperTheme` API change from a single `waveformColor` to per-state
+  colouring, with HC counterparts. This is the veto row from the table,
+  decided; it is the most visible change in the app and the only one that
+  alters a theme *contract* rather than a value. **Start here** — it is the
+  only slice with no open direction call and no #442 overlap.
 - **3c — remaining screen consumers.** Everything else that reads
   `context.surface`, plus the REC pill moving to `rec`. Establish the
   current consumer list yourself — it moves as PRs land, and the counts in
