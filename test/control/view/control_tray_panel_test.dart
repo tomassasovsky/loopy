@@ -207,74 +207,12 @@ void main() {
           reason: 'no card for ${button.name}',
         );
       }
-      // ...and the track row below it, which is bank-keyed.
-      for (final button in [
-        PedalButton.track1,
-        PedalButton.track2,
-        PedalButton.track3,
-        PedalButton.track4,
-      ]) {
-        expect(
-          find.byKey(Key('pedal_switch_${button.name}')),
-          findsOneWidget,
-          reason: 'no card for ${button.name}',
-        );
-      }
-      // Mode and Bank can never hold a binding (B12), so they get no card.
+      // Mode and Bank are unbindable, and the track row is bank-keyed — both
+      // stay off a surface four cards wide.
       expect(find.byKey(const Key('pedal_switch_mode')), findsNothing);
-      expect(find.byKey(const Key('pedal_switch_bank')), findsNothing);
+      expect(find.byKey(const Key('pedal_switch_track1')), findsNothing);
       // Nothing selected: no target list yet.
       expect(find.byType(ConsoleCard), findsNothing);
-    });
-
-    testWidgets('a track switch is assigned per bank', (tester) async {
-      await pump(tester);
-      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      final target = looper.availableBindingTargets().first;
-
-      // Bank A: assign TRK1.
-      await tester.tap(find.byKey(const Key('pedal_switch_track1')));
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(Key('pedal_target_${target.canonicalString().hashCode}')),
-      );
-      await tester.pumpAndSettle();
-
-      expect(
-        control.state.bindings.bindings.single.key,
-        const PedalBindingKey(button: PedalButton.track1, bank: 0),
-      );
-
-      // Bank B: the same card, a different slot — the card goes back to
-      // saying "unassigned" rather than showing bank A's target.
-      await tester.tap(
-        find.descendant(
-          of: find.byKey(const Key('pedal_bank')),
-          matching: find.text('B'),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(
-        find.descendant(
-          of: find.byKey(const Key('pedal_switch_track1')),
-          matching: find.text(l10n.pedalControlUnassigned),
-        ),
-        findsOneWidget,
-      );
-
-      await tester.tap(
-        find.byKey(Key('pedal_target_${target.canonicalString().hashCode}')),
-      );
-      await tester.pumpAndSettle();
-
-      expect(
-        control.state.bindings.bindings.map((b) => b.key).toSet(),
-        {
-          const PedalBindingKey(button: PedalButton.track1, bank: 0),
-          const PedalBindingKey(button: PedalButton.track1, bank: 1),
-        },
-      );
     });
 
     testWidgets('selecting a switch lists the racks it can drive', (
