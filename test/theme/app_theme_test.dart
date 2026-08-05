@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/theme/app_theme.dart';
 import 'package:segno/theme/looper_theme.dart';
 import 'package:segno/theme/surface_theme.dart';
@@ -74,6 +75,43 @@ void main() {
       );
       // Non-text line/border clears the 3:1 component threshold in HC.
       expect(ratio(hc.line, hc.card), greaterThanOrEqualTo(3));
+      // Secondary text clears AA in both variants.
+      expect(ratio(dark.textSecondary, dark.card), greaterThanOrEqualTo(4.5));
+      expect(ratio(hc.textSecondary, hc.card), greaterThanOrEqualTo(4.5));
+      // The caution colour stays legible as text in both variants (1.4.3).
+      expect(ratio(dark.warning, dark.card), greaterThanOrEqualTo(4.5));
+      expect(ratio(hc.warning, hc.card), greaterThanOrEqualTo(4.5));
+    });
+
+    test('HC meter/indicator idle tones clear 3:1 on the track tile', () {
+      double ratio(Color fg, Color bg) {
+        final a = fg.computeLuminance();
+        final b = bg.computeLuminance();
+        final hi = math.max(a, b);
+        final lo = math.min(a, b);
+        return (hi + 0.05) / (lo + 0.05);
+      }
+
+      final looper = AppTheme.highContrast.extension<LooperTheme>()!;
+      // WCAG 1.4.11: the empty-meter groove and the idle indicator are the
+      // dimmest non-text components on the tile; both must clear 3:1 in HC.
+      expect(
+        ratio(
+          looper.meterColor(
+            LooperMeterState.empty,
+            mode: InteractionMode.record,
+          ),
+          looper.tileBackground,
+        ),
+        greaterThanOrEqualTo(3),
+      );
+      expect(
+        ratio(
+          looper.indicatorColor(TrackIndicator.idle),
+          looper.tileBackground,
+        ),
+        greaterThanOrEqualTo(3),
+      );
     });
 
     test('the disabled dim is a token, and high contrast dims less', () {

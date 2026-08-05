@@ -77,11 +77,16 @@ void main() {
     for (final family in ['Helvetica', 'Arial', 'sans-serif']) {
       await _loadFont(family, robotoTtfs);
     }
-    await _loadFont('Space Grotesk', ['assets/fonts/SpaceGrotesk.ttf']);
-    await _loadFont('IBM Plex Mono', [
-      'assets/fonts/IBMPlexMono-Regular.ttf',
-      'assets/fonts/IBMPlexMono-Medium.ttf',
-      'assets/fonts/IBMPlexMono-SemiBold.ttf',
+    await _loadFont('Inter', [
+      'assets/fonts/Inter-Regular.ttf',
+      'assets/fonts/Inter-Medium.ttf',
+      'assets/fonts/Inter-SemiBold.ttf',
+      'assets/fonts/Inter-Bold.ttf',
+    ]);
+    await _loadFont('JetBrains Mono', [
+      'assets/fonts/JetBrainsMono-Regular.ttf',
+      'assets/fonts/JetBrainsMono-Medium.ttf',
+      'assets/fonts/JetBrainsMono-SemiBold.ttf',
     ]);
   });
 
@@ -150,6 +155,11 @@ void main() {
           providers: [
             RepositoryProvider<LooperRepository>.value(value: repository),
             RepositoryProvider<PerformanceRepository>.value(value: performance),
+            // TracksView builds a SettingsTrayCubit that requires a
+            // SettingsRepository; back it with the in-memory store.
+            RepositoryProvider<SettingsRepository>(
+              create: (_) => SettingsRepository(store: FakeKeyValueStore()),
+            ),
           ],
           child: MultiBlocProvider(
             providers: [

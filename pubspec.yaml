@@ -83,13 +83,19 @@ flutter:
   generate: true
   uses-material-design: true
   fonts:
-    - family: Space Grotesk
+    - family: Inter
       fonts:
-        - asset: assets/fonts/SpaceGrotesk.ttf
-    - family: IBM Plex Mono
-      fonts:
-        - asset: assets/fonts/IBMPlexMono-Regular.ttf
-        - asset: assets/fonts/IBMPlexMono-Medium.ttf
+        - asset: assets/fonts/Inter-Regular.ttf
+        - asset: assets/fonts/Inter-Medium.ttf
           weight: 500
-        - asset: assets/fonts/IBMPlexMono-SemiBold.ttf
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
+    - family: JetBrains Mono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-Regular.ttf
+        - asset: assets/fonts/JetBrainsMono-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/JetBrainsMono-SemiBold.ttf
           weight: 600
