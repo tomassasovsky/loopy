@@ -26,7 +26,11 @@ class ArmedIndicator extends StatelessWidget {
 
     final l10n = context.l10n;
     final theme = Theme.of(context);
-    final looper = theme.extension<LooperTheme>()!;
+    // The design system splits red in two: `signal-rec` is the stage — what a
+    // track is doing — and `rec` is UI chrome saying the app is capturing.
+    // This readout is chrome, so it takes `rec`, not the stage red the track
+    // meters and mode chip use.
+    final rec = context.surface.rec;
 
     return Padding(
       key: const Key('tracks_armedIndicator'),
@@ -34,12 +38,12 @@ class ArmedIndicator extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.fiber_manual_record, size: 12, color: looper.recordColor),
+          Icon(Icons.fiber_manual_record, size: 12, color: rec),
           const SizedBox(width: 6),
           Text(
             l10n.perfArmedElapsed(_format(state.elapsed)),
             style: theme.textTheme.labelLarge?.copyWith(
-              color: looper.recordColor,
+              color: rec,
               fontWeight: FontWeight.w700,
             ),
           ),

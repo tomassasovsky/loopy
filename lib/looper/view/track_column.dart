@@ -69,6 +69,7 @@ class TrackColumn extends StatelessWidget {
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final looper = theme.extension<LooperTheme>()!;
+    final surface = context.surface;
     final bloc = context.read<LooperBloc>();
 
     // The border is always white; selection only changes its weight. The meter
@@ -102,7 +103,7 @@ class TrackColumn extends StatelessWidget {
     // size (consistent height across columns; the longest name reaches ~60% of
     // the column width); desktop keeps the fixed text size.
     final nameStyle = theme.textTheme.titleMedium?.copyWith(
-      color: Colors.white,
+      color: surface.textPrimary,
       fontWeight: FontWeight.w800,
       letterSpacing: 1.5,
     );
@@ -147,7 +148,7 @@ class TrackColumn extends StatelessWidget {
                 Text(
                   '${track.channel + 1}',
                   style: theme.textTheme.titleMedium?.copyWith(
-                    color: Colors.white70,
+                    color: surface.textSecondary,
                     // Console: larger channel number to match the bigger name.
                     fontSize: 40,
                   ),
@@ -181,7 +182,7 @@ class TrackColumn extends StatelessWidget {
                 Text(
                   '${track.channel + 1}',
                   style: theme.textTheme.titleMedium?.copyWith(
-                    color: Colors.white70,
+                    color: surface.textSecondary,
                   ),
                 ),
                 if (track.pending) ...[
@@ -204,7 +205,7 @@ class TrackColumn extends StatelessWidget {
                     tooltip: l10n.undoTooltip(undoShortcut),
                     visualDensity: VisualDensity.compact,
                     iconSize: 18,
-                    color: Colors.white70,
+                    color: looper.toolbarIconColor,
                     icon: const Icon(Icons.undo),
                     // Mirrors the `U` key: enabled whenever there is a layer to
                     // peel — stacked overdub passes, or the base recording
@@ -221,7 +222,7 @@ class TrackColumn extends StatelessWidget {
                     tooltip: l10n.redoTooltip(redoShortcut),
                     visualDensity: VisualDensity.compact,
                     iconSize: 18,
-                    color: Colors.white70,
+                    color: looper.toolbarIconColor,
                     icon: const Icon(Icons.redo),
                     onPressed: track.canRedo && !track.isCapturing
                         ? () => onRedo(track.channel)
@@ -382,6 +383,9 @@ class _TrackHistoryDots extends StatelessWidget {
     final total = undoDepth + redoDepth;
     if (total == 0) return const SizedBox.shrink();
 
+    final surface = context.surface;
+    final looper = Theme.of(context).extension<LooperTheme>()!;
+
     final pageCount = (total + _slotsPerPage - 1) ~/ _slotsPerPage;
     // Show the page holding the newest undoable layer (0-based item index),
     // or the first page when there is nothing left to undo.
@@ -389,10 +393,13 @@ class _TrackHistoryDots extends StatelessWidget {
     final page = current ~/ _slotsPerPage;
     final start = page * _slotsPerPage;
 
+    // Three tiers of history slot: a layer you can peel, one you could redo
+    // back to, and an unused slot. The last is `borderSubtle` rather than a
+    // text tone — an empty slot is a container hairline, not a label.
     Color slotColor(int item) {
-      if (item < undoDepth) return Colors.white;
-      if (item < total) return Colors.grey;
-      return Colors.white12;
+      if (item < undoDepth) return surface.textPrimary;
+      if (item < total) return surface.textTertiary;
+      return surface.borderSubtle;
     }
 
     // On the console the history dots (undo/redo indicators) scale up to match
@@ -407,7 +414,7 @@ class _TrackHistoryDots extends StatelessWidget {
       maintainSize: true,
       maintainAnimation: true,
       maintainState: true,
-      child: Icon(icon, size: gutterSize, color: Colors.white70),
+      child: Icon(icon, size: gutterSize, color: looper.toolbarIconColor),
     );
 
     return SizedBox(

@@ -38,7 +38,9 @@ class PerfRecordButton extends StatelessWidget {
       tooltip: tooltip,
       visualDensity: VisualDensity.compact,
       iconSize: 20,
-      color: armed ? looper.recordColor : looper.toolbarIconColor,
+      // `rec` (UI chrome red), not `recordColor` (the stage red): this button
+      // reports that the *app* is capturing, not what a track is doing.
+      color: armed ? context.surface.rec : looper.toolbarIconColor,
       icon: Icon(
         armed ? Icons.fiber_manual_record : Icons.fiber_manual_record_outlined,
       ),

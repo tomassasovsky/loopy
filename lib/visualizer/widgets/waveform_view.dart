@@ -48,6 +48,9 @@ class WaveformView extends StatelessWidget {
     // actually render as — and the contrast floors in `test/theme/` are
     // measured against this token.
     final background = looper?.waveformBackground ?? Colors.black;
+    // Null-guarded like the LooperTheme above: this view also runs in the
+    // second window, which is a separate engine.
+    final surface = theme.extension<SurfaceTheme>();
     final paint = CustomPaint(
       key: const Key('waveform_view_paint'),
       painter: WaveformPainter(
@@ -73,7 +76,7 @@ class WaveformView extends StatelessWidget {
                 child: Text(
                   selectedTrack!,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: Colors.white,
+                    color: surface?.textPrimary ?? Colors.white,
                   ),
                 ),
               ),

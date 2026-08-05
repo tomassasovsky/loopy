@@ -202,7 +202,7 @@ class SessionMenu extends StatelessWidget {
             state.currentSessionName ?? l10n.sessionUnsaved,
             key: const Key('tracks_session_name'),
             style: TextStyle(
-              color: Colors.white70,
+              color: context.surface.textSecondary,
               fontStyle: state.currentSessionName == null
                   ? FontStyle.italic
                   : FontStyle.normal,
@@ -342,7 +342,9 @@ class BankSwitch extends StatelessWidget {
                 child: Text(
                   String.fromCharCode(0x41 + i),
                   style: theme.textTheme.titleMedium?.copyWith(
-                    color: i == active ? Colors.black : Colors.white70,
+                    color: i == active
+                        ? context.surface.onAccent
+                        : context.surface.textSecondary,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -422,7 +424,7 @@ class TransportTempoDisplay extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     maxLines: 1,
                     style: theme.textTheme.labelLarge?.copyWith(
-                      color: Colors.white70,
+                      color: context.surface.textSecondary,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -489,7 +491,8 @@ class _BeatIndicator extends StatelessWidget {
         for (var i = 0; i < count; i++)
           DecoratedBox(
             decoration: BoxDecoration(
-              color: i == current ? color : Colors.white24,
+              // An unlit page dot is a dim solid, not a text tone.
+              color: i == current ? color : context.surface.borderStrong,
               shape: BoxShape.circle,
             ),
             child: const SizedBox.square(dimension: 6),
