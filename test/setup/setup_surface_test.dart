@@ -89,15 +89,22 @@ void main() {
       onSelected: (_) {},
     );
 
-    Color fillOf(WidgetTester tester, Key key) {
-      final container = tester.widget<AnimatedContainer>(
-        find.descendant(
-          of: find.byKey(key),
-          matching: find.byType(AnimatedContainer),
-        ),
-      );
-      return (container.decoration! as BoxDecoration).color!;
-    }
+    BoxDecoration decorationOf(WidgetTester tester, Key key) =>
+        tester
+                .widget<AnimatedContainer>(
+                  find.descendant(
+                    of: find.byKey(key),
+                    matching: find.byType(AnimatedContainer),
+                  ),
+                )
+                .decoration!
+            as BoxDecoration;
+
+    Color fillOf(WidgetTester tester, Key key) =>
+        decorationOf(tester, key).color!;
+
+    Color borderOf(WidgetTester tester, Key key) =>
+        decorationOf(tester, key).border!.top.color;
 
     testWidgets('an unselected card lifts on hover and again on press', (
       tester,
@@ -139,22 +146,36 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final border =
-          (tester
-                      .widget<AnimatedContainer>(
-                        find.descendant(
-                          of: find.byKey(const Key('opt1')),
-                          matching: find.byType(AnimatedContainer),
-                        ),
-                      )
-                      .decoration!
-                  as BoxDecoration)
-              .border!
-              .top
-              .color;
+      final border = borderOf(tester, const Key('opt1'));
       expect(border, isNot(SurfaceTheme.dark.accent));
       expect(border, SurfaceTheme.dark.borderStrong);
     });
+
+    testWidgets(
+      'a selected card keeps its accent edge through hover and press',
+      (
+        tester,
+      ) async {
+        // The state layer must never outrank selection: hovering the selected
+        // card may deepen its fill, but the accent edge is what says "this one
+        // is chosen" and a pointer passing over must not take it away.
+        await _pump(tester, AppTheme.neon, rowOf(selected: 1));
+        expect(borderOf(tester, const Key('opt1')), SurfaceTheme.dark.accent);
+
+        final pointer = TestPointer(3, PointerDeviceKind.mouse);
+        final centre = tester.getCenter(find.byKey(const Key('opt1')));
+        await tester.sendEventToBinding(pointer.hover(centre));
+        await tester.pumpAndSettle();
+        expect(borderOf(tester, const Key('opt1')), SurfaceTheme.dark.accent);
+
+        await tester.sendEventToBinding(pointer.down(centre));
+        await tester.pumpAndSettle();
+        expect(borderOf(tester, const Key('opt1')), SurfaceTheme.dark.accent);
+
+        await tester.sendEventToBinding(pointer.up());
+        await tester.pumpAndSettle();
+      },
+    );
   });
 
   group('ink defaults', () {
@@ -168,6 +189,19 @@ void main() {
       expect(
         AppTheme.highContrast.highlightColor,
         SurfaceTheme.highContrast.borderSubtle,
+      );
+    });
+
+    test('the focus tint is the accent, not a Material default', () {
+      // Keyboard focus is the only state a pointer never reveals, so it is the
+      // easiest to leave on Material's stock purple without anyone noticing.
+      expect(
+        AppTheme.neon.focusColor,
+        SurfaceTheme.dark.accent.withValues(alpha: 0.24),
+      );
+      expect(
+        AppTheme.highContrast.focusColor,
+        SurfaceTheme.highContrast.accent.withValues(alpha: 0.24),
       );
     });
   });
