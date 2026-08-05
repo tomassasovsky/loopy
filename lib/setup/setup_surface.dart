@@ -254,7 +254,7 @@ class _OptionCardState<T> extends State<_OptionCard<T>> {
                     ? surface.borderSubtle
                     : _hovered
                     ? surface.borderHairline
-                    : const Color(0x00000000),
+                    : Colors.transparent,
                 selected ? surface.cardHigh : surface.card,
               ),
               borderRadius: BorderRadius.circular(12),

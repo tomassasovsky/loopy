@@ -142,8 +142,10 @@ class _SettingsTrayState extends State<SettingsTray> {
                 label: l10n.dismiss,
                 child: AnimatedOpacity(
                   duration: motion,
-                  opacity: state.dragProgress * 0.5,
-                  child: const ColoredBox(color: Colors.black),
+                  // The scrim token carries its own alpha, so the drag drives
+                  // opacity directly rather than through a second 0.5 factor.
+                  opacity: state.dragProgress,
+                  child: ColoredBox(color: context.surface.scrim),
                 ),
               ),
             ),

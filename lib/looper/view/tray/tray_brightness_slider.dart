@@ -100,9 +100,7 @@ class _TrayBrightnessSliderState extends State<TrayBrightnessSlider> {
               decoration: BoxDecoration(
                 color: surface.accent.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(28),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.08),
-                ),
+                border: Border.all(color: surface.borderSubtle),
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -111,7 +109,9 @@ class _TrayBrightnessSliderState extends State<TrayBrightnessSlider> {
                     trackHeight: 18,
                     activeTrackColor: surface.accent,
                     inactiveTrackColor: surface.accent.withValues(alpha: 0.12),
-                    thumbColor: Colors.white,
+                    // The thumb rides the accent track, so it takes the
+                    // on-accent tone rather than a bare white.
+                    thumbColor: surface.onAccent,
                     thumbShape: const RoundSliderThumbShape(
                       enabledThumbRadius: 11,
                       elevation: 2,
