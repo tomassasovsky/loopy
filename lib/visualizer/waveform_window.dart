@@ -158,7 +158,10 @@ Future<void> runWaveformWindow(WindowController controller) async {
     WindowOptions(
       size: placement.size,
       title: title,
-      backgroundColor: const Color(0xFF06060A),
+      // The OS window's pre-paint colour. Matches AppTheme.neon's scaffold
+      // background so opening the window does not flash a different dark —
+      // it cannot read the theme, since it is set before runApp.
+      backgroundColor: const Color(0xFF060607),
     ),
     () async {
       await windowManager.show();

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
@@ -21,10 +23,13 @@ class TrayNavigationRail extends StatelessWidget {
   /// Creates a [TrayNavigationRail].
   const TrayNavigationRail({super.key});
 
-  /// Rail width. Wide enough for the icon plus a two-line caption at the tile
-  /// caption's own size, so a rail item and a tile read as the same species
-  /// of control.
-  static const double _width = 84;
+  /// Rail width. Sized for an icon beside a full-size label, because the rail
+  /// is a navigation spine and should read as one — a column of icon-over-
+  /// caption tiles reads as more of the tile grid the rail exists to replace.
+  ///
+  /// From the redesign mockups (#490); the earlier 84px stacked form was built
+  /// without them, since the decision record carries no diagrams.
+  static const double _width = 165;
 
   static const double _itemGap = 4;
 
@@ -64,63 +69,80 @@ class TrayNavigationRail extends StatelessWidget {
     final destination = context.watch<SettingsTrayCubit>().state.destination;
     final cubit = context.read<SettingsTrayCubit>();
 
-    return SizedBox(
-      width: _width,
-      // The rail absorbs taps that miss an item. Without this they fall
-      // through to the panel's full-bleed dismiss detector and close the
-      // tray — fine for the home face's tile grid (Control Center dismisses
-      // on a miss), wrong for a persistent navigation surface you are aiming
-      // at.
-      //
-      // `excludeFromSemantics` because this detector exists purely to stop
-      // pointers: left in the tree it collapses the whole rail into one
-      // tappable node whose activation does nothing, so a screen reader
-      // offers a no-op action over the real items.
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        excludeFromSemantics: true,
-        onTap: () {},
-        child: Semantics(
-          explicitChildNodes: true,
-          label: l10n.a11yTrayRail,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              border: Border(
-                right: BorderSide(
-                  color: surface.line.withValues(alpha: 0.4),
+    // Clamped rather than fixed: a sheet narrower than the rail's natural
+    // width would otherwise overflow the item Row. Real on a small display,
+    // not only in a test harness.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth.isFinite
+            ? math.min(_width, constraints.maxWidth)
+            : _width;
+        return SizedBox(
+          width: width,
+          // The rail absorbs taps that miss an item. Without this they fall
+          // through to the panel's full-bleed dismiss detector and close the
+          // tray — fine for the home face's tile grid (Control Center
+          // dismisses on a miss), wrong for a persistent navigation
+          // surface you are aiming at.
+          //
+          // `excludeFromSemantics` because this detector exists purely to stop
+          // pointers: left in the tree it collapses the whole rail into one
+          // tappable node whose activation does nothing, so a screen reader
+          // offers a no-op action over the real items.
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            excludeFromSemantics: true,
+            onTap: () {},
+            child: Semantics(
+              explicitChildNodes: true,
+              label: l10n.a11yTrayRail,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border(
+                    right: BorderSide(
+                      color: surface.line.withValues(alpha: 0.4),
+                    ),
+                  ),
+                ),
+                child: SingleChildScrollView(
+                  // The drag handle rides at the open panel's bottom edge, over
+                  // the rail's last band — pad past it so a future destination
+                  // cannot land under a control that closes the tray.
+                  padding: const EdgeInsets.only(bottom: kTrayHandleHeight),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      spacing: _itemGap,
+                      children: [
+                        for (final target
+                            in SettingsTrayDestination.values) ...[
+                          // Stretch so every pill spans the rail: pills
+                          // sized to their own text read as chips, not
+                          // as rows of one list.
+                          _RailItem(
+                            key: Key('settingsTrayRail_${target.name}'),
+                            icon: _iconFor(target),
+                            label: _labelFor(l10n, target),
+                            selected: destination == target,
+                            onTap: () => cubit.showDestination(target),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
-            child: SingleChildScrollView(
-              // The drag handle rides at the open panel's bottom edge, over
-              // the rail's last band — pad past it so a future destination
-              // cannot land under a control that closes the tray.
-              padding: const EdgeInsets.only(bottom: kTrayHandleHeight),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final target in SettingsTrayDestination.values) ...[
-                    const SizedBox(height: _itemGap),
-                    _RailItem(
-                      key: Key('settingsTrayRail_${target.name}'),
-                      icon: _iconFor(target),
-                      label: _labelFor(l10n, target),
-                      selected: destination == target,
-                      onTap: () => cubit.showDestination(target),
-                    ),
-                  ],
-                  const SizedBox(height: _itemGap),
-                ],
-              ),
-            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
 
-/// One rail entry: icon over caption, accent-tinted and pill-backed while it
+/// One rail entry: icon beside label, accent-tinted and pill-backed while it
 /// is the showing destination.
 class _RailItem extends StatelessWidget {
   const _RailItem({
@@ -136,7 +158,7 @@ class _RailItem extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  static const double _radius = 14;
+  static const double _radius = 24;
 
   @override
   Widget build(BuildContext context) {
@@ -150,28 +172,35 @@ class _RailItem extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 11),
+        margin: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(_radius),
           color: selected
               ? surface.accent.withValues(alpha: 0.18)
               : Colors.transparent,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        // Icon beside the label, one row per destination. The label is at
+        // reading size rather than caption size: this is the surface you aim
+        // at to change what the sheet is showing, not a dense tile.
+        child: Row(
           children: [
-            Icon(icon, color: tint, size: 24),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: tint,
-                fontSize: 10,
-                height: 1.1,
-                fontWeight: FontWeight.w600,
+            Icon(icon, color: tint, size: 20),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Transform.translate(
+                offset: const Offset(0, 1),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: tint,
+                    fontSize: 14,
+                    height: 1.1,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ),
             ),
           ],

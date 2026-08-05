@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/common/pill_tabs.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
@@ -252,19 +253,17 @@ class _Editor extends StatelessWidget {
           // Track buttons hold one binding PER BANK (A3) — the same switch in
           // the other bank already acts on a different channel, so it is a
           // separate assignment rather than a second reading of this one.
-          SegmentedButton<int>(
+          PillTabs<int>(
             key: const Key('assign_bank'),
-            segments: [
+            tabs: [
               for (var b = 0; b < PedalBindingKey.bankCount; b++)
-                ButtonSegment(
+                PillTab(
                   value: b,
-                  label: Text(
-                    l10n.pedalAssignBankLabel(String.fromCharCode(65 + b)),
-                  ),
+                  label: l10n.pedalAssignBankLabel(String.fromCharCode(65 + b)),
                 ),
             ],
-            selected: {bank},
-            onSelectionChanged: (s) => onBank(s.first),
+            selected: bank,
+            onChanged: onBank,
           ),
         ],
         const SizedBox(height: 12),
@@ -427,22 +426,22 @@ class _BindingRow extends StatelessWidget {
               style: TextStyle(color: surface.textSecondary, fontSize: 12),
             ),
             const SizedBox(height: 4),
-            SegmentedButton<BindingBehavior>(
+            PillTabs<BindingBehavior>(
               key: const Key('assign_behavior'),
-              segments: [
-                ButtonSegment(
+              tabs: [
+                PillTab(
                   value: BindingBehavior.toggle,
-                  label: Text(l10n.pedalAssignToggle),
+                  label: l10n.pedalAssignToggle,
                   tooltip: l10n.pedalAssignToggleHint,
                 ),
-                ButtonSegment(
+                PillTab(
                   value: BindingBehavior.momentary,
-                  label: Text(l10n.pedalAssignMomentary),
+                  label: l10n.pedalAssignMomentary,
                   tooltip: l10n.pedalAssignMomentaryHint,
                 ),
               ],
-              selected: {binding.behavior},
-              onSelectionChanged: (s) => onBehavior(s.first),
+              selected: binding.behavior,
+              onChanged: onBehavior,
             ),
           ],
         ),

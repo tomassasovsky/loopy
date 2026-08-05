@@ -6,6 +6,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/performance/view/perf_record_button.dart';
+import 'package:segno/theme/theme.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -148,4 +149,61 @@ void main() {
       verify(cubit.toggleArm).called(1);
     },
   );
+
+  testWidgets('armed takes the DS chrome red; unarmed stays a toolbar icon', (
+    tester,
+  ) async {
+    // #499 stage 3c: the button reports that the *app* is capturing, so it
+    // takes `rec` (UI chrome) rather than the stage red a recording track
+    // wears. Both halves matter — the unarmed colour must stay the neutral
+    // toolbar tone, or the button reads as armed all the time.
+    await pump(
+      tester,
+      const PerformanceRecorderArmed(
+        elapsed: Duration(seconds: 3),
+        overrun: false,
+      ),
+    );
+
+    final context = tester.element(find.byKey(const Key('tracks_perfRecord')));
+    final surface = context.surface;
+    final looper = Theme.of(context).extension<LooperTheme>()!;
+
+    expect(
+      tester
+          .widget<IconButton>(find.byKey(const Key('tracks_perfRecord')))
+          .color,
+      surface.rec,
+    );
+    expect(
+      tester
+          .widget<IconButton>(find.byKey(const Key('tracks_perfRecord')))
+          .color,
+      isNot(looper.recordColor),
+      reason: 'chrome red must not fall back to the stage red',
+    );
+  });
+
+  testWidgets('unarmed stays the neutral toolbar tone', (tester) async {
+    // The other half of the split: if the idle colour drifted to `rec` too,
+    // the button would read as armed all the time and the arm state would
+    // stop meaning anything.
+    await pump(tester, const PerformanceRecorderIdle());
+
+    final context = tester.element(find.byKey(const Key('tracks_perfRecord')));
+    final looper = Theme.of(context).extension<LooperTheme>()!;
+
+    expect(
+      tester
+          .widget<IconButton>(find.byKey(const Key('tracks_perfRecord')))
+          .color,
+      looper.toolbarIconColor,
+    );
+    expect(
+      tester
+          .widget<IconButton>(find.byKey(const Key('tracks_perfRecord')))
+          .color,
+      isNot(context.surface.rec),
+    );
+  });
 }

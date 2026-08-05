@@ -94,7 +94,7 @@ class _TrackMeter extends StatelessWidget {
             '${track.channel + 1}',
             textAlign: TextAlign.center,
             style: theme.textTheme.headlineSmall?.copyWith(
-              color: Colors.white70,
+              color: context.surface.textSecondary,
             ),
           ),
           const SizedBox(height: 4),
@@ -116,7 +116,7 @@ class _TrackMeter extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.headlineSmall?.copyWith(
-              color: Colors.white,
+              color: context.surface.textPrimary,
               fontWeight: FontWeight.w700,
             ),
           ),
