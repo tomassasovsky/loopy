@@ -66,21 +66,25 @@ class _MidiControlTabState extends State<MidiControlTab> {
                 _StatusRow(
                   key: const Key('midi_status_connection'),
                   ok: connected,
-                  message: connected
-                      ? l10n.midiControlConnected(_deviceName(l10n, midi))
-                      : l10n.midiControlDisconnected,
+                  // Each fault says what it IS: unplugged and in-use-by-
+                  // another-app need different answers from the user, and
+                  // "no MIDI device" for all of them sends them looking in
+                  // the wrong place.
+                  message: _connectionMessage(l10n, midi),
+                  divider: connected,
                 ),
-                _StatusRow(
-                  key: const Key('midi_status_traffic'),
-                  divider: false,
-                  // The state carries a monotonic tick rather than a flag:
-                  // any tick at all means something has arrived since the app
-                  // started, which is the question this line answers.
-                  ok: midi.activityTick > 0,
-                  message: midi.activityTick > 0
-                      ? l10n.midiControlReceiving
-                      : l10n.midiControlWaiting,
-                ),
+                if (connected)
+                  _StatusRow(
+                    key: const Key('midi_status_traffic'),
+                    divider: false,
+                    // The state carries a monotonic tick rather than a flag:
+                    // any tick at all means something has arrived since the
+                    // app started, which is the question this line answers.
+                    ok: midi.activityTick > 0,
+                    message: midi.activityTick > 0
+                        ? l10n.midiControlReceiving
+                        : l10n.midiControlWaiting,
+                  ),
               ],
             ),
             const SizedBox(height: 12),
@@ -108,6 +112,7 @@ class _MidiControlTabState extends State<MidiControlTab> {
               bindings: bindings,
               learn: learn,
               connected: connected,
+              idleNotice: connected ? null : l10n.midiControlIdle,
               openKey: _openKey,
               onToggle: (key) => setState(
                 () => _openKey = _openKey == key ? null : key,
@@ -122,6 +127,22 @@ class _MidiControlTabState extends State<MidiControlTab> {
   String _deviceName(AppLocalizations l10n, MidiSetupState midi) {
     final name = midi.connection.selectedName;
     return name.isEmpty ? l10n.midiControlNoDevice : name;
+  }
+
+  /// What the connection line says, per state. The repository already tells
+  /// these four apart; collapsing them into one "not connected" line throws
+  /// away the only clue the operator has.
+  String _connectionMessage(AppLocalizations l10n, MidiSetupState midi) {
+    final name = midi.connection.selectedName;
+    return switch (midi.connection.status) {
+      MidiConnectionStatus.connected => l10n.midiControlConnected(
+        _deviceName(l10n, midi),
+      ),
+      MidiConnectionStatus.connecting => l10n.midiControlConnecting(name),
+      MidiConnectionStatus.deviceGone => l10n.midiControlDeviceGone(name),
+      MidiConnectionStatus.error => l10n.midiControlOpenFailed(name),
+      MidiConnectionStatus.none => l10n.midiControlNoDeviceDetail,
+    };
   }
 
   Future<void> _pickDevice(BuildContext context, MidiSetupState midi) async {
@@ -179,6 +200,7 @@ class _MappingList extends StatelessWidget {
     required this.bindings,
     required this.learn,
     required this.connected,
+    required this.idleNotice,
     required this.openKey,
     required this.onToggle,
   });
@@ -186,6 +208,10 @@ class _MappingList extends StatelessWidget {
   final ControllerBindingSet bindings;
   final ControllerLearn? learn;
   final bool connected;
+
+  /// Why the mappings cannot fire, or null while they can. Shown at the head
+  /// of the list, where the rows it explains are.
+  final String? idleNotice;
   final (MappingTrigger, String)? openKey;
   final ValueChanged<(MappingTrigger, String)> onToggle;
 
@@ -199,8 +225,15 @@ class _MappingList extends StatelessWidget {
     // it will land, so the prompt lives at its head.
     final adding = learn?.replacingKey == null ? learn : null;
 
+    final idle = idleNotice;
     return ConsoleCard(
       children: [
+        if (idle != null && adding == null)
+          ConsoleBanner(
+            key: const Key('midi_idle_notice'),
+            failed: true,
+            message: idle,
+          ),
         if (adding != null)
           ConsoleBanner(
             actionKey: const Key('midi_learn_cancel'),

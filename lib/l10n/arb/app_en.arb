@@ -1663,6 +1663,41 @@
             }
         }
     },
+    "midiControlNoDeviceDetail": "No MIDI device — the looper runs from the keyboard and mouse.",
+    "@midiControlNoDeviceDetail": {
+        "description": "Status line when no MIDI input device is selected at all."
+    },
+    "midiControlConnecting": "Opening {device}…",
+    "@midiControlConnecting": {
+        "description": "Status line while the selected MIDI device's port is being opened.",
+        "placeholders": {
+            "device": {
+                "type": "String"
+            }
+        }
+    },
+    "midiControlDeviceGone": "{device} not found — it will reconnect when plugged in.",
+    "@midiControlDeviceGone": {
+        "description": "Status line when the selected MIDI device is absent; the selection is kept.",
+        "placeholders": {
+            "device": {
+                "type": "String"
+            }
+        }
+    },
+    "midiControlOpenFailed": "Could not open {device} (in use by another app?).",
+    "@midiControlOpenFailed": {
+        "description": "Status line when the selected MIDI device exists but its port could not be opened.",
+        "placeholders": {
+            "device": {
+                "type": "String"
+            }
+        }
+    },
+    "midiControlIdle": "No MIDI input is connected, so these mappings are idle. Connect the controller, or relearn a row on the one you are using now.",
+    "@midiControlIdle": {
+        "description": "Notice at the head of the mapping list while no MIDI input is delivering."
+    },
     "trayNetworkLabel": "Network",
     "@trayNetworkLabel": {
         "description": "Navigation rail entry for the settings tray's Network face, which holds the WiFi and Bluetooth tabs."

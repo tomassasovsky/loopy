@@ -763,8 +763,8 @@ class ConsoleBanner extends StatelessWidget {
   /// Creates a [ConsoleBanner].
   const ConsoleBanner({
     required this.message,
-    required this.actionLabel,
-    required this.onAction,
+    this.actionLabel,
+    this.onAction,
     this.failed = false,
     this.actionKey,
     this.secondaryLabel,
@@ -776,10 +776,12 @@ class ConsoleBanner extends StatelessWidget {
   final String message;
 
   /// The action's label — Cancel while in flight, Try again after a failure.
-  final String actionLabel;
+  /// Null for a banner that only reports (the MIDI idle notice has nothing to
+  /// offer but the explanation).
+  final String? actionLabel;
 
   /// Runs the action.
-  final VoidCallback onAction;
+  final VoidCallback? onAction;
 
   /// Colours the dot red rather than amber.
   final bool failed;
@@ -820,19 +822,21 @@ class ConsoleBanner extends StatelessWidget {
                 style: TextStyle(color: surface.textSecondary, fontSize: 16),
               ),
             ),
-            const SizedBox(width: 14),
             if (secondaryLabel != null) ...[
+              const SizedBox(width: 14),
               ConsoleSmallButton(
                 label: secondaryLabel!,
                 onPressed: onSecondary,
               ),
-              const SizedBox(width: 10),
             ],
-            ConsoleSmallButton(
-              key: actionKey,
-              label: actionLabel,
-              onPressed: onAction,
-            ),
+            if (actionLabel != null) ...[
+              const SizedBox(width: 14),
+              ConsoleSmallButton(
+                key: actionKey,
+                label: actionLabel!,
+                onPressed: onAction,
+              ),
+            ],
           ],
         ),
       ),
