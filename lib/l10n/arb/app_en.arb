@@ -413,6 +413,14 @@
         }
     },
     "cancel": "Cancel",
+    "fxParamResetLabel": "Reset",
+    "@fxParamResetLabel": {
+        "description": "Button in the FX parameter editor sheet that returns the parameter to the plugin's default value."
+    },
+    "fxParamSetLabel": "Set",
+    "@fxParamSetLabel": {
+        "description": "Commit button in the FX parameter editor sheet; closes the sheet keeping the edited value."
+    },
     "save": "Save",
     "trackRoutingTitle": "{trackName} routing",
     "@trackRoutingTitle": {

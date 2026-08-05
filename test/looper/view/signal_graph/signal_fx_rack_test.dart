@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/looper/view/signal_graph/fx_param_edit_sheet.dart';
+import 'package:segno/looper/view/signal_graph/fx_param_tile.dart';
 import 'package:segno/looper/view/signal_graph/signal_fx_rack.dart';
 import 'package:segno/looper/view/signal_graph/signal_knob.dart';
 import 'package:segno/theme/surface_theme.dart';
@@ -551,7 +553,7 @@ void main() {
       expect(find.text('—'), findsOneWidget);
     });
 
-    testWidgets('renders one knob per user-visible param', (tester) async {
+    testWidgets('renders one tile per user-visible param', (tester) async {
       await tester.pumpApp(
         build(
           fx: plugin(
@@ -559,10 +561,12 @@ void main() {
           ),
         ),
       );
-      expect(find.byType(SignalKnob), findsNWidgets(3));
+      expect(find.byType(FxParamTile), findsNWidgets(3));
+      // The rotary is gone from the plugin path entirely (DS / 06).
+      expect(find.byType(SignalKnob), findsNothing);
     });
 
-    testWidgets('renders a knob for every user-visible param, uncapped', (
+    testWidgets('renders a tile for every user-visible param, uncapped', (
       tester,
     ) async {
       await tester.pumpApp(
@@ -572,13 +576,13 @@ void main() {
           ),
         ),
       );
-      // Every automatable param gets a knob — they wrap into rows and the card
+      // Every automatable param gets a tile — they wrap into rows and the card
       // grows taller rather than truncating (no cap, no horizontal scroll).
-      expect(find.byType(SignalKnob), findsNWidgets(12));
+      expect(find.byType(FxParamTile), findsNWidgets(12));
       final params = find.byKey(const Key('signalGraph_lane_device_0_params'));
       expect(params, findsOneWidget);
-      // 12 knobs at 60px in a 360px body = 6 per row -> a second row, so the
-      // control area is taller than a single row.
+      // 12 tiles at an 85px slot in a 360px body = 4 per row -> three rows, so
+      // the control area is taller than a single row.
       expect(tester.getSize(params).height, greaterThan(100));
     });
 
@@ -594,7 +598,7 @@ void main() {
         ),
       );
       expect(find.byType(Switch), findsOneWidget);
-      expect(find.byType(SignalKnob), findsNothing);
+      expect(find.byType(FxParamTile), findsNothing);
 
       // Flipping the switch drives the param to its max (on).
       await tester.tap(
@@ -639,7 +643,7 @@ void main() {
       expect(lastSet, 2.0);
     });
 
-    testWidgets('the knob readout uses the plugin format when provided', (
+    testWidgets('the tile readout uses the plugin format when provided', (
       tester,
     ) async {
       await tester.pumpApp(
@@ -652,7 +656,9 @@ void main() {
       expect(find.text('-6.0 dB'), findsOneWidget);
     });
 
-    testWidgets('hidden and read-only params get no knob', (tester) async {
+    testWidgets('hidden and non-automatable params get no control', (
+      tester,
+    ) async {
       await tester.pumpApp(
         build(
           fx: plugin(
@@ -664,11 +670,13 @@ void main() {
           ),
         ),
       );
-      // Only the automatable, non-hidden param earns a knob.
-      expect(find.byType(SignalKnob), findsOneWidget);
+      // Only the automatable, non-hidden param earns a control. Note the
+      // third fixture's flags omit 0x01, so it is dropped as *non-automatable*
+      // — read-only params (0x01 | 0x02) do get a tile; see below.
+      expect(find.byType(FxParamTile), findsOneWidget);
     });
 
-    testWidgets('turning a knob dispatches the plain value by param id', (
+    testWidgets('a tile opens the sheet, and dragging it dispatches plain', (
       tester,
     ) async {
       final calls = <(int, int, double)>[];
@@ -679,13 +687,19 @@ void main() {
         ),
       );
 
-      final knob = find.byKey(const Key('signalGraph_lane_device_0_param_0'));
-      final gesture = await tester.startGesture(tester.getCenter(knob));
-      await tester.pump(const Duration(milliseconds: 40));
-      await gesture.moveBy(const Offset(0, -30));
-      await gesture.moveBy(const Offset(0, -30));
-      await tester.pump();
-      await gesture.up();
+      // The grid is never the live surface: a tap opens the editor and commits
+      // nothing on its own.
+      await tester.tap(
+        find.byKey(const Key('signalGraph_lane_device_0_param_0')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(FxParamEditSheet), findsOneWidget);
+      expect(calls, isEmpty, reason: 'opening the sheet must not change audio');
+
+      // The whole track is the handle. Press near its right edge.
+      final track = find.byKey(const Key('fxParamSheet_track'));
+      final box = tester.getRect(track);
+      await tester.tapAt(Offset(box.right - 4, box.center.dy));
       await tester.pumpAndSettle();
 
       expect(calls, isNotEmpty);
@@ -696,6 +710,82 @@ void main() {
       // would never exceed 1, so a value above 1 proves the de-normalization.
       expect(calls.last.$3, greaterThan(1));
       expect(calls.last.$3, lessThanOrEqualTo(10));
+    });
+
+    testWidgets('cancelling the sheet restores the value it opened with', (
+      tester,
+    ) async {
+      final calls = <double>[];
+      await tester.pumpApp(
+        build(
+          fx: plugin(params: [param(42, 'Gain', max: 10, def: 5)]),
+          onSetPluginParam: (_, _, v) => calls.add(v),
+        ),
+      );
+
+      await tester.tap(
+        find.byKey(const Key('signalGraph_lane_device_0_param_0')),
+      );
+      await tester.pumpAndSettle();
+
+      final box = tester.getRect(find.byKey(const Key('fxParamSheet_track')));
+      await tester.tapAt(Offset(box.right - 4, box.center.dy));
+      await tester.pumpAndSettle();
+      expect(calls.last, greaterThan(5));
+
+      await tester.tap(find.byKey(const Key('fxParamSheet_cancel')));
+      await tester.pumpAndSettle();
+
+      // Cancel is not "stop sending" — the audio followed the drag live, so
+      // backing out has to walk it back to where the sheet opened.
+      expect(calls.last, 5);
+      expect(find.byType(FxParamEditSheet), findsNothing);
+    });
+
+    testWidgets('a read-only param gets a tile that does not open a sheet', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        build(
+          fx: plugin(
+            // automatable + read-only: shown, but it reports rather than takes.
+            params: [param(10, 'Meter', flags: 0x01 | 0x02)],
+          ),
+        ),
+      );
+
+      expect(find.byType(FxParamTile), findsOneWidget);
+      await tester.tap(
+        find.byKey(const Key('signalGraph_lane_device_0_param_0')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(FxParamEditSheet), findsNothing);
+    });
+
+    testWidgets('past 24 steps a param takes a tile, not a menu', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        build(
+          fx: plugin(
+            params: [
+              param(
+                10,
+                'Ratio',
+                flags: 0x01 | 0x10,
+                max: 25,
+                stepCount: 25,
+                valueTexts: [for (var i = 0; i <= 25; i++) 'S$i'],
+              ),
+            ],
+          ),
+        ),
+      );
+
+      // A 26-entry menu stops being readable, so it falls through to a tile
+      // whose sheet snaps to the steps.
+      expect(find.byType(FxParamEnumCell), findsNothing);
+      expect(find.byType(FxParamTile), findsOneWidget);
     });
 
     testWidgets('the plugin card carries the power control, not a bypass', (

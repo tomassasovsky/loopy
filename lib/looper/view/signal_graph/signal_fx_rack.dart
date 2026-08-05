@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/view/signal_graph/fx_param_edit_sheet.dart';
+import 'package:segno/looper/view/signal_graph/fx_param_tile.dart';
 import 'package:segno/looper/view/signal_graph/signal_fx_chrome.dart';
 import 'package:segno/looper/view/signal_graph/signal_knob.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
@@ -622,9 +625,12 @@ class _PluginDeviceCard extends StatelessWidget {
   /// never the plugin's own bypass parameter.
   final void Function({required bool enabled}) onSetEnabled;
 
-  static const double _knobSlot = 60;
-  static const double _enumSlot = 108;
-  static const double _cellHeight = 92; // one control + its label/readout
+  // DS / 06: every parameter kind wears the same 78x59 skeleton, so the strip
+  // is one grid rather than a row of unlike controls sized by kind.
+  static const double _slot =
+      FxParamTileMetrics.width + FxParamTileMetrics.gutter;
+  static const double _cellHeight =
+      FxParamTileMetrics.height + FxParamTileMetrics.gutter;
   static const double _headerHeight = 33;
   static const double _bodyVPad = 16; // 8 top + 8 bottom
 
@@ -632,16 +638,25 @@ class _PluginDeviceCard extends StatelessWidget {
   /// and not hidden) param, except the plugin's own bypass — that one belongs
   /// to the plugin's sound and stays in its native editor, so the card's single
   /// power control is unambiguously the host enable (D-POWER, R23). Each
-  /// renders as a switch / dropdown / knob per its kind.
+  /// renders per [_PluginParamControl]'s mapping.
+  ///
+  /// **Open conflict, deliberately unresolved here.** `DS / 06` routes
+  /// `isBypass` to an `FxBypassPill` in the chain chrome instead of dropping
+  /// it. That is a reversal of D-POWER/R23, not a reskin: it adds a second
+  /// bypass-shaped control beside the host enable, which is the exact ambiguity
+  /// R23 exists to prevent. #505 filed it as "a real bug — the param is
+  /// silently dropped", but the drop is documented right here and in the class
+  /// doc, so that premise does not hold. Left as-is pending a human call;
+  /// promoting it is a self-contained change to this method plus a pill.
   static List<PluginParamInfo> _visibleControls(PluginEffect fx) =>
       fx.params.where((p) => p.isUserVisible && !p.isBypass).toList();
 
   List<PluginParamInfo> get _controlParams => _visibleControls(fx);
 
-  /// The in-strip width a [param]'s control occupies — an enum dropdown needs
-  /// room for a worded value; a switch or knob fits the standard slot.
-  static double _slotWidth(PluginParamInfo param) =>
-      param.isEnum ? _enumSlot : _knobSlot;
+  /// The in-strip width a parameter occupies. Uniform by design (DS / 06): an
+  /// enum's longer label ellipsizes rather than widening its cell, so columns
+  /// stay aligned down the grid.
+  static double _slotWidth(PluginParamInfo param) => _slot;
 
   /// How many rows [widths] wrap into within a [maxWidth] body (greedy, the way
   /// [Wrap] packs them) — drives the card's height so every control is visible.
@@ -844,6 +859,7 @@ class _PluginDeviceCard extends StatelessWidget {
                                         controls[k].def,
                                     onChanged: (v) =>
                                         onSetParam(controls[k].id, v),
+                                    source: name,
                                     onFormatValue: onFormatValue,
                                   ),
                                 ),
@@ -1054,15 +1070,33 @@ class _CardPowerToggle extends StatelessWidget {
   }
 }
 
-/// One hosted-plugin parameter, rendered as the control its kind calls for: a
-/// two-state [_PluginParamSwitch], a named-step [_PluginParamDropdown], or a
-/// continuous rotary [_PluginParamKnob]. Plugins are not all knobs.
+/// One hosted-plugin parameter, rendered as the control its kind calls for.
+///
+/// The mapping is `DS / 06 FX parameter — spec`, read top to bottom with the
+/// first match winning:
+///
+/// | condition                  | control                       |
+/// |----------------------------|-------------------------------|
+/// | `isReadOnly`               | tile, not tappable (meters)   |
+/// | `stepCount == 1`           | [FxParamSwitchCell]           |
+/// | `2 <= stepCount <= 24`     | [FxParamEnumCell]             |
+/// | `stepCount > 24`           | tile; the sheet snaps to steps|
+/// | `stepCount == 0`           | tile; the sheet is continuous |
+///
+/// `!isAutomatable || isHidden` and `isBypass` never reach here — they are
+/// resolved before the grid is built (see `_visibleControls`).
+///
+/// Rotaries are gone. A knob is poor tactile UX on glass: no grip, imprecise
+/// drag, and a finger over the readout — and at `size: 36` it gave ~36px of
+/// travel for a full parameter range. The tile is an overview that opens an
+/// editor with the panel's full width to drag in.
 class _PluginParamControl extends StatelessWidget {
   const _PluginParamControl({
     required this.controlKey,
     required this.spec,
     required this.value,
     required this.onChanged,
+    required this.source,
     this.onFormatValue,
   });
 
@@ -1073,229 +1107,67 @@ class _PluginParamControl extends StatelessWidget {
   final double value;
   final ValueChanged<double> onChanged;
 
-  /// Only the continuous knob path uses this (switch / dropdown read their
-  /// labels from [PluginParamInfo.valueTexts] baked in at load time).
+  /// Breadcrumb for the editor sheet's header.
+  final String source;
+
+  /// The plugin's own readout for a plain value, when it offers one. Switch and
+  /// enum cells read their labels from [PluginParamInfo.valueTexts] instead,
+  /// baked in at load time.
   final String? Function(int paramId, double value)? onFormatValue;
 
   @override
   Widget build(BuildContext context) {
+    // Read-only first: a meter reports a value but takes none, whatever its
+    // step count says.
+    if (spec.isReadOnly) {
+      return FxParamTile(
+        key: controlKey,
+        spec: spec,
+        value: value,
+        valueText: onFormatValue?.call(spec.id, value),
+        onTap: null,
+      );
+    }
     if (spec.isToggle) {
-      return _PluginParamSwitch(
-        switchKey: controlKey,
+      return FxParamSwitchCell(
+        key: controlKey,
         spec: spec,
         value: value,
         onChanged: onChanged,
       );
     }
-    if (spec.isEnum) {
-      return _PluginParamDropdown(
-        dropdownKey: controlKey,
+    // Only a *small* enumeration earns a menu; past 24 steps a menu stops being
+    // readable, so it falls through to a tile whose sheet snaps to the steps.
+    if (spec.isEnum && spec.stepCount <= _maxMenuSteps) {
+      return FxParamEnumCell(
+        key: controlKey,
         spec: spec,
         value: value,
         onChanged: onChanged,
       );
     }
-    return _PluginParamKnob(
-      knobKey: controlKey,
+    return FxParamTile(
+      key: controlKey,
       spec: spec,
       value: value,
-      onChanged: onChanged,
-      onFormatValue: onFormatValue,
+      valueText: onFormatValue?.call(spec.id, value),
+      onTap: () => unawaited(
+        FxParamEditSheet.show(
+          context,
+          spec: spec,
+          value: value,
+          source: source,
+          onChanged: onChanged,
+          formatValue: (v) => onFormatValue?.call(spec.id, v),
+        ),
+      ),
     );
   }
 }
 
-/// One hosted-plugin parameter as a rotary [SignalKnob]. The plugin reports the
-/// value in its own plain `[min, max]` range; the knob works in `0..1`, so we
-/// normalize in and de-normalize out, and read out the live plain value — in
-/// the plugin's own words ([onFormatValue]) when available, else a number.
-class _PluginParamKnob extends StatelessWidget {
-  const _PluginParamKnob({
-    required this.knobKey,
-    required this.spec,
-    required this.value,
-    required this.onChanged,
-    required this.onFormatValue,
-  });
-
-  final Key knobKey;
-  final PluginParamInfo spec;
-
-  /// The current plain value (in `[spec.min, spec.max]`).
-  final double value;
-
-  /// Called with the new plain value as the knob turns.
-  final ValueChanged<double> onChanged;
-
-  /// The plugin's own readout for a plain value, or null for a numeric one.
-  final String? Function(int paramId, double value)? onFormatValue;
-
-  double get _span => spec.max - spec.min;
-
-  double _normalize(double plain) =>
-      _span == 0 ? 0.0 : ((plain - spec.min) / _span).clamp(0.0, 1.0);
-
-  double _denormalize(double norm) => spec.min + norm * _span;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    return SignalKnob(
-      knobKey: knobKey,
-      value: _normalize(value),
-      resetValue: _normalize(spec.def),
-      onChanged: (norm) => onChanged(_denormalize(norm)),
-      label: spec.name,
-      color: surface.accent,
-      size: 36,
-      readoutBuilder: (norm) {
-        final plain = _denormalize(norm);
-        // Prefer the plugin's own formatting ("-6.0 dB"); fall back to the bare
-        // number + unit when the plugin offers no text for this value.
-        final fromPlugin = onFormatValue?.call(spec.id, plain);
-        if (fromPlugin != null && fromPlugin.isNotEmpty) return fromPlugin;
-        final text = spec.stepCount > 0
-            ? plain.round().toString()
-            : plain.toStringAsFixed(2);
-        return spec.unit.isEmpty ? text : '$text ${spec.unit}';
-      },
-    );
-  }
-}
-
-/// A two-state (on/off) plugin parameter as a labeled switch — a knob reads
-/// poorly for a boolean. The plain value is `>= midpoint` when on; toggling
-/// drives it to [PluginParamInfo.max] / `min`. The on/off captions come from
-/// the plugin's own step text when present, else a generic On/Off.
-class _PluginParamSwitch extends StatelessWidget {
-  const _PluginParamSwitch({
-    required this.switchKey,
-    required this.spec,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final Key switchKey;
-  final PluginParamInfo spec;
-  final double value;
-  final ValueChanged<double> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final surface = context.surface;
-    final mid = (spec.min + spec.max) / 2;
-    final on = value >= mid;
-    final labels = spec.valueTexts.length == 2
-        ? spec.valueTexts
-        : const <String>[];
-    final caption = labels.isEmpty
-        ? (on ? l10n.signalPluginToggleOn : l10n.signalPluginToggleOff)
-        : (on ? labels[1] : labels[0]);
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          spec.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: signalMono(color: surface.textSecondary, size: 9),
-        ),
-        const SizedBox(height: 4),
-        Transform.scale(
-          scale: 0.7,
-          child: Switch(
-            key: switchKey,
-            value: on,
-            activeThumbColor: surface.accent,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            onChanged: (next) => onChanged(next ? spec.max : spec.min),
-          ),
-        ),
-        Text(
-          caption,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: signalMono(color: surface.textTertiary, size: 9),
-        ),
-      ],
-    );
-  }
-}
-
-/// A discrete enumeration plugin parameter as a dropdown of its named steps —
-/// e.g. a filter type. Selecting step `k` drives the plain value to the `k`-th
-/// step across `[min, max]`. Labels come from [PluginParamInfo.valueTexts].
-class _PluginParamDropdown extends StatelessWidget {
-  const _PluginParamDropdown({
-    required this.dropdownKey,
-    required this.spec,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final Key dropdownKey;
-  final PluginParamInfo spec;
-  final double value;
-  final ValueChanged<double> onChanged;
-
-  /// The step index nearest the current plain value (in `0..stepCount`).
-  int get _selectedStep {
-    final span = spec.max - spec.min;
-    if (span == 0) return 0;
-    final norm = ((value - spec.min) / span).clamp(0.0, 1.0);
-    return (norm * spec.stepCount).round();
-  }
-
-  double _valueForStep(int step) =>
-      spec.min + (spec.max - spec.min) * step / spec.stepCount;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          spec.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: signalMono(color: surface.textSecondary, size: 9),
-        ),
-        const SizedBox(height: 6),
-        DropdownButtonHideUnderline(
-          child: DropdownButton<int>(
-            key: dropdownKey,
-            value: _selectedStep,
-            isDense: true,
-            isExpanded: true,
-            iconSize: 16,
-            dropdownColor: surface.cardHigh,
-            style: signalMono(color: surface.textPrimary, size: 10),
-            onChanged: (step) {
-              if (step != null) onChanged(_valueForStep(step));
-            },
-            items: [
-              for (var i = 0; i < spec.valueTexts.length; i++)
-                DropdownMenuItem<int>(
-                  value: i,
-                  child: Text(
-                    spec.valueTexts[i],
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: signalMono(color: surface.textPrimary, size: 10),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
+/// The largest step count that still reads as a menu rather than a list
+/// (DS / 06). Above it a parameter takes a tile and snaps in the sheet.
+const _maxMenuSteps = 24;
 
 /// One parameter control within a device card: a rotary [SignalKnob] for a
 /// continuous param, or a two-state [_ModeSwitch] for a mode (a knob reads
