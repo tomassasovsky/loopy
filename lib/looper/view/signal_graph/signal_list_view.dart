@@ -4,21 +4,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/audio_setup.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/cubit/tracks_cubit.dart';
-import 'package:loopy/looper/view/fx_editor/fx_dock.dart';
-import 'package:loopy/looper/view/fx_editor/fx_scope.dart';
-import 'package:loopy/looper/view/signal_graph/signal_fx_chrome.dart';
-import 'package:loopy/looper/view/signal_graph/signal_fx_summary.dart';
-import 'package:loopy/looper/view/signal_graph/signal_knob.dart';
-import 'package:loopy/looper/view/signal_graph/signal_routing_chips.dart';
-import 'package:loopy/looper/view/signal_graph/signal_rows.dart';
-import 'package:loopy/looper/view/signal_graph/signal_style.dart';
-import 'package:loopy/theme/page_transitions.dart';
-import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/view/fx_editor/fx_dock.dart';
+import 'package:segno/looper/view/fx_editor/fx_scope.dart';
+import 'package:segno/looper/view/signal_graph/signal_fx_chrome.dart';
+import 'package:segno/looper/view/signal_graph/signal_fx_summary.dart';
+import 'package:segno/looper/view/signal_graph/signal_knob.dart';
+import 'package:segno/looper/view/signal_graph/signal_routing_chips.dart';
+import 'package:segno/looper/view/signal_graph/signal_rows.dart';
+import 'package:segno/looper/view/signal_graph/signal_style.dart';
+import 'package:segno/theme/page_transitions.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 // The surface is large, so its widgets are split across part files by role:
 // the three list panes, the row cards, and the page chrome. They share this

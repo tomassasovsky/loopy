@@ -3,7 +3,7 @@ import 'package:looper_repository/looper_repository.dart'
 import 'package:settings_repository/settings_repository.dart';
 
 /// One-time courtesy + structural migrations of the persisted monitor settings,
-/// run from `runLoopy` at bootstrap (so a first launch and the mock path run
+/// run from `runSegno` at bootstrap (so a first launch and the mock path run
 /// them too, not only when a saved config exists).
 ///
 /// Two ordered steps, each guarded by its own done-flag so they run once and

@@ -1,4 +1,4 @@
-/// Repository layer for the Loopy looper: owns the audio engine and projects
+/// Repository layer for the Segno looper: owns the audio engine and projects
 /// its snapshots into looper domain models.
 library;
 
@@ -10,7 +10,7 @@ library;
 // through `TransportState` (A4b). `LooperMode` joins them (B2a), also
 // surfaced through `TransportState`. The audio-config cluster
 // (AudioBackend/AudioDevice/EngineConfig/…) is wrapped in Part 2b.
-export 'package:loopy_engine/loopy_engine.dart'
+export 'package:segno_engine/segno_engine.dart'
     show
         ClickMode,
         EngineResult,

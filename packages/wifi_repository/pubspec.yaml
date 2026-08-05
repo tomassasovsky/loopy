@@ -1,6 +1,6 @@
 name: wifi_repository
 description: >-
-  Repository for Loopy appliance WiFi — thin orchestration over wifi_client.
+  Repository for Segno appliance WiFi — thin orchestration over wifi_client.
 version: 0.1.0
 publish_to: none
 

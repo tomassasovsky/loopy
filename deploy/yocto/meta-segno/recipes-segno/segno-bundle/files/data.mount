@@ -1,0 +1,16 @@
+[Unit]
+Description=Segno persistent data partition (/data)
+# The data partition survives OS/app updates; the app stores everything here.
+# segno.service pulls this in via RequiresMountsFor=/data.
+DefaultDependencies=no
+Conflicts=umount.target
+Before=local-fs.target umount.target
+
+[Mount]
+What=/dev/disk/by-label/data
+Where=/data
+Type=ext4
+Options=noatime
+
+[Install]
+WantedBy=local-fs.target

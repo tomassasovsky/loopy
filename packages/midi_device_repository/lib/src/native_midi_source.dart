@@ -24,7 +24,7 @@ MidiControllerSource? createNativeMidiSource({
       FlutterErrorDetails(
         exception: error,
         stack: stackTrace,
-        library: 'loopy',
+        library: 'segno',
         context: ErrorDescription('creating the native MIDI source'),
       ),
     );

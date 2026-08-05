@@ -1,6 +1,6 @@
 name: bluetooth_repository
 description: >-
-  Repository for Loopy appliance Bluetooth — thin orchestration over
+  Repository for Segno appliance Bluetooth — thin orchestration over
   bluetooth_client.
 version: 0.1.0
 publish_to: none

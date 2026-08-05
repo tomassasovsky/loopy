@@ -1,8 +1,8 @@
 import 'package:bloc/bloc.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:equatable/equatable.dart';
-import 'package:loopy/appliance/display_brightness_cubit.dart';
-import 'package:loopy/appliance/software_brightness.dart';
+import 'package:segno/appliance/display_brightness_cubit.dart';
+import 'package:segno/appliance/software_brightness.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'settings_tray_state.dart';

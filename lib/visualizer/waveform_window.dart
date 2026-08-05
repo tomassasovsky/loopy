@@ -1,15 +1,16 @@
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/theme/theme.dart';
-import 'package:loopy/visualizer/performance_readout.dart';
-import 'package:loopy/visualizer/performance_readout_view.dart';
-import 'package:loopy/visualizer/waveform_window_args.dart';
-import 'package:loopy/visualizer/waveform_window_channel.dart';
-import 'package:loopy/visualizer/widgets/waveform_view.dart';
-import 'package:loopy/window/window_chrome.dart';
+import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:screen_retriever/screen_retriever.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/visualizer/performance_readout.dart';
+import 'package:segno/visualizer/performance_readout_view.dart';
+import 'package:segno/visualizer/waveform_window_args.dart';
+import 'package:segno/visualizer/waveform_window_channel.dart';
+import 'package:segno/visualizer/widgets/waveform_view.dart';
+import 'package:segno/window/window_chrome.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// Where the output-waveform window should sit: **full-bleed on a secondary
@@ -97,7 +98,7 @@ Future<void> runWaveformWindow(WindowController controller) async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final args = WaveformWindowArgs.parse(controller.arguments);
-  final title = args.title ?? 'Loopy — Output';
+  final title = args.title ?? 'Segno — Output';
   final frame = ValueNotifier<WaveformFrame>(
     (samples: Float32List(0), progress: 0, selectedTrack: ''),
   );
@@ -141,7 +142,7 @@ Future<void> runWaveformWindow(WindowController controller) async {
       .catchError((Object _) => null);
 
   await windowManager.ensureInitialized();
-  await configureLoopyDesktopWindow(title: title);
+  await configureSegnoDesktopWindow(title: title);
 
   // Full-bleed on a second monitor when there is one; otherwise the windowed
   // fallback. Two ordering rules make this land on the *second* display:
@@ -174,6 +175,32 @@ Future<void> runWaveformWindow(WindowController controller) async {
 
   runApp(WaveformWindowApp(frame: frame, readout: readout, title: title));
 }
+
+/// The waveform's colour state for [readout]: the cursor track's transport
+/// state, with muted overlaying it — the same legend the meters use, keyed off
+/// the same track whose name the waveform already labels itself with.
+///
+/// Pure so the second screen's colouring can be tested without a window. Falls
+/// back to [LooperMeterState.empty] when no track is selected, or when the
+/// state token is one this build does not know: the readout crosses an engine
+/// boundary as strings, and an unrecognised one must degrade to the quiet
+/// "nothing to show" tone rather than throw on a render.
+@visibleForTesting
+LooperMeterState waveformStateOf(PerformanceReadout readout) {
+  for (final track in readout.tracks) {
+    if (!track.selected) continue;
+    final state = _trackStatesByName[track.state];
+    if (state == null) return LooperMeterState.empty;
+    return LooperMeterState.of(state, muted: track.muted);
+  }
+  return LooperMeterState.empty;
+}
+
+/// [TrackState] by its wire token. Hoisted out of [waveformStateOf] because
+/// that runs once per pushed frame — rebuilding the map there would allocate at
+/// frame rate to answer a five-entry lookup.
+final Map<String, TrackState> _trackStatesByName = TrackState.values
+    .asNameMap();
 
 /// Coerces a method-channel payload (a [Float32List], or a `List` of numbers
 /// after the plugin re-serializes across engines) into a [Float32List].
@@ -220,7 +247,7 @@ class WaveformWindowApp extends StatelessWidget {
       theme: AppTheme.neon,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: LoopyWindowChromeShell(
+      home: SegnoWindowChromeShell(
         title: title,
         body: Padding(
           padding: const EdgeInsets.all(16),
@@ -234,6 +261,7 @@ class WaveformWindowApp extends StatelessWidget {
                   selectedTrack: data.selectedTrack,
                   samples: data.samples,
                   progress: data.progress,
+                  state: waveformStateOf(readoutData),
                   semanticLabel: context.l10n.a11yWaveform,
                 ),
               ),

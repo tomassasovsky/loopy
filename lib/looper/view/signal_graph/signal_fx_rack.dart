@@ -2,11 +2,11 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/view/signal_graph/signal_fx_chrome.dart';
-import 'package:loopy/looper/view/signal_graph/signal_knob.dart';
-import 'package:loopy/looper/view/signal_graph/signal_style.dart';
-import 'package:loopy/theme/surface_theme.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/view/signal_graph/signal_fx_chrome.dart';
+import 'package:segno/looper/view/signal_graph/signal_knob.dart';
+import 'package:segno/looper/view/signal_graph/signal_style.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 /// The settle "pop" a dragged device card plays as it lands — it arrives
 /// slightly enlarged and springs down to rest. Deliberately overshoots, which

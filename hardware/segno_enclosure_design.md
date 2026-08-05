@@ -1,0 +1,245 @@
+# Segno — sheet-metal enclosure for the segno Pi loopstation
+
+A wedge-shaped welded console that houses this repo's standalone build
+(a Raspberry Pi + the V1 [`segno_pedal_main`](segno_pedal_pcb_design.md) board)
+and **integrates ten foot pedals
+into the chassis** the way the real "Chewie II" / Sonnit reference does. Form
+(850 × 465 × 100 mm, top sloping toward the player) and layout from the reference;
+internals are this project's. Branded **Segno**.
+
+The deliverable is a **manufacturing package** (STEP + DXF + PDF) produced by the
+parametric generator [`enclosure/segno_enclosure.py`](enclosure/segno_enclosure.py),
+validated by an in-generator **assertion suite** (see §8). Decisions came from
+[brainstorm](../docs/brainstorm/2026-06-27-segno-enclosure-brainstorm-doc.md) →
+[research](../docs/research/2026-06-27-segno-components-research.md) →
+[plan](../docs/plan/2026-06-27-feat-segno-enclosure-rework-plan.md) → technical review.
+
+> **Integrated pedals.** The foot controls are ten **whole Cherub WTB-006
+> footswitches** (109.87 × 76.35, 29.3 mm tall incl. anti-slip pads, caliper-
+> measured — `hardware/cherub_wtb006_pedal/`), modded so their switch leads wire
+> straight to the board. Each **stands on a printed pedestal**; the pedal
+> protrudes through a ~79 × 116 mm slot (slot depth is slope-corrected: the slot
+> lives in the 12.5° faceplate but the pedal is horizontal). **No top-face
+> fasteners; no cables leave the box.**
+
+---
+
+## 1. Overall geometry & construction
+
+| dimension | value | note |
+|-----------|-------|------|
+| Width `W` | **850 mm** | reference footprint |
+| Depth `D` | **397 mm** | sized to a comfortable gap behind the front row (no dead band) |
+| Rear height | **100 mm** / front lip **12 mm** | low-raked wedge |
+| Top slope | **12.5°** | sloped length 407 mm |
+| Material | **2.0 mm 5052-H32 aluminium** | bend R 2.0, K 0.33 |
+
+**Construction = welded lower body + removable top lid.** The front wall, rear
+wall, two sides and the bottom plate are **welded** into a rigid tray; the
+**faceplate is a removable lid**. The faceplate is **not a bare plate** — it is a
+shallow pan whose front lip, rear edge and **both sides fold down into skirt
+flanges**, and the **screws go through those skirt flanges**, never through the
+faceplate's top face. The lid drops over the body, **resting on the walls' inward
+top flanges** (a support ledge), and M4 screws pass through each **wall web** into
+the down-turned **lid skirt** behind it — so every fixing sits on a vertical face
+(front lip + the two sides), hidden from the playing surface. Lifting the lid takes
+the **screens, the encoder/ring PCB and the indicator LEDs** with it, while the
+**pedals stay on their welded platforms** in the lower body (the slots clear the
+pedals straight up) — so service is "back out the side + front-lip screws and lift
+the lid," and the Pi/board are reached from the open top.
+
+```
+  REMOVABLE TOP LID                       WELDED LOWER BODY
+  └ faceplate pan (cutouts) + down-turned ├ front wall (12) + top flange (lid ledge)
+    front/side/rear skirt flanges +       ├ rear wall (100) + I/O + vents + top flange
+    screens + encoder/ring PCB + LEDs     ├ 2× side panel + top flange (lid ledge)
+    (screws through the skirts)           ├ bottom plate (welded, vented, Pi/board)
+                                          └ 10× inner pedal platform (welded) + pedals
+```
+
+Joints are `WELD`-layer callouts, not modelled beads. Per-edge intent: the wall
+**bottom edges weld** to the bottom plate; the wall+side **top edges fold** to an
+inward flange that the lid **rests on** (support ledge, no fixings on the top face);
+the lid's **down-turned skirt flanges** take M4 screws driven horizontally through
+the **wall webs** (front lip + both sides), so no fixing ever pierces the faceplate
+surface.
+
+---
+
+## 2. Foot pedals on printed pedestals
+
+Ten whole **Cherub WTB-006** footswitches stand inside on printed pedestals,
+toe toward the player, protruding through the top slots — giving the
+reference's piano-key look with no visible fasteners and the switch wiring
+fully internal.
+
+- **Slot:** `FSW_SLOT_W` 79.35 (u) × `FSW_SLOT_D` 115.61 (v) mm — the WTB-006
+  envelope (76.35 × 109.87) + 3 mm clearance, with the slot depth divided by
+  cos(slope) because the slot lives in the sloped faceplate while the pedal is
+  horizontal. **No mounting holes** in the faceplate.
+- **Pedestal** (`segno_platform_front`/`_mid`, 8+2, 3D-printed): deck at
+  `platform_h(v)` (front ≈ 15.2, mid ≈ 59.3 mm) so the pedal's CASE TOP sits
+  **flush with the slot's upper (rear) rim** and only the pad stands above the
+  metal (issue #373 — the old +12 rule left the pedals reading sunken against
+  the rising slope). Perimeter strips outside the opening are relief-shaved to
+  ~0.3 under the real plate (drift-calibrated); side-screw bosses keep ~1 mm
+  under the faceplate. A 1.2 mm deck pocket locates the pedal's bottom pad
+  (the WTB-006 has no base screws — side through-screws only; retention
+  PROVISIONAL). The `PLATFORM_HEADROOM` assertion enforces this against the
+  local lid height.
+- **Layout (two rows, per the reference):** a front row of **8 evenly-spaced**
+  pedals (REC/PLAY · STOP · UNDO · MODE · TRACK 1–4) and an upper pair **CLEAR /
+  BANK aligned in `u` over UNDO and MODE**, placed so their **label tops align
+  with the screens' shared top line** (issue #366). **An LED pill indicator sits
+  above EVERY pedal (10 total)** — the board's `indicatorLeds[7]` chain contract
+  must widen to 10 (open firmware follow-up). The mid-row platforms are taller (the lid is higher there); the generator
+  computes both heights and the depth assertions confirm the 16" screen fits behind.
+
+> The `PEDAL_*` constants are **caliper-measured from a real WTB-006**
+> (2026-07-28, issues #358/#360) — unlike the earlier ASP-1 placeholder they are
+> no longer provisional. Pedestal **retention** is the remaining PROVISIONAL
+> piece (pocket + gravity; no fastener engages the pedal).
+
+---
+
+## 3. Top faceplate — control layout (Chewie-II)
+
+`u` = 0…843 L→R (player's left→right), `v` = 0…468 front→rear.
+
+| feature | qty | size (mm) | maps to |
+|---------|-----|-----------|---------|
+| WTB-006 pedal slot | 10 | 79.35 × 115.61 | 8 front (evenly spaced) + CLEAR/BANK over UNDO/MODE, no fasteners |
+| indicator LED pill | 10 | 60 × 6 slot | one above every pedal (#366; `indicatorLeds` chain must widen 7 → 10) |
+| 7" touchscreen | 1 | 156 × 88 aperture | waveform / loop view (left), top-aligned |
+| 16" touchscreen | 1 | 350 × 199 aperture | main segno UI (right), top-aligned |
+| encoder + diffused ring | 1 | Ø7 + Ø58/40 | centred under the 7" screen at `ENC_V` (does NOT follow CLEAR/BANK rearward — it would hit the 7" screen); EC11 + 12 THT LEDs |
+| power / mode LED | 2 | Ø8 | bezel, flanking the encoder |
+
+- **Screens mount from behind**; the aperture is **smaller than the bezel** so the
+  monitor clamps against the panel (rear `screen_bracket` parts retain them). The
+  16" is a ViewSonic TD1655-class portable touch monitor (355 × 223 × 15 mm).
+- **LEDs are 5 mm through-hole, cabled.** The ring is a cut annulus with a diffuser
+  + 12 THT LEDs behind.
+- **No logo cutout** on the panel (removed). "Segno" remains the product/drawing name.
+
+---
+
+## 4. Rear I/O & ventilation
+
+Rear wall (`u` = 0…846, `z` = 0…100): **9 V barrel** (Ø12) · **power/shutdown
+button** (Ø16) · **fuse** (Ø12) · **USB-A ×2** (the external audio interface +
+stick/MIDI) · **M6 earth/bond stud** · a **louvre vent block**. No audio aperture,
+no pedal-cable slot — the audio interface is **external**.
+
+**Ventilation** (Pi 5 ≤ 12 W; Active Cooler ramps 60/67.5/75 °C): a rear exhaust
+vent block + a bottom-plate intake array give ≈ 17 000 mm² open area (`>` the
+4 000 mm² floor the `VENT_FREE_AREA` assertion checks). The Pi mounts on **M3
+standoffs ≥ 10 mm** off the bottom plate for under-board airflow and Active-Cooler
+intake.
+
+**Grounding:** welded joints are continuous, but powder-coat is an insulator — the
+bottom-plate perimeter pads are **masked (un-coated)** for chassis bond, and the
+rear earth stud provides the bond point.
+
+---
+
+## 5. Internal mounting & the bottom plate
+
+The pedal platforms hang from the walls at the front + CLEAR/BANK rows, so the
+**rear strip of the bottom plate is the clear floor** for the electronics — and the
+16" screen above it is shallow (mounts to the faceplate, ~18 mm deep), leaving head
+height. The **Raspberry Pi and the `segno_pedal_main` board mount there on
+standoffs** (≥ `STANDOFF_H` for under-board airflow), linked over USB (they sit
+side-by-side). The **EC11 ring board** mounts to the
+faceplate underside behind the encoder cutout; the **screens** clamp to the
+faceplate from behind (`screen_bracket`).
+
+The **bottom plate** (`board_mounts()` drives the patterns) is **welded** to the
+wall bottom edges (part of the lower body) and carries: the **Pi** (58 × 49) and
+**`segno_pedal_main` board** (85 × 87 M3, measured from its KiCad)
+standoff holes in the rear; an **intake-vent block** in the clear gap between the
+two platform rows (air crosses the boards to the rear-wall exhaust); and 4 rubber
+feet. The electronics are reached from the **open top** once the lid is lifted.
+
+---
+
+## 6. Sheet-metal notes
+
+- Folded edges (wall bottom flanges): 90°, inside R = `t` = 2.0, **K 0.33** → bend
+  allowance 4.18 mm. Welded edges get a weld gap, no allowance.
+- **PEM:** clinch hole Ø6.3 (distinct from M4 Ø4.3 clearance), ≥ 8 mm edge distance
+  — the **18 mm side skirt flanges** host them, so the lid threads straight onto the
+  side screws; the **wall webs** get Ø4.3 clearance, and the shallow **9 mm front lip**
+  is a clearance hole + nut (too short for a clinch nut).
+- DXF layers: `CUT` (thru) · `BEND` (score) · `WELD` (callout) · `VENT` ·
+  `ENGRAVE` · `NOTE`.
+- Finish: deburr → powder coat (mask bond pads).
+
+---
+
+## 7. Material & weight
+
+| material | thickness | mass |
+|----------|-----------|------|
+| **5052-H32 aluminium** *(default)* | 2.0 mm | **≈ 5.3 kg** |
+| Mild steel (CRS) | 2.0 mm | ≈ 15.4 kg |
+
+---
+
+## 8. Generating the package & the assertion gate
+
+```bash
+cd hardware/enclosure
+python3.12 -m venv .venv && .venv/bin/pip install ezdxf cadquery matplotlib  # one-time
+.venv/bin/python segno_enclosure.py            # check + STEP + DXF + PDF -> out/
+.venv/bin/python segno_enclosure.py --report   # report + assertions only
+.venv/bin/python segno_enclosure.py --no-step   # DXF + PDF only
+```
+
+Before any output the generator runs `_check()` — **the real acceptance gate**.
+It raises (build fails) unless every geometry rule holds:
+
+| assertion | guards |
+|-----------|--------|
+| `WIDTH_BUDGET` | the 10-pedal row + gaps fit across the faceplate |
+| `NO_OVERLAP` / `BOUNDS` | no two cutouts intersect; all inside the usable area |
+| `PLATFORM_HEADROOM` | foot-plate flush+proud, body fits under the sloped lid |
+| `SCREEN_DEPTH` | each module + cable clears the interior; pedal row clears the 16" |
+| `VENT_FREE_AREA` | open vent area ≥ target; standoff gap adequate |
+| `SCREEN_RETENTION` | aperture < bezel (mount from behind) |
+| `PEM` | flange wide enough for the clinch nut |
+
+Outputs in `enclosure/out/` (mm): **STEP** (`segno_assembly` + per-part incl.
+`segno_platform`, `segno_bottom`), **DXF** flat patterns, **PDF** drawing sheets
+(`segno_platform` is DXF-only). Verification renders
+(`out/_hero.png`, `out/_fp_top.png`) confirm 7" left / 16" right.
+
+Everything is parameterised at the top of the script — change a value, re-run, and
+the assertions re-validate before re-cutting every panel.
+
+---
+
+## 9. Bill of materials (enclosure only)
+
+| item | qty | note |
+|------|-----|------|
+| 2.0 mm 5052-H32 sheet | ~1.1 m² | shell + bottom + platforms + brackets |
+| PEM M4 clinch nuts | ~6 | lid side-skirt fixings |
+| M4 screws (+ ~6 nuts) | ~12 | lid skirt: 6 side (into PEM) + 6 front/rear (screw + nut) |
+| M3 standoffs (≥10 mm) | ~6 | Pi / board, airflow gap |
+| M6 earth stud + hardware | 1 | chassis bond |
+| Rubber feet | 4 | bottom |
+| Screen-retention brackets | 4 + 4 | from `segno_screen_bracket` |
+| Diffuser disc (ring) + 12 THT LEDs | 1 | encoder ring |
+
+Pedals, screens, encoder, LEDs, Pi, board and the (external) audio interface are in
+the electronics BOMs / `segno_pedal_shopping_list.md`.
+
+---
+
+## 10. Confirm before cutting
+
+The pedal figures (`PEDAL_*`) are now caliper-measured (2026-07-28); the one
+family still to confirm from physical parts is the exact **`BIG_*`/`SMALL_*`**
+touch modules (one-line param changes, then re-run — the assertions
+re-validate).

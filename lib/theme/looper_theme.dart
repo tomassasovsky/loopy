@@ -2,7 +2,7 @@ import 'dart:math' show sqrt;
 
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
-import 'package:loopy/looper/model/interaction_mode.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
 
 /// Maps engine peak amplitude (`0..1`) to meter fill (`0..1`).
 ///
@@ -95,7 +95,7 @@ enum TrackIndicator {
   }
 }
 
-/// Loopy-specific design tokens layered on top of [ThemeData] via a
+/// Segno-specific design tokens layered on top of [ThemeData] via a
 /// [ThemeExtension], so the looper grid and visualizer pick up per-mode colors
 /// (per-track accents, waveform stroke, tile surfaces) without hard-coding them
 /// in widgets.
@@ -105,7 +105,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
   const LooperTheme({
     required this.tileBackground,
     required this.tileBorder,
-    required this.waveformColor,
+    required this.waveformColors,
     required this.waveformBackground,
     required this.recordColor,
     required this.fxColor,
@@ -121,10 +121,16 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
   /// Border/divider color on a track tile.
   final Color tileBorder;
 
-  /// Waveform stroke/fill color.
-  final Color waveformColor;
+  /// Waveform stroke/fill colors by [LooperMeterState].
+  ///
+  /// The waveform is part of the same transport legend as the track meter and
+  /// the pedal LEDs, so it keys off the same state vocabulary rather than
+  /// carrying one fixed accent: the surface says what the track is *doing*, not
+  /// merely that it is a waveform.
+  final Map<LooperMeterState, Color> waveformColors;
 
-  /// Background behind the waveform.
+  /// Background behind the waveform. A neutral that re-tints with the palette
+  /// ramp — not part of the state legend above.
   final Color waveformBackground;
 
   /// Accent for the record/recording state (e.g. the mode indicator).
@@ -167,11 +173,18 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
   Color indicatorColor(TrackIndicator indicator) =>
       indicatorColors[indicator] ?? Colors.transparent;
 
+  /// The waveform color for [state]. Transparent if the table omits it.
+  ///
+  /// Unlike the meters there is no per-mode split: the waveform draws the
+  /// mixed output, and no interaction mode changes what that means.
+  Color waveformColor(LooperMeterState state) =>
+      waveformColors[state] ?? Colors.transparent;
+
   @override
   LooperTheme copyWith({
     Color? tileBackground,
     Color? tileBorder,
-    Color? waveformColor,
+    Map<LooperMeterState, Color>? waveformColors,
     Color? waveformBackground,
     Color? recordColor,
     Color? fxColor,
@@ -182,7 +195,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
   }) => LooperTheme(
     tileBackground: tileBackground ?? this.tileBackground,
     tileBorder: tileBorder ?? this.tileBorder,
-    waveformColor: waveformColor ?? this.waveformColor,
+    waveformColors: waveformColors ?? this.waveformColors,
     waveformBackground: waveformBackground ?? this.waveformBackground,
     recordColor: recordColor ?? this.recordColor,
     fxColor: fxColor ?? this.fxColor,
@@ -208,8 +221,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
       tileBackground:
           Color.lerp(tileBackground, other.tileBackground, t) ?? tileBackground,
       tileBorder: Color.lerp(tileBorder, other.tileBorder, t) ?? tileBorder,
-      waveformColor:
-          Color.lerp(waveformColor, other.waveformColor, t) ?? waveformColor,
+      waveformColors: _lerpColorMap(waveformColors, other.waveformColors, t),
       waveformBackground:
           Color.lerp(waveformBackground, other.waveformBackground, t) ??
           waveformBackground,

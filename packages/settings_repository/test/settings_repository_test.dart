@@ -156,6 +156,25 @@ void main() {
       expect(await repository.loadLaneEffects(1, 1), isNull);
       expect(await repository.loadLaneEffects(0, 0), isNull);
     });
+
+    test(
+      'removing a chain reads back as unset, not as the old value',
+      () async {
+        await repository.saveLaneEffects(1, 0, '[{"type":3}]');
+        await repository.saveLaneEffects(1, 1, '[{"type":4}]');
+
+        await repository.clearLaneEffects(1, 0);
+
+        expect(await repository.loadLaneEffects(1, 0), isNull);
+        // Only the named lane is cleared.
+        expect(await repository.loadLaneEffects(1, 1), '[{"type":4}]');
+      },
+    );
+
+    test('clearing a lane that was never stored is a no-op', () async {
+      await repository.clearLaneEffects(3, 2);
+      expect(await repository.loadLaneEffects(3, 2), isNull);
+    });
   });
 
   group('track/master fx chains (FX v3)', () {
@@ -173,6 +192,23 @@ void main() {
       expect(await repository.loadMasterFxChain(), isNull);
       await repository.saveMasterFxChain('{"chainEnabled":true}');
       expect(await repository.loadMasterFxChain(), '{"chainEnabled":true}');
+    });
+
+    test('clearing a track chain reads back as unset, not as the old '
+        'value', () async {
+      await repository.saveTrackFxChain(0, '{"chainEnabled":true}');
+      await repository.saveTrackFxChain(1, '{"chainEnabled":false}');
+
+      await repository.clearTrackFxChain(0);
+
+      expect(await repository.loadTrackFxChain(0), isNull);
+      // Only the named channel is cleared.
+      expect(await repository.loadTrackFxChain(1), '{"chainEnabled":false}');
+    });
+
+    test('clearing a track chain that was never stored is a no-op', () async {
+      await repository.clearTrackFxChain(2);
+      expect(await repository.loadTrackFxChain(2), isNull);
     });
   });
 
@@ -460,10 +496,10 @@ void main() {
     });
 
     test('round-trips a saved id + name', () async {
-      await repository.savePedalOutputDevice(id: 'out-7', name: 'Loopy Pedal');
+      await repository.savePedalOutputDevice(id: 'out-7', name: 'Segno Pedal');
       final loaded = await repository.loadPedalOutputDevice();
       expect(loaded?.id, 'out-7');
-      expect(loaded?.name, 'Loopy Pedal');
+      expect(loaded?.name, 'Segno Pedal');
     });
 
     test('treats an empty saved id as no selection', () async {
@@ -472,7 +508,7 @@ void main() {
     });
 
     test('clearPedalOutputDevice removes both keys', () async {
-      await repository.savePedalOutputDevice(id: 'out-7', name: 'Loopy Pedal');
+      await repository.savePedalOutputDevice(id: 'out-7', name: 'Segno Pedal');
       await repository.clearPedalOutputDevice();
       expect(await repository.loadPedalOutputDevice(), isNull);
       expect(store.values.containsKey('pedal.output_device_id'), isFalse);

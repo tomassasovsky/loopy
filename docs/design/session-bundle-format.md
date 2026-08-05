@@ -1,6 +1,6 @@
-# Session bundle format (`.loopy`)
+# Session bundle format (`.segno`)
 
-A saved session is a directory (a `.loopy` **bundle**) holding a JSON manifest,
+A saved session is a directory (a `.segno` **bundle**) holding a JSON manifest,
 one WAV per audio layer, and a flattened mixdown. This document describes the
 **v5** schema and how legacy bundles migrate.
 

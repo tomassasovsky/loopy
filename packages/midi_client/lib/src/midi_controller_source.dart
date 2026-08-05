@@ -2,10 +2,10 @@ import 'dart:async';
 import 'dart:ffi';
 
 import 'package:controller_repository/controller_repository.dart';
-import 'package:loopy_engine/loopy_engine_ffi.dart';
 import 'package:meta/meta.dart';
 import 'package:midi_client/src/midi_client_base.dart';
 import 'package:midi_client/src/midi_device.dart';
+import 'package:segno_engine/segno_engine_ffi.dart';
 
 /// A [ControllerSource] backed by a native USB MIDI input device.
 ///

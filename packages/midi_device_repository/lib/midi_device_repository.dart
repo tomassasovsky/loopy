@@ -1,4 +1,4 @@
-/// Repository layer for Loopy's MIDI input (foot-controller) device.
+/// Repository layer for Segno's MIDI input (foot-controller) device.
 ///
 /// Owns the device lifecycle (enumerate / open / close), hotplug supervision,
 /// and selection persistence, and projects a `MidiConnection` stream for the

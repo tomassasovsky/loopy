@@ -4,14 +4,14 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
-import 'package:loopy/theme/theme.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/theme/theme.dart';
 
 // ---------------------------------------------------------------------------
-// Faceplate geometry (millimetres), taken verbatim from the VAMP top plate in
-// hardware/enclosure/vamp_enclosure.py so the on-screen replica matches the 3D
+// Faceplate geometry (millimetres), taken verbatim from the Segno top plate in
+// hardware/enclosure/segno_enclosure.py so the on-screen replica matches the 3D
 // model. u = player left->right (0..fpW); v = front->rear (0..fpV).
 // ---------------------------------------------------------------------------
 const _fpW = 846.0; // faceplate width
@@ -39,7 +39,7 @@ const _smallH = 88.0; // 7" aperture height
 /// The u of front-row pedal [i] (`0..7`), evenly spaced inside the edge margin.
 double _pedalU(int i) => 69.0 + (777.0 - 69.0) * i / 7.0;
 
-/// Renders the VAMP top plate to scale from injected state alone — the two
+/// Renders the Segno top plate to scale from injected state alone — the two
 /// screen apertures (a 7" waveform on the left, the main looper screen on the
 /// right), the encoder + activity ring, and the footswitches. Pure
 /// presentation: no transport, cubit, or bloc dependency, so it pumps from a
@@ -163,7 +163,7 @@ class PedalPlate extends StatelessWidget {
           );
         }
 
-        // Silk legend line — bottom edge at faceplate v (vamp_enclosure
+        // Silk legend line — bottom edge at faceplate v (segno_enclosure
         // layout).
         Widget silkLine(_SilkLine spec) => box(
           spec.align == TextAlign.center ? spec.u : spec.u + spec.blockW / 2,
@@ -321,7 +321,7 @@ class PedalPlate extends StatelessWidget {
   }
 }
 
-/// One silk legend line from vamp_enclosure faceplate_holes / silk_text.
+/// One silk legend line from segno_enclosure faceplate_holes / silk_text.
 class _SilkLine {
   const _SilkLine({
     required this.text,
@@ -338,7 +338,7 @@ class _SilkLine {
   final TextAlign align;
 }
 
-/// Mirrors vamp_enclosure._silk_lines.
+/// Mirrors segno_enclosure._silk_lines.
 List<String> _silkLines(String label) {
   if (label == 'REC/PLAY') return const ['REC/', 'PLAY'];
   if (label.startsWith('TRACK')) return const [];
@@ -348,7 +348,7 @@ List<String> _silkLines(String label) {
 bool _silkHasLed(String label) =>
     label == 'CLEAR' || label == 'BANK' || label.startsWith('TRACK');
 
-/// Mirrors vamp_enclosure.faceplate_holes engraving layout.
+/// Mirrors segno_enclosure.faceplate_holes engraving layout.
 List<_SilkLine> _silkLabelLines(String label, double pedalU, double pedalV) {
   final lines = _silkLines(label);
   if (lines.isEmpty) return const [];

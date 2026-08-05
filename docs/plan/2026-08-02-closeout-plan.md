@@ -18,7 +18,7 @@ merged. While it sits unmerged, master ships a console with no Wi-Fi UI, and at
 least five open issues describe problems that branch already fixed.
 
 **Landing #450 closes or resolves:** #348 (Control Center itself), #309 (SSH
-host keys per slot — `loopy-ssh-persist`), the Wi-Fi half of #432, and makes
+host keys per slot — `segno-ssh-persist`), the Wi-Fi half of #432, and makes
 #451 a small follow-up rather than a design question.
 
 **It is blocked on exactly one decision:** master's tests assert
@@ -35,7 +35,7 @@ Recommendation: **banners for persistent conditions, toasts for transient
 events.** The distinction is real, and "device lost" is not an event.
 
 Everything else in #450 is verified: analyze clean, format clean, flash-pedal
-28/28, pedal-firmware CI job intact, `loopy-update-ctl` carrying both
+28/28, pedal-firmware CI job intact, `segno-update-ctl` carrying both
 `flash-pedal` and `reconcile-staged`.
 
 ## Cluster 2 — hardware validation, no code needed

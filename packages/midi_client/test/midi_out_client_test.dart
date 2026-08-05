@@ -3,12 +3,12 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:midi_client/midi_client.dart';
 
-import 'helpers/fake_loopy_engine_bindings.dart';
+import 'helpers/fake_segno_engine_bindings.dart';
 
 void main() {
   group('MidiOutClient', () {
     test('throws when the native handle cannot be allocated', () {
-      final bindings = FakeLoopyEngineBindings(outCreateReturnsNull: true);
+      final bindings = FakeSegnoEngineBindings(outCreateReturnsNull: true);
       expect(
         () => MidiOutClient(bindings: bindings),
         throwsA(isA<MidiException>()),
@@ -16,14 +16,14 @@ void main() {
     });
 
     test('create allocates the native output handle', () {
-      final bindings = FakeLoopyEngineBindings();
+      final bindings = FakeSegnoEngineBindings();
       MidiOutClient(bindings: bindings);
       expect(bindings.calls, contains('out_create'));
     });
 
     group('enumerate', () {
       test('maps native output ports to MidiDevices', () {
-        final bindings = FakeLoopyEngineBindings(
+        final bindings = FakeSegnoEngineBindings(
           outDevices: const [
             MidiDevice(id: 'out-1', name: 'Pedal Out'),
             MidiDevice(id: 'out-2', name: 'Synth', isDefault: true),
@@ -42,14 +42,14 @@ void main() {
       });
 
       test('returns an empty list when there are no output ports', () {
-        final client = MidiOutClient(bindings: FakeLoopyEngineBindings());
+        final client = MidiOutClient(bindings: FakeSegnoEngineBindings());
         expect(client.enumerate(), isEmpty);
       });
     });
 
     group('open', () {
       test('passes the id through and returns the native code', () {
-        final bindings = FakeLoopyEngineBindings();
+        final bindings = FakeSegnoEngineBindings();
         final client = MidiOutClient(bindings: bindings);
 
         final code = client.open('out-1');
@@ -60,7 +60,7 @@ void main() {
       });
 
       test('surfaces a non-zero native failure code', () {
-        final bindings = FakeLoopyEngineBindings(outOpenResult: 2);
+        final bindings = FakeSegnoEngineBindings(outOpenResult: 2);
         final client = MidiOutClient(bindings: bindings);
         expect(client.open('missing'), 2);
       });
@@ -68,7 +68,7 @@ void main() {
 
     group('send', () {
       test('forwards the bytes verbatim and returns the native code', () {
-        final bindings = FakeLoopyEngineBindings();
+        final bindings = FakeSegnoEngineBindings();
         final client = MidiOutClient(bindings: bindings);
 
         final code = client.send(Uint8List.fromList([0xF0, 0x7D, 0x01, 0xF7]));
@@ -79,7 +79,7 @@ void main() {
       });
 
       test('is a no-op for an empty payload', () {
-        final bindings = FakeLoopyEngineBindings();
+        final bindings = FakeSegnoEngineBindings();
         final client = MidiOutClient(bindings: bindings);
 
         expect(client.send(Uint8List(0)), 0);
@@ -87,7 +87,7 @@ void main() {
       });
 
       test('surfaces a non-zero native failure code', () {
-        final bindings = FakeLoopyEngineBindings(sendResult: 5);
+        final bindings = FakeSegnoEngineBindings(sendResult: 5);
         final client = MidiOutClient(bindings: bindings);
         expect(client.send(Uint8List.fromList([0xFA])), 5);
       });
@@ -95,7 +95,7 @@ void main() {
 
     group('dispose', () {
       test('frees the native handle exactly once', () {
-        final bindings = FakeLoopyEngineBindings();
+        final bindings = FakeSegnoEngineBindings();
         final client = MidiOutClient(bindings: bindings)
           ..dispose()
           ..dispose();
@@ -108,7 +108,7 @@ void main() {
       });
 
       test('rejects use after dispose', () {
-        final client = MidiOutClient(bindings: FakeLoopyEngineBindings())
+        final client = MidiOutClient(bindings: FakeSegnoEngineBindings())
           ..dispose();
         expect(client.enumerate, throwsA(isA<MidiException>()));
         expect(() => client.open('x'), throwsA(isA<MidiException>()));

@@ -18,14 +18,14 @@ sum of every overdub pass mixed in place. Two capabilities are silently lost on
 save/reload:
 
 1. **Overdub layers.** Per-pass undo/redo snapshots exist only as RAM `pool[]`
-   slots ([`engine_private.h:255`](packages/loopy_engine/src/core/engine_private.h#L255),
-   [`:498`](packages/loopy_engine/src/core/engine_private.h#L498)). A reloaded
+   slots ([`engine_private.h:255`](packages/segno_engine/src/core/engine_private.h#L255),
+   [`:498`](packages/segno_engine/src/core/engine_private.h#L498)). A reloaded
    session has `undoDepth == 0` — you cannot undo overdubs or recover an earlier
    take.
 2. **Non-primary lanes.** `_capture()` and the engine's `le_engine_export_track`
    read **lane 0 only**
    ([`session_repository.dart:294`](packages/session_repository/lib/src/session_repository.dart#L294),
-   [`engine_session.c:22`](packages/loopy_engine/src/core/engine_session.c#L22)).
+   [`engine_session.c:22`](packages/segno_engine/src/core/engine_session.c#L22)).
    A multi-lane track loses lanes 1..N entirely.
 
 **Goal (agreed scope: "Everything"):** a saved session round-trips full audio
@@ -37,17 +37,17 @@ The flattened `mixdown.wav` is retained for preview/compat.
 
 Verified in code; the design hinges on these facts.
 
-- A **lane** ([`le_lane`](packages/loopy_engine/src/core/engine_private.h#L184))
+- A **lane** ([`le_lane`](packages/segno_engine/src/core/engine_private.h#L184))
   owns `float* pool[LE_POOL_SLOTS]` buffers, an `a_live` index (the buffer the
   audio thread plays/records), and `a_len`. Buffers are lazily allocated and
-  quantized to loop length ([`:69`](packages/loopy_engine/src/core/engine_private.h#L69)).
-- A **track** ([`le_track`](packages/loopy_engine/src/core/engine_private.h#L240))
+  quantized to loop length ([`:69`](packages/segno_engine/src/core/engine_private.h#L69)).
+- A **track** ([`le_track`](packages/segno_engine/src/core/engine_private.h#L240))
   owns `lanes[LE_MAX_LANES]`, `lane_count`, and the **shared** undo/redo stacks
   `undo_stack[]`/`redo_stack[]` of pool indices. The same slot index names the
   snapshot in **every lane in lockstep**
-  ([`:247`](packages/loopy_engine/src/core/engine_private.h#L247)).
+  ([`:247`](packages/segno_engine/src/core/engine_private.h#L247)).
 - An **overdub layer is a full pre-pass image** of the whole loop, not an
-  additive delta ([`:255`](packages/loopy_engine/src/core/engine_private.h#L255)).
+  additive delta ([`:255`](packages/segno_engine/src/core/engine_private.h#L255)).
   So the complete state of one lane is the ordered set of buffers:
   `undo_stack[0..undo_count)` → `a_live` → `redo_stack[0..redo_count)`.
 - Undo just swaps which slot is `a_live`; redo swaps back. Persisting undo/redo
@@ -56,7 +56,7 @@ Verified in code; the design hinges on these facts.
 
 **Precedent to reuse:** the performance-capture path already stages *retired*
 layers to numbered per-lane files + a sidecar manifest
-([`layer_staging_ring.h`](packages/loopy_engine/src/core/layer_staging_ring.h),
+([`layer_staging_ring.h`](packages/segno_engine/src/core/layer_staging_ring.h),
 `perf_drain.c`, `performance_repository`). Its file/manifest shape (numbered
 `lane_pcm[i]` buffers keyed by `(channel, lane, slot, generation)`) is the
 template for the session bundle's layer files. Session save is control-thread
@@ -66,10 +66,10 @@ template for the session bundle's layer files. Session save is control-thread
 
 | Layer | Symbol / file | Today | Needs |
 |---|---|---|---|
-| Engine export | `le_engine_export_track` / `_track_lane` ([engine_session.c:22](packages/loopy_engine/src/core/engine_session.c#L22),[:37](packages/loopy_engine/src/core/engine_session.c#L37)) | lane-0 / any-lane **live only** | enumerate + export every pool layer per lane |
-| Engine import | `le_engine_import_track` ([:54](packages/loopy_engine/src/core/engine_session.c#L54)) | lane-0 live, resets redo, EMPTY only | rebuild all lanes + pool + undo/redo stacks |
-| Engine commit | `le_engine_commit_session` ([:102](packages/loopy_engine/src/core/engine_session.c#L102)) | establishes master | unchanged |
-| FFI/Dart | `AudioEngine.exportTrack/exportTrackLane/importTrack/commitSession` ([audio_engine.dart:377](packages/loopy_engine/lib/src/audio_engine.dart#L377)) | mono lane-0 in/out | layer-aware in/out + generated bindings |
+| Engine export | `le_engine_export_track` / `_track_lane` ([engine_session.c:22](packages/segno_engine/src/core/engine_session.c#L22),[:37](packages/segno_engine/src/core/engine_session.c#L37)) | lane-0 / any-lane **live only** | enumerate + export every pool layer per lane |
+| Engine import | `le_engine_import_track` ([:54](packages/segno_engine/src/core/engine_session.c#L54)) | lane-0 live, resets redo, EMPTY only | rebuild all lanes + pool + undo/redo stacks |
+| Engine commit | `le_engine_commit_session` ([:102](packages/segno_engine/src/core/engine_session.c#L102)) | establishes master | unchanged |
+| FFI/Dart | `AudioEngine.exportTrack/exportTrackLane/importTrack/commitSession` ([audio_engine.dart:377](packages/segno_engine/lib/src/audio_engine.dart#L377)) | mono lane-0 in/out | layer-aware in/out + generated bindings |
 | Manifest | `Session`/`SessionTrack` v2 ([session.dart:198](packages/session_repository/lib/src/models/session.dart#L198)) | one `stem` per track | v3: `lanes[]` each with ordered `layers[]` |
 | Repo I/O | `SessionRepository.save/read/_capture` ([session_repository.dart:193](packages/session_repository/lib/src/session_repository.dart#L193)) | one WAV/track + mixdown | per-lane per-layer WAVs + mixdown |
 | Apply DTO | `SessionRig`/`SessionRigTrack` ([session_rig.dart:6](packages/looper_repository/lib/src/models/session_rig.dart#L6)) | `pcm` (lane 0) | lanes → layers |
@@ -166,14 +166,14 @@ is still 0 on reload (Part 2 adds it).
 **Engine (C):**
 - [ ] Add `le_engine_import_track_lane(channel, lane, pcm, frames)` — fills a
       specific lane's live slot of an EMPTY track (mirror of the lane-0 body in
-      [`le_engine_import_track`](packages/loopy_engine/src/core/engine_session.c#L54)),
+      [`le_engine_import_track`](packages/segno_engine/src/core/engine_session.c#L54)),
       and grows `lane_count` to cover the highest imported lane.
 - [ ] Keep `le_engine_import_track` as the lane-0 convenience wrapper.
 - [ ] Unit tests in the engine C/round-trip harness: import lanes 0..N, export
       each, assert PCM identity + `lane_count`.
 
 **FFI/Dart:**
-- [ ] Regenerate `loopy_engine_bindings.dart`; expose
+- [ ] Regenerate `segno_engine_bindings.dart`; expose
       `AudioEngine.importTrackLane(channel, lane, pcm)`; implement in
       `native_audio_engine.dart` + `mock_audio_engine.dart`.
 
@@ -275,7 +275,7 @@ implement in native + mock engines.
 ## Risks & open questions (for `/plan-technical-review`)
 
 - **R1 — Pool cap.** `LE_POOL_SLOTS == 256`
-  ([engine_private.h:57](packages/loopy_engine/src/core/engine_private.h#L57)).
+  ([engine_private.h:57](packages/segno_engine/src/core/engine_private.h#L57)).
   Live rigs evict the oldest undo layer past the cap; a loaded session cannot
   exceed it either. Confirm import rejects/clamps rather than overflowing the
   stack arrays.
@@ -290,7 +290,7 @@ implement in native + mock engines.
 - **R4 — Import atomicity.** `import_track_full` touches many slots before commit;
   a mid-rebuild failure must leave the track EMPTY, not half-filled. Build into a
   scratch, publish on success.
-- **R5 — ABI/bindings.** New FFI ⇒ regenerate `loopy_engine_bindings.dart` and
+- **R5 — ABI/bindings.** New FFI ⇒ regenerate `segno_engine_bindings.dart` and
   keep `mock_audio_engine` / the three test fakes
   (`fake_audio_engine`, `fake_session_engine`, `fake_performance_engine`) in sync.
 

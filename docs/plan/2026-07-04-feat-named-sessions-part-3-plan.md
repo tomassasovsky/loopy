@@ -34,7 +34,7 @@ path.
 - `lib/session/cubit/session_cubit.dart` — part 2's `saveAs` / `save` /
   `loadNamed` / `renameSession` / `deleteSession` / `refreshSessions` +
   `currentSessionName` / `sessions` in state.
-- `lib/app/view/app.dart` (~L42/99/280/595), `lib/app/run_loopy.dart` (~L126),
+- `lib/app/view/app.dart` (~L42/99/280/595), `lib/app/run_segno.dart` (~L126),
   `lib/looper/view/looper_page.dart` (~L21/41), `lib/main_mock.dart` — the
   `sessionDirectory` resolver chain to rename to a sessions root (and update the
   stale doc comments).
@@ -55,7 +55,7 @@ path.
 - [ ] The top bar shows the current session name (or "Unsaved").
 - [ ] The sessions-root resolver is threaded through the app shell; the legacy
       single-bundle Save/Load path and `defaultSessionDirectory` references are
-      removed; the old `loopy_session/` folder is left on disk.
+      removed; the old `segno_session/` folder is left on disk.
 - [ ] en/es l10n at parity (no untranslated keys); load failures (sample-rate /
       version) still surface through the SnackBar.
 - [ ] `flutter analyze` clean; `dart format` stable; full suite green; manager
@@ -72,7 +72,7 @@ path.
 - [ ] `tracks_chrome.dart`: replace the Save/Load menu items with a **Sessions…**
       entry (keep export); add a quick **Save** action + **Cmd/Ctrl+S**
       shortcut; show the current session name / "Unsaved".
-- [ ] Thread `defaultSessionsRoot` through `run_loopy.dart` / `app.dart` /
+- [ ] Thread `defaultSessionsRoot` through `run_segno.dart` / `app.dart` /
       `looper_page.dart` / `main_mock.dart`; rename the `sessionDirectory` param
       and fix the stale doc comments (LooperPage + the cubit `directory` param).
       Remove the dead single-bundle path and `defaultSessionDirectory`
@@ -90,7 +90,7 @@ path.
 
 `lib/session/view/sessions_manager_dialog.dart` (new) + the name-input dialog,
 `lib/looper/view/tracks_chrome.dart`, `lib/app/view/app.dart`,
-`lib/app/run_loopy.dart`, `lib/main_mock.dart`,
+`lib/app/run_segno.dart`, `lib/main_mock.dart`,
 `lib/looper/view/looper_page.dart`, `lib/l10n/arb/app_{en,es}.arb`,
 `test/session/view/*`, `test/looper/view/tracks_chrome_test.dart` (if present).
 
@@ -102,7 +102,7 @@ path.
    prompt); open the manager, load "A" (rig swaps, name updates); rename "A" →
    collision with "B" rejected inline; rename to "C"; delete the open session
    (confirm → music keeps playing, "Unsaved", next Save prompts); relaunch →
-   both sessions listed; old `loopy_session/` untouched.
+   both sessions listed; old `segno_session/` untouched.
 
 ## Dependencies
 
@@ -115,5 +115,5 @@ path.
 
 - The dialog's inline collision check is a fast-feedback affordance only; the
   cubit/repository remains the collision authority.
-- No migration of the legacy `loopy_session/` (sibling of the new root, never
+- No migration of the legacy `segno_session/` (sibling of the new root, never
   listed).

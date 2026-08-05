@@ -5,8 +5,8 @@ import 'dart:ui' show PlatformDispatcher;
 
 import 'package:bloc/bloc.dart';
 import 'package:flutter/widgets.dart';
-import 'package:loopy/common/console_mode.dart';
-import 'package:loopy/logging/app_log.dart';
+import 'package:segno/common/console_mode.dart';
+import 'package:segno/logging/app_log.dart';
 
 class AppBlocObserver extends BlocObserver {
   const AppBlocObserver();
@@ -34,12 +34,12 @@ class AppBlocObserver extends BlocObserver {
 /// failures are captured. Idempotent.
 Future<void> initAppLogging() async {
   await AppLog.init(directory: AppLog.defaultDirectory());
-  final alsaOnly = Platform.environment['LOOPY_ALSA_ONLY'] ?? '';
-  final rtAudio = Platform.environment['LOOPY_RT_AUDIO'] ?? '';
+  final alsaOnly = Platform.environment['SEGNO_ALSA_ONLY'] ?? '';
+  final rtAudio = Platform.environment['SEGNO_RT_AUDIO'] ?? '';
   AppLog.info(
     'start pid=$pid console=$kConsoleMode '
     'os=${Platform.operatingSystem} '
-    'LOOPY_ALSA_ONLY=$alsaOnly LOOPY_RT_AUDIO=$rtAudio',
+    'SEGNO_ALSA_ONLY=$alsaOnly SEGNO_RT_AUDIO=$rtAudio',
   );
 }
 
@@ -54,7 +54,7 @@ Future<void> bootstrap(FutureOr<Widget> Function() builder) async {
   };
 
   // Return false so fatal isolate errors still tear down the process —
-  // loopy.service Restart=always then brings the kiosk back cleanly.
+  // segno.service Restart=always then brings the kiosk back cleanly.
   PlatformDispatcher.instance.onError = (error, stack) {
     AppLog.error('PlatformDispatcher', error: error, stack: stack);
     return false;
@@ -62,7 +62,7 @@ Future<void> bootstrap(FutureOr<Widget> Function() builder) async {
 
   Bloc.observer = const AppBlocObserver();
 
-  // runApp must stay in the same zone as ensureInitialized (runLoopy).
+  // runApp must stay in the same zone as ensureInitialized (runSegno).
   // A nested runZonedGuarded triggers Flutter's zone-mismatch check and
   // can remount PlatformMenuBar.
   try {

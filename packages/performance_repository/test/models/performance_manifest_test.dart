@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy_engine/loopy_engine.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno_engine/segno_engine.dart';
 
 void main() {
   group('PerformanceLaneSnapshot', () {

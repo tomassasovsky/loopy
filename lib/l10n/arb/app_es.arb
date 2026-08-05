@@ -1,9 +1,9 @@
 {
     "@@locale": "es",
-    "appMenuLabel": "Loopy",
+    "appMenuLabel": "Segno",
     "settingsMenuItem": "Ajustes…",
     "settingsSectionUpdates": "Actualizaciones",
-    "updatesIntro": "Mantén Loopy al día. La comprobación es de solo lectura; descargar e instalar una actualización siempre es tu decisión.",
+    "updatesIntro": "Mantén Segno al día. La comprobación es de solo lectura; descargar e instalar una actualización siempre es tu decisión.",
     "updatesInstalledVersionLabel": "Versión instalada",
     "updatesChannelLabel": "Canal",
     "updatesVersionValue": "v{version}",
@@ -35,7 +35,7 @@
     "pedalFirmwareGateTitle": "Finalizando la actualización",
     "pedalFirmwareGateBody": "Actualizando tu pedal a {version}. Sus interruptores y luces están apagados hasta que termine — no lo desconectes.",
     "pedalFirmwareGateFailedTitle": "La actualización del pedal no terminó",
-    "pedalFirmwareGateFailedBody": "Tu pedal sigue funcionando con su firmware anterior. Loopy volverá a intentarlo la próxima vez que se inicie.",
+    "pedalFirmwareGateFailedBody": "Tu pedal sigue funcionando con su firmware anterior. Segno volverá a intentarlo la próxima vez que se inicie.",
     "pedalFirmwareGateContinue": "Continuar",
     "dismiss": "Descartar",
     "waveformWindowFailedBanner": "La pantalla de forma de onda no se abrió: comprueba la segunda pantalla.",
@@ -98,7 +98,7 @@
         }
     },
     "sessionErrorSampleRate": "No se pudo cargar la sesión: se grabó a una frecuencia de muestreo distinta a la del dispositivo actual. Vuelve a abrir el dispositivo a la frecuencia de la sesión e inténtalo de nuevo.",
-    "sessionErrorUnsupportedVersion": "No se pudo cargar la sesión: se guardó con una versión más reciente de Loopy. Actualiza la aplicación e inténtalo de nuevo.",
+    "sessionErrorUnsupportedVersion": "No se pudo cargar la sesión: se guardó con una versión más reciente de Segno. Actualiza la aplicación e inténtalo de nuevo.",
     "sessionErrorGeneric": "La acción de sesión falló: {details}",
     "engineStoppedBanner": "Motor de audio detenido — abre la configuración para iniciar.",
     "trackNumberLabel": "Pista {trackNumber}",
@@ -175,7 +175,7 @@
     "settingsSectionAudio": "Audio",
     "settingsSectionTracks": "Pistas",
     "settingsKicker": "AJUSTES",
-    "settingsTitle": "Loopy",
+    "settingsTitle": "Segno",
     "settingsViewIntro": "Cambia diseños, ajusta los valores predeterminados del looper y activa la ventana secundaria de forma de onda de salida.",
     "viewGroupLabel": "VISTA",
     "waveformWindowTitle": "Ventana de forma de onda de salida",
@@ -416,7 +416,7 @@
         }
     },
     "noAsioDriverTitle": "No se encontró ningún controlador ASIO",
-    "noAsioDriverMessage": "Loopy usa ASIO en Windows. Instala el controlador ASIO de tu interfaz, u obtén uno genérico de ASIO4ALL, y vuelve a abrir la configuración.",
+    "noAsioDriverMessage": "Segno usa ASIO en Windows. Instala el controlador ASIO de tu interfaz, u obtén uno genérico de ASIO4ALL, y vuelve a abrir la configuración.",
     "downloadAsio4all": "Obtener ASIO4ALL",
     "sampleRateLabel": "Frecuencia de muestreo",
     "bufferLabel": "Búfer",
@@ -495,7 +495,7 @@
     "pitchOctaves": "{sign}{count} oct",
     "pitchSemitones": "{sign}{count} st",
     "defaultTrackName": "PISTA {trackNumber}",
-    "outputWaveformWindowTitle": "Loopy — Salida",
+    "outputWaveformWindowTitle": "Segno — Salida",
     "@deviceDisconnectedBanner": {
         "placeholders": {
             "deviceName": {
@@ -757,7 +757,7 @@
             }
         }
     },
-    "pedalOutputHint": "Elige la salida MIDI del pedal para que loopy controle sus LED. Sus interruptores usan la entrada MIDI de arriba.",
+    "pedalOutputHint": "Elige la salida MIDI del pedal para que segno controle sus LED. Sus interruptores usan la entrada MIDI de arriba.",
     "pedalFirmwareGroup": "PROTOCOLO DEL FIRMWARE DEL PEDAL",
     "pedalFirmwareUnknown": "Sin definir — enviar v{version} (predeterminado)",
     "@pedalFirmwareUnknown": {
@@ -777,10 +777,10 @@
             }
         }
     },
-    "pedalFirmwareHint": "Debe coincidir con el protocolo del firmware grabado en tu pedal. loopy nunca envía un protocolo más nuevo que este; el modo FX del pedal necesita v3.",
+    "pedalFirmwareHint": "Debe coincidir con el protocolo del firmware grabado en tu pedal. segno nunca envía un protocolo más nuevo que este; el modo FX del pedal necesita v3.",
     "pedalFirmwareUpdateTitle": "Actualización de firmware del pedal disponible",
     "pedalFirmwareUpdateBody": "Este pedal está en el protocolo v{version}, así que el modo FX muestra sus LED de cadena en verde en lugar de azul y el pedal lee FX como silencio. Graba el firmware v{needed} y luego elige v{needed} arriba.",
-    "pedalFirmwareUpdateBodyUnknown": "El protocolo del firmware de este pedal no está definido, así que loopy se queda en el piso seguro v{version}: el modo FX muestra sus LED de cadena en verde en lugar de azul y el pedal lee FX como silencio. Graba el firmware v{needed} y luego elige v{needed} arriba.",
+    "pedalFirmwareUpdateBodyUnknown": "El protocolo del firmware de este pedal no está definido, así que segno se queda en el piso seguro v{version}: el modo FX muestra sus LED de cadena en verde en lugar de azul y el pedal lee FX como silencio. Graba el firmware v{needed} y luego elige v{needed} arriba.",
     "pluginUnsupportedTopology": "{name} no se puede usar aquí: no es un efecto estéreo (puede ser un instrumento o usar varios buses).",
     "@pluginUnsupportedTopology": {
         "description": "Shown when a user inserts a plugin whose audio bus layout is not a supported stereo/mono effect.",
@@ -897,7 +897,7 @@
     },
     "perfExportTrackLive": "Plugins en vivo",
     "@perfExportTrackLive": {
-        "description": "Per-track export summary label: this track exported with a live, editable Loopy VST3 device chain."
+        "description": "Per-track export summary label: this track exported with a live, editable Segno VST3 device chain."
     },
     "perfExportTrackBounced": "Audio mezclado",
     "@perfExportTrackBounced": {
@@ -913,7 +913,7 @@
     },
     "perfExportReasonUnrepresented": "Exportado como audio — este canal usa un efecto que aún no se puede exportar en vivo.",
     "@perfExportReasonUnrepresented": {
-        "description": "Fallback reason shown under a bounced-audio track: its chain includes an effect type this Loopy version doesn't recognize as exportable."
+        "description": "Fallback reason shown under a bounced-audio track: its chain includes an effect type this Segno version doesn't recognize as exportable."
     },
     "perfExportReExport": "Reexportar",
     "@perfExportReExport": {
@@ -1202,9 +1202,9 @@
     "@trayBackLabel": {
         "description": "Back control on an in-tray WiFi/Bluetooth expand panel — returns to the Control Center tiles without dismissing the tray."
     },
-    "wifiUnsupportedBody": "WiFi solo está disponible en la consola Loopy.",
+    "wifiUnsupportedBody": "WiFi solo está disponible en la consola Segno.",
     "@wifiUnsupportedBody": {
-        "description": "Shown on the WiFi page when loopy-wifi-ctl is not present (desktop builds)."
+        "description": "Shown on the WiFi page when segno-wifi-ctl is not present (desktop builds)."
     },
     "wifiStatusLabel": "Estado",
     "@wifiStatusLabel": {
@@ -1323,9 +1323,9 @@
     "@wifiJoinAction": {
         "description": "Confirm button on the WiFi password dialog."
     },
-    "bluetoothUnsupportedBody": "Bluetooth solo está disponible en la consola Loopy.",
+    "bluetoothUnsupportedBody": "Bluetooth solo está disponible en la consola Segno.",
     "@bluetoothUnsupportedBody": {
-        "description": "Shown on the Bluetooth page when loopy-bt-ctl is not present."
+        "description": "Shown on the Bluetooth page when segno-bt-ctl is not present."
     },
     "bluetoothIntro": "Haz que esta consola sea visible para que un teléfono o sidecar la encuentre. El emparejamiento llega después.",
     "@bluetoothIntro": {
@@ -1359,7 +1359,7 @@
     "@bluetoothAdvertiseTitle": {
         "description": "Toggle title for BLE advertising."
     },
-    "bluetoothAdvertiseSubtitle": "Anunciar como Loopy por Bluetooth LE",
+    "bluetoothAdvertiseSubtitle": "Anunciar como Segno por Bluetooth LE",
     "@bluetoothAdvertiseSubtitle": {
         "description": "Toggle subtitle for BLE advertising."
     },

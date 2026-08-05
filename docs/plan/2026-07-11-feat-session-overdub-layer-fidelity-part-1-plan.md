@@ -19,10 +19,10 @@ DTO already carry the final layer-bearing shape so parts 2–3 are purely additi
 ## Background (see umbrella for full engine detail)
 
 - A track owns `lanes[LE_MAX_LANES]`; each lane owns its own mono `pool[a_live]`
-  live buffer ([`engine_private.h:184`](packages/loopy_engine/src/core/engine_private.h#L184)).
+  live buffer ([`engine_private.h:184`](packages/segno_engine/src/core/engine_private.h#L184)).
 - Export/import touch **lane 0 only** today
-  ([`engine_session.c:22`](packages/loopy_engine/src/core/engine_session.c#L22),
-  [`:54`](packages/loopy_engine/src/core/engine_session.c#L54);
+  ([`engine_session.c:22`](packages/segno_engine/src/core/engine_session.c#L22),
+  [`:54`](packages/segno_engine/src/core/engine_session.c#L54);
   [`session_repository.dart:294`](packages/session_repository/lib/src/session_repository.dart#L294)).
 - `Session.fromJson` version-gates via **structural presence**, not a version
   switch (`json['laneChains'] as List? ?? const []`,
@@ -34,7 +34,7 @@ DTO already carry the final layer-bearing shape so parts 2–3 are purely additi
 
 - [ ] Add `le_engine_import_track_lane(channel, lane, pcm, frames)` — fills lane
       `lane`'s live slot of an EMPTY track (mirror the lane-0 body of
-      [`le_engine_import_track`](packages/loopy_engine/src/core/engine_session.c#L54)),
+      [`le_engine_import_track`](packages/segno_engine/src/core/engine_session.c#L54)),
       growing `lane_count` to cover the highest imported lane.
 - [ ] Keep `le_engine_import_track` as a lane-0 convenience wrapper.
 - [ ] C round-trip harness: import lanes 0..N, `exportTrackLane` each, assert PCM
@@ -43,12 +43,12 @@ DTO already carry the final layer-bearing shape so parts 2–3 are purely additi
 ### FFI / Dart — update **every** `AudioEngine` implementer (build-blocker)
 
 `AudioEngine` is an `abstract interface class`
-([audio_engine.dart:582](packages/loopy_engine/lib/src/audio_engine.dart#L582)); a
+([audio_engine.dart:582](packages/segno_engine/lib/src/audio_engine.dart#L582)); a
 new method must be implemented in all of these in this PR or the monorepo won't
 compile:
 
 - [ ] `AudioEngine.importTrackLane` declaration + regenerate
-      `loopy_engine_bindings.dart`.
+      `segno_engine_bindings.dart`.
 - [ ] `native_audio_engine.dart`, `mock_audio_engine.dart`
 - [ ] `packages/session_repository/test/helpers/fake_session_engine.dart`
       (mirror the existing `exportTrackLane` at
@@ -69,7 +69,7 @@ compile:
 - [ ] Do **not** store `liveIndex` (derive `== undoCount`) and do **not** add a
       per-layer `lengthFrames` — every layer of a lane shares the track length
       (`dub_len` is latched at session start,
-      [engine_private.h:273](packages/loopy_engine/src/core/engine_private.h#L273));
+      [engine_private.h:273](packages/segno_engine/src/core/engine_private.h#L273));
       keep the single `SessionTrack.lengthFrames`.
 - [ ] `SessionTrack`: replace `stem` with `lanes: List<SessionLane>`; make the old
       `stem` optional in `fromJson`. Bump `Session.formatVersion = 3` and update

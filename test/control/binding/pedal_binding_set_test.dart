@@ -2,10 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/binding/fx_binding_target.dart';
-import 'package:loopy/control/binding/pedal_binding.dart';
-import 'package:loopy/control/binding/pedal_binding_set.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/binding/fx_binding_target.dart';
+import 'package:segno/control/binding/pedal_binding.dart';
+import 'package:segno/control/binding/pedal_binding_set.dart';
 
 const _track5 = FxAddress(stage: FxStage.track, index: 5);
 const _master = FxAddress(stage: FxStage.master);

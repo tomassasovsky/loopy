@@ -1,18 +1,18 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:loopy/update/appliance/appliance_env.dart';
+import 'package:segno/update/appliance/appliance_env.dart';
 
 /// The production [ApplianceEnv]: real files, HTTP, and the privileged helper.
 ///
-/// The helper (`loopy-update-ctl`, shipped by the appliance image) does the
+/// The helper (`segno-update-ctl`, shipped by the appliance image) does the
 /// RAUC work. On the single-purpose appliance the kiosk app runs as root, so
 /// the helper is invoked directly — no pkexec/polkit/setuid. This class is the
 /// I/O boundary and is excluded from coverage; the testable logic lives in
 /// `AppliancePlatformBackend` over a fake [ApplianceEnv].
 class SystemApplianceEnv implements ApplianceEnv {
   /// Creates a [SystemApplianceEnv]. [helperPath] is the update helper.
-  const SystemApplianceEnv({this.helperPath = '/usr/bin/loopy-update-ctl'});
+  const SystemApplianceEnv({this.helperPath = '/usr/bin/segno-update-ctl'});
 
   /// Path to the update helper (run directly; the appliance app is root).
   final String helperPath;

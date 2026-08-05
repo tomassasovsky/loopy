@@ -5,7 +5,7 @@ Type: **feat** · Status: **planned** · Created: 2026-06-09
 Part **A1** of the audio-device/routing-UX bundle. Sub-split of the original
 "PR A" (see
 [2026-06-09-feat-audio-device-and-routing-ux-plan.md](2026-06-09-feat-audio-device-and-routing-ux-plan.md)).
-A1 lands the **native + FFI + `loopy_engine` Dart** layer only: enumerate
+A1 lands the **native + FFI + `segno_engine` Dart** layer only: enumerate
 devices, pin a device by id, and report device presence. **No app-visible
 behavior changes** — the codebase stays fully working and green after A1.
 
@@ -22,7 +22,7 @@ A2 (reconnect supervisor + cubit + device picker + banner) builds on this.
 ## Why split this out
 
 PR A originally bundled every architectural layer (native C → FFI →
-`loopy_engine` → repository → settings → cubit → app shell, ~600–850 LOC). The
+`segno_engine` → repository → settings → cubit → app shell, ~600–850 LOC). The
 native/FFI half is reviewed for RT-safety and C correctness; the Dart-async half
 for concurrency and recovery. A1 isolates the former so it can be approved on its
 own merits, leaving the tree in a working state (engine can enumerate and report
@@ -30,13 +30,13 @@ presence; existing behavior unchanged).
 
 ## Codebase context & conventions
 
-VGV layered monorepo. Native engine in `packages/loopy_engine/src/` (RT-safe
+VGV layered monorepo. Native engine in `packages/segno_engine/src/` (RT-safe
 audio callback; control→audio via the SPSC ring; audio→control via per-field
 `_Atomic` snapshots). FFI bindings regenerated with
-`dart run ffigen --config ffigen.yaml` after any `loopy_engine_api.h` change.
+`dart run ffigen --config ffigen.yaml` after any `segno_engine_api.h` change.
 Native tests: `clang … src/test/test_engine_core.c …` (device-free). Dart tests
 via the absolute `/Users/Tomas/development/flutter/bin/flutter`. App reaches the
-engine only through `package:looper_repository` (no `loopy_engine` import in
+engine only through `package:looper_repository` (no `segno_engine` import in
 `lib/`) — **A1 adds nothing to `lib/`.** Keep every gate green: native
 `ALL PASSED`, `flutter analyze`, app suite, macOS build.
 
@@ -44,7 +44,7 @@ engine only through `package:looper_repository` (no `loopy_engine` import in
 
 ## Scope
 
-### Native (`loopy_engine_api.h` / `engine.c`)
+### Native (`segno_engine_api.h` / `engine.c`)
 
 - [ ] **Device enumeration.** Add
       `le_device_info { char id[256]; char name[256]; int32_t is_default; }` and
@@ -72,10 +72,10 @@ engine only through `package:looper_repository` (no `loopy_engine` import in
 ### FFI
 
 - [ ] Regenerate bindings (`dart run ffigen --config ffigen.yaml`) after the
-      `loopy_engine_api.h` changes. Rebuild macOS to confirm native/Dart struct
+      `segno_engine_api.h` changes. Rebuild macOS to confirm native/Dart struct
       agreement.
 
-### Dart (`packages/loopy_engine`)
+### Dart (`packages/segno_engine`)
 
 - [ ] `EngineConfig`: add `playbackDeviceId` / `captureDeviceId` (default `''`).
       Match the existing camelCase field convention (`sampleRate`,
@@ -93,15 +93,15 @@ engine only through `package:looper_repository` (no `loopy_engine` import in
 
 ## Mock filenames (tests)
 
-- `packages/loopy_engine/src/test/test_engine_core.c` — extend: enumeration
+- `packages/segno_engine/src/test/test_engine_core.c` — extend: enumeration
   smoke (a `ma_context` returns ≥0 devices without crashing) and config-id
   plumbing (a non-empty `playback_device_id` is resolved/applied without error;
   empty falls back to default).
-- `packages/loopy_engine/test/engine_snapshot_test.dart` — `devicePresent`
+- `packages/segno_engine/test/engine_snapshot_test.dart` — `devicePresent`
   parses from the snapshot struct.
-- `packages/loopy_engine/test/engine_config_test.dart` — `playbackDeviceId` /
+- `packages/segno_engine/test/engine_config_test.dart` — `playbackDeviceId` /
   `captureDeviceId` default to `''` and round-trip into the native config.
-- `packages/loopy_engine/test/audio_device_test.dart` — `AudioDevice`
+- `packages/segno_engine/test/audio_device_test.dart` — `AudioDevice`
   equality/fields.
 
 ## Acceptance criteria

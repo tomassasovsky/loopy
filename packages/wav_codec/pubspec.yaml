@@ -1,6 +1,6 @@
 name: wav_codec
 description: >-
-  Minimal 32-bit IEEE-float WAV encoder/decoder — the lossless format Loopy
+  Minimal 32-bit IEEE-float WAV encoder/decoder — the lossless format Segno
   stores its loop stems, mixdowns, and performance-recording exports in. Pure
   Dart, no Flutter dependency, so non-Flutter tooling (e.g. daw_export) can
   read the files this writes without pulling in the framework.

@@ -2,7 +2,7 @@
 
 Parts 9-10 of the performance-recording / DAW-export umbrella
 (`docs/plan/2026-07-05-feat-performance-recording-daw-export-plan.md`) and
-part 10 of the [Loopy FX as VST3 plugins](../../../../docs/plan/2026-07-08-feat-loopy-fx-vst3-plugins-plan.md)
+part 10 of the [Segno FX as VST3 plugins](../../../../docs/plan/2026-07-08-feat-segno-fx-vst3-plugins-plan.md)
 umbrella are meant to be developed against a committed corpus of **minimal
 Ableton Live 12 projects, actually saved from Live 12 itself** — a "save
 from Live, diff the XML" methodology: create the smallest possible project
@@ -10,7 +10,7 @@ exercising one structural feature at a time (one audio track with an
 arrangement clip; one audio track with a session-view clip; a project with
 two tracks; a project with the tempo changed from the 120 default; a track
 with mixer volume automation; a track with activator/mute automation; a
-track with one or more Loopy VST3 plugins loaded as devices; etc.), save
+track with one or more Segno VST3 plugins loaded as devices; etc.), save
 it, inspect the resulting `.als`'s decompressed XML, and use that as the
 ground truth the generator's output is diffed against.
 
@@ -65,13 +65,13 @@ itself expects has not been verified against a real save.
    visibly present and correct on the timeline. Record the outcome in the
    PR that adds real corpus files.
 
-## Part 10: real device-chain XML (HIGH PRIORITY — needs Ableton Live 12 + all seven Loopy VST3 plugins installed)
+## Part 10: real device-chain XML (HIGH PRIORITY — needs Ableton Live 12 + all seven Segno VST3 plugins installed)
 
-Part 10 ([Loopy FX as VST3 plugins](../../../../docs/plan/2026-07-08-feat-loopy-fx-vst3-plugins-plan.md)
+Part 10 ([Segno FX as VST3 plugins](../../../../docs/plan/2026-07-08-feat-segno-fx-vst3-plugins-plan.md)
 umbrella) adds `als_builder.dart`'s first-ever device-XML emission
 (`_deviceChainXml`): one `<Vst3PluginDevice>` block per resolved chain
 entry, referencing the plugin by its permanent class GUID
-(`loopy_vst3_plugins.dart`). **This is the single least-verified piece of
+(`segno_vst3_plugins.dart`). **This is the single least-verified piece of
 XML in this entire package** — meaningfully more uncertain than the
 tempo/clip/automation XML above. Those are extensively documented in public
 Live-Set-format reverse-engineering write-ups; a hosted-VST3 device's exact
@@ -84,12 +84,12 @@ transcription of anything independently confirmed.
 
 Follow-up, in addition to the base-feature list above:
 
-1. Build all seven Loopy VST3 plugins (`packages/loopy_engine/vst3/`, parts
+1. Build all seven Segno VST3 plugins (`packages/segno_engine/vst3/`, parts
    2, 3, 5-9) and install them locally
-   (`-DLOOPY_VST3_DEV_INSTALL=ON`).
-2. In Live 12, insert a single Loopy plugin (e.g. "Loopy Delay") on one
+   (`-DSEGNO_VST3_DEV_INSTALL=ON`).
+2. In Live 12, insert a single Segno plugin (e.g. "Segno Delay") on one
    audio track, tweak its params away from default, save.
-3. Insert a chain of 2-3 Loopy plugins on a second track (order matters —
+3. Insert a chain of 2-3 Segno plugins on a second track (order matters —
    this is the multi-effect case `_deviceChainXml` needs to get right),
    save.
 4. Copy both `.als` files into this directory, decompress, and diff against
@@ -101,7 +101,7 @@ Follow-up, in addition to the base-feature list above:
    `StringListParameter` index to the parameter values it persists.
 5. Manual gate (part 10's own acceptance criteria): open a generated
    fixture project with a resolved device chain in Live 12 and confirm the
-   correct Loopy plugin(s) load (not offline/missing), with parameter
+   correct Segno plugin(s) load (not offline/missing), with parameter
    values matching what was played, and audio sounding correct through the
    live chain (not literally identical samples to the old wet-bounce
    export, since the arrangement clip is now the dry stem — the

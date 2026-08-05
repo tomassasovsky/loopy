@@ -1,3 +1,3 @@
-import 'package:loopy/app/app.dart';
+import 'package:segno/app/app.dart';
 
-Future<void> main(List<String> args) => runLoopy(args);
+Future<void> main(List<String> args) => runSegno(args);

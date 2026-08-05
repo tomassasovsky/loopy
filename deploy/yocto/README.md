@@ -1,6 +1,6 @@
 # Tier 3a — minimal Yocto/weston image running the prebuilt GTK bundle
 
-Scaffold for the **Tier 3a spike** ([#284](https://github.com/tomassasovsky/loopy/issues/284),
+Scaffold for the **Tier 3a spike** ([#284](https://github.com/tomassasovsky/segno/issues/284),
 child of #271): build a lean Yocto image for a **Raspberry Pi 4** that runs the
 **exact** aarch64 Flutter GTK bundle validated on Tier 2 (Pi OS), under **weston**,
 and measure boot-to-interactive. Plan: [`docs/plan/2026-07-23-spike-tier3a-yocto-gtk-plan.md`](../../docs/plan/2026-07-23-spike-tier3a-yocto-gtk-plan.md).
@@ -9,16 +9,16 @@ and measure boot-to-interactive. Plan: [`docs/plan/2026-07-23-spike-tier3a-yocto
 > been run through a Yocto build or booted on hardware — the whole spike is
 > `blocked-verify`. Expect to iterate the recipes on the build host. The likely
 > first snag is **ABI matching** (our prebuilt GTK3/Mesa embedder vs the image's
-> libs) — `ldd /opt/loopy/loopy` on the device is the moment of truth.
+> libs) — `ldd /opt/segno/segno` on the device is the moment of truth.
 
 ## What's here
 
 ```
-kas-loopy-rpi4.yml          kas project: poky + meta-openembedded + meta-raspberrypi (walnascar), MACHINE=raspberrypi4-64
-meta-loopy/
+kas-segno-rpi4.yml          kas project: poky + meta-openembedded + meta-raspberrypi (walnascar), MACHINE=raspberrypi4-64
+meta-segno/
   conf/layer.conf
-  recipes-core/images/loopy-kiosk-image.bb          core-image-weston + our bundle + GTK3/Mesa/ALSA
-  recipes-loopy/loopy-bundle/loopy-bundle.bb         install the PREBUILT bundle (no source build) + launcher + systemd unit
+  recipes-core/images/segno-kiosk-image.bb          core-image-weston + our bundle + GTK3/Mesa/ALSA
+  recipes-segno/segno-bundle/segno-bundle.bb         install the PREBUILT bundle (no source build) + launcher + systemd unit
   recipes-graphics/weston-init/weston-init.bbappend  weston.ini: kiosk-shell + dual HDMI outputs
 ```
 
@@ -49,7 +49,7 @@ cores**. First build is **~2–5 h**.
 
 3. **Build:**
    ```bash
-   ./kas-container build deploy/yocto/kas-loopy-rpi4.yml
+   ./kas-container build deploy/yocto/kas-segno-rpi4.yml
    ```
    Keep BitBake's `tmp/`/`sstate`/`downloads` **off** any `/Users` bind mount
    (VirtioFS is a perf cliff); kas-container's default in-container build dir is fine.
@@ -58,15 +58,15 @@ cores**. First build is **~2–5 h**.
    has a bug where compressed `.wic.bz2` yields an **unbootable** card, so **decompress
    first**:
    ```bash
-   bunzip2 -k loopy-kiosk-image-*.wic.bz2
+   bunzip2 -k segno-kiosk-image-*.wic.bz2
    diskutil list                      # find the SD, e.g. /dev/disk4
    diskutil unmountDisk /dev/disk4
-   sudo dd if=loopy-kiosk-image-*.wic of=/dev/rdisk4 bs=4m
+   sudo dd if=segno-kiosk-image-*.wic of=/dev/rdisk4 bs=4m
    ```
    (or `bmaptool copy --bmap image.wic.bmap image.wic.bz2 /dev/rdisk4`.)
 
 5. **Boot on the Pi 4** and validate (see the plan's Phase 5). Iterate app-only
-   changes by `rsync`-ing the bundle to `/opt/loopy` on the running Pi instead of
+   changes by `rsync`-ing the bundle to `/opt/segno` on the running Pi instead of
    reflashing.
 
 ## When to bail to a cloud builder

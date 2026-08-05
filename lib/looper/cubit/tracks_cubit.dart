@@ -1,6 +1,6 @@
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
-import 'package:loopy/common/console_mode.dart';
+import 'package:segno/common/console_mode.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'tracks_state.dart';

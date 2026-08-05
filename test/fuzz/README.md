@@ -21,20 +21,20 @@ Two kinds of rules run per step:
 ## Run it
 
 ```sh
-export LOOPY_ENGINE_LIB="$(bash packages/loopy_engine/tool/build_test_lib.sh)"
+export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
 flutter test --tags fuzz
 ```
 
-Without `LOOPY_ENGINE_LIB` the suite self-skips, so plain `flutter test`
+Without `SEGNO_ENGINE_LIB` the suite self-skips, so plain `flutter test`
 stays green everywhere. CI runs it as the `fuzz` job (.github/workflows/main.yaml).
 
 Scale the search:
 
 ```sh
 flutter test --tags fuzz \
-  --dart-define=LOOPY_FUZZ_SEEDS=200 \
-  --dart-define=LOOPY_FUZZ_STEPS=300 \
-  --dart-define=LOOPY_FUZZ_BASE=12345
+  --dart-define=SEGNO_FUZZ_SEEDS=200 \
+  --dart-define=SEGNO_FUZZ_STEPS=300 \
+  --dart-define=SEGNO_FUZZ_BASE=12345
 ```
 
 ## When it fails
@@ -50,7 +50,7 @@ shrunk repro (1/120 steps):
 ```
 
 Reproduce by pasting the list into a corpus test (below) or re-running the
-seed via `--dart-define=LOOPY_FUZZ_BASE=<seed> --dart-define=LOOPY_FUZZ_SEEDS=1`.
+seed via `--dart-define=SEGNO_FUZZ_BASE=<seed> --dart-define=SEGNO_FUZZ_SEEDS=1`.
 
 ## Add a corpus case
 

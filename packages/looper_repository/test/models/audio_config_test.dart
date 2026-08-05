@@ -2,7 +2,7 @@
 // imported (the mappers are package-internal, not exported from the barrel).
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/src/models/audio_config.dart';
-import 'package:loopy_engine/loopy_engine.dart' as le;
+import 'package:segno_engine/segno_engine.dart' as le;
 
 void main() {
   group('AudioBackend', () {

@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:daw_export/src/daw_effect.dart';
 import 'package:daw_export/src/daw_project.dart';
-import 'package:daw_export/src/loopy_vst3_plugins.dart';
+import 'package:daw_export/src/segno_vst3_plugins.dart';
 
 /// The fixed pointee id Ableton Live conventionally assigns to the main
 /// track's tempo automation target — the main track's `Tempo` element wires
@@ -87,7 +87,7 @@ Uint8List buildAls(DawProject project) {
     ..writeln(
       '<Ableton MajorVersion="5" MinorVersion="12.0_12120" '
       'SchemaChangeCount="3" Creator="Ableton Live 12.0" '
-      'Revision="loopy-daw-export">',
+      'Revision="segno-daw-export">',
     )
     ..writeln('<LiveSet>')
     ..writeln('<Tracks>');
@@ -252,7 +252,7 @@ AutomationLane? _laneFor(DawTrack track, AutomationTarget target) {
 }
 
 /// Emits `<Devices>` — one `Vst3PluginDevice` block per [chain] entry, in
-/// order — for a track whose channel resolved a non-empty real Loopy VST3
+/// order — for a track whose channel resolved a non-empty real Segno VST3
 /// device chain (`device_chain_resolver.dart`'s `resolveDeviceChain`, part
 /// 10). See this file's own top doc comment for why this shape carries
 /// meaningfully lower confidence than the rest of the builder: it is a
@@ -262,17 +262,17 @@ AutomationLane? _laneFor(DawTrack track, AutomationTarget target) {
 /// 12 save.
 ///
 /// Every effect entry's [DawEffect.type] is guaranteed to have a
-/// [loopyVst3Plugins] entry — `resolveDeviceChain` only ever resolves a
+/// [segnoVst3Plugins] entry — `resolveDeviceChain` only ever resolves a
 /// chain out of types it already confirmed are representable built-in
 /// codes, so an unknown type here would indicate that invariant broke, not
 /// a case to silently skip.
 String _deviceChainXml(List<DawEffect> chain, _IdAllocator allocator) {
   final buffer = StringBuffer()..writeln('<Devices>');
   for (final effect in chain) {
-    final ref = loopyVst3Plugins[effect.type];
+    final ref = segnoVst3Plugins[effect.type];
     if (ref == null) {
       throw StateError(
-        'DawEffect.type ${effect.type} has no loopyVst3Plugins entry — '
+        'DawEffect.type ${effect.type} has no segnoVst3Plugins entry — '
         'resolveDeviceChain should never resolve a chain containing a type '
         'this builder cannot map to a plugin.',
       );

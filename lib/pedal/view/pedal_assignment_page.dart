@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/common/pill_tabs.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
-import 'package:loopy/pedal/view/pedal_plate.dart';
-import 'package:loopy/theme/page_transitions.dart';
-import 'package:loopy/theme/theme.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/common/pill_tabs.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/pedal/view/pedal_plate.dart';
+import 'package:segno/theme/page_transitions.dart';
+import 'package:segno/theme/theme.dart';
 
 /// Opens the pedal-assignment surface as a full-screen page.
 ///

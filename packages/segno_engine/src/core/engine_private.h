@@ -1,0 +1,1348 @@
+/*
+ * engine_private.h — cross-TU engine internals shared by the portable core
+ * (engine.c) and the per-OS translation units (engine_linux.c / engine_apple.c /
+ * engine_windows.c).
+ *
+ * This is the full `struct le_engine` definition plus the handful of helpers a
+ * per-OS seam body needs to reach into engine state (the JACK pin hook touches
+ * engine->context.backend, engine->device.jack.*, engine->in/out_channels, and
+ * publishes engine->a_in/out_channels). It is NOT the FFI surface
+ * (segno_engine_api.h) and NOT the test surface (engine_internal.h) — it is the
+ * private contract between the engine's own translation units.
+ *
+ * Must be self-contained and idempotent: other TUs include it, so it cannot rely
+ * on any .c's include order.
+ */
+#ifndef SEGNO_ENGINE_PRIVATE_H
+#define SEGNO_ENGINE_PRIVATE_H
+
+/* The struct holds atomic_* fields; pull in <stdatomic.h> explicitly rather than
+ * relying on it arriving transitively via lockfree_ring.h. <string.h> backs the
+ * memcpy-based float<->bits helpers below. */
+#include <stdatomic.h>
+#include <stdint.h>
+#include <string.h>
+
+/* Both MSVC and GCC reject the C11 `_Atomic` keyword in C++ translation units,
+ * and neither exposes a keyword-compatible <stdatomic.h> fallback there — it is a
+ * Clang extension. The only C++ includers of this header (transitively, via
+ * engine_fx.h) are the VST3 plugins under packages/segno_engine/vst3/: they use
+ * the DSP types (le_fx_state, LE_FX_MAX, ...) but never perform atomic operations
+ * on the published snapshot fields. An atomic scalar/pointer has the same size and
+ * alignment as its plain counterpart on the targeted ABIs, so collapsing `_Atomic`
+ * to nothing for those TUs keeps every struct layout — and the DSP ABI with
+ * segno_dsp_core's C build — identical. Guarded to non-Clang C++ (Clang accepts
+ * `_Atomic` in C++, so macOS is untouched); the engine's own C build always sees
+ * real C11 atomics. Must sit after <stdatomic.h> and before the engine headers
+ * below (which use the keyword too). */
+#if defined(__cplusplus) && !defined(__clang__)
+#undef _Atomic
+#define _Atomic
+/* MSVC's and GCC's <stdatomic.h> also omit the C11 free-function atomic API in
+ * C++ mode. The only call sites reachable from these TUs are the `static inline`
+ * snapshot accessors below (load_i32/store_i32/store_f32/load_f32), which the
+ * plugins never call but the compiler still parses. Map the handful of ops used
+ * to plain accesses for these TUs only — safe because a plugin reads DSP state
+ * synchronously (no cross-thread publication happens in a plugin TU). */
+#undef memory_order_relaxed
+#define memory_order_relaxed 0
+#undef atomic_load_explicit
+#define atomic_load_explicit(slot, mo) (*(slot))
+#undef atomic_store_explicit
+#define atomic_store_explicit(slot, v, mo) ((void)(*(slot) = (v)))
+/* le_audio_rev_bump below; plugins never call it but the compiler parses it. */
+#undef atomic_fetch_add_explicit
+#define atomic_fetch_add_explicit(slot, v, mo) ((void)(*(slot) += (v)))
+#endif
+
+#include "audio_ring.h"        /* le_audio_ring (performance-recording taps) */
+#include "layer_staging_ring.h" /* le_layer_staging_ring (retired-layer persistence) */
+#include "le_device_backend.h" /* le_device_backend (the device-backend seam) */
+#include "le_midi_clock.h"     /* le_midi_clock_gen (C1 24-PPQN clock-send emitter) */
+#include "lockfree_ring.h"     /* le_command, le_ring */
+#include "loop_clock.h"        /* le_loop_clock */
+#include "segno_engine_api.h"  /* le_engine typedef, le_config, le_device_info,
+                                * LE_MAX_CHANNELS / LE_MAX_TRACKS / LE_MAX_INPUTS
+                                * / LE_MAX_LANES / LE_FX_MAX / LE_FX_PARAMS /
+                                * LE_VIZ_POINTS */
+#include "miniaudio.h"         /* ma_device, ma_context, ma_device_id */
+#include "perf_log_ring.h"     /* le_perf_log_ring (performance event log) */
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define LE_RING_CAPACITY 256u
+
+/* MIDI clock output ring (C1, D15): audio-thread producer, drained by
+ * whichever consumer forwards the bytes to le_midi_out_send (a native test's
+ * direct le_ring_pop today; a future Dart poll loop, mirroring the existing
+ * loop-top-pulse architecture, once a destination port is wired). Reuses
+ * le_ring/le_command wholesale rather than inventing a byte-sized ring — one
+ * command-sized slot per raw status byte (in `.code`) is negligible waste for
+ * a control-rate consumer, and it means this ring needs no new push/pop
+ * implementation to review. Capacity generously covers even a multi-bar test
+ * run between drains: at the fastest supported tempo (300 BPM) one PPQN tick
+ * is ~8.3 ms of audio, so 24 * 300 / 60 ≈ 120 ticks/s — comfortably inside a
+ * few seconds of undrained backlog. */
+#define LE_MIDI_CLOCK_RING_CAPACITY 1024u
+
+/* Performance event log (part 3): 4096 slots absorbs a command storm (a
+ * scripted/automated burst of >= 2000 audibility-affecting changes) within one
+ * 250ms drain interval without dropping an entry; the control-side ring is
+ * far smaller since it only ever sees human-paced UI edits. Both power of
+ * two, matching every other ring in this engine. */
+#define LE_PERF_LOG_RING_CAPACITY 4096u
+#define LE_PERF_LOG_CTRL_RING_CAPACITY 512u
+
+/* Per-track buffer pool size: one live buffer plus up to LE_POOL_SLOTS-1 undo/
+ * redo layers (one per overdub pass). Buffers are allocated lazily, so memory
+ * grows only as deep as the user actually overdubs; past the cap the oldest
+ * undo layer is evicted and its slot recycled. Only the slot POINTER tables are
+ * sized by this (2 KB per lane), not audio. */
+#define LE_POOL_SLOTS 256
+
+/* Retired-layer staging (part 5, D-LAYER): this ring is engine-wide, shared
+ * by every track, so it must cover the worst case across ALL of them, not
+ * just one — LE_MAX_TRACKS * LE_POOL_SLOTS, i.e. every slot on every track
+ * retiring before the drain thread's next ~250ms cycle, still fits without
+ * dropping a layer. (One usable slot is reserved to distinguish full from
+ * empty, per the ring's own invariant.) Already a power of two, as the ring
+ * requires — entries are small (a few pointers + ints), so the larger table
+ * costs ~200 KB, cheap for a one-time static allocation. */
+#define LE_LAYER_STAGING_RING_CAPACITY (LE_MAX_TRACKS * (unsigned)LE_POOL_SLOTS)
+
+/* Undo-layer buffers are sized to the track's ACTUAL loop length rounded up to
+ * this quantum (frames), not to max_loop_frames — a 2 s loop's undo layer
+ * costs ~2 s of floats, not the 30 s (or 8 min) cap. The quantum keeps slot
+ * reuse across small length changes allocation-free. The LIVE buffer of a
+ * recording track is the exception: a fresh capture can grow to the cap, so
+ * every path that starts a recording first regrows the live slot to
+ * max_loop_frames (see le_lane_ensure_slot). */
+#define LE_LAYER_QUANTUM 48000
+
+/* SAMPLES of live->shadow copy per track per le_engine_process call while a
+ * partially backed-up overdub layer drains after punch-out. The per-track
+ * budget is divided by the track's active lane count (the copy runs per
+ * lane), so one draining track costs <= 128 KB of memcpy per callback
+ * regardless of lanes; even all 8 tracks draining at once stay ~1 MB/block
+ * (~0.1-0.5 ms — bounded on the Pi appliance target). A 30 s mono loop
+ * completes in ~44 callbacks (~0.5 s at typical buffer sizes). */
+#define LE_DRAIN_CHUNK 32768
+
+/* Minimum performance-recording capture ring size, in seconds of audio at the
+ * device rate (le_perf_arm sizes the master + per-monitor rings from this). */
+#define LE_PERF_CAPTURE_SECONDS 2
+
+/* One looper track.
+ *
+ * The audio thread only reads pool[a_live] (and writes into it while recording/
+ * overdubbing). All undo/redo bookkeeping — the pool, the stacks, and a_live
+ * (whose sole writer is the control thread) — lives on the control thread, so
+ * undo/redo never races the audio callback. */
+/* Audio-thread-owned DSP state for one effects chain (LE_FX_MAX entries), reset
+ * per entry when its type changes. svf_* are the state-variable filter
+ * integrators; lfo is an LFO phase (0..1, TREMOLO depth / ECHO wow); delay is a
+ * lazily allocated ring
+ * (the control thread allocates before posting the command) of fx_delay_frames
+ * samples (shared by DELAY, ECHO, and the OCTAVER's input FIFO); fx_lp is a
+ * generic one-pole low-pass memory (ECHO feedback damping, OCTAVER tone). The
+ * OCTAVER's phase-vocoder working set lives in the `oct` sub-state (its heap
+ * buffers are control-thread allocated alongside the delay ring). A slot is only
+ * ever one type at a time, so these reuse freely. Each lane and each live
+ * monitor lane owns one of these, running its own non-destructive chain. */
+/* Reverb (LE_FX_REVERB) is a Schroeder/Freeverb network: a bank of parallel
+ * damped comb filters summed into a chain of series allpass diffusers. It runs
+ * LE_REV_BANKS of those in parallel — a left and a right whose delay lines are
+ * offset by the Freeverb "stereo spread" so their tails decorrelate, turning a
+ * mono input into a wide stereo tail. All the lines are packed into the slot's
+ * single `delay` ring at fixed offsets; rev_comb_pos / rev_ap_pos are the
+ * per-line write heads (left bank first, then right) and rev_comb_lp the
+ * per-comb damping (one-pole low-pass) memory. */
+#define LE_REV_COMBS 8
+#define LE_REV_APS 4
+#define LE_REV_BANKS 2
+
+/* The OCTAVER's phase-vocoder (and, in part 4, PSOLA) working set for one chain
+ * slot on one channel. The three pointers are heap buffers the control thread
+ * allocates when the slot becomes OCTAVER (sized by the LE_PV_* constants in
+ * engine.c) and frees on retype/reset/destroy; everything else is plain scalar
+ * state the audio thread owns. The PSOLA fields are defined now but unused until
+ * part 4, so that PR needs no struct/ABI change. */
+typedef struct le_octaver_state {
+  float* out;        /* synthesis overlap-add accumulator, length LE_PV_N */
+  float* last_phase; /* previous analysis phase per bin, length LE_PV_BINS */
+  float* sum_phase;  /* accumulated synthesis phase per bin, length LE_PV_BINS */
+  int32_t hop_count; /* samples emitted in the current hop block */
+  int32_t out_pos;   /* reserved read/write phase (PSOLA, part 4) */
+  /* PSOLA (part 4; zero-initialized and unused here). */
+  float period;
+  float voiced;
+  int32_t in_epoch;
+  int32_t out_epoch;
+  /* Shared: per-sample param smoothing + mode-switch gain-dip (D1/D2/H3). */
+  float sm_shift;
+  float sm_tone;
+  float sm_mix;
+  int32_t cur_mode; /* 0 = phase vocoder, 1 = PSOLA */
+  float xfade;      /* equal-power gain-dip envelope during a mode switch (1 = steady) */
+} le_octaver_state;
+
+/* Per-slot DSP state is carried per channel ([slot][chan], chan 0 = left,
+ * 1 = right) so the whole chain runs in full stereo: a slot colours its left and
+ * right independently. A mono source seeds l == r, so a symmetric chain produces
+ * l == r and is audibly unchanged. The delay-ringed effects (DELAY / ECHO /
+ * OCTAVER) own a ring per channel (delay[slot][0] and [1]); the REVERB packs its
+ * two stereo banks into the single ring delay[slot][0] (delay[slot][1] stays
+ * NULL), reading both banks from xl / xr — see fx_reverb. The rev_* arrays
+ * already hold both banks (LE_REV_BANKS == 2) and stay per-slot. */
+typedef struct le_fx_state {
+  float svf_ic1[LE_FX_MAX][2];
+  float svf_ic2[LE_FX_MAX][2];
+  float lfo[LE_FX_MAX][2];
+  float* delay[LE_FX_MAX][2];
+  int32_t delay_pos[LE_FX_MAX][2];
+  float fx_lp[LE_FX_MAX][2];
+  le_octaver_state oct[LE_FX_MAX][2];
+  int32_t rev_comb_pos[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
+  float rev_comb_lp[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
+  int32_t rev_ap_pos[LE_FX_MAX][LE_REV_APS * LE_REV_BANKS];
+  /* Per-slot enable-crossfade runtime (fx_apply_chain). DSP state — owned by
+   * whichever thread runs the chain (the audio thread live; the render thread
+   * offline), NOT published config: the published flags live on the chain
+   * owner (le_lane / le_monitor_input a_fx_enabled / a_fx_chain_enabled).
+   * enable_mix is the dry/wet crossfade position (1.0 = fully wet, 0.0 =
+   * fully bypassed); enable_target is the last-observed effective enabled bit
+   * for edge detection; enable_warmup counts the samples a just-re-enabled
+   * latency-bearing slot (the octaver) is fed input while its output is
+   * still discarded, so its delay-matched dry tap is warm before the ramp-in
+   * (no silence hole); enable_clear_cooldown spaces the re-enable ring
+   * clears so a whole-chain stomp never memsets every ring in one callback.
+   * Seeded SETTLED at the current target by le_lane_reset /
+   * le_monitor_input_reset so fresh chains do not fade in; a slot the chain
+   * is not processing is settled to bypass by the per-buffer snapshot when
+   * its effective bit is 0 (see snapshot_lane_fx), so a processing gap can
+   * never strand a ramp mid-fade. */
+  float enable_mix[LE_FX_MAX];
+  int32_t enable_target[LE_FX_MAX];
+  int32_t enable_warmup[LE_FX_MAX];
+  int32_t enable_clear_cooldown;
+  /* For an LE_FX_PLUGIN slot: the hosted-plugin slot handle the audio thread
+   * forwards to, or NULL. The control thread publishes/retracts it
+   * (engine_plugin.c); the audio thread only loads it (fx_plugin_process). A
+   * NULL or not-ready slot renders dry passthrough — no plugin is ever created
+   * or freed on the audio thread (D-LIFE). */
+  /* NB: keyword form (`*_Atomic`), not the `_Atomic(...)` functional form, so
+   * the MSVC-C++ `#define _Atomic` shim above collapses it cleanly. Identical
+   * C11 semantics: an atomic array of pointers to le_plugin_slot. */
+  le_plugin_slot *_Atomic plugin[LE_FX_MAX];
+} le_fx_state;
+
+/* One rendered Loop-stage wet-cache entry (FX v3 part 2): a lane's full loop,
+ * pre-rendered through its record-route chain at the volume baked into the key,
+ * as INTERLEAVED STEREO floats (chains decorrelate a mono source, so entries
+ * are stereo by design [R5] — memory accounting is 2x frames). Immutable once
+ * published: the control thread allocates and fully writes it, publishes it
+ * via le_lane.a_wet (release), and the audio thread only ever loads + reads it
+ * within one buffer. Reclamation is control-thread-only and NON-BLOCKING:
+ * retract, then free only after two processed-buffer boundaries (a_frames)
+ * have been observed to pass — the engine_plugin.c clear-slot safety rule,
+ * observed passively via engine_cache.c's graveyard list rather than a
+ * control-thread sleep — so no free can race a load. The key is the full
+ * {audio_rev, chain_fp, vol_bits, len} tuple [R1]: the audio thread re-derives
+ * the lane's current key every buffer and plays the entry only while every
+ * field matches — any mismatch is the same-buffer live fallback. */
+typedef struct le_wet_entry {
+  uint32_t audio_rev; /* le_track.a_audio_rev at render */
+  uint64_t chain_fp;  /* le_engine_lane_fx_fingerprint at render */
+  uint32_t vol_bits;  /* le_lane.a_vol_bits at render (D-VOL: pre-chain) */
+  int32_t len;        /* frames; == the lane's a_len at render */
+  float* pcm;         /* interleaved stereo wet, 2*len floats */
+  uint64_t last_used; /* control-side LRU stamp (tick counter) */
+} le_wet_entry;
+
+/* THE wet-cache key predicate: whether [ent] was rendered for exactly the
+ * key {audio_rev, chain_fp, vol_bits, len}. The single definition every
+ * comparison site uses — the audio thread's per-buffer verdict
+ * (snapshot_lane_cache) and the control side's install/collect/schedule
+ * checks (engine_cache.c). When the key grows a dimension, it grows HERE and
+ * every site moves together; a hand-expanded comparison that missed a field
+ * would be the stale-audio bug class this key exists to preclude. */
+static inline int le_wet_entry_key_matches(const le_wet_entry* ent,
+                                           uint32_t audio_rev,
+                                           uint64_t chain_fp,
+                                           uint32_t vol_bits, int32_t len) {
+  return ent->audio_rev == audio_rev && ent->chain_fp == chain_fp &&
+         ent->vol_bits == vol_bits && ent->len == len;
+}
+
+/* One recordable input lane — the fundamental unit of captured audio.
+ *
+ * A lane records exactly one hardware input (a_input_channel, -1 = none) into
+ * its own clean mono buffer (pool[a_live]); sibling lanes are NEVER merged.
+ * Lanes own only their audio content + per-lane routing/volume/mute + their
+ * effects DSP state. The owning track (le_track) drives the shared write head,
+ * the one undo span (lanes use the same slot indices in lockstep), and a_live
+ * (whose sole writer is the control thread), so undo/redo never races the audio
+ * callback.
+ *
+ * The effects fields are the per-lane record-route chain: a single
+ * non-destructive chain run on playback. The recording stays dry. */
+typedef struct le_lane {
+  _Atomic int32_t a_input_channel; /* hardware input recorded (-1 = none) */
+  _Atomic uint32_t a_output_mask;  /* bitmask of output channels to play to */
+  _Atomic uint32_t a_vol_bits;     /* per-lane volume (float bits, 0..1) */
+  _Atomic int32_t a_muted;         /* per-lane mute */
+  int32_t pending_mute; /* audio-thread-local: a mute that arrived while the
+                         * track was capturing. Applied (into a_muted) when the
+                         * capture ends — a capturing track is never muted, so
+                         * the mute punches the capture out and lands with the
+                         * finalize (see LE_CMD_SET_LANE_MUTE / the finalize
+                         * helpers in engine_process.c). */
+
+  float* pool[LE_POOL_SLOTS]; /* lazily allocated loop buffers */
+  int32_t pool_cap[LE_POOL_SLOTS]; /* allocated frames per slot (0 = none).
+                                    * Undo layers are quantized to the track's
+                                    * length; only a recording live slot needs
+                                    * the full max_loop_frames. */
+  _Atomic int32_t a_live;     /* pool index the audio thread plays/records */
+  _Atomic int32_t a_len;      /* recorded length (== the track's length) */
+  _Atomic uint32_t a_rms_bits;
+  _Atomic uint32_t a_peak_bits;
+
+  /* Per-lane effects chain. Published config (control writes, audio reads once
+   * per buffer): an ordered array of LE_FX_MAX entries, of which a_fx_count are
+   * active, each with a type and LE_FX_PARAMS normalized parameters. The chain
+   * is stageless — every active entry colors playback in order — and runs on
+   * the lane's own `fx` DSP state.
+   *
+   * Enable flags (two levels, both default 1): a_fx_enabled[s] bypasses one
+   * slot, a_fx_chain_enabled bypasses the whole chain. The audio thread
+   * consumes one EFFECTIVE bit per slot (chain && slot, snapshot_lane_fx) and
+   * crossfades each transition over ~LE_FX_ENABLE_RAMP_MS inside
+   * fx_apply_chain — no clicks, and NO tail spill on bypass [B7]: a disabled
+   * slot's wet output (tail included) fades out over the ramp, then the slot
+   * is skipped entirely (bit-exact passthrough). Re-enable resets a built-in
+   * slot's DSP state so stale tails never sound (a hosted plugin keeps its
+   * own state — no flush seam yet). */
+  _Atomic int32_t a_fx_count;
+  _Atomic int32_t a_fx_type[LE_FX_MAX];
+  _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
+  _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
+  _Atomic int32_t a_fx_chain_enabled;      /* whole-chain enable (default 1) */
+  /* Control-thread-owned shadows of the last successfully PUSHED count/types.
+   * a_fx_count / a_fx_type are published by the AUDIO thread when it drains
+   * the ring, so the control thread must not read them to decide D-ENSEED
+   * re-seeding — with undrained commands they are stale and the seed would
+   * clobber user disables or miss recycled slots. The setters read and write
+   * these instead (engine_commands.c); never touched by the audio thread. */
+  int32_t fx_count_pushed;
+  int32_t fx_type_pushed[LE_FX_MAX];
+  le_fx_state fx;
+
+  /* Loop-stage wet cache (FX v3 part 2). a_wet is the published cache entry
+   * for this lane, or NULL: control-thread single-writer (publish/retract in
+   * engine_cache.c, mirroring the fx.plugin[] discipline), audio-thread
+   * loaded ONCE per buffer (acquire) and key-checked against the lane's
+   * current {a_audio_rev, fingerprint, a_vol_bits, a_len} before any read.
+   * a_cache_active is written only by the audio thread: 1 while cached
+   * playback is engaged (engages only at the loop boundary; any key mismatch
+   * clears it the same buffer — the live fallback). Atomic (relaxed) solely
+   * because the control thread reads it for telemetry
+   * (le_engine_get_lane_cache's `engaged`) — no ordering is carried, it just
+   * keeps the cross-thread read defined and TSan-clean. */
+  le_wet_entry* _Atomic a_wet;
+  _Atomic int32_t a_cache_active;
+  /* Chain-edit generation: bumped (relaxed fetch_add) by EVERY path that can
+   * change this lane's chain fingerprint, so the audio thread's per-buffer
+   * cache check can skip the full fingerprint refold while nothing changed
+   * (snapshot_lane_cache caches its last verdict keyed on {entry, gen}).
+   * BUMP SITES — a missed one lets a stale verdict play stale audio, so this
+   * list is audited like the a_audio_rev table above: the five lane FX
+   * setters in engine_commands.c (type, count, param, enabled,
+   * chain_enabled), the lane plugin install/clear (engine_plugin.c),
+   * le_lane_reset (engine.c), and the audio thread's LE_CMD_SET_LANE_FX /
+   * _FX_COUNT handlers (engine_process.c — covers the raw
+   * le_engine_post_command escape hatch that bypasses the setters). Every
+   * chain mutation flows through one of those. Safety direction: a spurious
+   * bump merely re-verifies the fingerprint once; only a MISSING bump is a
+   * bug. */
+  _Atomic uint32_t a_fx_gen;
+  /* Audio-thread-LOCAL fingerprint-verdict cache (plain fields, never read
+   * by control): the entry pointer and a_fx_gen value at which the full
+   * fingerprint comparison last PASSED. While both still match (and the
+   * cheap rev/vol/len fields do too), the per-buffer check skips the ~40
+   * atomic loads + FNV refold — the standing cost of a cached steady state
+   * drops to one relaxed load. */
+  const le_wet_entry* cache_fp_entry;
+  uint32_t cache_fp_gen;
+} le_lane;
+
+/* Bumps a lane's chain-edit generation (see a_fx_gen above). Both threads
+ * bump: control setters and the audio-thread ring handlers. */
+static inline void le_lane_fx_gen_bump(le_lane* ln) {
+  atomic_fetch_add_explicit(&ln->a_fx_gen, 1u, memory_order_relaxed);
+}
+
+/* One hardware input's live monitor (engine-level, one slot per input).
+ *
+ * When a_enabled, the input's live sample runs through ONE non-destructive effect
+ * chain (stageless, on its own `fx` state) at a_vol_bits, routed to the output
+ * channels a_output_mask selects unless a_muted. An empty chain (a_fx_count == 0)
+ * is the clean (dry) path — there is no special-case dry concept. The monitored
+ * signal is NEVER recorded and is independent of all track state, so an input can
+ * be monitored whether or not any track records or plays it. Input-level enable
+ * gates the whole input (and honours loopback exclusion + the latency-measurement
+ * suppress/restore). The engine takes NO record-time snapshot of this chain —
+ * the host (LooperRepository) is the sole record-time snapshot authority and
+ * pushes lane FX through the command ring itself (see le_engine_set_lane_fx).
+ *
+ * Enable flags: the same two-level pair as le_lane's (per-slot a_fx_enabled +
+ * a_fx_chain_enabled, both default 1), with the same effective-bit snapshot,
+ * ~LE_FX_ENABLE_RAMP_MS crossfade, and no-tail-spill bypass contract [B7]. */
+typedef struct le_monitor_input {
+  _Atomic int32_t a_enabled;      /* 0/1 live monitoring on for this input */
+  _Atomic uint32_t a_output_mask; /* output channels the monitor plays to */
+  _Atomic uint32_t a_vol_bits;    /* monitor gain (float bits, 0..1) */
+  _Atomic int32_t a_muted;        /* 0/1 monitor mute */
+  _Atomic int32_t a_fx_count;
+  _Atomic int32_t a_fx_type[LE_FX_MAX];
+  _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
+  _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
+  _Atomic int32_t a_fx_chain_enabled;      /* whole-chain enable (default 1) */
+  /* Control-thread-owned pushed-count/type shadows (see le_lane). */
+  int32_t fx_count_pushed;
+  int32_t fx_type_pushed[LE_FX_MAX];
+  le_fx_state fx;
+} le_monitor_input;
+
+/* A bus-stage effect chain owner (FX v3 part 1b): the exact chain block shape
+ * of le_lane / le_monitor_input — published config atomics, the two-level
+ * enable pair, the control-thread pushed shadows, and the chain's own DSP
+ * state — with no routing/volume/mute of its own (the owner's context supplies
+ * those). Two instances exist:
+ *
+ * - le_track.bus — the TRACK-stage chain (D-TRACKROUTE): when non-empty, the
+ *   track's audible lanes sum into one stereo pair, this chain runs ONCE per
+ *   frame on it, and the wet result routes via the union of those lanes'
+ *   enabled output masks. When EMPTY (a_fx_count == 0, the default and the
+ *   migration state) the per-lane routing path is bit-identical to the
+ *   pre-part-1b engine — the accumulator never engages. Topology keys off
+ *   EMPTINESS, not enabled: a non-empty but chain-disabled chain keeps the
+ *   bus topology (part 1a's bypass makes it dry), so a stomp toggles DSP,
+ *   never routing.
+ *
+ * - le_engine.master_fx — the engine-level Master insert (D-MASTER): runs on
+ *   the summed track mix between mix_tracks_frame and mix_monitors_frame, so
+ *   live monitor signals — summed after it — stay uncolored, and master
+ *   gain/limiter (master_bus_frame, unchanged) still applies to both.
+ *   D-MASTERCH: FX kernels are strict stereo, so for ch_out != 2 the chain
+ *   processes the FIRST ENABLED output pair and passes other channels through
+ *   bit-exact dry; ch_out == 1 processes mono as l == r.
+ *
+ * Both default empty with every enable flag 1, so old sessions and fresh
+ * engines behave identically (dry). Enable flips are direct atomic stores
+ * (work while stopped), exactly like the lane/monitor owners'. */
+typedef struct le_fx_bus {
+  _Atomic int32_t a_fx_count;
+  _Atomic int32_t a_fx_type[LE_FX_MAX];
+  _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
+  _Atomic int32_t a_fx_enabled[LE_FX_MAX]; /* per-slot enable (default 1) */
+  _Atomic int32_t a_fx_chain_enabled;      /* whole-chain enable (default 1) */
+  /* Control-thread-owned pushed-count/type shadows (see le_lane). */
+  int32_t fx_count_pushed;
+  int32_t fx_type_pushed[LE_FX_MAX];
+  le_fx_state fx;
+} le_fx_bus;
+
+/* What one history entry represents. */
+typedef enum {
+  LE_HIST_LAYER = 0, /* a retired overdub pass, named by its pool slot */
+  LE_HIST_CLEAR = 1, /* a clear restore point: everything needed to put the
+                      * track back as it was (#219). Pushed ON TOP of the
+                      * layers it erased, which stay peelable after a restore. */
+} le_hist_kind;
+
+/* One entry on a track's undo/redo history (control-thread-owned). A bare pool
+ * index cannot say what it represents, which is why this is a tagged struct:
+ * a LAYER entry needs only its slot, while a CLEAR restore point also carries
+ * the transport state to put back. The payload fields are meaningless (and left
+ * zero) on a LAYER entry. */
+typedef struct {
+  int32_t kind; /* le_hist_kind */
+  int32_t slot; /* the pool slot this entry names — for CLEAR, the pre-clear
+                 * live slot, pinned against reuse until the entry dies */
+  int32_t len;        /* CLEAR: pre-clear track length in frames */
+  int32_t multiple;   /* CLEAR: pre-clear length in whole base loops */
+  int32_t state;      /* CLEAR: pre-clear state (PLAYING / STOPPED) */
+  int32_t master_len; /* CLEAR: master grid at clear time. A clear that empties
+                       * the last track resets the clock, so the restore has to
+                       * re-establish it — the track's own len is not enough
+                       * (this track may be a multiple of the base). */
+  uint32_t muted_mask; /* CLEAR: pre-clear per-lane mute bits (bit l = lane l) */
+} le_hist_entry;
+
+/* Positional aggregate init, not the designated initializer the rest of the
+ * engine's C uses: engine_fx.h includes this header, and each VST3 plugin's
+ * processor.h pulls engine_fx.h into a C++17 TU to reuse the FX kernels.
+ * Designated initializers are C++20 — gcc/clang accept them in C++17 as an
+ * extension, MSVC rejects them (error C7555), so everything reachable from
+ * engine_fx.h must stay C++17-clean or the Windows plugin build breaks.
+ *
+ * Keep it an initializer rather than member assignments: aggregate init
+ * zero-fills members it does not name. The CLEAR restore point (#219) adds
+ * exactly such members, and a LAYER entry must carry them as zeroes rather than
+ * whatever was on the stack — with plain assignment they would read garbage. */
+static inline le_hist_entry le_hist_layer(int32_t slot) {
+  le_hist_entry e = {LE_HIST_LAYER, slot};
+  return e;
+}
+
+/* One looper track: a multi-lane container that owns the transport, the shared
+ * latency-compensated write head, and one undo span across all its lanes.
+ *
+ * Recording is track-addressed and fans out to every active lane (each captures
+ * its own input clean); playback sums all active lanes. The undo span uses the
+ * SAME pool slot indices across every lane in lockstep, so the track owns the
+ * stacks and the lanes own only the buffers. */
+typedef struct le_track {
+  le_lane lanes[LE_MAX_LANES];
+  int32_t lane_count; /* active lanes (1..LE_MAX_LANES); control-thread plain
+                       * int, like track_count — not an atomic, not a ring
+                       * command (set before the first record into a new lane). */
+
+  /* Track-stage chain (FX v3 part 1b): the chain all this track's audible
+   * lanes sum into when it is non-empty — see le_fx_bus's doc for the full
+   * D-TRACKROUTE semantics. Not the per-LANE record-route chains above
+   * (lanes[l].a_fx_*): those run per lane first; this runs once on their
+   * summed stereo bus. */
+  le_fx_bus bus;
+
+  /* Control-thread-owned undo/redo stacks, shared by all lanes (the same slot
+   * index names the snapshot in every lane). Layers arrive on the undo stack via
+   * LE_EVT_LAYER_RETIRED events the audio thread emits at each completed overdub
+   * pass (see the dub_* capture state below). */
+  le_hist_entry undo_stack[LE_POOL_SLOTS];
+  int undo_count;
+  le_hist_entry redo_stack[LE_POOL_SLOTS];
+  int redo_count;
+
+  /* ---- per-pass layer capture (audio-thread-local unless noted) ----
+   *
+   * While the track overdubs, each in-place write first saves the pre-value
+   * into the armed shadow slot (`dub_slot`, same index on every lane —
+   * lockstep). The write trajectory visits each of the track's len positions
+   * exactly once per len frames, so dub_count == dub_len means the shadow holds
+   * a complete pre-pass image: it is retired to the control thread (which
+   * pushes it onto the undo stack) and the pre-posted spare takes over — one
+   * undo layer per pass. A punch-out mid-pass drains the uncovered remainder
+   * live->shadow in bounded chunks (live is stable then), then retires. */
+  int32_t dub_slot;  /* armed shadow pool slot (-1 = none) */
+  int32_t dub_spare; /* next shadow, pre-posted by control (-1 = none) */
+  int32_t dub_count; /* frames backed up into dub_slot this pass; -1 = armed
+                      * but unstarted (the first write latches the start point,
+                      * so no entry path needs position math). Reaching dub_len
+                      * freezes the complete image until it can be retired. */
+  int32_t dub_phase; /* frames written since the last pass boundary; wraps at
+                      * dub_len — the rotation point (hand off + arm spare) */
+  int32_t dub_len;   /* pass length (track len), latched at session start */
+  int32_t dub_offset; /* record offset latched for the whole dub session, so a
+                       * mid-dub offset change cannot tear the trajectory */
+  int32_t dub_start_vpos; /* trajectory point (base-loop position + segment) */
+  int32_t dub_start_vseg; /* of the pass's first backed-up write */
+  int32_t dub_vpos; /* drain cursor: the NEXT position to complete, walking */
+  int32_t dub_vseg; /* the remaining trajectory from start + count */
+  int32_t dub_draining;       /* post-punch-out bulk completion in progress */
+  int32_t dub_retire_slot;    /* retired slot awaiting evt-ring space (-1 none) */
+  uint32_t dub_gen_audio; /* audio-side mirror of dub_generation: both sides
+                           * bump exactly once per applied CLEAR, so they agree
+                           * without sharing a variable */
+  /* 1 from OVERDUBBING entry until every captured layer has been retired
+   * (through tail + drain). Audio stores it; control reads it (acquire after
+   * draining the event ring) to queue undo instead of swapping a_live while
+   * the audio thread still writes/reads the live buffers. The retire event is
+   * pushed BEFORE this clears, so a control thread that drained the ring and
+   * still sees 0 knows the undo stack is complete. */
+  _Atomic int32_t a_layer_in_flight;
+
+  /* ---- control-thread-owned undo bookkeeping ---- */
+  int32_t outstanding_slots[4]; /* shadow slots posted, not yet retired */
+  int outstanding_count;
+  int queued_undo;   /* undo taps deferred until the in-flight layer retires */
+  int32_t empty_len; /* len to restore on redo-from-empty (0 = none) */
+  /* Posted-but-unapplied state-flip accounting. UNDO_TO_EMPTY /
+   * REDO_FROM_EMPTY / CLEAR change a_state on the audio thread; until they
+   * apply, control-side decisions (a record press racing a redo would memset
+   * the very buffer redo just made live) must see the POSTED target, not the
+   * stale a_state. The audio thread bumps a_state_acks once per applied
+   * command; while state_cmds_posted > a_state_acks the effective state is
+   * pending_target. Deterministic (ring FIFO), no observation races. */
+  int state_cmds_posted;   /* control: state-flip commands pushed */
+  int32_t pending_target;  /* control: the last posted command's end state */
+  _Atomic int32_t a_state_acks; /* audio: state-flip commands applied */
+  uint32_t dub_generation; /* bumped on clear; audio mirrors it in handle_clear
+                            * and tags retire events, so a stale event from
+                            * before a clear is dropped, never re-pushed */
+
+  /* Content revision counter (FX v3 part 2, [R1]): bumped on EVERY event that
+   * changes which audio this track's lanes play — the identity half of the
+   * wet-cache key. "Which audio" means the mapping from a playback position to
+   * a sample: a_live swaps, in-place content writes, and length changes all
+   * bump; config that only colors playback (FX params/enabled, volume) is
+   * keyed separately (fingerprint + a_vol_bits) and does NOT bump.
+   *
+   * WHY NOT THE POOL SLOT INDEX: pool slots RECYCLE (LE_POOL_SLOTS above —
+   * past the cap the oldest undo layer is evicted and its slot reused, and
+   * undo/redo/clear reclaim and re-arm slots freely), so the same slot index
+   * names different audio at different times. A cache keyed on slot identity
+   * would replay a recycled slot's OLD content as current. Only a
+   * monotonically-advancing revision can key "which audio".
+   *
+   * AUDITED BUMP-SITE TABLE — one row per site, with the thread that bumps.
+   * An unaudited content write is a stale-audio bug by definition; any new
+   * content-mutation path MUST add a row here and a bump there.
+   *
+   *   The rule for WHICH thread bumps: the bump lives where the content
+   *   actually changes. a_live swaps are control-thread stores (content
+   *   changes the instant the store lands), so their bumps are control-side;
+   *   state flips and in-place writes apply on the audio thread, so theirs
+   *   are audio-side. Both threads bump the one atomic (fetch_add).
+   *
+   *   event                        | thread  | bumping function
+   *   -----------------------------+---------+------------------------------
+   *   record finalize (defining)   | audio   | finalize_master
+   *   record finalize (later trk)  | audio   | finalize_new_track
+   *   entry into OVERDUBBING       | audio   | le_dub_session_start
+   *   each retired overdub pass    | audio   | le_dub_boundary,
+   *                                |         | le_dub_block_update (drain)
+   *   undo swap (in-track)         | control | le_undo_swap
+   *   undo to empty                | audio   | apply_command
+   *                                |         | (LE_CMD_UNDO_TO_EMPTY)
+   *   redo swap (in-track)         | control | le_engine_redo
+   *   redo-from-empty              | control | le_engine_redo (the a_live
+   *                                |         | swap; the audio flip follows)
+   *   clear                        | audio   | handle_clear
+   *   clear-restore (#219)         | control | le_restore_clear (the a_live
+   *                                |         | swap; the audio flip follows)
+   *   session load (import)        | control | le_engine_import_track_lane
+   *   session load (layered)       | control | le_engine_finalize_layers
+   *                                |         | (covers le_engine_import_layer:
+   *                                |         | layers fill while EMPTY and
+   *                                |         | publish only at finalize)
+   *
+   *   STRUCTURAL NOTE: every control-side row that re-points a_live (the
+   *   undo/redo swaps, redo-from-empty, clear-restore, layered finalize)
+   *   funnels through le_track_publish_live (engine_core.h), which performs
+   *   the swap and the bump as one motion — new history features must use it
+   *   rather than hand-rolling the a_live store loop.
+   *
+   * Overdub coverage: the OVERDUBBING-entry bump lands in the same command
+   * drain that flips the state, BEFORE the first in-place write of that
+   * block's frame loop, so a control-thread reader that still observes the
+   * old revision cannot be reading mid-overdub content; punch-out fade-tail
+   * and drain writes are bracketed by a_layer_in_flight (the enqueue gate)
+   * and closed out by the retire bumps. Cross-thread: fetch_add release,
+   * read acquire — the enqueue copy re-checks the revision after copying
+   * (seqlock shape) and the publish step re-checks it again, so a torn copy
+   * can never publish. */
+  _Atomic uint32_t a_audio_rev;
+
+  _Atomic int32_t a_state;
+  _Atomic int32_t a_undo_depth; /* published PEELABLE layer count — see
+                                 * le_publish_undo_depth: a cleared track's
+                                 * stack is not peelable until its restore point
+                                 * is undone, so this reads 0 there */
+  _Atomic int32_t a_clear_restore; /* published: 1 when the next undo restores a
+                                    * cleared take rather than peeling a layer */
+  _Atomic int32_t a_redo_depth;    /* published redo_count */
+  _Atomic int32_t a_multiple;   /* track length in whole base loops (>= 1) */
+  /* Sync division (B3, D16, published): 0 = ordinary (this track's length is
+   * `a_multiple` whole base loops, the ubiquitous case); 2 or 4 = this
+   * track's OWN buffer holds exactly 1/2 or 1/4 of the primary's length and
+   * loops at that own (faster) rate, phase-locked to the primary's loop top
+   * (a_multiple reads 1, inertly, alongside a nonzero divisor). Set only by
+   * finalize_new_track under le_sync_quantize_active; 0 everywhere else, so
+   * every mode but an active Sync/Band division is byte-for-byte the
+   * pre-B3 seg_base/multiple path (see mix_tracks_frame). */
+  _Atomic int32_t a_sync_divisor;
+  _Atomic int32_t a_pending; /* published arm state (1 = waiting for the loop top
+                              * to fire a quantized record action); read by the
+                              * control thread to reconcile arm vs. fired. */
+  /* Published DEFINING-recording length preset (A6, D17): 0 = AUTO, 1..
+   * LE_LENGTH_PRESET_MAX_BARS = fixed N bars. Set via LE_CMD_SET_LENGTH_PRESET;
+   * read by both threads like a_multiple (audio thread applies it at record
+   * start / finalize; control thread's setter validates before pushing). */
+  _Atomic int32_t a_length_preset_bars;
+  /* Audio-thread-local: the auto-finalize target (in frames) armed for the
+   * CURRENT defining take by le_arm_length_preset_target, or 0 when no
+   * auto-finalize applies this take (AUTO preset, click off, or click on with
+   * no tempo set yet — see the header doc on le_engine_set_track_length_preset
+   * for the full matrix). Consumed and reset to 0 by finalize_master. */
+  int32_t length_preset_target_frames;
+  int32_t pending_record; /* audio-thread-local: a deferred record is armed. */
+  int32_t pending_trigger; /* what fires the pending record: 0 = next base-loop
+                            * top (quantize), 1 = input level threshold
+                            * (sound-activated auto-record). */
+  int32_t record_pos; /* audio-thread-local shared write head, driving every
+                       * active lane. Defining track: linear frame count. New
+                       * track over a master: the absolute phase (segment*base +
+                       * position), seeded at press so writes stay phase-locked
+                       * to the master loop. */
+  uint64_t start_iter; /* loop_iteration when this track's recording began */
+  int32_t record_start; /* record_pos when this capture began, so a fixed-length
+                         * track can auto-finalize after exactly K base loops. */
+  float od_gain; /* audio-thread-local overdub punch envelope (0..1). Ramps up on
+                  * punch-in and down on punch-out so the layered input enters and
+                  * leaves the loop buffer without a step discontinuity (a click)
+                  * at the punch points / loop seam. Drives the fade-out tail that
+                  * keeps writing for a few ms after the track is back in PLAYING. */
+
+  /* Deferred crossfade-finalize of the defining master (audio-thread-local). On
+   * the finalize press the master keeps RECORDING `xfade_capture` more frames —
+   * the continuation of the performance just past the loop point — into
+   * [xfade_len, xfade_len + F). When the count hits 0 that overlap is
+   * equal-gain (linear) crossfaded into the loop head so the wrap
+   * (xfade_len-1 -> 0) is
+   * click-free, and the loop is finalized at exactly xfade_len (length, and so
+   * tempo/quantize, are preserved). 0 == not deferring (immediate finalize). */
+  int32_t xfade_capture;
+  int32_t xfade_len;
+  int32_t xfade_end_state;
+
+  /* Free/Song mode (B2b + B4, index Architecture §4): this track's OWN loop
+   * clock, structurally identical to (and reusing) the master's
+   * le_loop_clock — length 0 means "not yet established", exactly like
+   * e->clock before the first defining recording. B4: Song mode's
+   * "independent lengths, no primary, no shared grid obligation" transport
+   * (song-mode-spec.md §2) is structurally IDENTICAL to Free's, so B4
+   * reuses this same machinery outright rather than inventing a parallel
+   * one — every gate below was broadened from a single `mode == FREE` check
+   * to `mode == FREE || mode == SONG`, never duplicated. DORMANT outside
+   * Free/Song: nothing writes or reads free_clock/free_iteration unless
+   * a_looper_mode is one of those two (verified by construction — see
+   * finalize_master, mix_tracks_frame, advance_transport_frame,
+   * viz_tap_frame's Free/Song-guarded call sites in engine_process.c). In
+   * Multi/Sync/Band every track's length is a multiple of the ONE shared
+   * e->clock (seg_base's `k` multiples), so this stays untouched at its
+   * zero-initialized value for the engine's whole lifetime in those modes.
+   * free_iteration mirrors e->loop_iteration (a free-running wrap count) for
+   * the same reason e->loop_iteration exists: Band's non-primary sections
+   * (B3b) instead reuse Sync's primary/multiple-division machinery, so this
+   * field's only two consumers remain Free and Song. */
+  le_loop_clock free_clock;
+  uint64_t free_iteration;
+
+  /* One Shot (B4, Sheeran manual §5.9.4): "plays just once and then stops"
+   * instead of looping. A SETTING (like a_length_preset_bars above),
+   * untouched by handle_clear/UNDO_TO_EMPTY — see LE_CMD_SET_ONE_SHOT's doc,
+   * segno_engine_api.h, for the full mode-gating rationale. Consumed only by
+   * advance_track_clock_frame's free_clock wrap check (engine_process.c);
+   * dormant (read but inert) outside Free/Song for the same reason
+   * free_clock itself is — there is no per-track wrap event to hook in
+   * Multi/Sync/Band. */
+  _Atomic int32_t a_one_shot;
+} le_track;
+
+/* Performance-recording capture state (le_perf_arm / le_perf_disarm,
+ * segno_engine_api.h). Rings are allocated CONTROL-side at arm and freed
+ * CONTROL-side only after the quiescent handshake in le_perf_disarm; the audio
+ * thread only ever pushes into an already-published ring — the same
+ * control-allocates/publish discipline as le_lane.fx.delay and the hosted-
+ * plugin slot pointers. `armed` is the audio-thread-LOCAL mirror of the
+ * published a_perf_armed atomic (like le_track.dub_slot mirrors
+ * a_layer_in_flight): cheaper to test per frame than an atomic load, and the
+ * only field of this struct the audio thread itself ever writes. */
+typedef struct le_perf_capture {
+  le_audio_ring master_ring;
+  int32_t master_channels;  /* 1 (mono) or 2 (stereo) — the ring's frame width */
+  int32_t master_out_ch[2]; /* captured output channel(s); [1] == -1 if mono */
+
+  /* One stereo ring per hardware input, valid iff its bit is set in
+   * input_mask (frozen at arm: inputs enabled later are not retroactively
+   * captured). */
+  le_audio_ring monitor_ring[LE_MAX_INPUTS];
+  uint32_t input_mask;
+
+  int armed;
+
+  /* The sample-accurate event log (part 3): every audibility-affecting
+   * command the audio thread applies, plus a handful of transport facts
+   * (record start/end, loop length locked, layer retired), tagged with the
+   * capture frame it occurred at and pushed here for perf_drain.c to append
+   * to events.log. Audio-thread-producer, so it lives alongside the taps
+   * above rather than being control-allocated at arm like the audio rings —
+   * a fixed-size field the same way evt_ring is (see le_engine below), just
+   * re-initialised (head/tail reset) on every arm so a session never sees a
+   * stale entry from a previous one. See docs/design/performance-event-log-
+   * format.md for the audited command table and on-disk format. */
+  le_perf_log_ring log_ring;
+  le_perf_log_entry log_storage[LE_PERF_LOG_RING_CAPACITY];
+
+  /* A second, control-thread-producer instance for the direct-atomic setters
+   * that bypass the command ring entirely (FX/monitor params, the limiter,
+   * overdub feedback, and the common in-track undo/redo swap) — splitting by
+   * producer thread keeps both rings single-producer/single-consumer with no
+   * new synchronization, at the cost of the drain thread appending two
+   * streams to events.log that are monotonic per-stream but not globally
+   * merged (see the format doc). Sized far smaller than log_ring: these are
+   * human-paced UI edits, not per-buffer audio-thread traffic. */
+  le_perf_log_ring log_ctrl_ring;
+  le_perf_log_entry log_ctrl_storage[LE_PERF_LOG_CTRL_RING_CAPACITY];
+
+  /* Retired-layer persistence (part 5, D-LAYER): every completed overdub
+   * pass's PCM, copied into a fresh heap buffer the moment it retires —
+   * before pool eviction, a track clear, or redo-invalidation can reclaim
+   * its slot and let a later write destroy it. Control-thread-producer
+   * (le_stage_retired_layer, engine_commands.c), drained by perf_drain.c
+   * into numbered layer files + sidecar manifest entries. Re-initialised on
+   * every arm, same as the two rings above. */
+  le_layer_staging_ring layer_staging_ring;
+  le_staged_layer layer_staging_storage[LE_LAYER_STAGING_RING_CAPACITY];
+
+  /* The capture-to-disk drain thread (perf_drain.h), spawned by le_perf_arm
+   * right after the ring set above is published and joined by le_perf_disarm
+   * before the rings are freed. Opaque here (perf_drain.c owns the
+   * definition) — control-thread lifecycle only; engine_process.c never
+   * touches it. NULL when not armed. */
+  struct le_perf_drain* drain;
+
+  /* The offline render worker (perf_render.h, part 7) — independent of the
+   * arm/disarm/drain lifecycle above: a render reads only a finalized
+   * capture directory from disk, never live engine state, so it can run
+   * whether or not this engine is currently armed. Opaque here (perf_render.c
+   * owns the definition). NULL when no render is active. */
+  struct le_perf_render* render;
+} le_perf_capture;
+
+struct le_engine {
+  /* The device backend driving the lifecycle (le_select_backend's choice),
+   * remembered so le_engine_stop / le_engine_destroy release the device through
+   * the same seam that opened it. NULL until the first device open; set once the
+   * device is open (so "running implies backend set") and retained across
+   * stop/start cycles. close() is idempotent, so a stale value never harms. */
+  const le_device_backend* backend;
+
+  ma_device device;
+  int device_initialised;
+
+  /* Snapshot, published as independent atomics. */
+  _Atomic int32_t a_running;
+  /* 1 while the device is present, 0 once a device-lost/rerouted/stopped
+   * notification fires. Written only by the RT-adjacent notification callback
+   * (store-only, no work) and the lifecycle calls; read into the snapshot.
+   * The callback stores `relaxed` (it carries no other state and must not block
+   * the audio thread); the lifecycle store and the snapshot load use
+   * release/acquire to match the `a_running` publication they sit beside. The
+   * flag is a single independent value, so plain visibility is all that's
+   * required either way. */
+  _Atomic int32_t a_device_present;
+  _Atomic int32_t a_configured;
+  _Atomic int32_t a_sample_rate;
+  _Atomic int32_t a_buffer_frames;
+  _Atomic int32_t a_in_channels;    /* negotiated hardware capture channels */
+  _Atomic int32_t a_out_channels;   /* negotiated hardware playback channels */
+  /* le_audio_backend actually running, published in the snapshot. Set to
+   * LE_BACKEND_MINIAUDIO in the configure/reset path and republished at device
+   * open from the backend's negotiated le_device_open_result.active_backend
+   * (ASIO on Windows, miniaudio on macOS/Linux). */
+  _Atomic int32_t a_active_backend;
+  /* Input channels whose Core Audio label marks them as loopback; never
+   * recorded, monitored, or routable. Computed once at device open. */
+  _Atomic uint32_t a_excluded_input_mask;
+  /* Structural output gate: bit c set => output channel c is ENABLED (a routing
+   * target). A cleared bit removes the output from the mix fan-out while leaving
+   * every lane/monitor mask untouched. Written by the control thread
+   * (LE_CMD_SET_OUTPUT_ENABLED), read once per process() on the audio thread and
+   * published in the snapshot. All bits set on a fresh configure (default-on). */
+  _Atomic uint32_t a_output_enabled_mask;
+  _Atomic uint64_t a_frames;
+  _Atomic uint32_t a_xruns;
+  _Atomic uint32_t a_in_rms_bits;
+  _Atomic uint32_t a_in_peak_bits;
+  _Atomic uint32_t a_out_rms_bits;
+  /* Loop-indexed visualization (float bits): one peak per loop bucket, spanning
+   * exactly one master loop and refreshed as the playhead sweeps. a_loop_viz is
+   * the mixed output; a_track_viz is each track's own contribution. */
+  _Atomic uint32_t a_loop_viz[LE_VIZ_POINTS];
+  _Atomic uint32_t a_track_viz[LE_MAX_TRACKS][LE_VIZ_POINTS];
+  _Atomic int32_t a_latency_state;
+  _Atomic uint64_t a_latency_ms_bits;
+
+  /* Per-input live monitors: one independent route per hardware input. Each
+   * sounds iff its a_enabled is set (a loopback measurement clears them all to
+   * break the cable feedback loop; a fresh start restores defaults). */
+  le_monitor_input monitors[LE_MAX_INPUTS];
+
+  /* Master insert chain (FX v3 part 1b): runs on the summed track mix between
+   * mix_tracks_frame and mix_monitors_frame — see le_fx_bus's doc for the
+   * full D-MASTER / D-MASTERCH semantics. Live monitors (summed after it)
+   * stay uncolored; master gain/limiter (master_bus_frame) is unchanged and
+   * still applies to both. */
+  le_fx_bus master_fx;
+
+  /* Looper transport (master). */
+  _Atomic int32_t a_master_len;
+  _Atomic int32_t a_master_pos;
+
+  /* Tempo grid (published — see le_snapshot's trailing tempo block). The
+   * SETTINGS (tempo/signature/sync/quantize_div/source) are seeded in
+   * le_engine_create and persist across configure; the loop-derived state
+   * (loop_bars, current_beat) is transient and reset per session. All default
+   * to grid-off values so the untouched engine is bit-identical to the
+   * tempo-free build. */
+  _Atomic uint32_t a_tempo_bpm_bits; /* float bits; 0 = unset (source none) */
+  _Atomic int32_t a_ts_num;          /* default 4 */
+  _Atomic int32_t a_ts_den;          /* 4 or 8; default 4 */
+  _Atomic int32_t a_sync_tempo;      /* default 1 */
+  _Atomic int32_t a_quantize_div;    /* le_grid_div; default 0 = off */
+  _Atomic int32_t a_tempo_source;    /* le_tempo_source; default 0 = none */
+  _Atomic int32_t a_loop_bars;       /* whole bars in the master loop; 0 none */
+  _Atomic int32_t a_current_beat;    /* 0..ts_num-1; loop-driven, or click/
+                                      * count-in-driven while those free-run */
+
+  /* Click + count-in (A2, published — see le_snapshot's trailing click block).
+   * The SETTINGS (mode/mask/volume/bars) are seeded in le_engine_create and
+   * persist across configure, exactly like the tempo settings above; the
+   * counting state (a_counting_in / a_count_in_beats_left) is transient. All
+   * default to click-off values (mode off, mask 0 = unrouted, count-in 0 =
+   * off) so the untouched engine is bit-identical to the click-free build. */
+  _Atomic int32_t a_click_mode;         /* le_click_mode; default 0 = off */
+  _Atomic uint32_t a_click_mask;        /* output bitmask; default 0 = unrouted */
+  _Atomic uint32_t a_click_volume_bits; /* float bits, 0..LE_MAX_GAIN; def. 1 */
+  _Atomic int32_t a_count_in_bars;      /* measures of count-in; 0 = off */
+  _Atomic int32_t a_counting_in;        /* 0/1: a count-in is in progress */
+  _Atomic int32_t a_count_in_beats_left; /* countdown beats remaining; 0 idle */
+
+  /* Looper mode (B2a, D4, published — see le_snapshot's trailing looper-mode
+   * block). A SETTING, seeded once in le_engine_create and persisting across
+   * configure exactly like the tempo/click settings above (not reset per
+   * session, and not reset by clear-all either — no engine-side "revert to
+   * Multi" event exists). Default MULTI (0) so an untouched engine is
+   * bit-identical to today's build. LOCKED (le_looper_mode_locked,
+   * engine_process.c) while any track has content — a simpler predicate than
+   * the tempo lock (content alone). */
+  _Atomic int32_t a_looper_mode; /* le_looper_mode; default 0 = MULTI */
+
+  /* Primary track (B3, D18, published — see le_snapshot's trailing block).
+   * -1 = none (default). A SETTING seeded once in le_engine_create and
+   * persisting across configure exactly like a_looper_mode above, and
+   * (unlike per-track content) NOT reset by handle_clear — a crowned track
+   * being cleared to EMPTY does not un-crown it (D18: the designation
+   * survives; only an explicit re-crown, LE_CMD_CROWN_PRIMARY, changes it).
+   * Meaningful only in Sync/Band; see le_sync_quantize_active below. */
+  _Atomic int32_t a_primary_track;
+
+  /* MIDI clock mode (Phase C/E, D15, published — see le_snapshot's trailing
+   * clock block). A SETTING, seeded once in le_engine_create and persisting
+   * across configure exactly like a_looper_mode/a_primary_track above.
+   * Default OFF (0) so an untouched engine emits no clock bytes. Gates
+   * le_midi_clock_advance (called at the end of le_engine_process) alongside
+   * the looper mode — see le_clock_send_gate_open, engine_process.c. */
+  _Atomic int32_t a_clock_mode;
+
+  _Atomic int32_t a_record_offset; /* latency compensation in frames */
+
+  /* Global master output gain (float bits, 0..1), applied post-mix to the final
+   * output. Written by the control thread (LE_CMD_SET_MASTER_GAIN), read once
+   * per process() on the audio thread. Unity (1.0) by default / on configure. */
+  _Atomic uint32_t a_master_gain_bits;
+
+  /* Master peak limiter, applied post-gain to the additive mix so the summed
+   * output (many tracks + overdub layers + monitoring) cannot hard-clip in the
+   * driver. Feed-forward, no lookahead: instant attack (clamp this frame to the
+   * ceiling) + smooth release. OFF by default so the deterministic native tests
+   * see the raw mix; the app enables it. ceiling is float bits in (0,1]. */
+  _Atomic int32_t a_limiter_enabled;
+  _Atomic uint32_t a_limiter_ceiling_bits;
+  float lim_gain; /* audio-thread-local smoothed gain reduction (1 = no cut) */
+
+  /* Overdub feedback: the existing loop content at the write head is scaled by
+   * this before the new input is layered in, so stacked overdubs can't grow
+   * without bound. Unity (1.0) by default == the classic additive overdub (and
+   * what the native tests assert); < 1.0 decays older layers. Float bits. */
+  _Atomic uint32_t a_overdub_fb_bits;
+
+  /* Performance-recording capture: published status atomics (le_snapshot's
+   * whole surface for this slice) plus the RT-owned ring set/config in `perf`
+   * (le_perf_capture above). */
+  _Atomic int32_t a_perf_armed;
+  _Atomic uint64_t a_perf_frames;
+  _Atomic uint32_t a_perf_overruns;
+  /* Perf-log ring drops (part 3), tracked separately from a_perf_overruns
+   * (the PCM-ring overrun count from part 1) — a dropped log entry and a
+   * dropped audio sample are different failure modes worth telling apart in
+   * a native test. Not surfaced via le_snapshot: no Dart consumer needs this
+   * yet (native tests read the atomic directly); add it there if a later
+   * part does. */
+  _Atomic uint32_t a_perf_log_overruns;
+  _Atomic uint32_t a_perf_log_ctrl_overruns;
+  /* Retired-layer staging drops (part 5) — the staging ring rejected a
+   * layer (LE_LAYER_STAGING_RING_CAPACITY exceeded), so its PCM was freed
+   * unpersisted instead of queued for the drain thread. Same rationale as
+   * the two atomics above: not surfaced via le_snapshot yet. */
+  _Atomic uint32_t a_perf_layer_overruns;
+  le_perf_capture perf;
+
+  /* Tracks. */
+  le_track tracks[LE_MAX_TRACKS];
+  int32_t track_count;
+
+  /* Loop-stage wet cache (FX v3 part 2): opaque control/worker state owned by
+   * engine_cache.c (scheduler bookkeeping, job queue, the single render
+   * worker [B6]) — the same opaque-pointer shape as perf.drain/perf.render.
+   * NULL until le_cache_init (end of configure); torn down (worker JOINED
+   * before any pool or wet-buffer free [R2]) by le_cache_shutdown from
+   * le_engine_stop, the top of le_engine_configure, and le_engine_destroy.
+   * The audio thread never touches this pointer — its whole cache surface is
+   * le_lane.a_wet + le_track.a_audio_rev. a_fx_cache_cap is the configurable
+   * memory budget in BYTES (entries at 2x frames, toggled pairs, and
+   * in-flight enqueue copies all count); 0 disables caching outright. A
+   * SETTING: seeded in le_engine_create, persists across configure. */
+  struct le_fx_cache* cache;
+  _Atomic int64_t a_fx_cache_cap;
+
+  /* Command ring + pre-allocated backing storage. */
+  le_ring ring;
+  le_command ring_storage[LE_RING_CAPACITY];
+
+  /* Event ring: the reverse direction (audio thread = producer, control thread
+   * = consumer), carrying LE_EVT_LAYER_RETIRED — the pool slot of a completed
+   * overdub-pass snapshot for the control thread to push onto that track's undo
+   * stack. Same SPSC ring type; the roles are simply swapped. Drained at the
+   * top of le_engine_get_snapshot (the UI poll) and of the transport calls. */
+  le_ring evt_ring;
+  le_command evt_storage[LE_RING_CAPACITY];
+
+  /* MIDI clock output ring (C1, D15; see LE_MIDI_CLOCK_RING_CAPACITY above).
+   * Audio-thread producer: le_engine_process appends one entry per emitted
+   * byte (le_midi_clock_advance's output), `.code` holding the raw status
+   * byte (LE_MIDI_CLOCK_TICK/_START/_STOP). No consumer is wired in this part
+   * — see le_midi_clock.h's header doc — so this simply accumulates until
+   * something pops it (a native test today). */
+  le_ring midi_clock_ring;
+  le_command midi_clock_ring_storage[LE_MIDI_CLOCK_RING_CAPACITY];
+  /* Bumped when the ring above is full and a clock byte is dropped — same
+   * "not surfaced via le_snapshot yet" rationale as a_perf_log_overruns; add a
+   * snapshot field once a real consumer needs to observe this. */
+  _Atomic uint32_t a_midi_clock_overruns;
+
+  /* Configuration. */
+  int sample_rate;
+  int in_channels;  /* hardware capture channels */
+  int out_channels; /* hardware playback channels */
+  int32_t max_loop_frames;
+  int32_t fx_delay_frames; /* per-slot delay-line capacity (1 s @ sample rate) */
+
+  /* Audio-thread-local transport. */
+  le_loop_clock clock;
+  uint64_t loop_iteration; /* free-running count of base-loop wraps */
+
+  /* Audio-thread-local tempo state. frame_clock is a running frame counter
+   * (advanced once per process call by the block size — tap timing needs only
+   * block granularity because taps arrive via the ring, which drains at block
+   * start). grid_total_beats > 0 iff a loop-driven beat grid is live
+   * (loop_bars * ts_num); grid_prev_beat is the last published beat index
+   * (-1 re-arms publication at the next frame). */
+  uint64_t frame_clock;
+  uint64_t last_tap_frame;
+  int has_tap;
+  int32_t grid_total_beats;
+  int32_t grid_prev_beat;
+
+  /* Audio-thread-local click voice (A2): one synthesized sine burst
+   * (1000/1500 Hz, 30 ms linear decay) retriggered on each audible beat.
+   * click_remaining > 0 while a burst is decaying; click_grid_gate is last
+   * frame's loop-locked gate (a rise re-arms grid_prev_beat so the current
+   * beat clicks immediately). The free-running scheduler (click_free_*) runs
+   * the beat phase off the nominal grid whenever no loop-locked grid exists
+   * (defining recording, sync-off playback); it re-anchors its downbeat each
+   * time it activates. */
+  int32_t click_remaining;
+  int32_t click_len;
+  float click_phase;
+  float click_freq;
+  int click_grid_gate;
+  int click_free_running;
+  int32_t click_free_frame; /* frames into the current free-run beat */
+  int32_t click_free_fpb;   /* frames per beat, refreshed at each beat */
+  int32_t click_free_beat;  /* 0..ts_num-1 within the free-run bar */
+
+  /* Audio-thread-local count-in (A2, D9): count_in_total > 0 while counting.
+   * Beat boundaries render from their index against the frozen count_in_fpb
+   * (no accumulation drift); the recording on count_in_channel begins the
+   * frame count_in_elapsed reaches count_in_total — the bar-1 downbeat. */
+  int32_t count_in_total;   /* frames in the whole count-in; 0 = not counting */
+  int32_t count_in_elapsed; /* frames since the count-in began */
+  int32_t count_in_beats;   /* total beats (bars * ts_num) */
+  int32_t count_in_beat;    /* next beat index (0-based) to fire */
+  double count_in_fpb;      /* nominal frames per beat, frozen at start */
+  int32_t count_in_channel; /* track the count-in will commit to */
+  /* Cancel-vs-auto-commit race grace window (code-review fix, A2). Commands
+   * drain once at the top of le_engine_process, but le_count_in_commit can
+   * complete the count-in MID-block via the per-frame countdown; a cancel
+   * press posted just after that block's drain already ran arrives one
+   * block too late — count_in_total is already 0 by the time it drains, so
+   * handle_record's cancel guard above no longer fires and the press would
+   * otherwise fall through to the RECORDING-finalize branch, minting a
+   * near-zero-length defining loop instead of the cancel the user pressed
+   * for. le_count_in_commit sets this to the just-committed channel;
+   * le_engine_process clears it back to -1 immediately after EVERY block's
+   * command-drain loop, so it is visible to exactly one block's worth of
+   * draining (the block right after the commit) — the same block a
+   * concurrently-posted press can land in. handle_record treats a press on
+   * this channel, within that window, as the ORIGINAL cancel-intent: the
+   * just-started take is aborted back to EMPTY (handle_clear) rather than
+   * finalized. This cannot be told apart from a genuine "count in, then
+   * immediately finalize a near-zero loop" double-press — the two are
+   * indistinguishable within a single block — so the deliberate choice is
+   * cancel-wins, matching the precondition that a press was already in
+   * flight before the commit landed. */
+  int32_t count_in_grace_channel; /* -1 = no grace window open */
+
+  /* MIDI clock send (C1, D15): audio-thread-local generator state driving
+   * le_midi_clock_advance once per block (engine_process.c, the very end of
+   * le_engine_process — after the per-frame loop, since the emitter runs at
+   * BLOCK granularity like the tap-tempo frame clock above, not per-sample).
+   * Reset per session (le_engine_configure) via le_midi_clock_reset, exactly
+   * like the click/count-in running state above — its SETTING twin
+   * (a_clock_mode) is seeded once in le_engine_create and persists. */
+  le_midi_clock_gen midi_clock;
+
+  /* Quantized recording (control-thread-owned). When `quantize` is set, a record
+   * press over an existing master arms `armed[ch]` (and does the one-time prep
+   * an immediate record would) instead of acting now; the audio thread fires it
+   * at the next loop top. Arming creates no undo layer (layers are captured
+   * per pass on the audio thread), so cancelling is a plain disarm. */
+  int quantize; /* global default */
+  /* Per-track quantize override: -1 inherit the global default, 0 force off,
+   * 1 force on. The effective value drives le_engine_record's arm decision. */
+  int track_quantize[LE_MAX_TRACKS];
+  int armed[LE_MAX_TRACKS];
+  /* What each arm is waiting for: 0 = loop top (quantize), 1 = input level
+   * (auto-record). Lets toggling one feature cancel only its own arms. */
+  int armed_trigger[LE_MAX_TRACKS];
+
+  /* Loop length. The global default (0 auto-rounds up to whole base loops on
+   * stop; K >= 1 fixes K base loops) applies to tracks that inherit. A track's
+   * target_multiple is 0 to inherit the global default, or K >= 1 to fix it.
+   * Control-thread-owned. */
+  int default_multiple;
+  int target_multiple[LE_MAX_TRACKS];
+
+  /* When `rec_dub` is set, finalizing a recording with a record (second) press
+   * continues into overdub instead of playback (the second-press "rec/dub"
+   * mode). A stop still ends in playback/stopped. Independently of this flag, a
+   * track recorded over an existing master that auto-finishes (reaches its loop
+   * length with no press) always continues into overdub, so layering stays live
+   * rather than auto-stopping to playback the moment the loop completes.
+   * Control-thread default, read on the audio thread via the finalize
+   * end-state. */
+  int rec_dub;
+
+  /* When `auto_record` is set, a record press on an empty track arms a
+   * signal-triggered start: the audio thread begins recording the first frame
+   * the input level crosses LE_AUTO_RECORD_THRESHOLD. Reuses the arm/pending
+   * machinery with a per-track trigger type (see le_track.pending_trigger). */
+  int auto_record;
+
+  /* Control-side mirror of the count-in setting (the published a_count_in_bars
+   * only updates when the audio thread drains the ring, so the D9 auto-record
+   * mutual exclusion and le_engine_record's precedence check read this plain
+   * control-thread int instead of racing the atomic). */
+  int count_in_bars;
+
+  /* Loop-viz bucketing (audio-thread-local): peaks accumulate within the
+   * current loop bucket and publish when the playhead crosses into the next. */
+  int32_t loop_viz_bucket;
+  float loop_viz_accum;
+  float track_viz_accum[LE_MAX_TRACKS];
+  /* Free mode (B2b): per-track bucket cursor, mirroring loop_viz_bucket but
+   * scoped to each track's own clock — Free mode has no single shared loop
+   * to bucket a_loop_viz against (a_loop_viz is simply not updated in Free
+   * mode; only the per-track a_track_viz waveforms are meaningful there).
+   * -1 = no bucket published yet, same convention as loop_viz_bucket.
+   * Dormant outside Free mode (see free_track_viz_tap_frame's mode guard,
+   * engine_process.c) — stays at its zero-initialized/reset value, which
+   * le_engine_configure and handle_clear explicitly re-arm to -1. */
+  int32_t track_viz_bucket[LE_MAX_TRACKS];
+
+  /* Latency harness (audio-thread-local + published state). The measurement
+   * captures the input-magnitude envelope into lat_buf for a fixed window after
+   * emitting the pulse, then cross-correlates it with the pulse to find the
+   * round-trip by its peak (robust to crosstalk/noise). */
+  int lat_active;
+  int32_t lat_emit_remaining;
+  float* lat_buf;      /* envelope capture (control-thread allocated) */
+  int32_t lat_buf_cap; /* capacity in frames */
+  int32_t lat_buf_pos; /* write head during a measurement */
+
+  char device_name[256];
+
+  /* Explicit context + resolved device ids, used when capturing from a detected
+   * loopback device (use_loopback_capture) or when a device is pinned by id.
+   * Owned and managed by the miniaudio backend (engine_miniaudio.c). */
+  ma_context context;
+  int context_initialised;
+  ma_device_id capture_id;
+  ma_device_id playback_id;
+  /* 1 when capture_id holds a resolved (pinned/loopback) capture device, so the
+   * portable core can compute the loopback-excluded input mask from that device
+   * UID after open. */
+  int capture_id_set;
+};
+
+/* Fills `out` (room for `max`) with the host's playback or capture devices and
+ * writes the count into *count. Uses a transient context so it never disturbs a
+ * running device. `capture` selects the direction. Defined in engine.c;
+ * declared here because the Linux JACK pin hook resolves friendly device names
+ * through it (le_jack_device_name). */
+int32_t enumerate_devices(le_device_info* out, int32_t max, int32_t* count,
+                          int capture);
+
+/* Device-resolution helpers defined in the portable core (engine.c) and shared
+ * with the miniaudio backend (engine_miniaudio.c), which resolves pinned /
+ * loopback device ids at device open. le_find_loopback also backs the FFI
+ * le_detect_loopback. Both operate on an already-open ma_context. */
+void le_find_loopback(ma_context* ctx, le_loopback_info* out,
+                      ma_device_id* out_id);
+int le_resolve_device_id(ma_context* ctx, int capture, const char* want,
+                         ma_device_id* out_id);
+
+/* Relaxed atomic accessors for the published int32 snapshot fields. `static
+ * inline` so every TU that touches engine state (the core and the per-OS seam
+ * bodies) gets its own copy with no external symbol — no double-definition
+ * risk. */
+static inline int32_t load_i32(_Atomic int32_t* slot) {
+  return atomic_load_explicit(slot, memory_order_relaxed);
+}
+static inline void store_i32(_Atomic int32_t* slot, int32_t v) {
+  atomic_store_explicit(slot, v, memory_order_relaxed);
+}
+
+/* Bumps a track's content revision (FX v3 part 2, [R1]) — call at every row of
+ * the a_audio_rev bump-site table (see its declaration). `static inline` here
+ * because BOTH threads bump (audio: finalize/dub sites in engine_process.c;
+ * control: undo/redo/clear/import sites in engine_commands.c /
+ * engine_session.c). Release orders the content mutation that PRECEDES a bump
+ * before it for an acquire reader; it deliberately does NOT order writes that
+ * FOLLOW an audio-side bump (overdub entry bumps before the pass's in-place
+ * writes) — for that window the LOAD-BEARING guard is the wet cache's
+ * collect-time re-check [B5] (engine_cache.c le_cache_collect): a render is
+ * published only if the revision still equals the enqueue-time read, so a
+ * copy torn by post-bump writes is discarded, never published. The enqueue
+ * copy's own seqlock-style re-read narrows the same window earlier as a
+ * cheap first line of defence. */
+static inline void le_audio_rev_bump(le_track* t) {
+  atomic_fetch_add_explicit(&t->a_audio_rev, 1u, memory_order_release);
+}
+
+/* Track [ch]'s effective forced loop multiple: its per-track override, or the
+ * global default when it inherits (target 0). 0 means auto (round up on stop).
+ * `static inline` here because BOTH threads decide from it — the audio thread's
+ * finalize_new_track fixes the length with it, and the control thread's
+ * first-wrap pre-arm gate (le_capture_may_overdub) predicts that same finalize
+ * — and the two must never diverge. */
+static inline int32_t le_effective_multiple(const le_engine* e, int32_t ch) {
+  const int32_t ov = e->target_multiple[ch];
+  return ov > 0 ? ov : e->default_multiple;
+}
+
+/* Sync/Band quantize gate (B3, D16/D18): whether channel [ch]'s finalize
+ * should snap to the nearest valid multiple-or-division of the PRIMARY
+ * track's length instead of the ordinary auto-round-up / forced-multiple
+ * rule (le_effective_multiple, above — bypassed entirely when this is true,
+ * per the manual's "every later track is AUTO", song-mode-spec.md §1).
+ * `static inline` here for the same reason as le_effective_multiple: BOTH
+ * threads decide from it and must never diverge — the control thread
+ * (le_engine_record) uses it to decide whether a non-primary EMPTY track's
+ * record press force-arms to the primary's loop top instead of starting
+ * immediately, and the audio thread (finalize_new_track) uses it to decide
+ * the actual ratio.
+ *
+ * True only when ALL of:
+ *   - mode is SYNC or BAND;
+ *   - a primary track is crowned (a_primary_track >= 0) and it is not [ch]
+ *     itself (the primary's own recording never quantizes against itself —
+ *     also correctly excludes the primary's OWN first-ever defining take,
+ *     see the a_len check below);
+ *   - the primary track already has content (lane 0's a_len > 0, read
+ *     BEFORE finalize_new_track mutates anything for [ch] — so if [ch] IS
+ *     the primary mid its own first recording, a_len still reads its
+ *     pre-take value: 0 the very first time, correctly reading "not yet
+ *     established" and falling back to ordinary Multi-style rounding, the
+ *     documented D16 fallback);
+ *   - the primary's own recorded length is EXACTLY one base loop
+ *     (a_multiple == 1 AND a_sync_divisor == 0 — BOTH are required: a Sync
+ *     DIVISION track also publishes a_multiple == 1 inertly alongside its
+ *     nonzero divisor, so a_multiple alone cannot tell "one plain base
+ *     loop" apart from "a fractional slice of some OTHER track" —
+ *     adversarial-review BUG 3. Without the divisor check, crowning a
+ *     division track as primary would make every downstream formula treat
+ *     its fractional length as if it were a full base loop, corrupting
+ *     the math for every dependent track. Checked here — the one gate both
+ *     threads consult — rather than at crown time (le_engine_crown_primary
+ *     stays unconditional per D18: the crown is a persistent designation,
+ *     settable before content even exists), matching this file's existing
+ *     "recompute live, don't trust the setter" discipline (see
+ *     le_effective_multiple, le_looper_mode_locked). A track crowned while
+ *     holding a divisor simply reads as "not yet established" — the same
+ *     D16 fallback as no primary at all, so every OTHER track's
+ *     recording degrades gracefully to ordinary Multi-style behavior
+ *     rather than corrupting). This is what lets every formula below use
+ *     e->clock.length directly as "the primary's length": if some OTHER
+ *     track happened to record first and define e->clock (D16's fallback
+ *     lets that happen), and the primary later records into that
+ *     already-established master as a k != 1 multiple, e->clock.length no
+ *     longer equals the primary's own length — a rare mis-ordering this
+ *     conservatively falls back on rather than risk incoherent divide/
+ *     multiply math (documented limitation, not a crash — and largely
+ *     closed by finalize_new_track's le_is_reestablishing_primary path,
+ *     engine_process.c, which now forces the primary's OWN recording to
+ *     exactly one base loop whenever it lands here). */
+static inline int le_sync_quantize_active(le_engine* e, int32_t ch) {
+  const int32_t mode = load_i32(&e->a_looper_mode);
+  if (mode != LE_LOOPER_MODE_SYNC && mode != LE_LOOPER_MODE_BAND) return 0;
+  const int32_t primary = load_i32(&e->a_primary_track);
+  if (primary < 0 || primary >= e->track_count || primary == ch) return 0;
+  le_track* pt = &e->tracks[primary];
+  if (load_i32(&pt->lanes[0].a_len) <= 0) return 0;
+  if (load_i32(&pt->a_sync_divisor) != 0) return 0;
+  return load_i32(&pt->a_multiple) == 1;
+}
+
+/* float/double <-> atomic-bits helpers. The published metering/gain fields are
+ * stored as _Atomic uint32_t/uint64_t bit patterns; these reinterpret without a
+ * strict-aliasing violation. `static inline` here (like load_i32/store_i32) so
+ * every engine TU shares one copy with no external symbol. */
+static inline uint32_t f32_to_bits(float v) {
+  uint32_t b;
+  memcpy(&b, &v, sizeof(b));
+  return b;
+}
+static inline float bits_to_f32(uint32_t b) {
+  float v;
+  memcpy(&v, &b, sizeof(v));
+  return v;
+}
+static inline uint64_t f64_to_bits(double v) {
+  uint64_t b;
+  memcpy(&b, &v, sizeof(b));
+  return b;
+}
+static inline double bits_to_f64(uint64_t b) {
+  double v;
+  memcpy(&v, &b, sizeof(v));
+  return v;
+}
+static inline void store_f32(_Atomic uint32_t* slot, float v) {
+  atomic_store_explicit(slot, f32_to_bits(v), memory_order_relaxed);
+}
+static inline float load_f32(_Atomic uint32_t* slot) {
+  return bits_to_f32(atomic_load_explicit(slot, memory_order_relaxed));
+}
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* SEGNO_ENGINE_PRIVATE_H */

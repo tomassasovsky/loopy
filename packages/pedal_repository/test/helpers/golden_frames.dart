@@ -2,7 +2,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 
 /// The canonical set of [PedalStateFrame]s captured as golden SysEx fixtures.
 ///
-/// These are the **shared contract** between loopy's codec and the pedal
+/// These are the **shared contract** between segno's codec and the pedal
 /// firmware: the committed `test/fixtures/<name>.syx` bytes are regenerated
 /// from this catalog (see `tool/generate_golden_fixtures.dart`) and asserted by
 /// `test/pedal_codec_golden_test.dart`. The firmware's host-compiled test links

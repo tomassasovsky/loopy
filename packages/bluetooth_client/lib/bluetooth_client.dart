@@ -1,4 +1,4 @@
-/// Data client for appliance Bluetooth (`loopy-bt-ctl`).
+/// Data client for appliance Bluetooth (`segno-bt-ctl`).
 library;
 
 export 'src/bluetooth_client.dart' show BluetoothClient;

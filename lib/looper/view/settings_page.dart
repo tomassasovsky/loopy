@@ -3,22 +3,22 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/audio_setup/audio_setup.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/cubit/high_contrast_cubit.dart';
-import 'package:loopy/looper/cubit/refresh_rate_cubit.dart';
-import 'package:loopy/looper/cubit/tracks_cubit.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
-import 'package:loopy/looper/view/looper_mode_section.dart';
-import 'package:loopy/looper/view/rename_track_dialog.dart';
-import 'package:loopy/looper/view/tempo_settings_section.dart';
-import 'package:loopy/setup/setup_surface.dart';
-import 'package:loopy/theme/surface_theme.dart';
-import 'package:loopy/update/cubit/update_cubit.dart';
-import 'package:loopy/update/view/updates_settings_section.dart';
-import 'package:loopy/visualizer/visualizer.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/high_contrast_cubit.dart';
+import 'package:segno/looper/cubit/refresh_rate_cubit.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/view/looper_mode_section.dart';
+import 'package:segno/looper/view/rename_track_dialog.dart';
+import 'package:segno/looper/view/tempo_settings_section.dart';
+import 'package:segno/setup/setup_surface.dart';
+import 'package:segno/theme/surface_theme.dart';
+import 'package:segno/update/cubit/update_cubit.dart';
+import 'package:segno/update/view/updates_settings_section.dart';
+import 'package:segno/visualizer/visualizer.dart';
 
 /// A settings section, shown one at a time and selected from the left rail.
 enum SettingsSection {
@@ -172,7 +172,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final defaultMode = context.watch<ControlCubit>().state.defaultMode;
     final refreshHz = context.watch<RefreshRateCubit>().state;
     return [
-      Text(l10n.settingsViewIntro, style: setupBody),
+      Text(l10n.settingsViewIntro, style: context.setupBody),
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.viewGroupLabel),
       const SizedBox(height: 12),
@@ -206,7 +206,7 @@ class _SettingsPageState extends State<SettingsPage> {
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.looperGroupLabel),
       const SizedBox(height: 12),
-      Text(l10n.defaultModeIntro, style: setupBody),
+      Text(l10n.defaultModeIntro, style: context.setupBody),
       const SizedBox(height: 12),
       SetupOptionRow<InteractionMode>(
         selected: defaultMode,
@@ -227,7 +227,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       ),
       const SizedBox(height: 20),
-      Text(l10n.refreshRateIntro, style: setupBody),
+      Text(l10n.refreshRateIntro, style: context.setupBody),
       const SizedBox(height: 12),
       SetupOptionRow<int>(
         selected: refreshHz,
@@ -267,7 +267,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final tracks = context.watch<TracksCubit>();
     final looperTracks = context.watch<LooperBloc>().state.tracks;
     return [
-      Text(l10n.tracksIntro, style: setupBody),
+      Text(l10n.tracksIntro, style: context.setupBody),
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.tracksGroupLabel),
       const SizedBox(height: 12),
@@ -308,7 +308,7 @@ class _SettingsPageState extends State<SettingsPage> {
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.oneShotGroupLabel),
       const SizedBox(height: 12),
-      Text(l10n.oneShotIntro, style: setupBody),
+      Text(l10n.oneShotIntro, style: context.setupBody),
       const SizedBox(height: 12),
       for (var i = 0; i < looperTracks.length; i++) ...[
         SetupTrackOneShotRow(
@@ -354,16 +354,11 @@ class _SettingsRail extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 9),
-              Text(
-                l10n.settingsKicker,
-                style: setupKicker.copyWith(
-                  color: context.surface.textSecondary,
-                ),
-              ),
+              Text(l10n.settingsKicker, style: context.setupKicker),
             ],
           ),
           const SizedBox(height: 28),
-          Text(l10n.settingsTitle, style: setupTitle),
+          Text(l10n.settingsTitle, style: context.setupTitle),
           const SizedBox(height: 20),
           for (final section in SettingsSection.values)
             // The Updates tab appears only where in-app updates are supported

@@ -3,13 +3,13 @@ import 'dart:developer' as developer;
 import 'dart:io';
 
 /// Durable, size-rotated application logfile. On the appliance the directory
-/// is `$HOME/log` → `/data/log` (see `loopy-kiosk-launch`). Mirrors every line
-/// to `developer.log` / stderr so `journalctl -u loopy.service` still works.
+/// is `$HOME/log` → `/data/log` (see `segno-kiosk-launch`). Mirrors every line
+/// to `developer.log` / stderr so `journalctl -u segno.service` still works.
 class AppLog {
   AppLog._();
 
   /// Current log file name inside the init directory.
-  static const String fileName = 'loopy.log';
+  static const String fileName = 'segno.log';
 
   /// Rotate when the active file reaches this many bytes (~2 MiB).
   static const int maxBytes = 2 * 1024 * 1024;
@@ -24,7 +24,7 @@ class AppLog {
   /// Whether [init] has completed successfully.
   static bool get isInitialized => _initialized;
 
-  /// Creates [directory] if needed and opens `loopy.log` for append. Safe to
+  /// Creates [directory] if needed and opens `segno.log` for append. Safe to
   /// call more than once (subsequent calls are no-ops).
   static Future<void> init({required Directory directory}) async {
     if (_initialized) return;
@@ -42,7 +42,7 @@ class AppLog {
     if (home != null && home.isNotEmpty) {
       return Directory('$home/log');
     }
-    return Directory('${Directory.systemTemp.path}/loopy-log');
+    return Directory('${Directory.systemTemp.path}/segno-log');
   }
 
   /// Informational breadcrumb.
@@ -71,7 +71,7 @@ class AppLog {
       'W' => 900,
       _ => 800,
     };
-    developer.log(message, name: 'loopy', level: logLevel);
+    developer.log(message, name: 'segno', level: logLevel);
     // Intentional journal/stderr mirror for the appliance.
     stderr
       ..writeln(line)
@@ -99,7 +99,7 @@ class AppLog {
     }
   }
 
-  /// `loopy.log` → `.1` → `.2` (drop oldest). Next write recreates `loopy.log`.
+  /// `segno.log` → `.1` → `.2` (drop oldest). Next write recreates `segno.log`.
   static void _rotateSync() {
     final dir = _directory;
     if (dir == null) return;

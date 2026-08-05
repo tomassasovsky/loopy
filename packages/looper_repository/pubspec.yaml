@@ -1,6 +1,6 @@
 name: looper_repository
 description: >-
-  Repository layer that owns the loopy audio engine and projects its snapshots
+  Repository layer that owns the segno audio engine and projects its snapshots
   into looper domain models, exposing a Stream<LooperState> and commands.
 version: 0.1.0
 publish_to: none
@@ -13,10 +13,9 @@ dependencies:
   equatable: ^2.0.7
   flutter:
     sdk: flutter
-  loopy_engine:
-    path: ../loopy_engine
   meta: ^1.16.0
-
+  segno_engine:
+    path: ../segno_engine
 dev_dependencies:
   flutter_test:
     sdk: flutter

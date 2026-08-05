@@ -15,7 +15,7 @@ date: 2026-06-08
 
 ## Overview
 
-Build **Loopy**, a cross-platform desktop loopstation modeled on Ed Sheeran's original *Chewie 2*. The app records, overdubs, loops, and mixes multiple audio tracks in real time through a professional external audio interface, with a Chewie-2-style multi-channel track grid on the primary screen and a full-screen waveform visualizer on a second screen.
+Build **Segno**, a cross-platform desktop loopstation modeled on Ed Sheeran's original *Chewie 2*. The app records, overdubs, loops, and mixes multiple audio tracks in real time through a professional external audio interface, with a Chewie-2-style multi-channel track grid on the primary screen and a full-screen waveform visualizer on a second screen.
 
 The non-negotiable constraint is **ultra-low, jitter-free audio latency**. Flutter/Dart alone cannot meet this — a garbage-collected runtime must never touch the audio callback thread. The architecture therefore splits cleanly:
 
@@ -43,7 +43,7 @@ A VGV layered monorepo where the **data layer's lowest tier is a native FFI plug
 
 ```text
         ┌────────────────────────── Flutter (UI isolate) ──────────────────────────┐
-        │  Presentation ► Bloc ► Repository ► loopy_engine (Dart FFI API)           │
+        │  Presentation ► Bloc ► Repository ► segno_engine (Dart FFI API)           │
         └───────────────┬───────────────────────────────────────────▲──────────────┘
             commands     │ (lock-free SPSC command ring)              │ snapshots (lock-free)
                          ▼                                            │
@@ -68,9 +68,9 @@ A VGV layered monorepo where the **data layer's lowest tier is a native FFI plug
 VGV four-layer layered monorepo. The only deviation from the canonical "pure-Dart data packages" rule is that the lowest data package is necessarily a **Flutter FFI plugin** (it bundles native platform code) — which the VGV data-layer definition explicitly allows ("platform plugins").
 
 ```text
-loopy/
+segno/
 ├── native/
-│   └── loopy_engine_core/                  # Hand-written C engine (miniaudio vendored)
+│   └── segno_engine_core/                  # Hand-written C engine (miniaudio vendored)
 │       ├── src/
 │       │   ├── engine.c / engine.h         # device lifecycle, callback, mix/record
 │       │   ├── track.c / track.h           # per-track buffer, overdub, undo stack
@@ -79,9 +79,9 @@ loopy/
 │       │   └── waveform.c / .h              # peak/RMS downsampling (non-RT thread)
 │       └── third_party/miniaudio/miniaudio.h
 ├── packages/
-│   ├── loopy_engine/                       # DATA — Flutter FFI plugin (ffigen bindings)
-│   │   ├── lib/ (loopy_engine.dart + src/) # AudioEngine Dart API + generated bindings
-│   │   ├── src/ (CMakeLists.txt)           # builds native/loopy_engine_core
+│   ├── segno_engine/                       # DATA — Flutter FFI plugin (ffigen bindings)
+│   │   ├── lib/ (segno_engine.dart + src/) # AudioEngine Dart API + generated bindings
+│   │   ├── src/ (CMakeLists.txt)           # builds native/segno_engine_core
 │   │   ├── macos/ ios?/windows/linux/      # plugin platform glue
 │   │   └── ffigen.yaml
 │   ├── midi_client/                        # DATA — USB-MIDI input (FFI: RtMidi, or plugin)
@@ -108,10 +108,10 @@ loopy/
 
 | Layer | Package / location | Responsibility |
 | --- | --- | --- |
-| **Data** | `packages/loopy_engine` (FFI plugin) | Typed Dart API over the native engine: `start/stop`, device enum, `armTrack`, `record/overdub/stop/clear/undo`, `setTrackVolume/Mute`, `setTempo`; exposes `EngineSnapshot` reads + waveform peaks. ffigen-generated bindings. |
+| **Data** | `packages/segno_engine` (FFI plugin) | Typed Dart API over the native engine: `start/stop`, device enum, `armTrack`, `record/overdub/stop/clear/undo`, `setTrackVolume/Mute`, `setTempo`; exposes `EngineSnapshot` reads + waveform peaks. ffigen-generated bindings. |
 | **Data** | `packages/midi_client` | Enumerate MIDI inputs, stream raw `MidiMessage` (Note/CC). |
 | **Data** | `packages/gpio_client` | Read GPIO pins on Pi (libgpiod via FFI); debounced edge events. No-op/unavailable on non-Pi. |
-| **Data** | `packages/local_storage_client` | Read/write `.loopy` project files (JSON manifest) and per-track WAV/PCM blobs. |
+| **Data** | `packages/local_storage_client` | Read/write `.segno` project files (JSON manifest) and per-track WAV/PCM blobs. |
 | **Repository** | `packages/looper_repository` | Owns `AudioEngine`; translates `EngineSnapshot` → domain (`Track`, `LoopSession`, `TransportState`, `EngineStatus`); exposes `Stream<LooperState>` + command methods. The single source of looper truth. |
 | **Repository** | `packages/controller_repository` | Combines `midi_client` + `gpio_client`; applies the active `ControllerMapping`; emits hardware-agnostic `Stream<ControllerEvent>` (e.g. `FootswitchPressed(channel)`). MIDI-learn capture. |
 | **Repository** | `packages/session_repository` | Save/load `LoopSession` via `local_storage_client`; export mixdown/stems to WAV. |
@@ -203,8 +203,8 @@ Use [`desktop_multi_window`](https://pub.dev/packages/desktop_multi_window): the
 #### Phase 1: Foundation & latency gate
 
 - **Tasks / deliverables**
-  - Scaffold monorepo: `very_good create flutter_app loopy` + `dart_package`/FFI-plugin packages.
-  - Vendor `miniaudio.h`; create `loopy_engine` FFI plugin with CMake builds for macOS (CoreAudio), Windows (WASAPI; ASIO optional flag), Linux (ALSA + JACK).
+  - Scaffold monorepo: `very_good create flutter_app segno` + `dart_package`/FFI-plugin packages.
+  - Vendor `miniaudio.h`; create `segno_engine` FFI plugin with CMake builds for macOS (CoreAudio), Windows (WASAPI; ASIO optional flag), Linux (ALSA + JACK).
   - Native PoC: **duplex passthrough** (input → output) + a round-trip latency measurement harness (loopback cable / virtual loopback).
   - `ffigen.yaml` + generated bindings; minimal `AudioEngine.start/stop` Dart API; "hello duplex" smoke app.
 - **Success criteria (GATE)**
@@ -244,7 +244,7 @@ Use [`desktop_multi_window`](https://pub.dev/packages/desktop_multi_window): the
 #### Phase 4: Sessions, hardware abstraction (Pi), polish
 
 - **Tasks / deliverables**
-  - `session_repository` + `local_storage_client`: save/load `.loopy` sessions; export mixdown + per-track WAV stems.
+  - `session_repository` + `local_storage_client`: save/load `.segno` sessions; export mixdown + per-track WAV stems.
   - `gpio_client` + `controller_repository` GPIO backend; Raspberry Pi (linux-arm64) build of the engine; pins→actions mapping (unified rig).
   - Robustness: audio device hot-plug/disconnect handling, sample-rate mismatch guard, xrun reporting, latency-calibration UI (input-monitoring + record-offset compensation).
   - Chewie-2 visual theme (Material 3 `ThemeExtension`), accessibility pass, golden tests.
@@ -351,7 +351,7 @@ Use [`desktop_multi_window`](https://pub.dev/packages/desktop_multi_window): the
 ## Documentation Plan
 
 - `README.md`: supported platforms, audio-interface setup, latency tuning guide.
-- `packages/loopy_engine/README.md`: FFI boundary contract, RT-safety rules, build instructions per platform.
+- `packages/segno_engine/README.md`: FFI boundary contract, RT-safety rules, build instructions per platform.
 - Architecture decision record: native-engine + FFI rationale, multi-window approach.
 - User guide: looping workflow, MIDI-learn, Pi/GPIO wiring map.
 

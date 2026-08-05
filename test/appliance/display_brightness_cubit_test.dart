@@ -1,8 +1,8 @@
 import 'package:bloc_test/bloc_test.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/appliance/display_brightness_cubit.dart';
-import 'package:loopy/appliance/software_brightness.dart';
+import 'package:segno/appliance/display_brightness_cubit.dart';
+import 'package:segno/appliance/software_brightness.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';

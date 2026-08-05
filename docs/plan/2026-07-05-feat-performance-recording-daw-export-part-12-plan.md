@@ -8,7 +8,7 @@ date: 2026-07-05
 
 > **Split note:** part 12 of 12 (umbrella:
 > `2026-07-05-feat-performance-recording-daw-export-plan.md`). The
-> user-locked D-PEDAL scope: full Loopy-pedal parity via a **firmware
+> user-locked D-PEDAL scope: full Segno-pedal parity via a **firmware
 > wire-contract extension** — sequenced last so the rest of the stack never
 > couples to a firmware release.
 

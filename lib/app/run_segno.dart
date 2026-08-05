@@ -1,0 +1,183 @@
+import 'package:bluetooth_repository/bluetooth_repository.dart';
+import 'package:brightness_client/brightness_client.dart';
+import 'package:controller_repository/controller_repository.dart';
+import 'package:desktop_multi_window/desktop_multi_window.dart';
+import 'package:flutter/widgets.dart';
+import 'package:looper_repository/looper_repository.dart';
+import 'package:midi_device_repository/midi_device_repository.dart';
+import 'package:pedal_repository/pedal_repository.dart';
+import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/audio_bootstrap.dart';
+import 'package:segno/app/monitor_migration.dart';
+import 'package:segno/app/view/app.dart';
+import 'package:segno/bootstrap.dart';
+import 'package:segno/common/pedal_device.dart';
+import 'package:segno/session_directory.dart';
+import 'package:segno/update/update_backend.dart';
+import 'package:segno/visualizer/visualizer.dart';
+import 'package:segno/visualizer/waveform_window_args.dart';
+import 'package:segno/window/window_chrome.dart';
+import 'package:session_repository/session_repository.dart';
+import 'package:settings_repository/settings_repository.dart';
+import 'package:update_repository/update_repository.dart';
+import 'package:wifi_repository/wifi_repository.dart';
+
+/// Shared entrypoint for every flavor: routes the secondary waveform window,
+/// otherwise wires the repositories, auto-starts the engine (from the saved
+/// config or a first-run default), and runs the [App] straight on the looper.
+///
+/// Native flavors call this with no overrides and get the native audio engine
+/// (constructed behind [createNativeAudioEngine], so this file never names or
+/// imports the engine package). The mock flavor injects both repositories
+/// (sharing one mock engine) plus the [startConfig] to open straight into the
+/// looper; injecting one repository requires the other.
+Future<void> runSegno(
+  List<String> args, {
+  LooperRepository? repository,
+  SessionRepository? sessionRepository,
+  PerformanceRepository? performanceRepository,
+  EngineConfig? startConfig,
+}) async {
+  assert(
+    (repository == null) == (sessionRepository == null) &&
+        (repository == null) == (performanceRepository == null),
+    'inject all three repositories together or none',
+  );
+  WidgetsFlutterBinding.ensureInitialized();
+  // Durable logfile under $HOME/log (→ /data/log on the appliance). Before
+  // audio auto-start so open failures leave a breadcrumb.
+  await initAppLogging();
+
+  final windowController = await WindowController.fromCurrentEngine();
+  if (WaveformWindowArgs.isWaveformWindow(windowController.arguments)) {
+    await runWaveformWindow(windowController);
+    return;
+  }
+
+  // Hot restart resets Dart state while native sub-windows survive.
+  await DesktopMultiWindowWaveformService.closeOrphanWindows();
+
+  await configureSegnoDesktopWindow();
+  // On a multi-display console the output waveform fills the secondary, so fill
+  // the primary with the control surface too. Single-monitor / dev runs keep a
+  // normal window. Toggle off any time with `F`.
+  await applyMainWindowFullscreen(
+    WidgetsBinding.instance.platformDispatcher.displays.length,
+  );
+
+  // One engine instance, shared by the looper (which owns its lifecycle) and
+  // the session repository (which only reads/writes its loop PCM). On the
+  // native path the engine is held by its [AudioEngine] interface — its
+  // concrete type is never named here, keeping segno_engine transitive.
+  final LooperRepository looper;
+  final SessionRepository session;
+  final PerformanceRepository performance;
+  if (repository == null ||
+      sessionRepository == null ||
+      performanceRepository == null) {
+    final engine = createNativeAudioEngine();
+    looper = LooperRepository(engine: engine);
+    session = SessionRepository(
+      engine: engine,
+      sessionsRoot: defaultSessionsRoot,
+    );
+    performance = PerformanceRepository(
+      engine: engine,
+      exportsRoot: defaultExportDirectory,
+    );
+  } else {
+    looper = repository;
+    session = sessionRepository;
+    performance = performanceRepository;
+  }
+
+  // The native MIDI source feeds the controller pipeline; it is null when no
+  // MIDI backend is available (e.g. the mock flavor), in which case the looper
+  // runs with no controller source. The waveform sub-window already returned
+  // above, so it never opens MIDI.
+  final midiSource = createNativeMidiSource();
+  final controllerRepository = ControllerRepository(
+    sources: [?midiSource],
+    // MIDI-learn never captures the Segno pedal's own protocol traffic (B8):
+    // the pedal shares this input stream, so a stomp mid-capture would
+    // otherwise bind a footswitch the app already drives end to end. The
+    // predicate is stated against the real note/CC tables in the package that
+    // owns them.
+    learnIgnore: isPedalProtocolInput,
+  );
+  // The bidirectional pedal reuses the MIDI source's single input capture and
+  // opens its own MIDI output for LED feedback. The repository is wrapped in a
+  // SimulatorPedalTransport so the on-screen faceplate is always available (it
+  // decorates a no-op transport when there is no MIDI backend); the repo + sim
+  // share one transport graph.
+  final (repo: pedalRepository, sim: pedalSimulator) =
+      createSimAwarePedalRepository(midiSource);
+  final settings = SettingsRepository(store: SharedPreferencesKeyValueStore());
+  // In-app updates. The backend is inert until the appliance/desktop backends
+  // are wired, so the update UI stays hidden on unsupported builds.
+  final updates = UpdateRepository(backend: createPlatformUpdateBackend());
+  final wifi = WifiRepository(client: createWifiClient());
+  final bluetooth = BluetoothRepository(client: createBluetoothClient());
+  final brightness = createBrightnessClient();
+  // Owns the MIDI input device lifecycle (enumerate / open / close, hotplug,
+  // persistence). Borrows the shared [midiSource] (owned by the controller
+  // pipeline) and never disposes it. Held independent of the engine so MIDI
+  // changes never restart audio.
+  final midiDeviceRepository = MidiDeviceRepository(
+    source: midiSource,
+    settings: settings,
+    // Redundant only on a desktop analysis run: the constant is null unless
+    // SEGNO_CONSOLE is defined, and dropping it would disable console
+    // auto-detect entirely.
+    // ignore: avoid_redundant_argument_values
+    autoBindProductNames: kPedalAutoBindProductNames,
+  );
+
+  // One-time courtesy migration from the removed global passthrough monitor to
+  // the per-input routing graph. Runs before the engine-start branch (and so on
+  // the mock path and a first launch too), independent of whether a saved audio
+  // config exists.
+  await runMonitorMigration(settings);
+
+  // Auto-start the engine and lands directly on the looper (no first-run gate).
+  // The mock flavor opens a deterministic default config; the native flavor
+  // auto-starts from the saved config or a first-run default and returns the
+  // ASIO drivers enumerated at startup for the audio-setup picker cache.
+  var asioDrivers = const <AudioDevice>[];
+  // The pinned config a boot auto-start couldn't open (interface unplugged at
+  // boot); the audio-recovery cubit auto-starts when it reappears.
+  EngineConfig? audioRecoveryConfig;
+  if (startConfig != null) {
+    looper.startEngine(startConfig);
+  } else {
+    final result = await tryAutoStartEngine(
+      repository: looper,
+      settings: settings,
+    );
+    asioDrivers = result.asioDrivers;
+    audioRecoveryConfig = result.recoveryConfig;
+  }
+
+  await bootstrap(
+    () => App(
+      repository: looper,
+      controllerRepository: controllerRepository,
+      midiDeviceRepository: midiDeviceRepository,
+      pedalRepository: pedalRepository,
+      pedalSimulator: pedalSimulator,
+      displayCount: () =>
+          WidgetsBinding.instance.platformDispatcher.displays.length,
+      audioRecoveryConfig: audioRecoveryConfig,
+      settings: settings,
+      waveformWindow: DesktopMultiWindowWaveformService(),
+      sessionRepository: session,
+      performanceRepository: performance,
+      exportDirectory: defaultExportDirectory,
+      initialAsioDrivers: asioDrivers,
+      updates: updates,
+      wifi: wifi,
+      bluetooth: bluetooth,
+      brightness: brightness,
+    ),
+  );
+}

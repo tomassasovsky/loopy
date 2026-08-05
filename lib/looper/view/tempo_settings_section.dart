@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/cubit/tempo_cubit.dart';
-import 'package:loopy/setup/setup_surface.dart';
-import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/tempo_cubit.dart';
+import 'package:segno/setup/setup_surface.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 /// The click's own gain-stage ceiling — matches the engine's `LE_MAX_GAIN`
 /// (2.0, +6.02 dB headroom above unity), the same ceiling every other volume
@@ -47,7 +47,7 @@ class TempoSettingsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(l10n.tempoSettingsIntro, style: setupBody),
+        Text(l10n.tempoSettingsIntro, style: context.setupBody),
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.tempoGroupLabel),
         const SizedBox(height: 12),
@@ -57,7 +57,7 @@ class TempoSettingsSection extends StatelessWidget {
           onTap: cubit.tapTempo,
         ),
         const SizedBox(height: 16),
-        Text(l10n.timeSignatureLabel, style: setupBody),
+        Text(l10n.timeSignatureLabel, style: context.setupBody),
         const SizedBox(height: 12),
         _TimeSignaturePicker(
           tsNum: transport.tsNum,
@@ -76,7 +76,7 @@ class TempoSettingsSection extends StatelessWidget {
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.quantizeGroupLabel),
         const SizedBox(height: 12),
-        Text(l10n.quantizeDivIntro, style: setupBody),
+        Text(l10n.quantizeDivIntro, style: context.setupBody),
         const SizedBox(height: 12),
         _QuantizeDivisionPicker(
           selected: transport.quantizeDiv,
@@ -85,7 +85,7 @@ class TempoSettingsSection extends StatelessWidget {
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.clickGroupLabel),
         const SizedBox(height: 12),
-        Text(l10n.clickModeIntro, style: setupBody),
+        Text(l10n.clickModeIntro, style: context.setupBody),
         const SizedBox(height: 12),
         _ClickSettingsGroup(
           mode: transport.clickMode,
@@ -99,7 +99,7 @@ class TempoSettingsSection extends StatelessWidget {
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.countInGroupLabel),
         const SizedBox(height: 12),
-        Text(l10n.countInIntro, style: setupBody),
+        Text(l10n.countInIntro, style: context.setupBody),
         const SizedBox(height: 12),
         _CountInPicker(
           bars: transport.countInBars,
@@ -406,7 +406,7 @@ class _ClickSettingsGroup extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 16),
-        Text(l10n.clickOutputLabel, style: setupBody),
+        Text(l10n.clickOutputLabel, style: context.setupBody),
         const SizedBox(height: 12),
         SetupChannelChips(
           channelCount: outputChannelCount,
@@ -444,7 +444,7 @@ class _ClickVolumeSlider extends StatelessWidget {
                 style: TextStyle(color: surface.textPrimary, fontSize: 13),
               ),
               SliderTheme(
-                data: setupSliderTheme,
+                data: context.setupSliderTheme,
                 child: Slider(
                   key: const Key('tempoSettings_clickVolume_slider'),
                   value: clamped,

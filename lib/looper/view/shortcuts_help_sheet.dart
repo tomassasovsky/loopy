@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:loopy/l10n/l10n.dart';
+import 'package:segno/l10n/l10n.dart';
 
 /// Opens the keyboard-shortcut legend for the Big Picture performance surface
 /// as a dismissible [AlertDialog] (Esc / tap-outside close it). Surfaced by the
@@ -39,7 +39,7 @@ class _ShortcutsHelpDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    // Loopy targets Windows/Linux too, so the modifier must not hardcode ⌘.
+    // Segno targets Windows/Linux too, so the modifier must not hardcode ⌘.
     final isMac = defaultTargetPlatform == TargetPlatform.macOS;
     // On macOS the modifier abuts the key (⌘Z); elsewhere it joins with `+`.
     String combo(String key) => isMac ? '⌘$key' : 'Ctrl+$key';

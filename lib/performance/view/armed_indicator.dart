@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/performance/cubit/performance_recorder_cubit.dart';
-import 'package:loopy/theme/theme.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
+import 'package:segno/theme/theme.dart';
 
 /// A persistent elapsed-time readout shown while performance recording is
 /// armed — collapses to nothing otherwise. Self-contained (mirrors the

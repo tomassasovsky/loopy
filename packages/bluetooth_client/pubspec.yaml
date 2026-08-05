@@ -1,6 +1,6 @@
 name: bluetooth_client
 description: >-
-  Data client for Loopy appliance Bluetooth (`loopy-bt-ctl`). Pure Dart —
+  Data client for Segno appliance Bluetooth (`segno-bt-ctl`). Pure Dart —
   Process.run + JSON parse only; no Flutter dependency.
 version: 0.1.0
 publish_to: none

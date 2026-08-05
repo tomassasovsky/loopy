@@ -22,7 +22,7 @@ this part carries `Closes #263`** — every other PR in the series carries
 
 ## Overview
 
-Loopy as MIDI clock slave: a native follower that timestamps 0xF8 arrivals,
+Segno as MIDI clock slave: a native follower that timestamps 0xF8 arrivals,
 smooths tempo, and drives the engine grid directly. Dart sees only derived
 state (BPM, locked/lost). While slaved: manual tempo disabled, Sync Audio to
 Tempo forced on (D3).
@@ -33,7 +33,7 @@ Tempo forced on (D3).
   - Lift the real-time-byte drop (`midi.c:84,99-100`) **for the follower
     only** (0xF8/FA/FB/FC routed to the follower; still never delivered to
     the Dart controller stream).
-  - Follower in `packages/loopy_engine/src/midi/`: interval smoothing
+  - Follower in `packages/segno_engine/src/midi/`: interval smoothing
     (window spec'd in-PR), freewheel on >250 ms silence (clock-lost), MIDI
     Stop = transport stop distinct from loss (D14); lock-free state into the
     engine; in-flight recordings finalize on the frozen grid; ffigen regen
@@ -64,22 +64,22 @@ Tempo forced on (D3).
 ## Success Criteria
 
 ```success-criteria
-GOAL: Loopy records bar-locked against an external MIDI clock under the Sheeran slave restrictions; grid-off behavior unchanged.
+GOAL: Segno records bar-locked against an external MIDI clock under the Sheeran slave restrictions; grid-off behavior unchanged.
 
 SUCCESS CRITERIA:
-- Existing suites unchanged; follower robustness tests (jitter, dropout, Stop-vs-loss) pass | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- ASAN-clean | verify: EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g" bash packages/loopy_engine/src/test/run_native_tests.sh
+- Existing suites unchanged; follower robustness tests (jitter, dropout, Stop-vs-loss) pass | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- ASAN-clean | verify: EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g" bash packages/segno_engine/src/test/run_native_tests.sh
 - Dart suites green with coverage gates | verify: /Users/Tomas/development/flutter/bin/flutter analyze && /Users/Tomas/development/flutter/bin/flutter test --coverage
-- Real-time bytes still never reach the Dart controller stream (regression guard) | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
+- Real-time bytes still never reach the Dart controller stream (regression guard) | verify: bash packages/segno_engine/src/test/run_native_tests.sh
 - Slaved to Ableton over USB-MIDI: records bar-locked, tempo controls disabled, freewheel on master stop mid-record | verify: manual 1. master Ableton 2. record a loop slaved 3. confirm bar lock + disabled controls 4. stop master mid-record, confirm freewheel finalize
 
 NON-GOALS: SPP, MTC, Ableton Link, drift-tolerant receive without stretch.
 
-VERIFICATION COMMAND: bash packages/loopy_engine/src/test/run_native_tests.sh && /Users/Tomas/development/flutter/bin/flutter analyze && /Users/Tomas/development/flutter/bin/flutter test --coverage
+VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && /Users/Tomas/development/flutter/bin/flutter analyze && /Users/Tomas/development/flutter/bin/flutter test --coverage
 ```
 
 ## References
 
 Index plan (architecture §5, D3, D14, D20); real-time drop
-`packages/loopy_engine/src/midi/midi.c:84,99-100`; B1 spec doc (part 2) for
+`packages/segno_engine/src/midi/midi.c:84,99-100`; B1 spec doc (part 2) for
 §6.2.1 arming table.

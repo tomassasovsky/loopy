@@ -1,9 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/app/console_audio_devices.dart';
-import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
-import 'package:loopy/common/console_mode.dart';
-import 'package:loopy/logging/app_log.dart';
+import 'package:segno/app/console_audio_devices.dart';
+import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
+import 'package:segno/common/console_mode.dart';
+import 'package:segno/logging/app_log.dart';
 // Settings owns its own AudioBackend; mapped to/from the looper domain backend
 // here. Prefixed only for that enum so the unprefixed one is the domain type.
 import 'package:settings_repository/settings_repository.dart' hide AudioBackend;

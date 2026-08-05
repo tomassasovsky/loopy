@@ -17,7 +17,7 @@ topic: wav-codec-encode-size-overflow-guard
 RIFF chunk size and `data` chunk size as 32-bit little-endian fields via
 `ByteData.setUint32`. Dart's `setUint32` silently wraps values that exceed
 `0xFFFFFFFF` instead of throwing, so once encoded audio exceeds roughly 4 GiB
-(a few hours of recording — realistic for Loopy's own performance-recording
+(a few hours of recording — realistic for Segno's own performance-recording
 feature), the header lies about the file's size while the actual byte buffer
 is still the correct, full length. Any reader that trusts the header
 (including this package's own `decodeFloat32`, which derives sample count

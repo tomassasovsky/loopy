@@ -43,7 +43,7 @@ class PedalState extends Equatable {
   final int? firmwareVersion;
 
   /// Whether a REAL bound pedal negotiates below the newest protocol, so the
-  /// codec is downgrading what loopy sends it (flow err-4: FX mode arrives as
+  /// codec is downgrading what segno sends it (flow err-4: FX mode arrives as
   /// mute, chain LEDs as green).
   ///
   /// DERIVED in the cubit from `PedalRepository.targetProtocolVersion` — the

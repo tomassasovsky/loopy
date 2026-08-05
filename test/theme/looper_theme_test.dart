@@ -3,8 +3,8 @@ import 'dart:math' show sqrt;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
-import 'package:loopy/looper/model/interaction_mode.dart';
-import 'package:loopy/theme/theme.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/theme/theme.dart';
 
 void main() {
   group('peakMeterFill', () {
@@ -28,7 +28,10 @@ void main() {
     const theme = LooperTheme(
       tileBackground: Color(0xFF111111),
       tileBorder: Color(0xFF222222),
-      waveformColor: Color(0xFF00E5FF),
+      waveformColors: {
+        LooperMeterState.playing: Color(0xFF4CDA4A),
+        LooperMeterState.recording: Color(0xFFFF1744),
+      },
       waveformBackground: Color(0xFF000000),
       recordColor: Color(0xFFFF1744),
       fxColor: Color(0xFF3B82F6),
@@ -95,11 +98,28 @@ void main() {
       );
     });
 
+    test('waveformColor picks the color for the meter state', () {
+      expect(
+        theme.waveformColor(LooperMeterState.playing),
+        const Color(0xFF4CDA4A),
+      );
+      expect(
+        theme.waveformColor(LooperMeterState.recording),
+        const Color(0xFFFF1744),
+      );
+      // A state the table omits resolves to transparent, matching the
+      // meter/indicator tables rather than silently substituting an accent.
+      expect(
+        theme.waveformColor(LooperMeterState.muted),
+        Colors.transparent,
+      );
+    });
+
     test('indicatorColor resolves to transparent when the table omits it', () {
       const sparse = LooperTheme(
         tileBackground: Color(0xFF111111),
         tileBorder: Color(0xFF222222),
-        waveformColor: Color(0xFF00E5FF),
+        waveformColors: {},
         waveformBackground: Color(0xFF000000),
         recordColor: Color(0xFFFF1744),
         fxColor: Color(0xFF3B82F6),
@@ -114,7 +134,7 @@ void main() {
     test('copyWith overrides only the given fields', () {
       final updated = theme.copyWith(recordColor: const Color(0xFFABCDEF));
       expect(updated.recordColor, const Color(0xFFABCDEF));
-      expect(updated.waveformColor, theme.waveformColor);
+      expect(updated.waveformColors, theme.waveformColors);
       expect(updated.recordMeterColors, theme.recordMeterColors);
       expect(updated.muteMeterColors, theme.muteMeterColors);
       expect(updated.indicatorColors, theme.indicatorColors);
@@ -131,9 +151,38 @@ void main() {
     });
 
     test('lerp interpolates toward the other theme', () {
-      final other = theme.copyWith(waveformColor: const Color(0xFFFFFFFF));
+      final other = theme.copyWith(recordColor: const Color(0xFFFFFFFF));
       final mid = theme.lerp(other, 1);
-      expect(mid.waveformColor, const Color(0xFFFFFFFF));
+      expect(mid.recordColor, const Color(0xFFFFFFFF));
+    });
+
+    test('lerp carries waveformColors toward the other theme', () {
+      const white = Color(0xFFFFFFFF);
+      final other = theme.copyWith(
+        waveformColors: const {
+          LooperMeterState.playing: white,
+          LooperMeterState.recording: white,
+        },
+      );
+      final end = theme.lerp(other, 1);
+      expect(end.waveformColor(LooperMeterState.playing), white);
+      expect(end.waveformColor(LooperMeterState.recording), white);
+    });
+
+    test('copyWith replaces waveformColors when given', () {
+      final updated = theme.copyWith(
+        waveformColors: const {LooperMeterState.muted: Color(0xFF010203)},
+      );
+      expect(
+        updated.waveformColor(LooperMeterState.muted),
+        const Color(0xFF010203),
+      );
+      // Replacing the table drops the entries it does not restate — the field
+      // is one table, not a per-state merge.
+      expect(
+        updated.waveformColor(LooperMeterState.playing),
+        Colors.transparent,
+      );
     });
 
     test('lerp carries indicatorColors toward the other theme', () {
@@ -327,6 +376,69 @@ void main() {
       expect(theme.muteMeterColors[state], isNotNull);
     }
     expect(AppTheme.neon.useMaterial3, isTrue);
+  });
+
+  test('both palettes map every waveform state', () {
+    // Exit criterion for #499 stage 3b: no state may fall back to the
+    // accessor's transparent default, in either variant — a waveform that
+    // vanishes in one transport state is worse than the single cyan it
+    // replaced.
+    for (final data in [AppTheme.neon, AppTheme.highContrast]) {
+      final theme = data.extension<LooperTheme>()!;
+      for (final state in LooperMeterState.values) {
+        expect(
+          theme.waveformColors[state],
+          isNotNull,
+          reason: 'waveform state $state is unmapped',
+        );
+        expect(theme.waveformColor(state), isNot(Colors.transparent));
+      }
+    }
+  });
+
+  test('the waveform speaks the same legend as the meters', () {
+    // The point of the change: the waveform is not its own accent, it repeats
+    // the stage colours the meters already use. Assert the relationship rather
+    // than the hexes, so a palette migration flows through untouched.
+    for (final data in [AppTheme.neon, AppTheme.highContrast]) {
+      final theme = data.extension<LooperTheme>()!;
+      // The signal-bearing states come straight from the meter table. The
+      // quiet ones deliberately do not: the meter paints stopped and muted the
+      // same plain white and hides `empty` in a dim groove, while the waveform
+      // dims that trio apart by alpha (see below).
+      for (final state in [
+        LooperMeterState.recording,
+        LooperMeterState.overdubbing,
+        LooperMeterState.playing,
+      ]) {
+        expect(
+          theme.waveformColor(state),
+          theme.meterColor(state, mode: InteractionMode.mute),
+          reason: '$state must reuse the meter colour, not a waveform-only one',
+        );
+      }
+      // Recording and playing must not collapse into one another, or the
+      // legend says nothing.
+      expect(
+        theme.waveformColor(LooperMeterState.recording),
+        isNot(theme.waveformColor(LooperMeterState.playing)),
+      );
+      // An empty cursor track reads exactly as a stopped one: both mean "not
+      // playing", which is the only thing this surface can honestly say about
+      // a track while it draws the whole mix. It must NOT borrow the meter's
+      // dim empty groove — that would black out the mix whenever the cursor
+      // sits on a fresh track.
+      expect(
+        theme.waveformColor(LooperMeterState.empty),
+        theme.waveformColor(LooperMeterState.stopped),
+      );
+      expect(
+        theme.waveformColor(LooperMeterState.empty),
+        isNot(
+          theme.meterColor(LooperMeterState.empty, mode: InteractionMode.mute),
+        ),
+      );
+    }
   });
 
   test('both palettes map every indicator state, idle distinct from tile', () {

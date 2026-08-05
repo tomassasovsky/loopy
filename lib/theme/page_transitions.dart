@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 /// Fade + subtle scale-up (96% → 100%) transition math shared by
 /// [FadeScalePageTransitionsBuilder] (the app-wide theme default) and
-/// [desktopPageRoute] (Loopy's own asymmetric desktop timing).
+/// [desktopPageRoute] (Segno's own asymmetric desktop timing).
 Widget buildFadeScaleTransition(Animation<double> animation, Widget child) {
   final curved = CurvedAnimation(parent: animation, curve: Curves.easeInOut);
   return FadeTransition(
@@ -39,7 +39,7 @@ class FadeScalePageTransitionsBuilder extends PageTransitionsBuilder {
 }
 
 /// Pushes [builder] with the same fade + scale-up transition as
-/// [FadeScalePageTransitionsBuilder], but at Loopy's own desktop timing
+/// [FadeScalePageTransitionsBuilder], but at Segno's own desktop timing
 /// (200ms open / 150ms close) rather than `MaterialPageRoute`'s fixed
 /// 300ms — `pageTransitionsTheme` can swap a route's transition *look*
 /// app-wide, but it can't touch a route's duration, so matching the

@@ -1,4 +1,4 @@
-"""SKiDL generator for the Loopy pedal RING/ENCODER base board.
+"""SKiDL generator for the Segno pedal RING/ENCODER base board.
 
 Hosts an off-the-shelf **16-LED WS2812 5050 NeoPixel ring module** (wired to a
 4-pin header) plus the rotary encoder and the link to the main board. Everything
@@ -64,7 +64,7 @@ j1[8] += encSW
 # ---- 4-pin header to the NeoPixel module (3 wires used: 5V/GND/DIN) ---------
 #   1 = +5V_LED   2 = GND   3 = DIN (<- RING_DATA)   4 = DOUT (spare)
 j2 = Part("Connector_Generic", "Conn_01x04",
-          footprint="loopy:WirePads_1x04",   # flat FRONT solder pads (wires to module)
+          footprint="segno:WirePads_1x04",   # flat FRONT solder pads (wires to module)
           ref="J2", value="NEOPIXEL")
 j2[1] += v5
 j2[2] += gnd
@@ -76,7 +76,7 @@ j2[4] += ring_dout
 # to J2 -- same nets, either connection method works). The Out pin carries the
 # spare DOUT net but is mainly there to solder down a 4th post for rigidity.
 j3 = Part("Connector_Generic", "Conn_01x04",
-          footprint="loopy:ModuleMountPads_4", ref="J3", value="RINGPINS")
+          footprint="segno:ModuleMountPads_4", ref="J3", value="RINGPINS")
 j3[1] += ring_data   # DIN
 j3[2] += v5          # +5V
 j3[3] += gnd         # GND
@@ -88,7 +88,7 @@ Part("Device", "C_Polarized", value="470uF",
 
 # ---- EC11 rotary encoder (A,B,C common, S1,S2 switch) ----------------------
 enc = Part("Device", "RotaryEncoder_Switch",
-           footprint="loopy:RotaryEncoder_EC11",   # vendored EC11 (LCSC C202365) + 3D model
+           footprint="segno:RotaryEncoder_EC11",   # vendored EC11 (LCSC C202365) + 3D model
            ref="ENC1")
 enc["A"] += encA
 enc["B"] += encB

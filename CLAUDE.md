@@ -18,7 +18,7 @@ plugin, macOS dylib loading, flavor schemes). They will bite otherwise.
 - Dart/Flutter tests: `/Users/Tomas/development/flutter/bin/flutter test`
   (bare `flutter test`/`dart test` are hook-blocked; the very_good MCP test
   tool is broken in this env)
-- Native engine tests: `bash packages/loopy_engine/src/test/run_native_tests.sh`
+- Native engine tests: `bash packages/segno_engine/src/test/run_native_tests.sh`
 - Pedal firmware contract + protocol-copy drift gate (required when anything
   under `firmware/` or `hardware/firmware/` or the pedal codec changes):
   `bash firmware/test/run_tests.sh`

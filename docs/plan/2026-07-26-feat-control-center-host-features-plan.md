@@ -26,7 +26,7 @@ Presentation (lib/)     → Cubits / tray panels / pages
 Business logic (lib/)   → WifiCubit, BluetoothCubit, SettingsTrayCubit
 Repository (packages/)  → wifi_repository, bluetooth_repository
 Data (packages/)        → wifi_client, bluetooth_client, brightness_client
-Host helpers (Yocto)    → /usr/bin/loopy-{wifi,bt,brightness}-ctl
+Host helpers (Yocto)    → /usr/bin/segno-{wifi,bt,brightness}-ctl
 ```
 
 - `wifi_client` / `bluetooth_client` / `brightness_client` — `Process.run` +
@@ -35,7 +35,7 @@ Host helpers (Yocto)    → /usr/bin/loopy-{wifi,bt,brightness}-ctl
   models from clients
 - Brightness persist stays in `SettingsRepository` (`ui.brightness`); apply via
   `BrightnessClient`
-- App bootstrap (`run_loopy` → `App`) constructs system clients and provides
+- App bootstrap (`run_segno` → `App`) constructs system clients and provides
   repositories via `RepositoryProvider`
 
 ### Control Center UX
@@ -48,7 +48,7 @@ Host helpers (Yocto)    → /usr/bin/loopy-{wifi,bt,brightness}-ctl
 
 ## Yocto
 
-- Helpers + `25-wlan.network` (DHCP) in meta-loopy / loopy-bundle
+- Helpers + `25-wlan.network` (DHCP) in meta-segno / segno-bundle
 - Verbs: wifi `radio on|off` + `enabled` in status; bt `power on|off`
 - `IMAGE_INSTALL:append` — `ddcutil`; RDEPENDS on wpa-supplicant / bluez5
 
@@ -62,5 +62,5 @@ Host helpers (Yocto)    → /usr/bin/loopy-{wifi,bt,brightness}-ctl
 Tuner; BT pairing; labwc/wlr-randr brightness path.
 
 **Follow-up (landed):** WiFi moved from raw `wpa_cli` + networkd to
-**NetworkManager / nmcli** behind the same `loopy-wifi-ctl` boundary for
+**NetworkManager / nmcli** behind the same `segno-wifi-ctl` boundary for
 mature join/retry and clearer wrong-password errors.

@@ -105,7 +105,7 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter analyze lib/s
   helper that wires them into a `SessionCubit`. The new regression test
   should reuse this `build()` helper and mocking convention rather than
   inventing a new setup.
-- **Loopy test-runner gotcha** (from project memory): the `very_good` MCP
+- **Segno test-runner gotcha** (from project memory): the `very_good` MCP
   test runner is broken for this repo; use the absolute Flutter binary path
   (`/Users/Tomas/development/flutter/bin/flutter test ...`) instead.
 

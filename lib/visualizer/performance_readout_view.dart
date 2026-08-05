@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/theme/theme.dart';
-import 'package:loopy/visualizer/performance_readout.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/visualizer/performance_readout.dart';
 
 /// The 7" screen's permanent performance surface: what every track is doing,
 /// the tempo, and what a footswitch press means right now — with the waveform

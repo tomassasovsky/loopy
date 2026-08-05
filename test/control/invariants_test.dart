@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
 
 /// Direct unit tests for the control-surface invariant spec: each rule is
 /// exercised with a satisfied and a violated synthetic context. The sequence

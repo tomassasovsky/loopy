@@ -15,7 +15,7 @@ date: 2026-07-04
 ## Overview
 
 Add a **named-session catalog** to `SessionRepository`: enumerate, resolve,
-rename, and delete `.loopy` bundles under a `sessions/<name>/` root, plus a
+rename, and delete `.segno` bundles under a `sessions/<name>/` root, plus a
 `SessionSummary` list model and a slug/validate helper. The existing pure
 path-addressed `read(dir)` / `save(dir, {chains})` / `exportMixdown/
 exportStems(path)` are **left exactly as they are** — the catalog is added
@@ -35,7 +35,7 @@ the path into those unchanged methods.
 - `packages/session_repository/lib/src/session_exception.dart` — sealed
   `SessionException`; add one variant.
 - `lib/session_directory.dart` — the sessions root `<documents>/sessions` is a
-  *sibling* of the legacy `<documents>/loopy_session`, so the old bundle is
+  *sibling* of the legacy `<documents>/segno_session`, so the old bundle is
   never enumerated. (The resolver rename lands in part 2/3; part 1's catalog is
   handed a root path in tests.)
 

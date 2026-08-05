@@ -1,5 +1,5 @@
-import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 /// Shared visual language for the Signal surface — deliberately calm and
 /// native. Monospace is reserved for genuine numerics (dB, `%`, counts, channel
@@ -24,9 +24,9 @@ RoundedRectangleBorder signalMenuShape(SurfaceTheme surface) =>
       side: BorderSide(color: surface.line),
     );
 
-/// A monospace text style (IBM Plex Mono) for **numerics and machine readouts
-/// only** — dB values, `%`, counts, channel ids. Section labels and prose use
-/// [signalLabel] instead.
+/// A monospace text style ([SurfaceTheme.monoFont]) for **numerics and
+/// machine readouts only** — dB values, `%`, counts, channel ids. Section
+/// labels and prose use [signalLabel] instead.
 TextStyle signalMono({
   required Color color,
   double size = 11,

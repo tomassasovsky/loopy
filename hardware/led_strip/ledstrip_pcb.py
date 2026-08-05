@@ -1,7 +1,7 @@
-"""loopy LED strip — parametric chainable WS2812B segment PCB.
+"""segno LED strip — parametric chainable WS2812B segment PCB.
 
 Generates a **manufacturing package** for one 16 x 8 mm single-LED indicator
-puck for the VAMP console: ONE board per indicator pedal (behind the
+puck for the Segno console: ONE board per indicator pedal (behind the
 faceplate's small pill diffuser slot), 1x WS2812B 5050 addressable LED with
 100nF decoupling, castellated half-hole pads on both 8 mm ends. Boards
 daisy-chain pedal-to-pedal with three short wires (5V / data / GND) soldered
@@ -38,8 +38,8 @@ Everything is driven by pcbnew (KiCad 10) — run with KiCad's bundled python:
 
     /Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3 ledstrip_pcb.py
 
-Outputs (./out): loopy_led_strip.kicad_pcb, gerbers/ + drill files, and
-loopy_led_strip_gerbers.zip ready to upload to JLCPCB.
+Outputs (./out): segno_led_strip.kicad_pcb, gerbers/ + drill files, and
+segno_led_strip_gerbers.zip ready to upload to JLCPCB.
 """
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ import pcbnew
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "out")
-BOARD_PATH = os.path.join(OUT, "loopy_led_strip.kicad_pcb")
+BOARD_PATH = os.path.join(OUT, "segno_led_strip.kicad_pcb")
 
 KICAD_CLI = "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli"
 KICAD_FP = "/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints"
@@ -405,7 +405,7 @@ def build() -> pcbnew.BOARD:
     # so they stay clear of LED and cap courtyards at any N/pitch). A 1-LED
     # puck has no gaps: the end-pad labels are the only silk that fits.
     if N_LEDS >= 2:
-        _silk_text(board, "loopy LED strip v1", LED_PITCH, CY, w=0.6)
+        _silk_text(board, "segno LED strip v1", LED_PITCH, CY, w=0.6)
     if N_LEDS >= 3:
         ax = 2.0 * LED_PITCH
         _silk_line(board, ax - 4.0, CY, ax + 4.0, CY)
@@ -466,7 +466,7 @@ def export(board: pcbnew.BOARD) -> None:
         ],
         check=True,
     )
-    zip_base = os.path.join(OUT, "loopy_led_strip_gerbers")
+    zip_base = os.path.join(OUT, "segno_led_strip_gerbers")
     shutil.make_archive(zip_base, "zip", gerber_dir)
     print(f"wrote {zip_base}.zip")
 

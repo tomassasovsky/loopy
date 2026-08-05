@@ -1,21 +1,21 @@
 import 'package:meta/meta.dart';
 
 /// The `type` code a chain entry carrying a `plugin` key uses — matches
-/// `loopy_engine`'s `kPluginFxCode`. A `DawEffect` can never represent an
+/// `segno_engine`'s `kPluginFxCode`. A `DawEffect` can never represent an
 /// entry with this code (see `resolveDeviceChain` in
 /// `device_chain_resolver.dart`, which is where a `type: 8` entry is
 /// classified and turned into a fallback, never a `DawEffect`).
 const int kPluginFxCode = 8;
 
 /// The lowest valid `LE_FX_*` built-in effect type code a `DawEffect` can
-/// represent — `LE_FX_DRIVE`, matching `loopy_engine`'s
-/// `loopy_engine_api.h`. `0` (`LE_FX_NONE`) is below this range and is not
+/// represent — `LE_FX_DRIVE`, matching `segno_engine`'s
+/// `segno_engine_api.h`. `0` (`LE_FX_NONE`) is below this range and is not
 /// a built-in effect this feature can emit a device for.
 const int kMinBuiltInEffectType = 1;
 
 /// The highest valid `LE_FX_*` built-in effect type code a `DawEffect` can
-/// represent — `LE_FX_REVERB`, matching `loopy_engine`'s
-/// `loopy_engine_api.h`. Any code above this other than [kPluginFxCode] is
+/// represent — `LE_FX_REVERB`, matching `segno_engine`'s
+/// `segno_engine_api.h`. Any code above this other than [kPluginFxCode] is
 /// not a built-in effect this feature can emit a device for.
 const int kMaxBuiltInEffectType = 7;
 
@@ -23,7 +23,7 @@ const int kMaxBuiltInEffectType = 7;
 /// code and its normalized (`0..1`) [params], parsed independently from the
 /// manifest's `TrackEffect.toJson()` shape
 /// (`docs/design/performance-manifest-format.md`) — no import of
-/// `loopy_engine`/`looper_repository`, matching this package's existing
+/// `segno_engine`/`looper_repository`, matching this package's existing
 /// own-input-model rule (`manifest_reader.dart`'s own doc comment).
 ///
 /// Only ever constructed for an entry already known to be representable —

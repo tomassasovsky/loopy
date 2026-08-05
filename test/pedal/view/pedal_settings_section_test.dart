@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/pedal/pedal.dart';
 import 'package:midi_client/midi_client.dart' show MidiDevice;
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/pedal/pedal.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/fake_key_value_store.dart';
@@ -67,7 +67,7 @@ void main() {
     ) async {
       final cubit = cubitWith(
         FakePedalTransport(
-          outputs: const [MidiDevice(id: 'out', name: 'Loopy Pedal')],
+          outputs: const [MidiDevice(id: 'out', name: 'Segno Pedal')],
         ),
       );
       addTearDown(cubit.close);
@@ -87,7 +87,7 @@ void main() {
       final handle = tester.ensureSemantics();
       final cubit = cubitWith(
         FakePedalTransport(
-          outputs: const [MidiDevice(id: 'out', name: 'Loopy Pedal')],
+          outputs: const [MidiDevice(id: 'out', name: 'Segno Pedal')],
         ),
       );
       addTearDown(cubit.close);
@@ -131,19 +131,19 @@ void main() {
     ) async {
       final cubit = cubitWith(
         FakePedalTransport(
-          outputs: const [MidiDevice(id: 'out', name: 'Loopy Pedal')],
+          outputs: const [MidiDevice(id: 'out', name: 'Segno Pedal')],
         ),
       );
       addTearDown(cubit.close);
 
       await pumpSection(tester, cubit);
       await cubit.selectOutput(
-        const PedalOutput(id: 'out', name: 'Loopy Pedal'),
+        const PedalOutput(id: 'out', name: 'Segno Pedal'),
       );
       await tester.pump();
 
       expect(cubit.state.bindStatus, PedalBindStatus.bound);
-      expect(find.textContaining('Loopy Pedal'), findsWidgets);
+      expect(find.textContaining('Segno Pedal'), findsWidgets);
     });
 
     testWidgets(
@@ -219,10 +219,10 @@ void main() {
       Future<PedalCubit> boundCubit(String device) async {
         final cubit = cubitWith(
           FakePedalTransport(
-            outputs: [MidiDevice(id: device, name: 'Loopy Pedal')],
+            outputs: [MidiDevice(id: device, name: 'Segno Pedal')],
           ),
         );
-        await cubit.selectOutput(PedalOutput(id: device, name: 'Loopy Pedal'));
+        await cubit.selectOutput(PedalOutput(id: device, name: 'Segno Pedal'));
         return cubit;
       }
 

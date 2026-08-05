@@ -893,6 +893,17 @@ class SettingsRepository {
   Future<void> saveLaneEffects(int channel, int lane, String encoded) =>
       _store.setString(_laneEffectsKey(channel, lane), encoded);
 
+  /// Clears lane [lane] of track [channel]'s persisted chain, so the boot
+  /// restore reads it back as "no chain" rather than as the last value written.
+  ///
+  /// For a session load that leaves a lane with no chain: there is no envelope
+  /// to overwrite the key with, and the old string would otherwise be restored
+  /// on the next launch. Deletes rather than writing an empty envelope (which
+  /// the boot restore reads identically) so the key set self-cleans — the same
+  /// posture as [saveOutputEnabled]'s default-on removal.
+  Future<void> clearLaneEffects(int channel, int lane) =>
+      _store.remove(_laneEffectsKey(channel, lane));
+
   String _trackFxChainKey(int channel) => 'track_fx_chain.$channel';
   static const String _masterFxChainKey = 'master_fx_chain';
 
@@ -906,6 +917,16 @@ class SettingsRepository {
   /// Saves track [channel]'s [encoded] Track-stage chain envelope.
   Future<void> saveTrackFxChain(int channel, String encoded) =>
       _store.setString(_trackFxChainKey(channel), encoded);
+
+  /// Clears track [channel]'s persisted Track-stage chain envelope — the bus
+  /// twin of [clearLaneEffects], for a session load that drops a chain the
+  /// live rig carried.
+  ///
+  /// There is no Master equivalent: the Master envelope always has a value
+  /// (the empty enabled chain when none is configured), so a load overwrites
+  /// it rather than needing it cleared.
+  Future<void> clearTrackFxChain(int channel) =>
+      _store.remove(_trackFxChainKey(channel));
 
   /// Loads the persisted Master insert chain as an opaque encoded envelope
   /// string (see `encodeFxChain`), or `null` if none is saved.
@@ -930,7 +951,7 @@ class SettingsRepository {
 
   /// Loads the user-selected update channel (`experimental` / `production`),
   /// or `null` when the user has never set one (fall back to the device's
-  /// baked `/etc/loopy/update-channel` marker).
+  /// baked `/etc/segno/update-channel` marker).
   Future<String?> loadUpdateChannel() async {
     final raw = await _store.getString(_updateChannelKey);
     if (raw == null || raw.trim().isEmpty) return null;

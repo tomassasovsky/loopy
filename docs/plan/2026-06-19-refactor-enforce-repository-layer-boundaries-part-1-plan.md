@@ -16,7 +16,7 @@ date: 2026-06-19
 bypassing the repository layer. This PR introduces a new repository package
 `midi_device_repository` that owns the MIDI **input** (controller) device lifecycle, and
 rewrites `MidiSetupCubit` as a thin projector over it — mirroring the existing
-`AudioSetupCubit` → `LooperRepository` → `loopy_engine` pattern. Behavior-preserving.
+`AudioSetupCubit` → `LooperRepository` → `segno_engine` pattern. Behavior-preserving.
 
 **Scope note:** this covers only the MIDI **input** path. The pedal's **output**-device
 `MidiDevice` leak is a separate path (via `pedal_repository`) handled in Part 3.
@@ -57,7 +57,7 @@ plus imperative commands. `MidiSetupCubit` subscribes and forwards.
       `refresh()`. Preserve the exact poll cadence and lost/restored transition semantics.
 - [ ] Rewrite `lib/audio_setup/cubit/midi_setup_cubit.dart` as a thin projector: subscribe to
       the repository stream, forward commands, delete the `midi_client` import.
-- [ ] Wire the repository in `lib/app/run_loopy.dart` (construct once) and provide via
+- [ ] Wire the repository in `lib/app/run_segno.dart` (construct once) and provide via
       `RepositoryProvider` in `lib/app/view/app.dart`; pass to `MidiSetupCubit`.
 - [ ] **Tests:** port `test/audio_setup/cubit/midi_setup_cubit_test.dart`'s 11 scenarios into
       `packages/midi_device_repository/test/midi_device_repository_test.dart` (enumerate, null
@@ -85,4 +85,4 @@ None — this PR stands alone and must land **first** in the V1 → D2a → D2b 
 - Target file: [lib/audio_setup/cubit/midi_setup_cubit.dart](../../lib/audio_setup/cubit/midi_setup_cubit.dart)
 - Pattern to mirror: [lib/audio_setup/cubit/audio_setup_cubit.dart](../../lib/audio_setup/cubit/audio_setup_cubit.dart)
 - Disposal owner: [packages/controller_repository/lib/src/controller_repository.dart](../../packages/controller_repository/lib/controller_repository.dart)
-- Wiring: [lib/app/run_loopy.dart](../../lib/app/run_loopy.dart), [lib/app/view/app.dart](../../lib/app/view/app.dart)
+- Wiring: [lib/app/run_segno.dart](../../lib/app/run_segno.dart), [lib/app/view/app.dart](../../lib/app/view/app.dart)

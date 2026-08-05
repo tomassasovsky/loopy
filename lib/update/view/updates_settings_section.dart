@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/setup/setup_surface.dart';
-import 'package:loopy/update/cubit/update_cubit.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/setup/setup_surface.dart';
+import 'package:segno/update/cubit/update_cubit.dart';
 
 /// The "Updates" section of the settings surface: installed version + channel,
 /// an auto-check toggle (governs only the read-only check), a persistent
@@ -25,7 +25,7 @@ class UpdatesSettingsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(l10n.updatesIntro, style: setupBody),
+        Text(l10n.updatesIntro, style: context.setupBody),
         const SizedBox(height: 28),
         SetupInfoTable(
           rows: [
@@ -58,7 +58,7 @@ class UpdatesSettingsSection extends StatelessWidget {
         _CheckNowRow(state: state, onTap: cubit.check),
         if (state.phase == UpdatePhase.error && state.errorMessage != null) ...[
           const SizedBox(height: 8),
-          Text(state.errorMessage!, style: setupBody),
+          Text(state.errorMessage!, style: context.setupBody),
         ],
         if (state.available != null) ...[
           const SizedBox(height: 20),
@@ -200,10 +200,13 @@ class _UpdateActionRow extends StatelessWidget {
       children: [
         SetupGroupLabel(l10n.updatesAvailableTitle(version)),
         const SizedBox(height: 8),
-        Text(notes, style: setupBody),
+        Text(notes, style: context.setupBody),
         if (manifest.size > 0) ...[
           const SizedBox(height: 4),
-          Text(l10n.updatesSizeMb(_mb(manifest.size)), style: setupBody),
+          Text(
+            l10n.updatesSizeMb(_mb(manifest.size)),
+            style: context.setupBody,
+          ),
         ],
         const SizedBox(height: 12),
         SetupNavRow(

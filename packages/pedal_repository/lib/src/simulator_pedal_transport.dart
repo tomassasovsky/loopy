@@ -12,7 +12,7 @@ import 'package:pedal_repository/src/pedal_transport.dart';
 /// The simulator advertises itself as a normal MIDI output so it binds through
 /// the same picker + `bind` flow as real hardware; this id is how the wiring
 /// and the faceplate recognize it. A real device is never allowed to use it.
-const kSimulatorOutputId = 'loopy-sim';
+const kSimulatorOutputId = 'segno-sim';
 
 /// A [PedalTransport] that adds an **on-screen pedal** on top of an inner
 /// transport (the native one, or a `NoopPedalTransport` when there is no MIDI

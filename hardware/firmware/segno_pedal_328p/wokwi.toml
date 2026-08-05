@@ -1,0 +1,4 @@
+[wokwi]
+version = 1
+firmware = "segno_pedal_328p.ino"
+elf = "segno_pedal_328p.ino.elf"

@@ -5,13 +5,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/pedal/pedal.dart';
-import 'package:loopy/theme/surface_theme.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/pedal/pedal.dart';
+import 'package:segno/theme/looper_theme.dart';
+import 'package:segno/theme/surface_theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/fake_audio_engine.dart';
@@ -648,6 +649,54 @@ void main() {
       // The faceplate's deactivate() must releaseAll the held switch, so the
       // undo tap completes (no stuck note, no dangling long-press timer).
       verify(() => looper.undo()).called(1);
+    });
+  });
+
+  group('waveformStateOfCursor', () {
+    LooperState stateWith(List<Track> tracks) => LooperState(tracks: tracks);
+
+    test('reads the cursor track, not the first one', () {
+      // The 7" waveform labels itself with the cursor track's name, so its
+      // colour has to speak for that same track — picking tracks.first would
+      // look right only while the cursor sat on channel 0.
+      final looper = stateWith(const [
+        Track(state: TrackState.recording),
+        Track(channel: 1, state: TrackState.playing),
+      ]);
+      expect(
+        waveformStateOfCursor(looper, 1),
+        LooperMeterState.playing,
+      );
+      expect(
+        waveformStateOfCursor(looper, 0),
+        LooperMeterState.recording,
+      );
+    });
+
+    test('muted overlays the cursor track state', () {
+      expect(
+        waveformStateOfCursor(
+          stateWith(const [Track(state: TrackState.playing, muted: true)]),
+          0,
+        ),
+        LooperMeterState.muted,
+      );
+    });
+
+    test('a cursor past the track list reads as empty, not a crash', () {
+      // The cursor is an index owned by the control layer and can outrun the
+      // engine's track list while it starts or after a rig change.
+      expect(
+        waveformStateOfCursor(
+          stateWith(const [Track(state: TrackState.playing)]),
+          7,
+        ),
+        LooperMeterState.empty,
+      );
+      expect(
+        waveformStateOfCursor(const LooperState(), 0),
+        LooperMeterState.empty,
+      );
     });
   });
 }

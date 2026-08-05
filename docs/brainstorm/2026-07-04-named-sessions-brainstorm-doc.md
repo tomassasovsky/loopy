@@ -13,8 +13,8 @@ bundles with full CRUD and a document-editor UX.
 
 ## Problem / motivation
 
-Today loopy has exactly one session slot. `defaultSessionDirectory()`
-(`lib/session_directory.dart`) resolves a single `loopy_session/` folder under
+Today segno has exactly one session slot. `defaultSessionDirectory()`
+(`lib/session_directory.dart`) resolves a single `segno_session/` folder under
 the app documents dir, injected into `SessionCubit` as the `directory`
 resolver. "Save session" overwrites it in place; "Load session" reloads it.
 There is no way to keep more than one arrangement, name them, or manage them —
@@ -27,10 +27,10 @@ switch between them) like documents.
 
 | Decision | Choice |
 | --- | --- |
-| **Storage layout** | Each session is its own `.loopy` bundle directory under a top-level `sessions/<name>/` folder in the app documents dir (not flat). |
+| **Storage layout** | Each session is its own `.segno` bundle directory under a top-level `sessions/<name>/` folder in the app documents dir (not flat). |
 | **Operations** | Full CRUD: list, load, save-as (new name), rename, delete. |
 | **Session model** | **Document-editor**: a "current session" is tracked. Loading or saving-as sets it; plain **Save** writes back to it silently; the UI shows its name. |
-| **Migration** | **None.** The old `loopy_session/` bundle is left on disk but not shown; new work lives under `sessions/`. Fresh start. |
+| **Migration** | **None.** The old `segno_session/` bundle is left on disk but not shown; new work lives under `sessions/`. Fresh start. |
 | **Picker UI** | The folder button opens **one Sessions-manager dialog**: a list with load-on-tap, per-row rename/delete, and a "Save as…" action. Export (mixdown / stems) stays a separate action. |
 | **Naming & collisions** | Free-text name, sanitized to a folder-safe slug; a **duplicate name is rejected** with an inline error (no silent overwrite, no auto-suffix). |
 | **Quick save** | A toolbar **Save** action (and Ctrl/Cmd+S) writes back to the current session silently; falls back to **Save-As** when no session is open. The manager handles Save-As / rename / delete / load. |
@@ -112,7 +112,7 @@ of a single bundle dir, and owns the `sessions/<name>/` layout:
 - **Flat bundles named by directory** (no wrapping `sessions/`) — rejected in
   favour of a dedicated `sessions/` root so listing is a single well-known
   folder and future non-session bundles don't get mixed in.
-- **Migrate the old `loopy_session/`** — rejected for now (simplest to start
+- **Migrate the old `segno_session/`** — rejected for now (simplest to start
   fresh); the folder is harmless on disk and can be surfaced later if anyone
   misses it.
 - **Silent overwrite / auto-suffix on duplicate names** — rejected in favour of

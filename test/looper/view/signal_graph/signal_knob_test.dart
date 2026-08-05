@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/looper/view/signal_graph/signal_knob.dart';
+import 'package:segno/looper/view/signal_graph/signal_knob.dart';
 
 import '../../../helpers/helpers.dart';
 

@@ -1,5 +1,5 @@
-import 'package:loopy_engine/loopy_engine.dart';
 import 'package:meta/meta.dart';
+import 'package:segno_engine/segno_engine.dart';
 
 /// The state a performance-capture arm/disarm snapshot needs that the engine
 /// snapshot alone cannot supply: every FX stage's effect chains, and the master

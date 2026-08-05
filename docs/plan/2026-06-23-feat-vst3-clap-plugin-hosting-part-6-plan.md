@@ -59,11 +59,11 @@ truth, **drain-before-refresh** sequencing, bloc-owned timer disposed on close).
 
 ## File References
 
-- New: `packages/loopy_engine/macos/.../native_window_controller.mm`,
-  `packages/loopy_engine/src/host/editor_*.{cpp,mm}`
-- [loopy_engine_api.h](../../packages/loopy_engine/src/core/loopy_engine_api.h)
-- [native_audio_engine.dart](../../packages/loopy_engine/lib/src/native_audio_engine.dart),
-  [mock_audio_engine.dart](../../packages/loopy_engine/lib/src/mock_audio_engine.dart)
+- New: `packages/segno_engine/macos/.../native_window_controller.mm`,
+  `packages/segno_engine/src/host/editor_*.{cpp,mm}`
+- [segno_engine_api.h](../../packages/segno_engine/src/core/segno_engine_api.h)
+- [native_audio_engine.dart](../../packages/segno_engine/lib/src/native_audio_engine.dart),
+  [mock_audio_engine.dart](../../packages/segno_engine/lib/src/mock_audio_engine.dart)
 - [looper_bloc.dart](../../lib/looper/bloc/looper_bloc.dart),
   [signal_fx_rack.dart](../../lib/looper/view/signal_graph/signal_fx_rack.dart)
 

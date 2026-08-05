@@ -94,6 +94,6 @@ The repository must know an undo *restored a clear* rather than peeled a layer. 
 
 ## Verification
 
-- Native: `packages/loopy_engine/src/test` — restore fidelity (PCM identical), full-stack peelability after restore, invalidation-on-new-recording, eviction never drops a restore point, clear-during-in-flight-layer.
+- Native: `packages/segno_engine/src/test` — restore fidelity (PCM identical), full-stack peelability after restore, invalidation-on-new-recording, eviction never drops a restore point, clear-during-in-flight-layer.
 - Dart: repository restores chains + mutes + re-persists; `applySession` clears stay destructive; control-layer invariants (`test/control/invariants_test.dart`, `test/control/control_projection_test.dart`).
 - Real app: record → overdub ×2 → clear → undo → take + both layers back, FX + mutes intact, still peelable.

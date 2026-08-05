@@ -4,15 +4,15 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/appliance/host_page_chrome.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/setup/setup_surface.dart';
-import 'package:loopy/theme/page_transitions.dart';
-import 'package:loopy/theme/theme.dart';
-import 'package:loopy/wifi/wifi_cubit.dart';
-import 'package:loopy/wifi/wifi_error_message.dart';
-import 'package:loopy/wifi/wifi_network_visibility.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/appliance/host_page_chrome.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/setup/setup_surface.dart';
+import 'package:segno/theme/page_transitions.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/wifi/wifi_cubit.dart';
+import 'package:segno/wifi/wifi_error_message.dart';
+import 'package:segno/wifi/wifi_network_visibility.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 /// Opens the WiFi surface as a full-screen page from the settings tray.
@@ -112,7 +112,7 @@ class _WifiPageState extends State<WifiPage> {
                                       state.errorMessage,
                                     )
                                   : l10n.wifiUnsupportedBody,
-                              style: setupBody,
+                              style: context.setupBody,
                             ),
                           )
                         : LayoutBuilder(
@@ -159,7 +159,7 @@ class _WifiPageState extends State<WifiPage> {
                                             l10n,
                                             state.errorMessage,
                                           ),
-                                          style: setupBody.copyWith(
+                                          style: context.setupBody.copyWith(
                                             fontSize: 12,
                                           ),
                                         ),
@@ -403,7 +403,7 @@ class _WifiNetworkList extends StatelessWidget {
         SetupGroupLabel(l10n.wifiNetworksGroup),
         const SizedBox(height: 6),
         if (state.networks.isEmpty && !state.scanning)
-          Text(l10n.wifiEmptyNetworks, style: setupBody)
+          Text(l10n.wifiEmptyNetworks, style: context.setupBody)
         else
           DecoratedBox(
             decoration: BoxDecoration(

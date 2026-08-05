@@ -12,7 +12,7 @@ date: 2026-06-14
 
 ## Overview
 
-Let the user pick a **USB MIDI input device** (a foot controller) so loopy can be
+Let the user pick a **USB MIDI input device** (a foot controller) so segno can be
 driven hands-free like a looper pedal: stomp to record / overdub / stop / undo on a
 track. MIDI is **captured natively** on all three desktop OSes (CoreMIDI / ALSA
 sequencer / WinMM) behind a new FFI seam mirroring the existing audio-device
@@ -25,7 +25,7 @@ resulting events. The looper remains fully usable with no MIDI device — MIDI i
 additive.
 
 **The controller pipeline already exists end-to-end** ([controller_repository.dart](../../packages/controller_repository/lib/src/controller_repository.dart),
-wired in [run_loopy.dart:41](../../lib/app/run_loopy.dart) as `ControllerRepository(sources: const [])`,
+wired in [run_segno.dart:41](../../lib/app/run_segno.dart) as `ControllerRepository(sources: const [])`,
 consumed in [looper_bloc.dart:172](../../lib/looper/bloc/looper_bloc.dart)). The gap is:
 (1) a native MIDI capture seam, (2) the `midi_client` Dart source, (3) device
 selection UI + persistence + auto-reconnect/hotplug, and (4) wiring the source in.
@@ -33,7 +33,7 @@ selection UI + persistence + auto-reconnect/hotplug, and (4) wiring the source i
 ## Problem Statement
 
 A looper is a stomp instrument: the player needs to start/stop/overdub loops with
-their feet while both hands play. Today loopy has no MIDI input at all — control is
+their feet while both hands play. Today segno has no MIDI input at all — control is
 mouse/keyboard only, which is unusable in performance. The controller-abstraction
 layer (`controller_repository`) was built in anticipation of this but has **no source
 feeding it**.
@@ -104,7 +104,7 @@ LooperBloc → LooperRepository → le_engine_record/stop_track/undo/clear   (ex
 public contract unchanged (sources fixed at construction, one stable subscription).
 `MidiControllerSource` is a **long-lived** source: its `inputs` is a persistent
 broadcast stream; opening/closing/switching the physical device happens *inside* the
-source and does not tear down the subscription. `run_loopy` constructs
+source and does not tear down the subscription. `run_segno` constructs
 `ControllerRepository(sources: [midiSource])`; `MidiSetupCubit` calls
 `midiSource.open(id)` / `close()`. *Rationale:* zero change to `ControllerRepository`
 (and its tests), no duplicate-subscription hazard on replug (EC-6), atomic A→B switch
@@ -114,9 +114,9 @@ source and does not tear down the subscription. `run_loopy` constructs
 **Per-OS seam + portable core** (mirrors `engine.c` / `engine_{linux,apple,windows}.c`
 and `le_device_backend.h`):
 
-- `packages/loopy_engine/src/le_midi_backend.h` — new vtable: `enumerate`, `open`,
+- `packages/segno_engine/src/le_midi_backend.h` — new vtable: `enumerate`, `open`,
   `close` (open/close idempotent, mirroring `le_device_backend` discipline).
-- `packages/loopy_engine/src/midi.c` — portable core: `le_midi_select_backend()`,
+- `packages/segno_engine/src/midi.c` — portable core: `le_midi_select_backend()`,
   the SPSC `le_midi_ring`, the pure `le_midi_parse(status,d1,d2,*out)` classifier, and
   the FFI entry points. **No** `<CoreMIDI/…>` / `<alsa/…>` / `<mmsystem.h>` here.
 - `midi_backend_apple.c` (CoreMIDI), `midi_backend_linux.c` (ALSA sequencer),
@@ -124,9 +124,9 @@ and `le_device_backend.h`):
   → else a `typedef int ..._unused;`), all three listed unconditionally in CMake, like
   the `engine_*.c` TUs.
 - `le_midi_internal.h` — test surface for the pure parser + injection hooks
-  (`le_midi_push_for_test`), mirroring [engine_internal.h](../../packages/loopy_engine/src/engine_internal.h).
+  (`le_midi_push_for_test`), mirroring [engine_internal.h](../../packages/segno_engine/src/engine_internal.h).
 
-**FFI surface** (added to [loopy_engine_api.h](../../packages/loopy_engine/src/loopy_engine_api.h),
+**FFI surface** (added to [segno_engine_api.h](../../packages/segno_engine/src/segno_engine_api.h),
 `LE_EXPORT`, ffigen-included via the existing `le_.*` filter):
 
 ```c
@@ -147,7 +147,7 @@ LE_EXPORT int32_t   le_midi_close(le_midi* m);                  /* idempotent */
 ```
 
 Add `le_midi_info` to `ffigen.yaml` `structs.include`; regen bindings + `dart format`
-per [ffigen.yaml](../../packages/loopy_engine/ffigen.yaml) instructions.
+per [ffigen.yaml](../../packages/segno_engine/ffigen.yaml) instructions.
 
 **Per-OS device identity** (persist `id`, match on reconnect by `id` then fall back to
 `name`):
@@ -167,10 +167,10 @@ Each phase is independently mergeable → **suggested 3-PR split** (run
 
 - **Add** `le_midi_backend.h`, `midi.c`, `le_midi_internal.h`, `midi_backend_apple.c`,
   `midi_backend_linux.c`, `midi_backend_windows.c`; extend
-  [loopy_engine_api.h](../../packages/loopy_engine/src/loopy_engine_api.h) with the
+  [segno_engine_api.h](../../packages/segno_engine/src/segno_engine_api.h) with the
   `le_midi_*` surface + `le_midi_info`.
 - **Portable core (`midi.c`)**: `le_midi_ring` (SPSC, fixed capacity ~128, mirroring
-  [lockfree_ring.c](../../packages/loopy_engine/src/lockfree_ring.c)); pure
+  [lockfree_ring.c](../../packages/segno_engine/src/lockfree_ring.c)); pure
   `le_midi_parse` (Note On/Off w/ velocity-0 = Note Off, CC; drop SysEx/real-time/
   partial/aftertouch); atomic callback pointer (`_Atomic`, release/acquire) so close
   can null it before teardown (no use-after-free); `le_midi_select_backend()`.
@@ -188,11 +188,11 @@ Each phase is independently mergeable → **suggested 3-PR split** (run
   SPSC ring (no allocation/syscalls — documented WinMM restriction) and `SetEvent`; a
   worker thread drains the ring → callback; hotplug via re-enumeration poll (hidden-HWND
   `WM_DEVICECHANGE` deferred).
-- **CMake** ([src/CMakeLists.txt](../../packages/loopy_engine/src/CMakeLists.txt)): list
+- **CMake** ([src/CMakeLists.txt](../../packages/segno_engine/src/CMakeLists.txt)): list
   the four new C files; `-framework CoreMIDI` on Apple (and add to
-  [macos/loopy_engine.podspec](../../packages/loopy_engine/macos/loopy_engine.podspec)
+  [macos/segno_engine.podspec](../../packages/segno_engine/macos/segno_engine.podspec)
   `s.frameworks`), `asound` on Linux (`find_package`), `winmm` already linked on Windows.
-- **Tests** (`packages/loopy_engine/src/test/test_engine_core.c` or new
+- **Tests** (`packages/segno_engine/src/test/test_engine_core.c` or new
   `test_midi_core.c`): pure `le_midi_parse` cases (CC, Note On, Note-On-vel-0 → off,
   SysEx/real-time dropped, running status N/A); `le_midi_ring` wrap/full/FIFO;
   `le_midi_push_for_test` → callback delivery. Build/run with mingw gcc like the
@@ -203,9 +203,9 @@ Each phase is independently mergeable → **suggested 3-PR split** (run
 #### Phase 2 (PR B): `midi_client` Dart package + source
 
 - **New package** `packages/midi_client/` (VGV `dart_package` shape):
-  `MidiClient` (enumerate + open/close over `LoopyEngineBindings`, bindings-injectable
-  like [native_audio_engine.dart](../../packages/loopy_engine/lib/src/native_audio_engine.dart)),
-  `MidiDevice` value class (mirror [audio_device.dart](../../packages/loopy_engine/lib/src/audio_device.dart)),
+  `MidiClient` (enumerate + open/close over `SegnoEngineBindings`, bindings-injectable
+  like [native_audio_engine.dart](../../packages/segno_engine/lib/src/native_audio_engine.dart)),
+  `MidiDevice` value class (mirror [audio_device.dart](../../packages/segno_engine/lib/src/audio_device.dart)),
   and `MidiControllerSource implements ControllerSource` (depends on
   `controller_repository`).
 - `MidiControllerSource`: persistent broadcast `inputs`; `open(id)`/`close()`/
@@ -219,7 +219,7 @@ Each phase is independently mergeable → **suggested 3-PR split** (run
 - **Activity signal**: expose a raw-input tap (pre-mapping) for the UI indicator;
   drive it from Note/CC only (ignore clock/active-sensing) so a chatty device doesn't
   peg it.
-- **Tests**: `MidiClient` enumerate/open/close against a `FakeLoopyEngineBindings`;
+- **Tests**: `MidiClient` enumerate/open/close against a `FakeSegnoEngineBindings`;
   `MidiControllerSource` byte→`RawControllerInput` mapping, debounce, dispose ordering;
   reuse the existing `FakeControllerSource` for any repository-level test.
 - **Success:** `very_good test` ≥ 90% on the new package; `flutter analyze` clean.
@@ -241,7 +241,7 @@ Each phase is independently mergeable → **suggested 3-PR split** (run
   color-only); a visible required-CCs hint ("CC 80 record · 81 stop · 82 undo · 83
   clear"). Placed in [audio_settings_section.dart](../../lib/audio_setup/view/audio_settings_section.dart),
   **visible even in Windows `asioOnly` mode**.
-- **Wiring**: in [run_loopy.dart](../../lib/app/run_loopy.dart) build the
+- **Wiring**: in [run_segno.dart](../../lib/app/run_segno.dart) build the
   `MidiControllerSource`, pass `ControllerRepository(sources: [midiSource])`, and thread
   the source/cubit through [app.dart](../../lib/app/view/app.dart) via `RepositoryProvider`/
   `BlocProvider`; the waveform sub-window opens **no** MIDI (guard like the existing
@@ -380,19 +380,19 @@ Each phase is independently mergeable → **suggested 3-PR split** (run
   [controller_mapping.dart](../../packages/controller_repository/lib/src/controller_mapping.dart),
   [controller_input.dart](../../packages/controller_repository/lib/src/controller_input.dart),
   [looper_action.dart](../../packages/controller_repository/lib/src/looper_action.dart)
-- Wiring: [run_loopy.dart:41](../../lib/app/run_loopy.dart), [app.dart](../../lib/app/view/app.dart),
+- Wiring: [run_segno.dart:41](../../lib/app/run_segno.dart), [app.dart](../../lib/app/view/app.dart),
   [looper_bloc.dart:172](../../lib/looper/bloc/looper_bloc.dart), [looper_page.dart:31](../../lib/looper/view/looper_page.dart)
-- Audio-device analog: [loopy_engine_api.h](../../packages/loopy_engine/src/loopy_engine_api.h)
-  (`le_device_info`, `le_enumerate_*`, `LE_EXPORT`), [native_audio_engine.dart](../../packages/loopy_engine/lib/src/native_audio_engine.dart),
-  [audio_device.dart](../../packages/loopy_engine/lib/src/audio_device.dart),
+- Audio-device analog: [segno_engine_api.h](../../packages/segno_engine/src/segno_engine_api.h)
+  (`le_device_info`, `le_enumerate_*`, `LE_EXPORT`), [native_audio_engine.dart](../../packages/segno_engine/lib/src/native_audio_engine.dart),
+  [audio_device.dart](../../packages/segno_engine/lib/src/audio_device.dart),
   [audio_setup_cubit.dart](../../lib/audio_setup/cubit/audio_setup_cubit.dart),
   [audio_device_picker.dart](../../lib/audio_setup/view/audio_device_picker.dart)
-- Seam pattern: [le_device_backend.h](../../packages/loopy_engine/src/le_device_backend.h),
-  `engine_{linux,apple,windows}.c`, [engine_internal.h](../../packages/loopy_engine/src/engine_internal.h),
-  [lockfree_ring.c](../../packages/loopy_engine/src/lockfree_ring.c)
-- Build/codegen: [src/CMakeLists.txt](../../packages/loopy_engine/src/CMakeLists.txt),
-  [macos/loopy_engine.podspec](../../packages/loopy_engine/macos/loopy_engine.podspec),
-  [ffigen.yaml](../../packages/loopy_engine/ffigen.yaml)
+- Seam pattern: [le_device_backend.h](../../packages/segno_engine/src/le_device_backend.h),
+  `engine_{linux,apple,windows}.c`, [engine_internal.h](../../packages/segno_engine/src/engine_internal.h),
+  [lockfree_ring.c](../../packages/segno_engine/src/lockfree_ring.c)
+- Build/codegen: [src/CMakeLists.txt](../../packages/segno_engine/src/CMakeLists.txt),
+  [macos/segno_engine.podspec](../../packages/segno_engine/macos/segno_engine.podspec),
+  [ffigen.yaml](../../packages/segno_engine/ffigen.yaml)
 - Persistence: [settings_repository.dart:113-125](../../packages/settings_repository/lib/src/settings_repository.dart)
 
 ### External References
@@ -406,4 +406,4 @@ Each phase is independently mergeable → **suggested 3-PR split** (run
 ### Related Work
 
 - Brainstorm: [docs/brainstorm/2026-06-14-midi-usb-device-selection-brainstorm-doc.md](../brainstorm/2026-06-14-midi-usb-device-selection-brainstorm-doc.md)
-- Prior PRs in the native/controller stack: [#27](https://github.com/tomassasovsky/loopy/pull/27) (device-backend seam), [#28](https://github.com/tomassasovsky/loopy/pull/28) (native Windows/Linux), [#29](https://github.com/tomassasovsky/loopy/pull/29) (multi-lane monitoring; `controller_repository`)
+- Prior PRs in the native/controller stack: [#27](https://github.com/tomassasovsky/segno/pull/27) (device-backend seam), [#28](https://github.com/tomassasovsky/segno/pull/28) (native Windows/Linux), [#29](https://github.com/tomassasovsky/segno/pull/29) (multi-lane monitoring; `controller_repository`)

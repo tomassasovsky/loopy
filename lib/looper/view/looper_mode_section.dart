@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/setup/setup_surface.dart';
-import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/setup/setup_surface.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 /// The looper feature's own mode-picker settings surface (index plan's UI
 /// conventions — same "lives in the looper feature, not `audio_setup`"
@@ -38,7 +38,7 @@ class LooperModeSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(l10n.looperModeIntro, style: setupBody),
+        Text(l10n.looperModeIntro, style: context.setupBody),
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.looperModeGroupLabel),
         const SizedBox(height: 12),

@@ -2,9 +2,9 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/l10n/gen/app_localizations.dart';
-import 'package:loopy/session/session.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/l10n/gen/app_localizations.dart';
+import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
 
 class _MockSessionCubit extends MockCubit<SessionState>

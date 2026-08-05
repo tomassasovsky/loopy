@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
-import 'package:loopy/pedal/pedal.dart';
-import 'package:loopy/theme/surface_theme.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/pedal/pedal.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 const _recPlayKey = Key('pedalFaceplate_footswitch_recPlay');
 const _mainScreenKey = Key('mainScreen');

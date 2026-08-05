@@ -1,32 +1,32 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/common/console_mode.dart';
-import 'package:loopy/window/window_chrome.dart';
+import 'package:segno/common/console_mode.dart';
+import 'package:segno/window/window_chrome.dart';
 
 void main() {
-  group('loopyUsesCursorAutoHide', () {
+  group('segnoUsesCursorAutoHide', () {
     tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-    test('matches loopyUsesFlutterTitleBar on Windows (custom chrome)', () {
+    test('matches segnoUsesFlutterTitleBar on Windows (custom chrome)', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      expect(loopyUsesCursorAutoHide, isTrue);
-      expect(loopyUsesCursorAutoHide, equals(loopyUsesFlutterTitleBar));
+      expect(segnoUsesCursorAutoHide, isTrue);
+      expect(segnoUsesCursorAutoHide, equals(segnoUsesFlutterTitleBar));
     });
 
-    test('matches loopyUsesFlutterTitleBar on macOS (no custom chrome)', () {
+    test('matches segnoUsesFlutterTitleBar on macOS (no custom chrome)', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
-      expect(loopyUsesCursorAutoHide, isFalse);
-      expect(loopyUsesCursorAutoHide, equals(loopyUsesFlutterTitleBar));
+      expect(segnoUsesCursorAutoHide, isFalse);
+      expect(segnoUsesCursorAutoHide, equals(segnoUsesFlutterTitleBar));
     });
 
     test(
       'off on Linux outside console/kiosk builds (regular unit test run)',
       () {
         debugDefaultTargetPlatformOverride = TargetPlatform.linux;
-        expect(loopyUsesCursorAutoHide, isFalse);
+        expect(segnoUsesCursorAutoHide, isFalse);
       },
       // kConsoleMode is a compile-time flag; this checks the regular-build
-      // branch, so it's skipped under --dart-define=LOOPY_CONSOLE=true (the
+      // branch, so it's skipped under --dart-define=SEGNO_CONSOLE=true (the
       // Linux-console-mode branch below covers that run instead — mirrors the
       // golden test gating in test/screenshots/tracks_screenshots_test.dart).
       skip: kConsoleMode,
@@ -34,10 +34,10 @@ void main() {
 
     test(
       'on for the Linux console/kiosk build (run with '
-      '--dart-define=LOOPY_CONSOLE=true)',
+      '--dart-define=SEGNO_CONSOLE=true)',
       () {
         debugDefaultTargetPlatformOverride = TargetPlatform.linux;
-        expect(loopyUsesCursorAutoHide, isTrue);
+        expect(segnoUsesCursorAutoHide, isTrue);
       },
       skip: !kConsoleMode,
     );

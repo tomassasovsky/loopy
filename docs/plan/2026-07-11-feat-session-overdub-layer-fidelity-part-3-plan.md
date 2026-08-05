@@ -23,7 +23,7 @@ stack, so a reloaded session reports the correct `undoDepth`/`redoDepth` and
 
 - [ ] `AudioEngine` gains `exportLayer(channel, lane, ordinal)`,
       `importLayer(channel, lane, ordinal, pcm)`, `finalizeLayers(channel,
-      undoCount, redoCount)`; regenerate `loopy_engine_bindings.dart`.
+      undoCount, redoCount)`; regenerate `segno_engine_bindings.dart`.
 - [ ] Implement in `native_audio_engine.dart`, `mock_audio_engine.dart`, and keep
       all four test fakes in sync (`fake_session_engine`,
       `looper_repository/.../fake_audio_engine`, `test/helpers/fake_audio_engine`,

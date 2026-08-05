@@ -1,6 +1,6 @@
-# loopy LED strip
+# segno LED strip
 
-Single-LED WS2812B indicator puck for the VAMP console: **one board per
+Single-LED WS2812B indicator puck for the Segno console: **one board per
 indicator pedal**, sitting under that pedal's small pill diffuser slot in the
 faceplate. One board is 16 x 8 mm, 2-layer, 1.6 mm, carrying **1x WS2812B
 5050 addressable LED** (with its 100nF 0603 decoupling cap) and **castellated
@@ -49,7 +49,7 @@ cleaner form factor and castellated wire pads; use whichever is at hand.
   pads (0.8 mm drill) centred exactly on the board edge; the castellation
   process mills the edge through them leaving half-holes. Without the option
   the fab may flag the edge-breaking holes.
-- Upload `out/loopy_led_strip_gerbers.zip` (gerbers + Excellon drills).
+- Upload `out/segno_led_strip_gerbers.zip` (gerbers + Excellon drills).
 - Parts if hand-placing: 4x WS2812B (5050 PLCC4), 4x 100nF 0603 per segment.
 
 ## Regenerating
@@ -66,8 +66,8 @@ This runs a geometry assertion suite, builds the board, fills the GND pour and
 runs DRC via `kicad-cli` (the run fails loudly if DRC does), and writes to
 `out/`:
 
-- `loopy_led_strip.kicad_pcb` — openable in KiCad
-- `gerbers/` + `loopy_led_strip_gerbers.zip` — fab package
+- `segno_led_strip.kicad_pcb` — openable in KiCad
+- `gerbers/` + `segno_led_strip_gerbers.zip` — fab package
 - `drc.json` — full DRC report (expected: 0 violations, 0 unconnected)
 
 All dimensions (LED count, pitch, rail widths, via rows…) are parameters at

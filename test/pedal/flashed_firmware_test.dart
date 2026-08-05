@@ -1,9 +1,14 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/pedal/flashed_firmware.dart';
+import 'package:segno/pedal/flashed_firmware.dart';
 
 void main() {
+  test('kFlashedPedalFirmwarePath pins the appliance data path', () {
+    // Rename-sensitive: segno-update-ctl flash-pedal writes here.
+    expect(kFlashedPedalFirmwarePath, '/data/segno/pedal-firmware-version');
+  });
+
   group('parseFlashedPedalProtocolVersion', () {
     test('reads the protocol field of a well-formed record', () {
       expect(parseFlashedPedalProtocolVersion('0.2.0 3'), 3);

@@ -1,4 +1,4 @@
-"""SKiDL generator for the Loopy pedal MAIN board — THT redesign.
+"""SKiDL generator for the Segno pedal MAIN board — THT redesign.
 
 Mostly through-hole / hand-solderable re-spin around an **Arduino Pro Micro
 (ATmega32U4, USB-C, 5 V/16 MHz)** module that does native class-compliant
@@ -6,7 +6,7 @@ USB-MIDI (firmware: MIDIUSB) and drives DIN-5 MIDI OUT on the hardware UART
 (Serial1, D1/D0). The module is mounted in the board interior and its USB-C is
 cable-extended to the enclosure faceplate, so there is NO board USB receptacle.
 No 16U2, no MocoLUFA bridge, no MIDI-merge gate. See
-hardware/loopy_pedal_pcb_tht_plan.md.
+hardware/segno_pedal_pcb_tht_plan.md.
 
 The Pro Micro is modelled as the two 1x12 pin-socket rows it plugs into
 (SparkFun pinout). ring_board.py is unchanged.
@@ -80,7 +80,7 @@ rst = Net("RST")          # Pro Micro /RESET: faceplate button + ICSP recovery
 # (pad 1 = TX is the corner pad next to the USB-C connector.)
 
 pm = Part("Connector_Generic", "Conn_01x24",
-          footprint="loopy:ProMicro", ref="J1", value="ProMicro")
+          footprint="segno:ProMicro", ref="J1", value="ProMicro")
 
 sw_pins = {
     "RECPLAY": pm[5],    # D2
@@ -169,7 +169,7 @@ R("330")[1, 2] += ind_data, ind_out
 # ---- DIN MIDI OUT (buffered) -----------------------------------------------
 
 j_mout = Part("Connector", "DIN-5_180degree",
-              footprint="loopy:MIDI_DIN5_RA", ref="J4", value="MIDI_DIN5_RA")
+              footprint="segno:MIDI_DIN5_RA", ref="J4", value="MIDI_DIN5_RA")
 R("220")[1, 2] += midi_out_buf, j_mout[5]
 R("220")[1, 2] += v5, j_mout[4]
 j_mout[2] += gnd
@@ -177,7 +177,7 @@ j_mout[2] += gnd
 # ---- DIN MIDI IN (opto-isolated) -------------------------------------------
 
 j_min = Part("Connector", "DIN-5_180degree",
-             footprint="loopy:MIDI_DIN5_RA", ref="J5", value="MIDI_DIN5_RA")
+             footprint="segno:MIDI_DIN5_RA", ref="J5", value="MIDI_DIN5_RA")
 opto = Part("Isolator", "H11L1", footprint="Package_DIP:DIP-6_W7.62mm", ref="U2")
 R("220")[1, 2] += j_min[4], opto[1]
 opto[2] += j_min[5]
@@ -210,11 +210,11 @@ Part("Device", "D", value="1N5817", footprint=DO41, ref="D1")[1, 2] += v9, vin_r
 Part("Device", "D", value="P6KE13A", footprint=DO41, ref="D2")[1, 2] += v9, gnd
 CP("100uF", "Capacitor_THT:CP_Radial_D6.3mm_P2.50mm")[1, 2] += v9, gnd
 
-# The MP1584EN mini-buck mounts flat on its own ~23x17mm pad pattern (loopy footprint)
+# The MP1584EN mini-buck mounts flat on its own ~23x17mm pad pattern (segno footprint)
 # instead of standing on a 1x4 header. Pads 1=VIN(+9V) 2=GND 3=VOUT(+5V_LED) 4=GND,
 # each a pair of holes. VERIFY the pad pitch against your actual module before fab.
 buck = Part("Connector_Generic", "Conn_01x04",
-            footprint="loopy:BuckModule_MP1584",
+            footprint="segno:BuckModule_MP1584",
             ref="J8", value="MP1584")
 buck[1] += v9
 buck[2] += gnd

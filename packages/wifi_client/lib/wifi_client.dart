@@ -1,4 +1,4 @@
-/// Data client for appliance WiFi (`loopy-wifi-ctl`).
+/// Data client for appliance WiFi (`segno-wifi-ctl`).
 library;
 
 export 'src/system_wifi_client.dart' show SystemWifiClient, createWifiClient;

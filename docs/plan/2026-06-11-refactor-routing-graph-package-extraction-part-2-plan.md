@@ -47,7 +47,7 @@ Folder `lib/looper/view/lane_graph/`:
 - The shared card metrics + `positionedNode` + `buildEffectDropZones` come from
   `package:routing_graph` (Part 1); the lane-specific geometry stays in
   `lane_graph_layout.dart` with descriptive names.
-- `LanePanel` imports `EffectParamsEditor` from `package:loopy/common/effect_params_editor.dart`.
+- `LanePanel` imports `EffectParamsEditor` from `package:segno/common/effect_params_editor.dart`.
 - Keep all existing widget keys (`laneGraph_*`) so tests/goldens don't move.
 
 ## Implementation Phases

@@ -138,7 +138,7 @@ App `flutter analyze` + full suite + goldens green.
 ### Package
 - [ ] `packages/routing_graph` exists; root pubspec has the path dep; **all**
       app consumers import the **barrel**, never `src/`.
-- [ ] **Zero** `looper_repository` / `loopy_engine` imports under the package
+- [ ] **Zero** `looper_repository` / `segno_engine` imports under the package
       (grep clean); `flutter pub deps` shows flutter SDK only.
 - [ ] `analysis_options.yaml` = `very_good_analysis`, **no** overrides;
       `flutter analyze` clean with `public_member_api_docs` satisfied on every

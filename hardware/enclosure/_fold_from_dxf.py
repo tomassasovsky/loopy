@@ -4,7 +4,7 @@ Gitignored scratch. Run with the bundled .venv."""
 import os, math
 import ezdxf
 import cadquery as cq
-import vamp_enclosure as V
+import segno_enclosure as V
 
 OUT = V.OUT
 T = V.T
@@ -219,7 +219,7 @@ def fold_faceplate(path, explode=0.0):
     s16uc = (V._row1_u(4) + V._row1_u(7)) / 2.0
     parts.append(screen(V.COL_U, V.SCREEN_TOP_V - V.SMALL_H/2, V.SMALL_W-1, V.SMALL_H-1, 12, "lid_screen7"))
     parts.append(screen(s16uc,               V.SCREEN_TOP_V - V.BIG_H/2,   V.BIG_W-1,   V.BIG_H-1,   16, "lid_screen16"))
-    # --- screen-retention brackets (vamp_screen_bracket x4 per screen): each clamps a panel edge
+    # --- screen-retention brackets (segno_screen_bracket x4 per screen): each clamps a panel edge
     #     from behind -- a FOOT rivets to the plate underside, a WALL steps down the panel edge, and
     #     a HOOK laps over the panel's rear, pressing the bezel forward against the faceplate.
     def screen_clamps(uc, vc, w, h, sd, tag):
@@ -411,13 +411,13 @@ def corner_joins():
 
 def build(explode=0.0):
     """Assemble base + platforms + pedals + lid, all from the DXFs (no mirror)."""
-    parts = list(fold_base(os.path.join(OUT, "vamp_base.dxf")))
+    parts = list(fold_base(os.path.join(OUT, "segno_base.dxf")))
     parts += corner_joins()
     parts += pcb_parts()
     parts += rear_panels()
     # two platform heights: front-row (8, short) and mid CLEAR/BANK (2, tall)
-    front = fold_platform(os.path.join(OUT, "vamp_platform_front.dxf"))
-    mid   = fold_platform(os.path.join(OUT, "vamp_platform_mid.dxf"))
+    front = fold_platform(os.path.join(OUT, "segno_platform_front.dxf"))
+    mid   = fold_platform(os.path.join(OUT, "segno_platform_mid.dxf"))
     cs = math.cos(math.radians(V.SLOPE_ANGLE))   # slot at slope-distance v lands at horizontal v*cos
     for i, (label, u, v) in enumerate(V.PEDALS):
         vh = v * cs
@@ -428,7 +428,7 @@ def build(explode=0.0):
                  .translate((u, vh, ztop + V.T + 2*explode)).val())                    # layer 2
         parts.append((f"pedal{i}", ped))
     # faceplate = top layer (3); base stays at 0. explode separates the vertical layers.
-    parts += fold_faceplate(os.path.join(OUT, "vamp_faceplate.dxf"), explode=3*explode)
+    parts += fold_faceplate(os.path.join(OUT, "segno_faceplate.dxf"), explode=3*explode)
     return parts
 
 
@@ -543,8 +543,8 @@ if __name__ == "__main__":
         return cq.Color(0.82,0.85,0.90,1.0)
     for name, shp in parts:
         asm.add(shp, name=name, color=colof(name))
-    asm.save(os.path.join(OUT, "vamp_fromdxf.glb"))
-    print("  out/vamp_fromdxf.glb (full unit, from DXF)")
+    asm.save(os.path.join(OUT, "segno_fromdxf.glb"))
+    print("  out/segno_fromdxf.glb (full unit, from DXF)")
 
     # shaded PNGs via VTK (clean shading, no triangulation wireframe)
     import vtk, numpy as np

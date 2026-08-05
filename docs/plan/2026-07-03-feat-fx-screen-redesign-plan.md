@@ -117,7 +117,7 @@ Boss RC-505mk2 Parameter Guide, Roland support articles, Line 6 Helix manuals
 - Entry: `showSignalPage(context)` →
   `lib/looper/view/signal_graph/signal_list_view.dart:29` (a `MaterialPageRoute`,
   re-provides `LooperBloc`, `MonitorCubit`, `TracksCubit`). Same pattern used by
-  `lib/app/loopy_navigator.dart`. **No go_router in this flow** — the new FX
+  `lib/app/segno_navigator.dart`. **No go_router in this flow** — the new FX
   editor route follows the same `showXPage()` + `MaterialPageRoute` idiom.
 - FX rack: `lib/looper/view/signal_graph/signal_fx_rack.dart` (device cards,
   drag-drop, knobs, plugin cards, add-card).

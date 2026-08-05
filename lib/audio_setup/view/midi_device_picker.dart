@@ -2,16 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/audio_setup/cubit/midi_setup_cubit.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/setup/setup_surface.dart';
-import 'package:loopy/theme/surface_theme.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
+import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/setup/setup_surface.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 /// Dropdown value for the "None" item — not a real device id (hosts may expose
 /// ports whose id is empty, which would duplicate `''` and trip
 /// DropdownButton).
-const _kMidiNoneValue = '__loopy_midi_none__';
+const _kMidiNoneValue = '__segno_midi_none__';
 
 /// The MIDI foot-controller block in the audio/I-O settings: a device dropdown
 /// (with a "None" item and an absent-selection fallback), an empty state, a
@@ -43,7 +43,7 @@ class MidiDevicePicker extends StatelessWidget {
         const SizedBox(height: 12),
         const MidiActivityIndicator(),
         const SizedBox(height: 12),
-        Text(l10n.midiRequiredCcsHint, style: setupBody),
+        Text(l10n.midiRequiredCcsHint, style: context.setupBody),
       ],
     );
   }
@@ -64,7 +64,7 @@ class _MidiEmptyState extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: context.surface.line),
       ),
-      child: Text(context.l10n.midiNoDevicesFound, style: setupBody),
+      child: Text(context.l10n.midiNoDevicesFound, style: context.setupBody),
     );
   }
 }
@@ -184,7 +184,7 @@ class _MidiStatusLine extends StatelessWidget {
       child: Text(
         message,
         key: const Key('midiSettings_status'),
-        style: setupBody.copyWith(
+        style: context.setupBody.copyWith(
           color: isError ? Theme.of(context).colorScheme.error : null,
         ),
       ),
@@ -247,7 +247,7 @@ class _MidiActivityIndicatorState extends State<MidiActivityIndicator> {
                 color: color,
               ),
               const SizedBox(width: 8),
-              Text(label, style: setupBody.copyWith(color: color)),
+              Text(label, style: context.setupBody.copyWith(color: color)),
             ],
           ),
         ),

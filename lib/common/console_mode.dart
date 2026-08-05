@@ -1,8 +1,8 @@
-/// Compile-time flag: is this build running as the physical VAMP floor console
+/// Compile-time flag: is this build running as the physical Segno floor console
 /// (Raspberry Pi kiosk, fixed 16″ + 7″ panels, driven by the foot pedals)
 /// rather than a desktop dev/user build?
 ///
-/// Enable at build/run time with `--dart-define=LOOPY_CONSOLE=true`. It is set
+/// Enable at build/run time with `--dart-define=SEGNO_CONSOLE=true`. It is set
 /// for the Pi kiosk bundle (`deploy/rpi`) and for the main-window screenshot
 /// generator, so the captured decal artwork matches what the console shows.
 ///
@@ -11,4 +11,4 @@
 /// panel, per-track readiness indicators default off, channel numbers centre,
 /// and the on-screen undo/redo buttons are removed. Default (false) keeps the
 /// full on-screen chrome.
-const kConsoleMode = bool.fromEnvironment('LOOPY_CONSOLE');
+const kConsoleMode = bool.fromEnvironment('SEGNO_CONSOLE');

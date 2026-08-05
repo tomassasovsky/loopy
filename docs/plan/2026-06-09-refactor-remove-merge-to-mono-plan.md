@@ -66,11 +66,11 @@ agreement is re-established before the Dart side is touched.
 ## Technical Considerations
 
 - **FFI struct agreement.** `merge_to_mono` is a field of the `le_config`
-  (`LeConfig`) struct in `loopy_engine_api.h`. The Dart bindings in
-  `lib/src/generated/loopy_engine_bindings.dart` are **ffigen-generated**
+  (`LeConfig`) struct in `segno_engine_api.h`. The Dart bindings in
+  `lib/src/generated/segno_engine_bindings.dart` are **ffigen-generated**
   (`ffigen.yaml` present; file header says *AUTO GENERATED, DO NOT EDIT*).
   Delete the field from the header, then **regenerate** — do not hand-edit the
-  bindings. Run from `packages/loopy_engine`:
+  bindings. Run from `packages/segno_engine`:
 
   ```bash
   dart run ffigen --config ffigen.yaml
@@ -108,9 +108,9 @@ Ordered so each layer compiles before the next depends on it.
 
 ### Phase 1 — Native engine (C)
 
-- [ ] `packages/loopy_engine/src/loopy_engine_api.h:117` — delete the
+- [ ] `packages/segno_engine/src/segno_engine_api.h:117` — delete the
       `int32_t merge_to_mono;` struct member (and its comment).
-- [ ] `packages/loopy_engine/src/engine.c`:
+- [ ] `packages/segno_engine/src/engine.c`:
   - [ ] Delete the `int mono_input;` field (`:165`).
   - [ ] Delete the per-frame `mono` accumulator: `float mono = 0.0f;` (`:509`),
         `mono += s;` (`:521`), and `mono /= (float)(active_in > 0 …);` (`:523`).
@@ -121,9 +121,9 @@ Ordered so each layer compiles before the next depends on it.
         always honored (no mode left to contrast against).
   - [ ] Delete `le_engine_set_mono_input_for_test` (`:1174–1177`).
   - [ ] Delete `engine->mono_input = config->merge_to_mono ? 1 : 0;` (`:1224`).
-- [ ] `packages/loopy_engine/src/engine_internal.h:52–55` — delete the
+- [ ] `packages/segno_engine/src/engine_internal.h:52–55` — delete the
       `le_engine_set_mono_input_for_test` declaration and its doc comment.
-- [ ] `packages/loopy_engine/src/test/test_engine_core.c`:
+- [ ] `packages/segno_engine/src/test/test_engine_core.c`:
   - [ ] Remove or repurpose `test_routing_input_mask_honored_in_mono_mode`
         (`:1094–1133`). The mask-honoring guarantee it asserts is now covered by
         the always-on mask path — fold its two assertions (single-channel mask
@@ -138,9 +138,9 @@ Ordered so each layer compiles before the next depends on it.
 
 ### Phase 2 — FFI regen
 
-- [ ] Regenerate bindings: `cd packages/loopy_engine && dart run ffigen --config
+- [ ] Regenerate bindings: `cd packages/segno_engine && dart run ffigen --config
       ffigen.yaml`.
-- [ ] Verify `lib/src/generated/loopy_engine_bindings.dart:817`
+- [ ] Verify `lib/src/generated/segno_engine_bindings.dart:817`
       (`external int merge_to_mono;`) is gone and the diff is limited to that
       field (and any struct size/offset metadata ffigen emits).
 
@@ -148,7 +148,7 @@ Ordered so each layer compiles before the next depends on it.
 
 ### Phase 3 — Dart libraries
 
-- [ ] `packages/loopy_engine/lib/src/engine_config.dart` — remove
+- [ ] `packages/segno_engine/lib/src/engine_config.dart` — remove
       `mergeToMono` from: the constructor param (`:21`), the field (`:53`), the
       `..merge_to_mono = …` line in `toNative` (`:78`), `operator ==` (`:95`),
       `hashCode` (`:108`), and `toString` (`:120`).
@@ -178,7 +178,7 @@ Ordered so each layer compiles before the next depends on it.
 
 ### Phase 5 — Update tests
 
-- [ ] `packages/loopy_engine/test/engine_config_test.dart` — drop the
+- [ ] `packages/segno_engine/test/engine_config_test.dart` — drop the
       `mergeToMono` default assertion (`:18`), the constructor arg (`:33`), and
       the `ptr.ref.merge_to_mono` struct assertion (`:47`).
 - [ ] `packages/settings_repository/test/settings_repository_test.dart` — remove
@@ -205,7 +205,7 @@ Ordered so each layer compiles before the next depends on it.
       `setMergeToMono`, or `audioSetup_mergeToMono_switch` remains anywhere
       (verify: the project-wide grep used in research returns nothing in
       non-test and test code alike).
-- [ ] `loopy_engine_api.h` no longer declares `merge_to_mono`; regenerated
+- [ ] `segno_engine_api.h` no longer declares `merge_to_mono`; regenerated
       bindings reflect the removal and were produced by ffigen (not hand-edited).
 - [ ] Native test suite prints `ALL PASSED`; the mask-honoring guarantees
       (single-channel mask → that channel; empty mask → silence) remain covered
@@ -261,11 +261,11 @@ Ordered so each layer compiles before the next depends on it.
 ## References & Research
 
 - Brainstorm: [docs/brainstorm/2026-06-09-remove-merge-to-mono-brainstorm-doc.md](../brainstorm/2026-06-09-remove-merge-to-mono-brainstorm-doc.md)
-- Native monitor line: [packages/loopy_engine/src/engine.c:702](../../packages/loopy_engine/src/engine.c)
-- Per-frame `mono` fold: [packages/loopy_engine/src/engine.c:509](../../packages/loopy_engine/src/engine.c)
-- FFI struct field: [packages/loopy_engine/src/loopy_engine_api.h:117](../../packages/loopy_engine/src/loopy_engine_api.h)
-- Generated binding: [packages/loopy_engine/lib/src/generated/loopy_engine_bindings.dart:817](../../packages/loopy_engine/lib/src/generated/loopy_engine_bindings.dart)
-- Test helper decl: [packages/loopy_engine/src/engine_internal.h:52](../../packages/loopy_engine/src/engine_internal.h)
+- Native monitor line: [packages/segno_engine/src/engine.c:702](../../packages/segno_engine/src/engine.c)
+- Per-frame `mono` fold: [packages/segno_engine/src/engine.c:509](../../packages/segno_engine/src/engine.c)
+- FFI struct field: [packages/segno_engine/src/segno_engine_api.h:117](../../packages/segno_engine/src/segno_engine_api.h)
+- Generated binding: [packages/segno_engine/lib/src/generated/segno_engine_bindings.dart:817](../../packages/segno_engine/lib/src/generated/segno_engine_bindings.dart)
+- Test helper decl: [packages/segno_engine/src/engine_internal.h:52](../../packages/segno_engine/src/engine_internal.h)
 - Setup UI: [lib/audio_setup/view/audio_setup_steps.dart:229](../../lib/audio_setup/view/audio_setup_steps.dart)
 - Related prior fix: commit `d85eb46` — "honor per-track input mask in
   mono-input mode" (the bug that motivated this removal).

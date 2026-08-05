@@ -1,4 +1,4 @@
-name: loopy
+name: segno
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,7 +24,7 @@ jobs:
       # format_directories/analyze_directories default to "lib test", which
       # only covers the root app. Glob in every package's lib/ + test/ too, so
       # `dart format --set-exit-if-changed` and `flutter analyze` actually gate
-      # the 13 packages/* (daw_export, loopy_engine, etc.) instead of silently
+      # the 13 packages/* (daw_export, segno_engine, etc.) instead of silently
       # skipping them. The glob is spliced into a plain bash step by the
       # reusable workflow, so it self-expands as packages are added/removed —
       # no need to edit this list when packages/* changes.
@@ -35,7 +35,7 @@ jobs:
       # (window_manager), the desktop_multi_window output-waveform sub-window,
       # and the app bootstrap/entrypoint. Coverage on the remainder stays ~91%.
       min_coverage: 90
-      coverage_excludes: "**/window_chrome.dart **/waveform_window*.dart **/run_loopy.dart **/bootstrap.dart **/session_directory.dart **/system_appliance_env.dart"
+      coverage_excludes: "**/window_chrome.dart **/waveform_window*.dart **/run_segno.dart **/bootstrap.dart **/session_directory.dart **/system_appliance_env.dart"
 
   # daw_export is a pure Dart package (no Flutter dependency, plain `test`
   # instead of `flutter_test`) so it can't ride the root flutter_package.yml
@@ -170,7 +170,7 @@ jobs:
   # firmware/test/run_tests.sh — the single definition of that gate (also the
   # local verify loop), which diffs the two pedal_protocol.{h,c} copies and
   # builds + runs the contract test against both trees, so protocol drift
-  # between firmware/loopy_pedal and hardware/firmware/loopy_pedal_32u4
+  # between firmware/segno_pedal and hardware/firmware/segno_pedal_32u4
   # fails the job. This is the strongest correctness gate in the repo — keep
   # it on every PR.
   native-tests:
@@ -182,7 +182,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential libasound2-dev
       - name: Build + run native engine/MIDI tests
-        run: bash packages/loopy_engine/src/test/run_native_tests.sh
+        run: bash packages/segno_engine/src/test/run_native_tests.sh
       - name: Build + run firmware/Dart protocol contract tests (both trees)
         run: bash firmware/test/run_tests.sh
 
@@ -205,11 +205,11 @@ jobs:
           set -eu
           arduino-cli core update-index
           arduino-cli core install arduino:avr
-          hardware/firmware/loopy_pedal_32u4/build.sh fw-out ci
+          hardware/firmware/segno_pedal_32u4/build.sh fw-out ci
       - name: Check the artifacts the release manifest reads
         run: |
           set -eu
-          test -s fw-out/loopy-pedal-ci.hex
+          test -s fw-out/segno-pedal-ci.hex
           # The manifest interpolates this straight into JSON as a number, so a
           # non-numeric or empty read would publish a manifest that no client
           # can parse.
@@ -235,14 +235,14 @@ jobs:
       - name: Build + run native tests under AddressSanitizer
         run: >
           EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g"
-          bash packages/loopy_engine/src/test/run_native_tests.sh
+          bash packages/segno_engine/src/test/run_native_tests.sh
 
   # The control-sequence fuzzer: the REAL native engine (device-free pump) +
   # the real repository/bloc/cubits, driven by seeded random event sequences
   # and checked against the control-surface invariant spec
   # (lib/control/invariants.dart) after every settled step. Runs as its own
   # job because the reusable flutter_package test job can't build the engine
-  # library first; the fuzz tests self-skip without LOOPY_ENGINE_LIB, keeping
+  # library first; the fuzz tests self-skip without SEGNO_ENGINE_LIB, keeping
   # plain `flutter test` green everywhere. Failures print a seed + a shrunk
   # replayable repro to paste into the corpus.
   fuzz:
@@ -258,13 +258,13 @@ jobs:
           flutter-version: "3.44.x"
           channel: stable
       - name: Build the engine test library
-        run: echo "LOOPY_ENGINE_LIB=$(bash packages/loopy_engine/tool/build_test_lib.sh)" >> "$GITHUB_ENV"
+        run: echo "SEGNO_ENGINE_LIB=$(bash packages/segno_engine/tool/build_test_lib.sh)" >> "$GITHUB_ENV"
       - name: Run the control-sequence fuzzer
         run: |
           flutter pub get
           flutter test --tags fuzz
       # The looper_repository fingerprint agreement suite (R16) is fuzz-tagged
-      # and self-skips without LOOPY_ENGINE_LIB — the per-package job above
+      # and self-skips without SEGNO_ENGINE_LIB — the per-package job above
       # skips it by design, so run it HERE against the engine library this job
       # already built, or the mixed-enabled agreement guarantee would be
       # silently skipped everywhere.
@@ -294,7 +294,7 @@ jobs:
       - run: flutter pub get
       - run: flutter build macos --debug --flavor development --target lib/main_development.dart
 
-  # Build the seven Loopy FX VST3 plugins (packages/loopy_engine/vst3) and run
+  # Build the seven Segno FX VST3 plugins (packages/segno_engine/vst3) and run
   # their CTest suite: GUID-drift, wrapper parameter round-trip, golden-parity
   # vs the engine DSP, and a per-plugin dlopen load-smoke against the assembled
   # bundle. This is the FIRST CI coverage of the plugins — they previously built
@@ -309,7 +309,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Configure + build + test the VST3 plugins
         run: |
-          cmake -S packages/loopy_engine/vst3 -B build/vst3 -DCMAKE_BUILD_TYPE=Debug
+          cmake -S packages/segno_engine/vst3 -B build/vst3 -DCMAKE_BUILD_TYPE=Debug
           cmake --build build/vst3
           ctest --test-dir build/vst3 --output-on-failure
 
@@ -325,7 +325,7 @@ jobs:
       - name: Configure + build + test the VST3 plugins
         shell: bash
         run: |
-          cmake -S packages/loopy_engine/vst3 -B build/vst3
+          cmake -S packages/segno_engine/vst3 -B build/vst3
           cmake --build build/vst3 --config Debug
           ctest --test-dir build/vst3 -C Debug --output-on-failure
 
@@ -341,16 +341,16 @@ jobs:
           sudo apt-get update
           # libasound2-dev: the engine's src/CMakeLists.txt (pulled in via
           # add_subdirectory) runs find_package(ALSA REQUIRED) at configure time
-          # even though EXCLUDE_FROM_ALL means its ALSA-linking loopy_engine target
+          # even though EXCLUDE_FROM_ALL means its ALSA-linking segno_engine target
           # is never built here — matches build-linux / native-tests.
           sudo apt-get install -y build-essential cmake libasound2-dev
       - name: Configure + build + test the VST3 plugins
         run: |
-          cmake -S packages/loopy_engine/vst3 -B build/vst3 -DCMAKE_BUILD_TYPE=Debug
+          cmake -S packages/segno_engine/vst3 -B build/vst3 -DCMAKE_BUILD_TYPE=Debug
           cmake --build build/vst3
           ctest --test-dir build/vst3 --output-on-failure
 
-  # The refusal paths of `loopy-update-ctl flash-pedal` (#331 part D). The flash
+  # The refusal paths of `segno-update-ctl flash-pedal` (#331 part D). The flash
   # itself needs a real Pro Micro, but the decisions AROUND it are the dangerous
   # part: the pedal has no A/B rollback, so a write that should not have started
   # means a workbench trip with a sealed enclosure. The harness injects a
@@ -366,19 +366,19 @@ jobs:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
       - name: Run flash-pedal safety tests
-        run: bash deploy/yocto/meta-loopy/recipes-loopy/loopy-bundle/test/run_flash_pedal_tests.sh
+        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_flash_pedal_tests.sh
       - name: Run bt-persist tests
-        run: bash deploy/yocto/meta-loopy/recipes-loopy/loopy-bundle/test/run_bt_persist_tests.sh
+        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_bt_persist_tests.sh
       - name: Run wifi-regdom tests
-        run: bash deploy/yocto/meta-loopy/recipes-loopy/loopy-bundle/test/run_wifi_regdom_tests.sh
+        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wifi_regdom_tests.sh
       - name: Run wifi-backend ownership tests
-        run: bash deploy/yocto/meta-loopy/recipes-loopy/loopy-bundle/test/run_wifi_backend_tests.sh
+        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wifi_backend_tests.sh
       - name: Run wifi join-error classification tests
-        run: bash deploy/yocto/meta-loopy/recipes-loopy/loopy-bundle/test/run_wifi_join_error_tests.sh
+        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wifi_join_error_tests.sh
       - name: Run wifi saved-network tests
-        run: bash deploy/yocto/meta-loopy/recipes-loopy/loopy-bundle/test/run_wifi_saved_tests.sh
+        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wifi_saved_tests.sh
       - name: Run mark-good tests
-        run: bash deploy/yocto/meta-loopy/recipes-loopy/loopy-bundle/test/run_mark_good_tests.sh
+        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_mark_good_tests.sh
 
   spell-check:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1

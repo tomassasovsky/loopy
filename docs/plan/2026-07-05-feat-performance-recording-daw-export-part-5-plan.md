@@ -14,7 +14,7 @@ date: 2026-07-05
 ## Overview
 
 The verified hazard: `le_handle_retired`
-([engine_commands.c:195–215](../../packages/loopy_engine/src/core/engine_commands.c))
+([engine_commands.c:195–215](../../packages/segno_engine/src/core/engine_commands.c))
 silently drops a retired overdub layer when the track's undo stack is full;
 `track_acquire_slot` (:41) evicts the oldest undo when the pool fills; clear
 and redo-invalidation reclaim slots the same way. Audio that audibly played
@@ -61,22 +61,22 @@ change.
 
 ## Tasks
 
-- [ ] `packages/loopy_engine/src/core/engine_commands.c` — armed-gated
+- [ ] `packages/segno_engine/src/core/engine_commands.c` — armed-gated
       staging copy in `le_handle_retired` (+ the redo-invalidation and clear
       reclaim paths, which funnel through slot release — audit and cover).
-- [ ] `packages/loopy_engine/src/core/perf_drain.c` — staging queue drain →
+- [ ] `packages/segno_engine/src/core/perf_drain.c` — staging queue drain →
       `layer-<t>-<frame>.pcm` + sidecar manifest entries.
 - [ ] Native tests: pool-overflow persistence, clear-during-dub,
       redo-invalidation, hand-off ordering, unarmed regression.
 
 ## Files touched (primary)
 
-`packages/loopy_engine/src/core/{engine_commands.c,perf_drain.c,engine_private.h}`,
-`packages/loopy_engine/src/test/test_engine_core.c`.
+`packages/segno_engine/src/core/{engine_commands.c,perf_drain.c,engine_private.h}`,
+`packages/segno_engine/src/test/test_engine_core.c`.
 
 ## Verification
 
-1. `bash packages/loopy_engine/src/test/run_native_tests.sh` — "ALL PASSED".
+1. `bash packages/segno_engine/src/test/run_native_tests.sh` — "ALL PASSED".
 2. `flutter analyze` clean; `dart format --set-exit-if-changed .` stable.
 
 ## Dependencies

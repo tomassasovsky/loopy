@@ -4,19 +4,19 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/cubit/tracks_cubit.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
-import 'package:loopy/looper/view/track_meters.dart';
-import 'package:loopy/looper/view/tracks_view.dart';
-import 'package:loopy/pedal/cubit/pedal_cubit.dart';
-import 'package:loopy/pedal/view/pedal_plate.dart';
-import 'package:loopy/theme/theme.dart';
-import 'package:loopy/visualizer/widgets/waveform_view.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/view/track_meters.dart';
+import 'package:segno/looper/view/tracks_view.dart';
+import 'package:segno/pedal/cubit/pedal_cubit.dart';
+import 'package:segno/pedal/view/pedal_plate.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/visualizer/widgets/waveform_view.dart';
 
-/// The on-screen pedal simulator: a replica of the VAMP top plate — the two
+/// The on-screen pedal simulator: a replica of the Segno top plate — the two
 /// screen apertures (a 7" waveform on the left, the main [TracksView] on
 /// the right), the encoder + activity ring, and the footswitches, laid out to
 /// scale from the 3D model. It drives the **real** `PedalCubit` (through
@@ -108,6 +108,23 @@ class _PedalFaceplateState extends State<PedalFaceplate> {
   }
 }
 
+/// The meter state the 7" waveform colours itself by: the [cursor] track's
+/// transport state, with muted overlaying it — so the stroke and the track name
+/// drawn over it describe the same track.
+///
+/// A cursor that names no live track reads as empty rather than throwing: the
+/// cursor is an index owned by the control layer, and it can point past the
+/// track list while the engine is starting or after a rig change.
+@visibleForTesting
+LooperMeterState waveformStateOfCursor(LooperState looper, int cursor) {
+  for (final track in looper.tracks) {
+    if (track.channel == cursor) {
+      return LooperMeterState.of(track.state, muted: track.muted);
+    }
+  }
+  return LooperMeterState.empty;
+}
+
 /// The live output waveform in the 7" aperture, polled from the looper on a
 /// display-rate timer (mirrors what the waveform sub-window is fed).
 class _ScreenWaveform extends StatefulWidget {
@@ -123,6 +140,7 @@ class _ScreenWaveformState extends State<_ScreenWaveform> {
   Float32List _samples = Float32List(0);
   double _progress = 0;
   String _selectedTrack = '';
+  LooperMeterState _state = LooperMeterState.empty;
 
   @override
   void initState() {
@@ -134,12 +152,12 @@ class _ScreenWaveformState extends State<_ScreenWaveform> {
     if (!mounted) return;
     final looper = context.read<LooperRepository>();
     final tracks = context.read<TracksCubit>();
+    final cursor = context.read<ControlCubit>().state.cursor;
     setState(() {
       _samples = looper.readWaveform();
       _progress = looper.state.transport.progress;
-      _selectedTrack = tracks.state.nameOf(
-        context.read<ControlCubit>().state.cursor,
-      );
+      _selectedTrack = tracks.state.nameOf(cursor);
+      _state = waveformStateOfCursor(looper.state, cursor);
     });
   }
 
@@ -151,13 +169,14 @@ class _ScreenWaveformState extends State<_ScreenWaveform> {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: Colors.black,
-      child: WaveformView(
-        samples: _samples,
-        progress: _progress,
-        selectedTrack: _selectedTrack,
-      ),
+    // No backdrop of our own: WaveformView paints the themed
+    // `waveformBackground`, which is what its state colours are contrast-tested
+    // against. A hard-coded black here would drift from that token.
+    return WaveformView(
+      samples: _samples,
+      progress: _progress,
+      selectedTrack: _selectedTrack,
+      state: _state,
     );
   }
 }

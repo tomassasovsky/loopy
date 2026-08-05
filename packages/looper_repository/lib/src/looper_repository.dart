@@ -16,7 +16,7 @@ import 'package:looper_repository/src/models/track.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
 import 'package:looper_repository/src/plugin_catalog.dart';
-import 'package:loopy_engine/loopy_engine.dart'
+import 'package:segno_engine/segno_engine.dart'
     hide
         AudioBackend,
         AudioDevice,
@@ -34,7 +34,7 @@ import 'package:loopy_engine/loopy_engine.dart'
         TrackEffectParam,
         TrackEffectType;
 
-/// Builds the production [AudioEngine] backed by the native loopy engine.
+/// Builds the production [AudioEngine] backed by the native segno engine.
 ///
 /// Lets the composition root obtain an engine without naming or importing the
 /// engine package's concrete types: the returned value is held as the
@@ -1194,6 +1194,14 @@ class LooperRepository {
   /// the ONE session-apply path (F2). Every write lands in the remembered
   /// caches as well as the engine, so a device restart / reconnect replays the
   /// LOADED session by construction, never a pre-load cache.
+  ///
+  /// **The caller owns writing settings back.** This method updates the engine
+  /// and the caches only; it never touches the boot-restore keys. A session
+  /// load is therefore not complete until whichever layer owns settings
+  /// persistence re-writes them from the enumerations below ([allLaneChains] /
+  /// [allTrackChains] / [masterChainEnvelope] / [allMonitors]). Left silent,
+  /// that asymmetry shipped twice — a cold boot restored the pre-load rig — so
+  /// state it here rather than leaving the caller to discover it.
   ///
   /// Order: clear every track via [clear] (which forgets remembered lane
   /// mutes), await the engine settling to empty, reset every per-track

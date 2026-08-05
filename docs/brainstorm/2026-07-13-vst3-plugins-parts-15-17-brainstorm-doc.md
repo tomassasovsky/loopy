@@ -1,8 +1,8 @@
-# Brainstorm: loopy-fx-vst3-plugins parts 15–17 (undefined tail)
+# Brainstorm: segno-fx-vst3-plugins parts 15–17 (undefined tail)
 
 **Date:** 2026-07-13 · **Status:** needs a decision (which options become 15/16/17)
 
-The `loopy-fx-vst3-plugins` series shipped parts 1–14: the seven FX plugins
+The `segno-fx-vst3-plugins` series shipped parts 1–14: the seven FX plugins
 (Delay, Reverb, Echo, Drive, Filter, Tremolo, Octaver) as real `.vst3` on
 **macOS + Windows + Linux**, with a per-OS CTest gate (GUID + golden-parity +
 wrapper + load-smoke) in CI, plus `.als` device-chain export. **Part 12** (macOS
@@ -23,7 +23,7 @@ Run a real host-grade validator against each built bundle in the
   load-smoke can't — state save/restore, parameter bounds, thread-safety,
   bus/channel arrangements, allocation-on-audio-thread. Pure CI, no product design.
 - **How:** vendor/download `pluginval` (a free, cross-platform plugin validator)
-  and run `pluginval --validate "Loopy Delay.vst3"` per plugin per OS. Gate on
+  and run `pluginval --validate "Segno Delay.vst3"` per plugin per OS. Gate on
   strictness level. macOS/Windows binaries exist; Linux builds from source.
 - **Size:** small–medium (CI + a script). Self-contained.
 
@@ -35,7 +35,7 @@ artifacts.
   no Steinberg agreement, cleaner threading model. Broadens host reach for free-ish.
 - **How:** mirror the `vst3/` project — a `clap/` CMake building each plugin's
   processor against the CLAP entry API + a per-OS `.clap` bundle; reuse
-  `loopy_dsp_core`; add golden-parity + load-smoke CTests + CI jobs. The engine
+  `segno_dsp_core`; add golden-parity + load-smoke CTests + CI jobs. The engine
   already scans CLAP (`src/host/scan_clap.cpp`), so there's precedent.
 - **Size:** medium–large (a parallel plugin project). High value, self-contained.
 

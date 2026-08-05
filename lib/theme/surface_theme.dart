@@ -7,6 +7,9 @@ import 'package:flutter/material.dart';
 /// [ThemeData] via a [ThemeExtension] so widgets resolve them from
 /// `Theme.of(context)` instead of reading module-level constants.
 ///
+/// Values are sourced from the Segno design system (issue #499): the design
+/// file's token set is authoritative and this class mirrors it.
+///
 /// Read it ergonomically with the [SurfaceThemeX.surface] extension:
 /// `context.surface.card`, `context.surface.wetRoute`, etc.
 @immutable
@@ -18,12 +21,27 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     required this.card,
     required this.cardHigh,
     required this.line,
+    required this.control,
+    required this.controlStrong,
+    required this.scrim,
+    required this.borderHairline,
+    required this.borderSubtle,
+    required this.borderStrong,
     required this.accent,
     required this.onAccent,
+    required this.accentSurface,
+    required this.accentAlt,
     required this.warning,
+    required this.success,
+    required this.rec,
+    required this.recSurface,
+    required this.recTint,
+    required this.recLine,
+    required this.recDeep,
     required this.textPrimary,
     required this.textSecondary,
     required this.textTertiary,
+    required this.textMuted,
     required this.wetRoute,
     required this.dryRoute,
     required this.lanePalette,
@@ -44,22 +62,66 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     required this.traceDimOpacity,
   });
 
-  /// The neutral surface palette.
+  /// The neutral surface palette (DS `bg-base`, `bg-surface`, `bg-raised`,
+  /// `bg-elevated`, `border-default`).
   final Color background;
   final Color surface;
   final Color card;
   final Color cardHigh;
   final Color line;
+
+  /// Control-surface fills (DS `bg-control`, `bg-control-strong`): the
+  /// resting fill of an interactive chip/segment, and its strong sibling for
+  /// emphasised or active control surfaces.
+  final Color control;
+  final Color controlStrong;
+
+  /// Overlay scrim behind dialogs and trays (DS `bg-scrim`).
+  final Color scrim;
+
+  /// The white-alpha border tiers below [line] (DS `border-hairline`,
+  /// `border-subtle`): hairline is the resting card edge, subtle is the
+  /// hover-tier lift; both are also the interaction-state overlay fills.
+  final Color borderHairline;
+  final Color borderSubtle;
+
+  /// The strong border tier above [line] (DS `border-strong`).
+  final Color borderStrong;
+
   final Color accent;
   final Color onAccent;
+
+  /// Accent-family surfaces (DS `accent-surface`, `accent-alt`): the tinted
+  /// fill behind selected/accented content, and the lighter accent used for
+  /// secondary accents on dark fills.
+  final Color accentSurface;
+  final Color accentAlt;
 
   /// The caution colour for non-blocking notices (e.g. "no active outputs"),
   /// brightened in the high-contrast variant so it stays legible (WCAG 1.4.3).
   final Color warning;
 
+  /// Positive/confirmation colour (DS `success`).
+  final Color success;
+
+  /// The UI-chrome record red family (DS `rec`, `rec-surface`, `rec-tint`,
+  /// `rec-line`, `rec-deep`): REC pills, armed banners, and armed-row tints.
+  /// Distinct from the stage record hue (`LooperTheme.recordColor`,
+  /// DS `signal-rec`) by design — chrome red is softer than stage red.
+  final Color rec;
+  final Color recSurface;
+  final Color recTint;
+  final Color recLine;
+  final Color recDeep;
+
   final Color textPrimary;
   final Color textSecondary;
   final Color textTertiary;
+
+  /// The dimmest text tier (DS `text-muted`, ~3.4:1 on [card]): large text
+  /// and non-essential ornament only — never body copy (WCAG 1.4.3 applies
+  /// to the three tiers above).
+  final Color textMuted;
 
   /// Routing-graph send-role colours: wet (effected) and dry (clean).
   final Color wetRoute;
@@ -74,9 +136,10 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
 
   /// Pedal LED palette — the on-screen pedal faceplate renders the firmware's
   /// LED colors from these so they honor the high-contrast variant instead of
-  /// hardcoding hues. [ledOff] is an unlit dot; the rest map the pedal's
-  /// `PedalTrackLed` / `GlobalColor` semantics; [ringGlow] is the encoder ring's
-  /// ambient rim when idle.
+  /// hardcoding hues. [ledGreen]/[ledRed]/[ledAmber]/[ledBlue] map the pedal's
+  /// `PedalTrackLed` / `GlobalColor` semantics and are not restylable;
+  /// [ledOff] (an unlit dot) and [ringGlow] (the encoder ring's ambient rim
+  /// when idle) are panel neutrals that follow the ramp's hue.
   final Color ledOff;
   final Color ledGreen;
   final Color ledRed;
@@ -116,11 +179,10 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// an untraced row legible rather than to be reused for disabled state.
   final double traceDimOpacity;
 
-  /// The display/body typeface — a geometric grotesque that gives the surfaces
-  /// their instrument-panel character (bundled under `assets/fonts/`).
-  static const String displayFont = 'Space Grotesk';
+  /// The UI typeface (DS `font-ui`, bundled under `assets/fonts/`).
+  static const String displayFont = 'Inter';
 
-  /// Bold Helvetica legend face from the VAMP printed overlay — pedal silk
+  /// Bold Helvetica legend face from the Segno printed overlay — pedal silk
   /// labels and the main looper screen.
   static const String legendFont = 'Helvetica';
 
@@ -128,8 +190,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   static const List<String> legendFontFallback = ['Arial', 'sans-serif'];
 
   /// The monospace typeface used for numerics, gate/section labels, and any
-  /// "machine" readout (channel ids, dB values, FX names).
-  static const String monoFont = 'IBM Plex Mono';
+  /// "machine" readout (channel ids, dB values, FX names) — DS `font-mono`,
+  /// bundled under `assets/fonts/`.
+  static const String monoFont = 'JetBrains Mono';
 
   @override
   SurfaceTheme copyWith({
@@ -138,12 +201,27 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     Color? card,
     Color? cardHigh,
     Color? line,
+    Color? control,
+    Color? controlStrong,
+    Color? scrim,
+    Color? borderHairline,
+    Color? borderSubtle,
+    Color? borderStrong,
     Color? accent,
     Color? onAccent,
+    Color? accentSurface,
+    Color? accentAlt,
     Color? warning,
+    Color? success,
+    Color? rec,
+    Color? recSurface,
+    Color? recTint,
+    Color? recLine,
+    Color? recDeep,
     Color? textPrimary,
     Color? textSecondary,
     Color? textTertiary,
+    Color? textMuted,
     Color? wetRoute,
     Color? dryRoute,
     List<Color>? lanePalette,
@@ -168,12 +246,27 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     card: card ?? this.card,
     cardHigh: cardHigh ?? this.cardHigh,
     line: line ?? this.line,
+    control: control ?? this.control,
+    controlStrong: controlStrong ?? this.controlStrong,
+    scrim: scrim ?? this.scrim,
+    borderHairline: borderHairline ?? this.borderHairline,
+    borderSubtle: borderSubtle ?? this.borderSubtle,
+    borderStrong: borderStrong ?? this.borderStrong,
     accent: accent ?? this.accent,
     onAccent: onAccent ?? this.onAccent,
+    accentSurface: accentSurface ?? this.accentSurface,
+    accentAlt: accentAlt ?? this.accentAlt,
     warning: warning ?? this.warning,
+    success: success ?? this.success,
+    rec: rec ?? this.rec,
+    recSurface: recSurface ?? this.recSurface,
+    recTint: recTint ?? this.recTint,
+    recLine: recLine ?? this.recLine,
+    recDeep: recDeep ?? this.recDeep,
     textPrimary: textPrimary ?? this.textPrimary,
     textSecondary: textSecondary ?? this.textSecondary,
     textTertiary: textTertiary ?? this.textTertiary,
+    textMuted: textMuted ?? this.textMuted,
     wetRoute: wetRoute ?? this.wetRoute,
     dryRoute: dryRoute ?? this.dryRoute,
     lanePalette: lanePalette ?? this.lanePalette,
@@ -204,12 +297,27 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       card: c(card, other.card),
       cardHigh: c(cardHigh, other.cardHigh),
       line: c(line, other.line),
+      control: c(control, other.control),
+      controlStrong: c(controlStrong, other.controlStrong),
+      scrim: c(scrim, other.scrim),
+      borderHairline: c(borderHairline, other.borderHairline),
+      borderSubtle: c(borderSubtle, other.borderSubtle),
+      borderStrong: c(borderStrong, other.borderStrong),
       accent: c(accent, other.accent),
       onAccent: c(onAccent, other.onAccent),
+      accentSurface: c(accentSurface, other.accentSurface),
+      accentAlt: c(accentAlt, other.accentAlt),
       warning: c(warning, other.warning),
+      success: c(success, other.success),
+      rec: c(rec, other.rec),
+      recSurface: c(recSurface, other.recSurface),
+      recTint: c(recTint, other.recTint),
+      recLine: c(recLine, other.recLine),
+      recDeep: c(recDeep, other.recDeep),
       textPrimary: c(textPrimary, other.textPrimary),
       textSecondary: c(textSecondary, other.textSecondary),
       textTertiary: c(textTertiary, other.textTertiary),
+      textMuted: c(textMuted, other.textMuted),
       wetRoute: c(wetRoute, other.wetRoute),
       dryRoute: c(dryRoute, other.dryRoute),
       ledOff: c(ledOff, other.ledOff),
@@ -250,21 +358,37 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// the routing graphs. The same values in every [ThemeData] variant — these
   /// surfaces read identically regardless of the active app theme.
   ///
-  /// Text tokens meet WCAG 2.2 AA contrast (1.4.3) against [card]:
-  /// `textTertiary` was lifted from `0xFF5B5D67` (~2.6:1) to `0xFF82848E`
-  /// (~4.6:1) so dimmed labels stay legible.
+  /// The neutral ramp is the DS's neutral grey (the pre-#499 ramp was
+  /// blue-tinted). Text tokens meet WCAG 2.2 AA contrast (1.4.3) against
+  /// [card]: `textSecondary` ~6.5:1, `textTertiary` ~5.3:1; [textMuted] is
+  /// below the body-copy floor by design (see its doc).
   static const SurfaceTheme dark = SurfaceTheme(
-    background: Color(0xFF08080A),
-    surface: Color(0xFF0D0D11),
-    card: Color(0xFF16161B),
-    cardHigh: Color(0xFF1C1C22),
-    line: Color(0xFF272730),
+    background: Color(0xFF0B0B0C),
+    surface: Color(0xFF141417),
+    card: Color(0xFF161618),
+    cardHigh: Color(0xFF1E1E21),
+    line: Color(0xFF2A2A2E),
+    control: Color(0xFF26262A),
+    controlStrong: Color(0xFF3A3A40),
+    scrim: Color(0x6B08080A),
+    borderHairline: Color(0x0BFFFFFF),
+    borderSubtle: Color(0x1FFFFFFF),
+    borderStrong: Color(0xFF3A3A40),
     accent: Color(0xFF3B82F6),
     onAccent: Color(0xFFFFFFFF),
-    warning: Color(0xFFF0C97A),
+    accentSurface: Color(0xFF16233D),
+    accentAlt: Color(0xFF738CF2),
+    warning: Color(0xFFE0A94A),
+    success: Color(0xFF30A46C),
+    rec: Color(0xFFE5484D),
+    recSurface: Color(0x24E5484D),
+    recTint: Color(0x21E5484D),
+    recLine: Color(0x66E5484D),
+    recDeep: Color(0xFF2A1214),
     textPrimary: Color(0xFFF3F4F7),
-    textSecondary: Color(0xFF989AA4),
-    textTertiary: Color(0xFF82848E),
+    textSecondary: Color(0xFF9A9AA2),
+    textTertiary: Color(0xFF8A8A92),
+    textMuted: Color(0xFF6B6B73),
     wetRoute: Color(0xFF3B82F6),
     dryRoute: Color(0xFFF59E0B),
     lanePalette: [
@@ -277,19 +401,19 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       Color(0xFFFB923C), // orange
       Color(0xFF38BDF8), // sky
     ],
-    ledOff: Color(0xFF23232B),
+    ledOff: Color(0xFF232325),
     ledGreen: Color(0xFF34D399),
     ledRed: Color(0xFFEF4444),
     ledAmber: Color(0xFFF59E0B),
     ledBlue: Color(0xFF3B82F6),
-    ringGlow: Color(0xFF3A3A44),
-    chromeGradientTop: Color(0xFF101016),
-    chromeGradientBottom: Color(0xFF0C0C10),
-    chromeBar: Color(0xFF0B0B0F),
-    meterTrack: Color(0xFF0E0E12),
-    pageGlow: Color(0xFF11111B),
-    knobFaceTop: Color(0xFF23232B),
-    knobFaceBottom: Color(0xFF121217),
+    ringGlow: Color(0xFF3A3A3D),
+    chromeGradientTop: Color(0xFF111113),
+    chromeGradientBottom: Color(0xFF0C0C0D),
+    chromeBar: Color(0xFF0B0B0C),
+    meterTrack: Color(0xFF0E0E0F),
+    pageGlow: Color(0xFF121214),
+    knobFaceTop: Color(0xFF232325),
+    knobFaceBottom: Color(0xFF121214),
     disabledOpacity: 0.4,
     traceDimOpacity: 0.28,
   );
@@ -299,18 +423,37 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// High Contrast, surfaced via `MediaQuery.highContrast`). Text rises toward
   /// pure white, lines clear the 3:1 non-text threshold (1.4.11), and the
   /// route/lane hues brighten so wiring stays distinguishable.
+  ///
+  /// Re-derived from the pre-#499 HC palette by the rule "preserve lightness,
+  /// drop the blue tint" so it matches the DS's neutral ramp; the measured
+  /// contrast floors are asserted relationally in `test/theme/`.
   static const SurfaceTheme highContrast = SurfaceTheme(
     background: Color(0xFF000000),
     surface: Color(0xFF000000),
-    card: Color(0xFF0A0A0D),
-    cardHigh: Color(0xFF17171D),
-    line: Color(0xFF6B6D78),
+    card: Color(0xFF0A0A0B),
+    cardHigh: Color(0xFF171719),
+    line: Color(0xFF6E6E6E),
+    control: Color(0xFF2E2E30),
+    controlStrong: Color(0xFF4A4A4C),
+    scrim: Color(0xA0000000),
+    borderHairline: Color(0x1FFFFFFF),
+    borderSubtle: Color(0x3DFFFFFF),
+    borderStrong: Color(0xFF8A8A8A),
     accent: Color(0xFF6BA8FF),
     onAccent: Color(0xFF000000),
+    accentSurface: Color(0xFF234069),
+    accentAlt: Color(0xFF9AB4FF),
     warning: Color(0xFFFFD27A),
+    success: Color(0xFF6EE7B7),
+    rec: Color(0xFFFF6B6B),
+    recSurface: Color(0x33FF6B6B),
+    recTint: Color(0x2EFF6B6B),
+    recLine: Color(0x99FF6B6B),
+    recDeep: Color(0xFF361619),
     textPrimary: Color(0xFFFFFFFF),
-    textSecondary: Color(0xFFD6D8E0),
-    textTertiary: Color(0xFFB2B4BE),
+    textSecondary: Color(0xFFD8D8D8),
+    textTertiary: Color(0xFFB4B4B4),
+    textMuted: Color(0xFF9A9A9A),
     wetRoute: Color(0xFF6BA8FF),
     dryRoute: Color(0xFFFFC04D),
     lanePalette: [
@@ -323,19 +466,19 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       Color(0xFFFDBA74), // orange
       Color(0xFF7DD3FC), // sky
     ],
-    ledOff: Color(0xFF3A3A44),
+    ledOff: Color(0xFF3A3A3C),
     ledGreen: Color(0xFF6EE7B7),
     ledRed: Color(0xFFFF6B6B),
     ledAmber: Color(0xFFFFC04D),
     ledBlue: Color(0xFF6BA8FF),
-    ringGlow: Color(0xFF6B6D78),
-    chromeGradientTop: Color(0xFF0B0B10),
-    chromeGradientBottom: Color(0xFF050508),
-    chromeBar: Color(0xFF060609),
-    meterTrack: Color(0xFF040406),
-    pageGlow: Color(0xFF0B0B18),
-    knobFaceTop: Color(0xFF2E2E3A),
-    knobFaceBottom: Color(0xFF17171D),
+    ringGlow: Color(0xFF6E6E6E),
+    chromeGradientTop: Color(0xFF0B0B0C),
+    chromeGradientBottom: Color(0xFF050506),
+    chromeBar: Color(0xFF060607),
+    meterTrack: Color(0xFF040405),
+    pageGlow: Color(0xFF0B0B0C),
+    knobFaceTop: Color(0xFF2E2E30),
+    knobFaceBottom: Color(0xFF171719),
     // Dim less than [dark]: a disabled control must still clear the contrast
     // floor under the high-contrast preference.
     disabledOpacity: 0.62,

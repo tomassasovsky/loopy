@@ -1,6 +1,6 @@
-import 'package:loopy_engine/loopy_engine.dart';
 import 'package:meta/meta.dart';
 import 'package:performance_repository/src/models/performance_chains.dart';
+import 'package:segno_engine/segno_engine.dart';
 
 /// One lane's PCM + (arm-only) effect chain at the moment of a performance
 /// snapshot.

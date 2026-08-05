@@ -7,7 +7,7 @@ topic: asio-only-windows-and-ui-consolidation
 
 ## What We're Building
 
-A consolidation pass over Loopy that commits fully to **ASIO on Windows** and
+A consolidation pass over Segno that commits fully to **ASIO on Windows** and
 simplifies the app's surface area. Five related workstreams:
 
 1. **Remove the audio-setup wizard.** The first-run `_Wizard`/`_EngineStep`/
@@ -34,7 +34,7 @@ and the cross-cutting UI/monitoring changes are affected.
 
 ## Why This Approach
 
-Loopy's Windows story has converged on ASIO (the only way to reach a pro
+Segno's Windows story has converged on ASIO (the only way to reach a pro
 interface's full channel count — proven on the user's Focusrite at 18 in /
 20 out). Keeping WASAPI selectable, a separate first-run wizard, and a second
 "desktop" layout are now redundant surfaces that each duplicate config/monitor
@@ -65,7 +65,7 @@ the overlap.
 - **License → GPLv3, vendor the full SDK.** Change `LICENSE` MIT → GPLv3 and
   commit the entire Steinberg ASIO SDK (~5.5 MB, 39 files) into the repo with its
   Steinberg license intact; remove the `.gitignore` entries; make
-  `LOOPY_ENABLE_ASIO` default-ON for Windows. Rationale: GPLv3 permits
+  `SEGNO_ENABLE_ASIO` default-ON for Windows. Rationale: GPLv3 permits
   redistributing the GPLv3-licensed SDK; vendoring makes the Windows build
   reproducible with no user-supplied step. (Full SDK chosen over a trimmed set
   for completeness / future use of its sample + docs.)

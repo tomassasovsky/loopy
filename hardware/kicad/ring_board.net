@@ -115,12 +115,12 @@
       (ref "ENC1")
       (value "RotaryEncoder_Switch")
       (description "Rotary encoder, dual channel, incremental quadrate outputs, with switch")
-      (footprint "loopy:RotaryEncoder_EC11")
+      (footprint "segno:RotaryEncoder_EC11")
       (fields
         (field
           (name "Description") "Rotary encoder, dual channel, incremental quadrate outputs, with switch")
         (field
-          (name "Footprint") "loopy:RotaryEncoder_EC11")
+          (name "Footprint") "segno:RotaryEncoder_EC11")
         (field
           (name "Datasheet"))
         (field
@@ -161,12 +161,12 @@
       (ref "J2")
       (value "NEOPIXEL")
       (description "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
-      (footprint "loopy:WirePads_1x04")
+      (footprint "segno:WirePads_1x04")
       (fields
         (field
           (name "Description") "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
         (field
-          (name "Footprint") "loopy:WirePads_1x04")
+          (name "Footprint") "segno:WirePads_1x04")
         (field
           (name "Datasheet"))
         (field
@@ -184,12 +184,12 @@
       (ref "J3")
       (value "RINGPINS")
       (description "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
-      (footprint "loopy:ModuleMountPads_4")
+      (footprint "segno:ModuleMountPads_4")
       (fields
         (field
           (name "Description") "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
         (field
-          (name "Footprint") "loopy:ModuleMountPads_4")
+          (name "Footprint") "segno:ModuleMountPads_4")
         (field
           (name "Datasheet"))
         (field

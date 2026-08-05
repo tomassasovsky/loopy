@@ -7,14 +7,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/app/app.dart';
-import 'package:loopy/app/app_toasts.dart';
-import 'package:loopy/app/loopy_navigator.dart';
-import 'package:loopy/looper/looper.dart';
-import 'package:loopy/update/view/updates_settings_section.dart';
-import 'package:loopy/visualizer/visualizer.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/app.dart';
+import 'package:segno/app/app_toasts.dart';
+import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/looper/looper.dart';
+import 'package:segno/update/view/updates_settings_section.dart';
+import 'package:segno/visualizer/visualizer.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:update_repository/update_repository.dart';
@@ -99,7 +99,7 @@ class _RecordingWindowService implements WaveformWindowService {
   bool get isOpen => _open;
 
   @override
-  Future<bool> open({String title = 'Loopy — Output'}) async {
+  Future<bool> open({String title = 'Segno — Output'}) async {
     openCalls++;
     _open = openResult;
     return openResult;
@@ -131,9 +131,9 @@ void main() {
     setUp(() {
       // Both are module-level and survive between tests: a leftover toast
       // makes the next identical toast a silent no-op, and a settings guard
-      // left set makes openLoopySettings return early forever after.
+      // left set makes openSegnoSettings return early forever after.
       resetAppToastsForTest();
-      resetLoopyNavigatorForTest();
+      resetSegnoNavigatorForTest();
       repository = LooperRepository(
         engine: FakeAudioEngine(),
         ticker: const Stream<void>.empty(),
@@ -262,12 +262,12 @@ void main() {
           tester,
           UpdateRepository(backend: backend),
         );
-        // NOT awaited: openLoopySettings awaits navigator.push, which resolves
+        // NOT awaited: openSegnoSettings awaits navigator.push, which resolves
         // only when the route is POPPED. Awaiting it here deadlocks the test on
         // its own first statement — settings is not closed until the end — and
         // it does not fail fast: it spins until the harness gives up minutes
         // later, poisoning the rest of the file.
-        unawaited(openLoopySettings(section: SettingsSection.updates));
+        unawaited(openSegnoSettings(section: SettingsSection.updates));
         await tester.pumpAndSettle();
         backend.complete();
         await tester.pumpAndSettle();

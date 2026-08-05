@@ -7,8 +7,8 @@ topic: windows-linux-native
 
 ## What We're Building
 
-Bring Loopy to Windows and Linux at the highest feature parity each OS physically
-allows. The audio engine C core (`packages/loopy_engine/src/`) is already portable
+Bring Segno to Windows and Linux at the highest feature parity each OS physically
+allows. The audio engine C core (`packages/segno_engine/src/`) is already portable
 via vendored **miniaudio** — there are no macOS `#ifdef`s in the DSP, looping,
 lock-free ring, or atomic-state code. The work is therefore three things:
 (1) get both platforms **building and running end-to-end** (record / loop / play /
@@ -38,7 +38,7 @@ research passes established:
   MOTU / Focusrite drivers do populate. But miniaudio has **no ASIO backend**, so
   it is a separate driver integration alongside the WASAPI capture path, and the
   Steinberg ASIO SDK is **GPLv3-or-proprietary** (since Nov 2025) — **incompatible
-  with Loopy's MIT license** unless ASIO is an opt-in, user-supplied, non-vendored
+  with Segno's MIT license** unless ASIO is an opt-in, user-supplied, non-vendored
   build component (or a paid Steinberg license is obtained).
 - **Linux.** No stack — ALSA chmaps, PulseAudio, PipeWire ports, JACK aliases —
   exposes arbitrary per-channel labels; all are **positional** (FL/FR/AUX0…). The
@@ -71,7 +71,7 @@ unavailable.
   ALSA/PulseAudio/PipeWire on Linux) is its own deliverable. Everything else is
   additive. Rationale: it's the bulk of the user value and carries none of the
   licensing/feasibility risk.
-- **Create the missing Linux app scaffold.** `loopy/linux/` does not exist; the
+- **Create the missing Linux app scaffold.** `segno/linux/` does not exist; the
   engine plugin already declares `linux: { ffiPlugin: true }` and has
   `linux/CMakeLists.txt`. Need `flutter create --platforms=linux .` to generate the
   app-level GTK runner, then wire flavors. Windows scaffold already exists and is
@@ -117,7 +117,7 @@ unavailable.
   backend dynamically; the PipeWire label spike needs `libpipewire` present and the
   node visible. Confirm the Linux test box runs PipeWire (vs. bare ALSA) so the
   spike is even applicable.
-- **Linux flavors / packaging.** Loopy uses Flutter flavor schemes
+- **Linux flavors / packaging.** Segno uses Flutter flavor schemes
   (`--flavor development`). Confirm how flavors map onto the Linux GTK runner and
   whether any packaging (AppImage/Flatpak/.deb) is in scope or deferred.
 - **CI coverage.** Whether to add Windows + Linux build/test jobs so the portable

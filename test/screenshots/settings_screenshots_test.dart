@@ -8,21 +8,21 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/audio_setup.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/looper.dart';
-import 'package:loopy/looper/view/fx_editor/fx_dock.dart';
-import 'package:loopy/looper/view/fx_editor/fx_scope.dart';
-import 'package:loopy/pedal/pedal.dart';
-import 'package:loopy/theme/theme.dart';
-import 'package:loopy/update/cubit/update_cubit.dart';
-import 'package:loopy/visualizer/visualizer.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/view/fx_editor/fx_dock.dart';
+import 'package:segno/looper/view/fx_editor/fx_scope.dart';
+import 'package:segno/pedal/pedal.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/update/cubit/update_cubit.dart';
+import 'package:segno/visualizer/visualizer.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:update_repository/update_repository.dart';
 
@@ -80,11 +80,16 @@ void main() {
     ]);
     // The Signal surface's bundled typefaces, so its mono readouts and grotesk
     // headings render as text (not Ahem boxes) under golden capture.
-    await _loadFont('Space Grotesk', ['assets/fonts/SpaceGrotesk.ttf']);
-    await _loadFont('IBM Plex Mono', [
-      'assets/fonts/IBMPlexMono-Regular.ttf',
-      'assets/fonts/IBMPlexMono-Medium.ttf',
-      'assets/fonts/IBMPlexMono-SemiBold.ttf',
+    await _loadFont('Inter', [
+      'assets/fonts/Inter-Regular.ttf',
+      'assets/fonts/Inter-Medium.ttf',
+      'assets/fonts/Inter-SemiBold.ttf',
+      'assets/fonts/Inter-Bold.ttf',
+    ]);
+    await _loadFont('JetBrains Mono', [
+      'assets/fonts/JetBrainsMono-Regular.ttf',
+      'assets/fonts/JetBrainsMono-Medium.ttf',
+      'assets/fonts/JetBrainsMono-SemiBold.ttf',
     ]);
   });
 

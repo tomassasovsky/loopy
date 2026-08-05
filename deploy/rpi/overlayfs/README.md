@@ -18,16 +18,16 @@ a yanked cable can never damage the OS.
 | Partition | Mount | Mode | Contents |
 |---|---|---|---|
 | `mmcblk0p1` | `/boot/firmware` | ro | firmware + kernel + `cmdline.txt` |
-| `mmcblk0p2` | `/` | **ro (overlay)** | OS + the Loopy bundle |
-| `mmcblk0p3` | `/var/lib/loopy` | rw | app settings + saved sessions |
+| `mmcblk0p2` | `/` | **ro (overlay)** | OS + the Segno bundle |
+| `mmcblk0p3` | `/var/lib/segno` | rw | app settings + saved sessions |
 
 The app must write its settings/sessions onto the writable partition, not the
 read-only root. Point the XDG data dir at it for the kiosk user, e.g. in the
 kiosk environment:
 
 ```sh
-export XDG_DATA_HOME=/var/lib/loopy/share
-export XDG_CONFIG_HOME=/var/lib/loopy/config
+export XDG_DATA_HOME=/var/lib/segno/share
+export XDG_CONFIG_HOME=/var/lib/segno/config
 ```
 
 (`SharedPreferences` and the session directory resolve under these via
@@ -50,7 +50,7 @@ check mounts it after fsck):
 
 ```fstab
 # /dev/mmcblk0p3 is mounted by deploy/rpi/boot-integrity-check.sh after fsck.
-/dev/mmcblk0p3  /var/lib/loopy  ext4  noauto,noatime  0  0
+/dev/mmcblk0p3  /var/lib/segno  ext4  noauto,noatime  0  0
 ```
 
 `/boot/firmware` should also be remounted read-only once configured.
@@ -76,6 +76,6 @@ Record the result (pass/fail per cycle, any fsck repairs) in
 With a read-only root, **cutting power is safe for the OS** — nothing is mid-write
 on `/`. The writable data partition is mounted with journaling and fsck'd on the
 next boot, so an interrupted save self-heals. For a graceful stop (e.g. a wired
-power button), `sudo systemctl poweroff` unmounts `/var/lib/loopy` cleanly; wire
+power button), `sudo systemctl poweroff` unmounts `/var/lib/segno` cleanly; wire
 a momentary button to `dtoverlay=gpio-shutdown` in `config.txt` if a physical
 power-off is wanted.

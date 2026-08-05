@@ -6,15 +6,15 @@ import 'package:daw_export/src/daw_project.dart';
 /// Reads `events.log`
 /// (`docs/design/performance-event-log-format.md`) directly — a
 /// fixed-width binary format, parsed here with no dependency on
-/// `loopy_engine` (own-input-model rule, same as `DawManifestReader`'s
+/// `segno_engine` (own-input-model rule, same as `DawManifestReader`'s
 /// `performance.json` reading). Every field offset below mirrors that
 /// document's entry layout exactly.
 abstract final class EventLogReader {
   static const int _headerBytes = 12;
   static const int _entryBytes = 28;
 
-  // Values from perf_log_ring.h / loopy_engine_api.h's audited command
-  // table — never imported (this package has no loopy_engine dependency),
+  // Values from perf_log_ring.h / segno_engine_api.h's audited command
+  // table — never imported (this package has no segno_engine dependency),
   // reproduced verbatim as this reader's own constants.
   static const int _codeSetVolume = 7;
   static const int _codeSetMute = 8;

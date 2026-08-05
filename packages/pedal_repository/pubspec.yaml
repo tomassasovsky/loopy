@@ -1,7 +1,7 @@
 name: pedal_repository
 description: >-
-  Protocol layer for the Loopy bidirectional MIDI looper pedal: state-frame
-  models and the SysEx codec (versioned, checksummed, 7-bit-packed) that loopy
+  Protocol layer for the Segno bidirectional MIDI looper pedal: state-frame
+  models and the SysEx codec (versioned, checksummed, 7-bit-packed) that segno
   and the pedal firmware share as a single contract.
 version: 0.1.0
 publish_to: none

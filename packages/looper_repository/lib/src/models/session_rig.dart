@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
-import 'package:loopy_engine/loopy_engine.dart' show LooperMode;
+import 'package:segno_engine/segno_engine.dart' show LooperMode;
 
 /// One lane's restored audio, routing, and mix inside a [SessionRigTrack].
 ///

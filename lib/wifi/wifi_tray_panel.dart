@@ -2,14 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/appliance/host_page_chrome.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/setup/setup_surface.dart';
-import 'package:loopy/theme/theme.dart';
-import 'package:loopy/wifi/wifi_cubit.dart';
-import 'package:loopy/wifi/wifi_error_message.dart';
-import 'package:loopy/wifi/wifi_network_visibility.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/appliance/host_page_chrome.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/setup/setup_surface.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/wifi/wifi_cubit.dart';
+import 'package:segno/wifi/wifi_error_message.dart';
+import 'package:segno/wifi/wifi_network_visibility.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 /// In-tray WiFi face — fills the Control Center radio division until Back.
@@ -79,7 +79,7 @@ class _WifiTrayPanelState extends State<WifiTrayPanel> {
                       ? wifiErrorMessage(l10n, state.errorMessage)
                       : l10n.wifiUnsupportedBody,
                   textAlign: TextAlign.center,
-                  style: setupBody,
+                  style: context.setupBody,
                 ),
               ),
             )
@@ -89,7 +89,7 @@ class _WifiTrayPanelState extends State<WifiTrayPanel> {
               const SizedBox(height: 8),
               Text(
                 wifiErrorMessage(l10n, state.errorMessage),
-                style: setupBody.copyWith(fontSize: 12),
+                style: context.setupBody.copyWith(fontSize: 12),
               ),
             ],
             const SizedBox(height: 16),
@@ -99,7 +99,10 @@ class _WifiTrayPanelState extends State<WifiTrayPanel> {
               child: state.networks.isEmpty && !state.scanning
                   ? Align(
                       alignment: Alignment.topLeft,
-                      child: Text(l10n.wifiEmptyNetworks, style: setupBody),
+                      child: Text(
+                        l10n.wifiEmptyNetworks,
+                        style: context.setupBody,
+                      ),
                     )
                   : DecoratedBox(
                       decoration: BoxDecoration(

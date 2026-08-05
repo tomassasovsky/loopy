@@ -31,7 +31,7 @@ source_brainstorm: docs/brainstorm/2026-07-05-performance-recording-daw-export-b
 > `.als`-format research pass, and a three-agent technical review (simplicity,
 > VGV conventions, plan splitting) whose findings are folded into the
 > decisions, data model, and part scopes below. Two scope questions were put
-> to the user and are locked: **full Loopy-pedal firmware parity is in scope**
+> to the user and are locked: **full Segno-pedal firmware parity is in scope**
 > (new note + LED field) and the `.als` generator targets **Live 12**.
 
 ## feat: performance recording & DAW export — Extensive (umbrella)
@@ -65,7 +65,7 @@ Deliverables land in one movable bundle:
 ```
 
 **Out of scope (explicit):** screen/camera capture (user films separately),
-recreating Loopy's built-in FX as Ableton devices (a named follow-up — the
+recreating Segno's built-in FX as Ableton devices (a named follow-up — the
 `performance.json` metadata stays rich enough for it), offline rendering
 *through* third-party VST3/CLAP plugins (plugin slots render as dry
 passthrough offline, see D-RENDER), Reaper `.rpp` / `.dawproject` exporters
@@ -75,24 +75,24 @@ in progress (arm is disabled until the render completes).
 
 ## Problem Statement
 
-Loopy can only export a single dry mono loop cycle per track — and only lane 0
-([`le_engine_export_track`](../../packages/loopy_engine/src/core/engine_session.c),
+Segno can only export a single dry mono loop cycle per track — and only lane 0
+([`le_engine_export_track`](../../packages/segno_engine/src/core/engine_session.c),
 lines 22–35, hardcodes `lanes[0]`). There is no way to record a whole
 performance (loops starting/stopping, overdubs, mutes, volume rides, FX
 tweaks, singing over the top) for a video, and nothing that lands in a DAW as
 editable material. Everything needed to fix this already exists in pieces:
 
 - A post-limiter master tap: `master_bus_frame`
-  ([engine_process.c:974–1017](../../packages/loopy_engine/src/core/engine_process.c)),
+  ([engine_process.c:974–1017](../../packages/segno_engine/src/core/engine_process.c)),
   called once per frame after track + monitor mixing (:1669).
 - The live monitor path: `mix_monitors_frame` (:1289–1310) — audible but never
   written to any buffer or file.
 - An RT-safe cross-thread pattern: SPSC rings
-  ([lockfree_ring.h:30–69](../../packages/loopy_engine/src/core/lockfree_ring.h)),
+  ([lockfree_ring.h:30–69](../../packages/segno_engine/src/core/lockfree_ring.h)),
   one control→audio command ring and one audio→control event ring
-  ([engine_private.h:413–423](../../packages/loopy_engine/src/core/engine_private.h)).
+  ([engine_private.h:413–423](../../packages/segno_engine/src/core/engine_private.h)).
 - Dry loop buffers with non-destructive playback FX (`fx_apply_chain`,
-  [engine_fx.c:978](../../packages/loopy_engine/src/core/engine_fx.c)) — so wet
+  [engine_fx.c:978](../../packages/segno_engine/src/core/engine_fx.c)) — so wet
   *and* dry stems can come from one offline replay mechanism.
 - Retained overdub layers: 256-slot undo pool per track
   (`LE_POOL_SLOTS`, engine_private.h:46) with retire events already flowing to
@@ -103,7 +103,7 @@ editable material. Everything needed to fix this already exists in pieces:
   [session_directory.dart:18](../../lib/session_directory.dart)).
 
 **The one verified correctness hazard:** `le_handle_retired`
-([engine_commands.c:195–215](../../packages/loopy_engine/src/core/engine_commands.c))
+([engine_commands.c:195–215](../../packages/segno_engine/src/core/engine_commands.c))
 **silently drops** a retired layer when a track's undo stack is full, and
 `track_acquire_slot` (:41–68) evicts the oldest undo when the pool fills.
 Clear and redo-invalidation reclaim slots the same way. Audio that audibly
@@ -247,15 +247,15 @@ Taken control-side, tagged with capture frames:
 - `daw_export` is a **pure Dart package with its own input model**
   (`DawProject` / `DawTrack` / `DawClip` / `AutomationLane`) built from the
   documented `performance.json` + log formats — it never imports
-  `performance_repository` or `loopy_engine`; the app layer maps between the
+  `performance_repository` or `segno_engine`; the app layer maps between the
   two. Fixture-driven tests, fully parallelizable with the native track.
-- One Ableton audio track per non-empty Loopy track + one per live-input
+- One Ableton audio track per non-empty Segno track + one per live-input
   stem. Arrangement view: wet full-length stems as clips at capture t=0
   (full-length, so placement is trivial and sample-accurate). Session view:
   loop-cycle clips in slots per lane. Volume events → mixer volume automation
   (thinned breakpoints, thinning lives here); mute events → track-activator
   automation.
-- **Fixed tempo (120 BPM), warp OFF on every clip** — Loopy has no BPM;
+- **Fixed tempo (120 BPM), warp OFF on every clip** — Segno has no BPM;
   warp-off is the only choice that cannot corrupt sample-accurate timing
   (D-TEMPO).
 - **Relative file references only**; the bundle folder is self-contained and
@@ -263,7 +263,7 @@ Taken control-side, tagged with capture frames:
 - FX chains: `performance.json` is the **canonical machine-readable record**
   (effect types + normalized params per lane, third-party plugin identity
   from the existing `PluginEffect` metadata — rich enough for the future
-  Loopy-FX-plugin exporter); `fx-chains.txt` is the human summary. No `.als`
+  Segno-FX-plugin exporter); `fx-chains.txt` is the human summary. No `.als`
   annotation mirroring (pure duplication + corpus-test surface).
 
 ### App state & control surfaces
@@ -418,7 +418,7 @@ erDiagram
   `exportTrackLane`. `MockAudioEngine` parity for every new capability is
   per-PR, not deferred.
 - **New packages:** `wav_codec` (pure Dart, extracted), `performance_repository`
-  (depends on `loopy_engine` + `wav_codec`), `daw_export` (pure Dart, own
+  (depends on `segno_engine` + `wav_codec`), `daw_export` (pure Dart, own
   `DawProject` input model, **no** repository/engine deps). Repositories
   never import each other; the app composes them.
 
@@ -487,25 +487,25 @@ toggles (single intent path through `ControlCubit` → repository).
 GOAL: A performer can arm from UI or pedal, play a full looper session, and receive a self-contained bundle — video-sync master, live-input stems, full-length wet/dry per-track stems, all-lane loop-cycle stems, and a Live 12 project that opens cleanly with everything placed where it was played.
 
 SUCCESS CRITERIA:
-- Native engine suites pass, including: capture-tap correctness, ring-overflow silence-fill, raw event-log ordering + audited-table completeness, layer-survives-pool-eviction (and clear/redo reclaim), overdub-pass stitching, track-recorded-while-armed renders a stem, and the golden master-parity test under the fixed protocol (arm-from-silence, no monitors, no plugins, settle window, float tolerance) | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
+- Native engine suites pass, including: capture-tap correctness, ring-overflow silence-fill, raw event-log ordering + audited-table completeness, layer-survives-pool-eviction (and clear/redo reclaim), overdub-pass stitching, track-recorded-while-armed renders a stem, and the golden master-parity test under the fixed protocol (arm-from-silence, no monitors, no plugins, settle window, float tolerance) | verify: bash packages/segno_engine/src/test/run_native_tests.sh
 - Static analysis clean across app + packages | verify: flutter analyze
 - Formatting stable (incl. regenerated ffigen bindings) | verify: dart format --set-exit-if-changed .
 - New package suites green with coverage >= 90 (CI gate): wav_codec, performance_repository (snapshots/persistLiveLanes/finalize/salvage/slug), daw_export (Live 12 corpus structural tests, relative-ref assertion, automation mapping, thinning), plus updated pedal_repository codec goldens and app cubit/widget tests | verify: flutter test packages/wav_codec packages/performance_repository packages/daw_export packages/pedal_repository test/performance
-- Recording while armed never allocates, locks, or performs I/O on the audio thread (rings allocated control-side at arm; taps write to published rings only) | verify: bash packages/loopy_engine/src/test/run_native_tests.sh (RT assertions included in the native suite)
+- Recording while armed never allocates, locks, or performs I/O on the audio thread (rings allocated control-side at arm; taps write to published rings only) | verify: bash packages/segno_engine/src/test/run_native_tests.sh (RT assertions included in the native suite)
 - A kill -9 during an armed capture leaves a salvageable bundle (raw PCM + sidecar + flushed log) that the next launch detects and can finalize | verify: manual 1. arm and play ~30 s 2. kill -9 the app 3. relaunch 4. accept the recovery prompt 5. confirm master.wav plays and stems render
-- project.als opens in Ableton Live 12 with no missing-file dialog, one track per non-empty Loopy track + live-input stems, clips at correct positions with warp off, and volume/activator automation present | verify: manual 1. record a session with loops, mutes, and a volume ride 2. open the bundle's project.als in Live 12 3. check tracks, placement, automation 4. move the folder and confirm refs still resolve
+- project.als opens in Ableton Live 12 with no missing-file dialog, one track per non-empty Segno track + live-input stems, clips at correct positions with warp off, and volume/activator automation present | verify: manual 1. record a session with loops, mutes, and a volume ride 2. open the bundle's project.als in Live 12 3. check tracks, placement, automation 4. move the folder and confirm refs still resolve
 - Pedal parity: the new footswitch arms/disarms and the armed LED (blinking red) is distinct from looper-record red | verify: manual 1. arm via pedal with the screen hidden 2. confirm LED state 3. disarm 4. confirm bundle exists
 
 NON-GOALS:
-- Screen/camera capture; offline rendering through third-party VST3/CLAP plugins (dry passthrough + follow-up); recreating Loopy FX as Ableton devices (metadata kept sufficient); Reaper/.dawproject exporters; BPM detection or warped/grid-aligned clips; resampling; re-arm while rendering; any new user settings.
+- Screen/camera capture; offline rendering through third-party VST3/CLAP plugins (dry passthrough + follow-up); recreating Segno FX as Ableton devices (metadata kept sufficient); Reaper/.dawproject exporters; BPM detection or warped/grid-aligned clips; resampling; re-arm while rendering; any new user settings.
 
-VERIFICATION COMMAND: bash packages/loopy_engine/src/test/run_native_tests.sh && flutter analyze && dart format --set-exit-if-changed . && flutter test packages/wav_codec packages/performance_repository packages/daw_export packages/pedal_repository test/performance
+VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && flutter analyze && dart format --set-exit-if-changed . && flutter test packages/wav_codec packages/performance_repository packages/daw_export packages/pedal_repository test/performance
 ```
 
 ## Testing Strategy
 
 - **Engine (C).** Extend the CHECK/`main()`-registered harness in
-  [test_engine_core.c](../../packages/loopy_engine/src/test/test_engine_core.c)
+  [test_engine_core.c](../../packages/segno_engine/src/test/test_engine_core.c)
   (run via `run_native_tests.sh`; "ALL PASSED" is the gate). New tests per
   part: master tap equals processed output; monitor tap equals monitor mix;
   overflow → silence-fill + counter; raw log ordering under command storms;
@@ -560,15 +560,15 @@ VERIFICATION COMMAND: bash packages/loopy_engine/src/test/run_native_tests.sh &&
 ### Internal
 
 - Brainstorm: [2026-07-05-performance-recording-daw-export-brainstorm-doc.md](../brainstorm/2026-07-05-performance-recording-daw-export-brainstorm-doc.md)
-- Master tap: [engine_process.c:974–1017](../../packages/loopy_engine/src/core/engine_process.c) (`master_bus_frame`), monitors :1289, retire :198
-- Rings: [lockfree_ring.h:30–69](../../packages/loopy_engine/src/core/lockfree_ring.h), [engine_private.h:413–423](../../packages/loopy_engine/src/core/engine_private.h) (`LE_RING_CAPACITY`:39, `LE_POOL_SLOTS`:46)
-- Layer-drop hazard: [engine_commands.c:195–215](../../packages/loopy_engine/src/core/engine_commands.c) (`le_handle_retired`), `track_acquire_slot` :41
-- Lane-0 export: [engine_session.c:22–35](../../packages/loopy_engine/src/core/engine_session.c)
-- FX chain: [engine_fx.c:978](../../packages/loopy_engine/src/core/engine_fx.c) (`fx_apply_chain`)
+- Master tap: [engine_process.c:974–1017](../../packages/segno_engine/src/core/engine_process.c) (`master_bus_frame`), monitors :1289, retire :198
+- Rings: [lockfree_ring.h:30–69](../../packages/segno_engine/src/core/lockfree_ring.h), [engine_private.h:413–423](../../packages/segno_engine/src/core/engine_private.h) (`LE_RING_CAPACITY`:39, `LE_POOL_SLOTS`:46)
+- Layer-drop hazard: [engine_commands.c:195–215](../../packages/segno_engine/src/core/engine_commands.c) (`le_handle_retired`), `track_acquire_slot` :41
+- Lane-0 export: [engine_session.c:22–35](../../packages/segno_engine/src/core/engine_session.c)
+- FX chain: [engine_fx.c:978](../../packages/segno_engine/src/core/engine_fx.c) (`fx_apply_chain`)
 - WAV + export conventions: [wav.dart:31](../../packages/session_repository/lib/src/wav.dart), [session_repository.dart:264](../../packages/session_repository/lib/src/session_repository.dart), [session_directory.dart:18](../../lib/session_directory.dart)
-- Engine boundary precedent: `EnginePluginHosting` in [audio_engine.dart](../../packages/loopy_engine/lib/src/audio_engine.dart)
+- Engine boundary precedent: `EnginePluginHosting` in [audio_engine.dart](../../packages/segno_engine/lib/src/audio_engine.dart)
 - Control surfaces: [control_cubit.dart:493](../../lib/control/cubit/control_cubit.dart) (`_onPress`), [pedal_button.dart:9](../../packages/pedal_repository/lib/src/pedal_button.dart), [tracks_chrome.dart:19](../../lib/looper/view/tracks_chrome.dart) (`TracksToolbar`)
-- Native test gate: [run_native_tests.sh](../../packages/loopy_engine/src/test/run_native_tests.sh)
+- Native test gate: [run_native_tests.sh](../../packages/segno_engine/src/test/run_native_tests.sh)
 - Worker-thread precedent: `plugin_scan.cpp` (dedicated `std::thread`, poll-based progress)
 - Pattern precedent (umbrella + parts, thread lifecycle, ffigen gotchas): [2026-06-23-feat-vst3-clap-plugin-hosting-plan.md](./2026-06-23-feat-vst3-clap-plugin-hosting-plan.md)
 

@@ -12,7 +12,7 @@ reusable `flutter_package.yml@v1` without overriding `format_directories` or
 `working_directory: "."`, so `dart format --set-exit-if-changed lib test` and
 `flutter analyze lib test` only ever check the root app. None of the 13
 packages under `packages/` (daw_export, performance_repository, wav_codec,
-loopy_engine, controller_repository, local_storage_client,
+segno_engine, controller_repository, local_storage_client,
 looper_repository, midi_client, midi_device_repository, pedal_repository,
 routing_graph, session_repository, settings_repository) get any format or
 analyze gate in CI, so analyzer lints and `dart format` drift in package code
@@ -35,9 +35,9 @@ license_check.yaml.
 
 SUCCESS CRITERIA:
 - main.yaml's build job passes explicit format_directories and analyze_directories inputs to flutter_package.yml@v1 that include both the root ("lib test") and every package's lib+test via a glob | verify: grep -A2 'format_directories' .github/workflows/main.yaml | grep -q 'packages/\*/lib' && grep -A2 'analyze_directories' .github/workflows/main.yaml | grep -q 'packages/\*/lib'
-- dart format --set-exit-if-changed over root + all packages' lib/test exits 0 (no formatting drift left in the tree) | verify: cd /Users/Tomas/Documents/Work/opensource/loopy/.claude/worktrees/agent-a7e71863edb276596 && dart format --set-exit-if-changed lib test packages/*/lib packages/*/test
-- flutter analyze over root + all packages' lib/test exits 0 (no analyzer issues) | verify: cd /Users/Tomas/Documents/Work/opensource/loopy/.claude/worktrees/agent-a7e71863edb276596 && flutter analyze lib test packages/*/lib packages/*/test
-- The workflow YAML is still valid YAML | verify: cd /Users/Tomas/Documents/Work/opensource/loopy/.claude/worktrees/agent-a7e71863edb276596 && python3 -c "import yaml; yaml.safe_load(open('.github/workflows/main.yaml'))"
+- dart format --set-exit-if-changed over root + all packages' lib/test exits 0 (no formatting drift left in the tree) | verify: cd /Users/Tomas/Documents/Work/opensource/segno/.claude/worktrees/agent-a7e71863edb276596 && dart format --set-exit-if-changed lib test packages/*/lib packages/*/test
+- flutter analyze over root + all packages' lib/test exits 0 (no analyzer issues) | verify: cd /Users/Tomas/Documents/Work/opensource/segno/.claude/worktrees/agent-a7e71863edb276596 && flutter analyze lib test packages/*/lib packages/*/test
+- The workflow YAML is still valid YAML | verify: cd /Users/Tomas/Documents/Work/opensource/segno/.claude/worktrees/agent-a7e71863edb276596 && python3 -c "import yaml; yaml.safe_load(open('.github/workflows/main.yaml'))"
 - A deliberately-introduced lint/format violation in a package is demonstrated to be caught by the new directory list (already proven once during brainstorming; re-confirm after the final diff is in place) | verify: manual 1) temporarily add a badly-formatted function with an unused local variable to any packages/*/lib file 2) run the two dart format / flutter analyze commands above with the new directory args and confirm non-zero exit + the issue reported 3) revert the temporary change and re-run to confirm clean exit 0 again
 - license_check.yaml is untouched | verify: git diff --name-only master... | grep -qv 'license_check.yaml' && ! git diff --name-only master... | grep -q 'license_check.yaml'
 
@@ -47,7 +47,7 @@ NON-GOALS:
 - Any refactor of package source beyond the one mechanical dart-format fix required to make the new gate pass at merge time.
 - Parallelizing or matrix-izing per-package CI (out of scope; see brainstorm doc's Approach B rejection).
 
-VERIFICATION COMMAND: cd /Users/Tomas/Documents/Work/opensource/loopy/.claude/worktrees/agent-a7e71863edb276596 && dart format --set-exit-if-changed lib test packages/*/lib packages/*/test && flutter analyze lib test packages/*/lib packages/*/test && python3 -c "import yaml; yaml.safe_load(open('.github/workflows/main.yaml'))"
+VERIFICATION COMMAND: cd /Users/Tomas/Documents/Work/opensource/segno/.claude/worktrees/agent-a7e71863edb276596 && dart format --set-exit-if-changed lib test packages/*/lib packages/*/test && flutter analyze lib test packages/*/lib packages/*/test && python3 -c "import yaml; yaml.safe_load(open('.github/workflows/main.yaml'))"
 ```
 
 ## Context
@@ -76,7 +76,7 @@ VERIFICATION COMMAND: cd /Users/Tomas/Documents/Work/opensource/loopy/.claude/wo
       flutter_version: "3.44.x"
       run_bloc_lint: true
       min_coverage: 90
-      coverage_excludes: "**/window_chrome.dart **/waveform_window*.dart **/run_loopy.dart **/bootstrap.dart **/session_directory.dart"
+      coverage_excludes: "**/window_chrome.dart **/waveform_window*.dart **/run_segno.dart **/bootstrap.dart **/session_directory.dart"
   ```
 - `run_bloc_lint: true` runs a separate, hardcoded `bloc lint .` step in the
   reusable workflow that already scans the whole repo regardless of
@@ -85,8 +85,8 @@ VERIFICATION COMMAND: cd /Users/Tomas/Documents/Work/opensource/loopy/.claude/wo
   directory (verified via `ls`), so a bare `packages/*/lib
   packages/*/test` glob covers every package uniformly with no dangling
   literal-glob edge case.
-- Institutional gotcha (`loopy-ffigen-format-drift` memory): ffigen
-  regeneration in `packages/loopy_engine/lib/src/generated/` is a known
+- Institutional gotcha (`segno-ffigen-format-drift` memory): ffigen
+  regeneration in `packages/segno_engine/lib/src/generated/` is a known
   recurring source of format drift; this fix is what would have caught it in
   CI going forward.
 
@@ -110,7 +110,7 @@ Two-part change:
        # (window_manager), the desktop_multi_window output-waveform sub-window,
        # and the app bootstrap/entrypoint. Coverage on the remainder stays ~91%.
        min_coverage: 90
-       coverage_excludes: "**/window_chrome.dart **/waveform_window*.dart **/run_loopy.dart **/bootstrap.dart **/session_directory.dart"
+       coverage_excludes: "**/window_chrome.dart **/waveform_window*.dart **/run_segno.dart **/bootstrap.dart **/session_directory.dart"
    ```
 
    A short comment above the two new inputs should explain why they exist

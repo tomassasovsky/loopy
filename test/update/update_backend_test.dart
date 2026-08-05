@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/update/update_backend.dart';
+import 'package:segno/update/update_backend.dart';
 
 void main() {
   test(

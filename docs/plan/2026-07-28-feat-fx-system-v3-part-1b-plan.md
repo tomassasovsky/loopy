@@ -33,18 +33,18 @@ empty-chain **bit-identical** guarantee that protects every existing session.
 
 ## Context
 
-Everything below is engine-native work in `packages/loopy_engine`. No domain,
+Everything below is engine-native work in `packages/segno_engine`. No domain,
 session, UI, or pedal code changes in this part.
 
 **Key files:**
 
-- `packages/loopy_engine/src/core/engine_private.h` — chain-owner shapes to
+- `packages/segno_engine/src/core/engine_private.h` — chain-owner shapes to
   mirror: `le_lane` (per-lane chain: `a_fx_count` / `a_fx_type` /
   `a_fx_param` / `le_fx_state fx`, `engine_private.h:231-263`) and
   `le_monitor_input` (`engine_private.h:266-286`); `le_track` struct
   (`engine_private.h:335-501`) gains the Track-stage owner; the engine
   struct gains the Master owner.
-- `packages/loopy_engine/src/core/engine_process.c` —
+- `packages/segno_engine/src/core/engine_process.c` —
   `mix_tracks_frame` (`:3219-3461`): per-lane audible predicate + volume
   (`:3429-3432`), per-lane chain + individual routing via
   `le_fx_route(out, f, ch_out, out_mask[t][l] & out_enabled, wl, wr)`
@@ -58,24 +58,24 @@ session, UI, or pedal code changes in this part.
   by part 1a) and `snapshot_monitor_fx` (`:2969`), call sites `:3560-3579`;
   "first enabled output pair" precedent in `perf_tap_master_frame`
   (`:2459-2461`).
-- `packages/loopy_engine/src/core/engine_commands.c` — control-thread heap
+- `packages/segno_engine/src/core/engine_commands.c` — control-thread heap
   allocation contract `le_fx_prepare_entry` (`:1497-1517`: delay rings etc.
   allocated on the control thread, defaults seeded only on type change,
   publish via the ring's release/acquire pairing); the lane setter family to
   mirror: `le_engine_set_lane_fx` / `_count` / `_param`
   (`:1519-1573` — note `_param` is a direct atomic store, no ring).
-- `packages/loopy_engine/src/core/loopy_engine_api.h` — `le_command` enum
+- `packages/segno_engine/src/core/segno_engine_api.h` — `le_command` enum
   (`LE_CMD_SET_LANE_FX = 20` … monitor FX = 31/32, `:226-278`); lane API
   declarations (`:1436-1456`), monitor declarations (`:1491-1509`);
   `fx_added_latency_frames` doc (`:621-629`).
-- `packages/loopy_engine/src/core/engine_fx.c` — `fx_apply_chain`
+- `packages/segno_engine/src/core/engine_fx.c` — `fx_apply_chain`
   (`:983-994`; gains the enabled/ramp args in part 1a), `le_fx_prepare`,
   `le_fx_entry_reset`, `le_fx_defaults`.
-- `packages/loopy_engine/src/test/test_engine_core.c` +
-  `packages/loopy_engine/src/test/run_native_tests.sh` (source list must
+- `packages/segno_engine/src/test/test_engine_core.c` +
+  `packages/segno_engine/src/test/run_native_tests.sh` (source list must
   match `src/CMakeLists.txt`; `EXTRA_CFLAGS="-fsanitize=address -g"` for the
   ASan variant).
-- `packages/loopy_engine/ffigen.yaml` + `packages/loopy_engine/lib/src/`
+- `packages/segno_engine/ffigen.yaml` + `packages/segno_engine/lib/src/`
   (`audio_engine.dart`, `native_audio_engine.dart`, `mock_audio_engine.dart`,
   `generated/`) — bindings surface.
 - `docs/design/performance-event-log-format.md` — command audit table [R3].
@@ -207,7 +207,7 @@ pinned wording — flag for review, don't silently change):**
       change. Note this in the step's doc comment (stems/manifest decision
       is parts 3/9).
 
-### 4. API + ring commands (`loopy_engine_api.h`, `engine_commands.c`)
+### 4. API + ring commands (`segno_engine_api.h`, `engine_commands.c`)
 
 - [ ] New command codes appended to the `le_command` enum **after part 1a's
       last code** (coordinate on rebase — both parts append):
@@ -243,11 +243,11 @@ pinned wording — flag for review, don't silently change):**
       `docs/design/performance-event-log-format.md`: "No replay —
       manifest-only; stems stay per-stage dry-of-downstream (part 9), arm
       manifest carries track/master chains (part 3)."
-- [ ] API doc comments in `loopy_engine_api.h` state the pinned semantics:
+- [ ] API doc comments in `segno_engine_api.h` state the pinned semantics:
       empty-chain bit-identity + union-mask routing (track), monitors
       uncolored + first-enabled-pair mapping (master), enabled-flips-work-
       while-stopped.
-- [ ] Leave `fx_added_latency_frames` (`loopy_engine_api.h:621-629`)
+- [ ] Leave `fx_added_latency_frames` (`segno_engine_api.h:621-629`)
       semantics untouched: it exists for record-alignment of the monitored
       path; Track/Master chains sit post-capture and do not affect record
       alignment. Note this in the new setters' doc comments.
@@ -343,13 +343,13 @@ API/lifecycle:
 GOAL: Real Track and Master FX stages in the engine — per-track stereo bus + master insert with full setter API — while an empty chain keeps today's routing bit-identical and live monitors stay uncolored.
 
 SUCCESS CRITERIA:
-- D-TRACKROUTE pinned: empty-chain path bit-identical (existing test expectations untouched + set-then-empty equality test); non-empty chain sums audible lanes, runs once, routes via the union of enabled lane masks; disabled-but-non-empty keeps bus topology; tail continuity across mute | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- D-MASTER pinned: master insert sits between mix_tracks_frame and mix_monitors_frame, before master gain/limiter; monitors uncolored by the master chain; empty master chain bit-identical | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- D-MASTERCH pinned: ch_out==2 wet pair; ch_out>2 first enabled pair wet, others bit-exact dry; ch_out==1 mono as l==r | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- Full track/master setter family (fx/count/param + enabled/chain-enabled twins) mirrors the lane family: ring for type/count with lockstep DSP reset, direct atomic stores for param/enabled (work while stopped), le_fx_prepare_entry control-thread allocation, validation returns LE_ERR_INVALID | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- No plog events from track/master setters; audit table in docs/design/performance-event-log-format.md has a "No replay" verdict row per new command | verify: bash packages/loopy_engine/src/test/run_native_tests.sh && grep -q "SET_TRACK_FX" docs/design/performance-event-log-format.md
-- Lifecycle clean: configure/destroy with populated track+master chains is leak-free under ASan | verify: EXTRA_CFLAGS="-fsanitize=address -g" bash packages/loopy_engine/src/test/run_native_tests.sh
-- Dart bindings regenerated (ffigen + dart format) and the interface/native/mock trio extended; package suite green | verify: /Users/Tomas/development/flutter/bin/flutter test packages/loopy_engine
+- D-TRACKROUTE pinned: empty-chain path bit-identical (existing test expectations untouched + set-then-empty equality test); non-empty chain sums audible lanes, runs once, routes via the union of enabled lane masks; disabled-but-non-empty keeps bus topology; tail continuity across mute | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- D-MASTER pinned: master insert sits between mix_tracks_frame and mix_monitors_frame, before master gain/limiter; monitors uncolored by the master chain; empty master chain bit-identical | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- D-MASTERCH pinned: ch_out==2 wet pair; ch_out>2 first enabled pair wet, others bit-exact dry; ch_out==1 mono as l==r | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Full track/master setter family (fx/count/param + enabled/chain-enabled twins) mirrors the lane family: ring for type/count with lockstep DSP reset, direct atomic stores for param/enabled (work while stopped), le_fx_prepare_entry control-thread allocation, validation returns LE_ERR_INVALID | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- No plog events from track/master setters; audit table in docs/design/performance-event-log-format.md has a "No replay" verdict row per new command | verify: bash packages/segno_engine/src/test/run_native_tests.sh && grep -q "SET_TRACK_FX" docs/design/performance-event-log-format.md
+- Lifecycle clean: configure/destroy with populated track+master chains is leak-free under ASan | verify: EXTRA_CFLAGS="-fsanitize=address -g" bash packages/segno_engine/src/test/run_native_tests.sh
+- Dart bindings regenerated (ffigen + dart format) and the interface/native/mock trio extended; package suite green | verify: /Users/Tomas/development/flutter/bin/flutter test packages/segno_engine
 
 NON-GOALS:
 - Per-slot/per-chain enabled mechanism, crossfade ramp, no-tail-spill semantics, plog enabled events, fingerprint enabled-bit folding, snapshot_track_fx -> snapshot_lane_fx rename — part 1a owns these (this part only extends them to the new owners)
@@ -360,7 +360,7 @@ NON-GOALS:
 - Any change to master gain/limiter placement, monitor gain/limiter behavior, metering semantics, or fx_added_latency_frames
 - daw_export / stems rendering of the new stages — part 9 (manifest-only decision already pinned)
 
-VERIFICATION COMMAND: bash packages/loopy_engine/src/test/run_native_tests.sh
+VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh
 ```
 
 ## Notes
@@ -397,5 +397,5 @@ VERIFICATION COMMAND: bash packages/loopy_engine/src/test/run_native_tests.sh
   (they are author-machine-only; relevant to parts 4/6, not here).
 - **macOS test build.** Use the documented runner only; the very_good MCP
   test wrapper is broken in this repo — native suite via
-  `bash packages/loopy_engine/src/test/run_native_tests.sh`, Dart via the
+  `bash packages/segno_engine/src/test/run_native_tests.sh`, Dart via the
   absolute Flutter path `/Users/Tomas/development/flutter/bin/flutter`.

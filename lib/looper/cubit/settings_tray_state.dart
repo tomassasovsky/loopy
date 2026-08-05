@@ -52,7 +52,7 @@ class SettingsTrayState extends Equatable {
 
   /// True from the instant a tray nav button is tapped until the pushed
   /// route pops — guards against a rapid double-tap double-pushing
-  /// `showSignalPage` (which, unlike `openLoopySettings`, has no re-entrancy
+  /// `showSignalPage` (which, unlike `openSegnoSettings`, has no re-entrancy
   /// guard of its own).
   final bool isNavigating;
 

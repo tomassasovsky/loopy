@@ -3,11 +3,11 @@ import 'dart:io';
 
 import 'package:brightness_client/src/brightness_client.dart';
 
-/// Production [BrightnessClient]: shells out to `/usr/bin/loopy-brightness-ctl`.
+/// Production [BrightnessClient]: shells out to `/usr/bin/segno-brightness-ctl`.
 class SystemBrightnessClient implements BrightnessClient {
   /// Creates a [SystemBrightnessClient].
   const SystemBrightnessClient({
-    this.helperPath = '/usr/bin/loopy-brightness-ctl',
+    this.helperPath = '/usr/bin/segno-brightness-ctl',
   });
 
   /// Path to the brightness helper.

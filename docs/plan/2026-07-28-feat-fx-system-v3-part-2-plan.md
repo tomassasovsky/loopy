@@ -37,7 +37,7 @@ convention that heap allocations for FX owners happen on the control thread.
 
 ## Context
 
-Key files (all under `packages/loopy_engine/` unless noted):
+Key files (all under `packages/segno_engine/` unless noted):
 
 - `src/core/engine_private.h` — lane/track owner structs; **pool slots
   recycle** (`engine_private.h:95-100`, `LE_POOL_SLOTS` with slot
@@ -56,7 +56,7 @@ Key files (all under `packages/loopy_engine/` unless noted):
 - `src/core/engine_plugin.c` — the clear-slot reclamation pattern (retract →
   two processed-buffer boundaries via `a_frames` → free) and the
   `fx->plugin[]` atomic-publication discipline the cache mirrors [R2].
-- `src/core/engine_commands.c`, `src/core/loopy_engine_api.h` — API + ring
+- `src/core/engine_commands.c`, `src/core/segno_engine_api.h` — API + ring
   command surface for the cache cap and telemetry.
 - `src/core/engine_snapshot.c` — per-buffer snapshot; gains per-lane cache
   state telemetry (log/test-only in v3).
@@ -204,7 +204,7 @@ Risks (lifted from the index risk table, scoped to this part):
     gave-up, e.g. plugin-bearing). Exposed for tests and logs only; **no UI
     in this part** (debug glyph is part 9).
 - [ ] **API surface + ffigen**
-  - `loopy_engine_api.h`: cache cap setter, telemetry accessors (snapshot
+  - `segno_engine_api.h`: cache cap setter, telemetry accessors (snapshot
     fields), anything the tests need. Ring commands in
     `engine_commands.c` where a heap pointer moves; direct atomic stores
     where not (the part-1 convention).
@@ -262,13 +262,13 @@ Risks (lifted from the index risk table, scoped to this part):
 GOAL: Loop-stage wet results render in the background and play at zero FX CPU, with same-frame live fallback on any edit — cached audio is correct (volume-in-key), never stale (audited revision bumps), and the worker lifecycle is sanitizer-clean.
 
 SUCCESS CRITERIA:
-- a_audio_rev exists with the audited bump-site table [R1] and every table row is exercised by a native test (record finalize, overdub entry + retired pass, undo/redo, redo-from-empty, clear + clear-restore, session load) | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- Cached playback ≈ live within float tolerance for every built-in, with a_vol_bits in the key (D-VOL): volume move invalidates and re-keys | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- Any edit falls back live within one buffer; boundary swap-in is continuity-clean; documented tail-drop on fallback [B4] | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- Overdub invalidates and never plays stale audio [A7]; invalidation storm is crash-free and stale-free with the settle debounce holding [B2][B3][B5] | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- Toggled-pair retention makes off/on stomps cache-hot [B2]; LRU eviction degrades to live; plugin-bearing chains are excluded with telemetry stating why | verify: bash packages/loopy_engine/src/test/run_native_tests.sh
-- Worker lifecycle clean under ASan: copy-at-enqueue, atomic publish, quiescent reclaim, join-before-free incl. destroy-during-active-render [R2] | verify: EXTRA_CFLAGS="-fsanitize=address -g" bash packages/loopy_engine/src/test/run_native_tests.sh
-- Dart bindings regenerated + formatted for the new surface (cache cap, telemetry); engine package suite and the fingerprint agreement test stay green | verify: /Users/Tomas/development/flutter/bin/flutter test packages/loopy_engine packages/looper_repository/test/fx_fingerprint_agreement_test.dart
+- a_audio_rev exists with the audited bump-site table [R1] and every table row is exercised by a native test (record finalize, overdub entry + retired pass, undo/redo, redo-from-empty, clear + clear-restore, session load) | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Cached playback ≈ live within float tolerance for every built-in, with a_vol_bits in the key (D-VOL): volume move invalidates and re-keys | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Any edit falls back live within one buffer; boundary swap-in is continuity-clean; documented tail-drop on fallback [B4] | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Overdub invalidates and never plays stale audio [A7]; invalidation storm is crash-free and stale-free with the settle debounce holding [B2][B3][B5] | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Toggled-pair retention makes off/on stomps cache-hot [B2]; LRU eviction degrades to live; plugin-bearing chains are excluded with telemetry stating why | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Worker lifecycle clean under ASan: copy-at-enqueue, atomic publish, quiescent reclaim, join-before-free incl. destroy-during-active-render [R2] | verify: EXTRA_CFLAGS="-fsanitize=address -g" bash packages/segno_engine/src/test/run_native_tests.sh
+- Dart bindings regenerated + formatted for the new surface (cache cap, telemetry); engine package suite and the fingerprint agreement test stay green | verify: /Users/Tomas/development/flutter/bin/flutter test packages/segno_engine packages/looper_repository/test/fx_fingerprint_agreement_test.dart
 
 NON-GOALS:
 - Bypass, track bus, Track/Master inserts — parts 1a/1b own those (merged prerequisites here)
@@ -278,7 +278,7 @@ NON-GOALS:
 - Appliance soak, cache hit-rate/xrun budget on the Pi, cap tuning — part 9
 - Unity-render + post-volume optimization for linear-only chains (stated future refinement, not v3)
 
-VERIFICATION COMMAND: bash packages/loopy_engine/src/test/run_native_tests.sh
+VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh
 ```
 
 ## Notes

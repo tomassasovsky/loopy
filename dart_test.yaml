@@ -1,4 +1,4 @@
-# Test configuration for the loopy app.
+# Test configuration for the segno app.
 #
 # Declare the `screenshots` tag so package:test does not warn about it. The
 # manual golden/screenshot generators in test/screenshots/ self-skip in-test
@@ -8,7 +8,7 @@
 tags:
   screenshots:
   # The control-sequence fuzzer (test/fuzz/): drives the REAL native engine
-  # through the device-free pump. Self-skips in-test when LOOPY_ENGINE_LIB is
+  # through the device-free pump. Self-skips in-test when SEGNO_ENGINE_LIB is
   # unset -- build it first:
-  #   export LOOPY_ENGINE_LIB="$(bash packages/loopy_engine/tool/build_test_lib.sh)"
+  #   export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
   fuzz:

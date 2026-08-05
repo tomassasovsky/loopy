@@ -3,16 +3,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
-import 'package:loopy/audio_setup/view/audio_device_picker.dart';
-import 'package:loopy/audio_setup/view/midi_device_picker.dart';
-import 'package:loopy/audio_setup/view/midi_learn_section.dart';
-import 'package:loopy/common/console_mode.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/cubit/quantize_cubit.dart';
-import 'package:loopy/looper/cubit/record_options_cubit.dart';
-import 'package:loopy/pedal/pedal.dart';
-import 'package:loopy/setup/setup_surface.dart';
+import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
+import 'package:segno/audio_setup/view/audio_device_picker.dart';
+import 'package:segno/audio_setup/view/midi_device_picker.dart';
+import 'package:segno/audio_setup/view/midi_learn_section.dart';
+import 'package:segno/common/console_mode.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/quantize_cubit.dart';
+import 'package:segno/looper/cubit/record_options_cubit.dart';
+import 'package:segno/pedal/pedal.dart';
+import 'package:segno/setup/setup_surface.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// The audio controls embedded in the Tracks settings "Audio" section,
@@ -45,7 +45,7 @@ class AudioSettingsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(l10n.audioSettingsIntro, style: setupBody),
+        Text(l10n.audioSettingsIntro, style: context.setupBody),
         const SizedBox(height: 28),
         // Engine errors are surfaced here (the only audio surface now that the
         // wizard is gone): a failed open/start from a setting change shows its
@@ -151,7 +151,7 @@ class AudioSettingsSection extends StatelessWidget {
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.recordingGroupLabel),
         const SizedBox(height: 12),
-        Text(l10n.maxLoopLengthIntro, style: setupBody),
+        Text(l10n.maxLoopLengthIntro, style: context.setupBody),
         const SizedBox(height: 12),
         SetupOptionRow<int>(
           selected: state.maxLoopMinutes,
@@ -195,7 +195,7 @@ class AudioSettingsSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        Text(l10n.defaultLoopLengthIntro, style: setupBody),
+        Text(l10n.defaultLoopLengthIntro, style: context.setupBody),
         const SizedBox(height: 12),
         SetupOptionRow<int>(
           selected: context.watch<RecordOptionsCubit>().state.defaultMultiple,
@@ -391,7 +391,7 @@ class _Asio4AllLink extends StatelessWidget {
   }
 }
 
-/// Shown on Windows when no ASIO driver is installed: explains that Loopy needs
+/// Shown on Windows when no ASIO driver is installed: explains that Segno needs
 /// ASIO and offers the ASIO4ALL link (the engine cannot start with no driver).
 class _NoAsioDriverMessage extends StatelessWidget {
   const _NoAsioDriverMessage();
@@ -420,7 +420,7 @@ class _NoAsioDriverMessage extends StatelessWidget {
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 6),
-              Text(l10n.noAsioDriverMessage, style: setupBody),
+              Text(l10n.noAsioDriverMessage, style: context.setupBody),
               const SizedBox(height: 6),
               const _Asio4AllLink(),
             ],

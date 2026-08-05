@@ -1,8 +1,8 @@
-"""Scratch: build out/vamp.glb (+ .gltf) and the hero/exploded PNGs from the
+"""Scratch: build out/segno.glb (+ .gltf) and the hero/exploded PNGs from the
 generator's _render_parts(). Gitignored; run with the bundled .venv."""
 import os
 import cadquery as cq
-import vamp_enclosure as V
+import segno_enclosure as V
 
 OUT = V.OUT
 os.makedirs(OUT, exist_ok=True)
@@ -12,9 +12,9 @@ def export_glb(explode=0.0):
     asm = cq.Assembly()
     for i, (shape, rgb) in enumerate(V._render_parts(cq, explode)):
         asm.add(cq.Workplane(obj=shape), name=f"p{i}", color=cq.Color(*rgb, 1.0))
-    asm.save(os.path.join(OUT, "vamp.gltf"))   # writes .gltf + .bin
-    asm.save(os.path.join(OUT, "vamp.glb"))    # binary glTF for the viewer
-    print("  out/vamp.glb (+ .gltf)")
+    asm.save(os.path.join(OUT, "segno.gltf"))   # writes .gltf + .bin
+    asm.save(os.path.join(OUT, "segno.glb"))    # binary glTF for the viewer
+    print("  out/segno.glb (+ .gltf)")
 
 
 if __name__ == "__main__":

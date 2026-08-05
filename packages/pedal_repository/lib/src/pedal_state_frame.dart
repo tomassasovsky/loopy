@@ -3,7 +3,7 @@ import 'package:pedal_repository/src/pedal_mode.dart';
 
 /// The render state of a single track LED on the pedal ring.
 ///
-/// loopy owns all looper logic; the firmware renders these colors verbatim.
+/// segno owns all looper logic; the firmware renders these colors verbatim.
 /// Encoded as the enum [index] in the state frame — do not reorder.
 enum PedalTrackLed {
   /// Track is empty or muted — LED dark.
@@ -32,7 +32,7 @@ enum PedalTrackLed {
 
 /// The global status color shown by the pedal (e.g. the center / mode LED).
 ///
-/// Semantic colors chosen by loopy and rendered verbatim by the firmware.
+/// Semantic colors chosen by segno and rendered verbatim by the firmware.
 /// Encoded as the enum [index] in the state frame — do not reorder.
 enum GlobalColor {
   /// No global indication — LED dark.
@@ -54,9 +54,9 @@ enum GlobalColor {
 /// The wire-level looper-mode code carried in protocol **v2** state frames
 /// (D11), bits 4-6 of the flags byte.
 ///
-/// This is a **value-only mirror** of `packages/loopy_engine`'s `LooperMode`
+/// This is a **value-only mirror** of `packages/segno_engine`'s `LooperMode`
 /// enum (`multi/sync/song/band/free`, `code` 0-4) — `pedal_repository` is a
-/// protocol/repo-layer package and cannot depend on `loopy_engine` (an
+/// protocol/repo-layer package and cannot depend on `segno_engine` (an
 /// app-facing DATA package two layers up), so the two enums are kept in
 /// lockstep by hand rather than by import. Translating between them is an
 /// app-layer concern for a later PR (the repository consumer already
@@ -94,7 +94,7 @@ enum PedalLooperMode {
 
 /// An immutable snapshot of everything the pedal needs to render its LEDs.
 ///
-/// loopy projects looper state into a [PedalStateFrame], the codec serializes
+/// segno projects looper state into a [PedalStateFrame], the codec serializes
 /// it to SysEx, and the firmware renders the last good frame. It carries LED
 /// state for **all 8 tracks** so a bank switch renders with no round-trip.
 class PedalStateFrame extends Equatable {
@@ -135,7 +135,7 @@ class PedalStateFrame extends Equatable {
 
   /// A blank, all-off frame.
   ///
-  /// With [goodbye] set this is the shutdown frame loopy sends on close; the
+  /// With [goodbye] set this is the shutdown frame segno sends on close; the
   /// firmware darkens its LEDs on receipt.
   factory PedalStateFrame.blank({bool goodbye = false}) => PedalStateFrame(
     globalColor: GlobalColor.off,
@@ -179,7 +179,7 @@ class PedalStateFrame extends Equatable {
   final bool clearFadeActive;
 
   /// Whether this is the shutdown frame — all LEDs off, sent so the pedal
-  /// darkens when loopy quits while the USB stays powered.
+  /// darkens when segno quits while the USB stays powered.
   final bool isGoodbye;
 
   /// Whether performance-recording is armed (D-PEDAL) — the firmware renders

@@ -15,7 +15,7 @@ date: 2026-06-14
 
 ## Overview
 
-Replace the granular `fx_octaver` ([engine.c:411](../../packages/loopy_engine/src/engine.c))
+Replace the granular `fx_octaver` ([engine.c:411](../../packages/segno_engine/src/engine.c))
 with an STFT phase vocoder that preserves formants via a cepstral spectral
 envelope (whiten → shift residual → re-apply original envelope). The chain still
 calls the effect one sample at a time; internally it buffers input, runs one FFT
@@ -134,7 +134,7 @@ return `dry*(1-sm_mix) + xfade*wet*sm_mix`.
 
 ### Allocation / reset / destroy (control thread)
 
-- **`le_fx_prepare_entry`** ([engine.c:2789](../../packages/loopy_engine/src/engine.c)):
+- **`le_fx_prepare_entry`** ([engine.c:2789](../../packages/segno_engine/src/engine.c)):
   for `LE_FX_OCTAVER`, after the two `delay` rings (`needs_right`), allocate
   `oct[index][chan].out` (`LE_PV_N`), `.last_phase`, `.sum_phase` (`LE_PV_BINS`)
   for `chan ∈ {0,1}` when `NULL`.
@@ -144,7 +144,7 @@ return `dry*(1-sm_mix) + xfade*wet*sm_mix`.
     reverse order, null them, return `LE_ERR_INVALID`. **Never** free a ring or
     buffer the slot already owned from a prior type (mirrors the existing
     `allocated0` pattern at engine.c:2799-2817). Document the free list inline.
-- **`le_fx_entry_reset`** ([engine.c:524](../../packages/loopy_engine/src/engine.c)):
+- **`le_fx_entry_reset`** ([engine.c:524](../../packages/segno_engine/src/engine.c)):
   zero the octaver scalars for both channels (`hop_count`, `out_pos`, `period`,
   `voiced`, epochs, `sm_*`, `cur_mode`, `xfade = 1`) and `memset` the three PV
   buffers (per channel) **if allocated**.
@@ -243,9 +243,9 @@ return `dry*(1-sm_mix) + xfade*wet*sm_mix`.
 
 ## References & Research
 
-- `fx_octaver` / chain: [engine.c:411](../../packages/loopy_engine/src/engine.c),
-  [engine.c:622](../../packages/loopy_engine/src/engine.c).
-- State: `le_fx_state` ([engine_private.h:80](../../packages/loopy_engine/src/engine_private.h)).
+- `fx_octaver` / chain: [engine.c:411](../../packages/segno_engine/src/engine.c),
+  [engine.c:622](../../packages/segno_engine/src/engine.c).
+- State: `le_fx_state` ([engine_private.h:80](../../packages/segno_engine/src/engine_private.h)).
 - Alloc/reset/destroy: `le_fx_prepare_entry` (2789), `le_fx_entry_reset` (524),
   lane/monitor reset (1509/1536), destroy loops (2124/2132).
 - FFT primitive: [part 1](./2026-06-14-feat-formant-preserving-octaver-part-1-plan.md).

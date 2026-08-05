@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/plugin_descriptor.dart';
-import 'package:loopy_engine/loopy_engine.dart' as engine;
+import 'package:segno_engine/segno_engine.dart' as engine;
 
 /// A file's identity for cache keying: its path plus last-modified time and
 /// size. A reinstalled or updated plugin changes its mtime/size, invalidating

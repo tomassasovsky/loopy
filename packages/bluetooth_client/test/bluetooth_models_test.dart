@@ -8,13 +8,13 @@ void main() {
       'powered': true,
       'discoverable': false,
       'advertising': true,
-      'alias': 'Loopy',
+      'alias': 'Segno',
       'connected': true,
       'device': 'AirPods Pro',
     });
     expect(status.powered, isTrue);
     expect(status.advertising, isTrue);
-    expect(status.alias, 'Loopy');
+    expect(status.alias, 'Segno');
     expect(status.connected, isTrue);
     expect(status.device, 'AirPods Pro');
   });
@@ -25,7 +25,7 @@ void main() {
       'powered': true,
       'discoverable': false,
       'advertising': false,
-      'alias': 'Loopy',
+      'alias': 'Segno',
     });
     expect(status.powered, isTrue);
     expect(status.discoverable, isFalse);

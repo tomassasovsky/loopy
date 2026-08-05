@@ -63,11 +63,11 @@ looping during a render, and salvage renders are free (umbrella D-RENDER).
 
 ## Tasks
 
-- [ ] `packages/loopy_engine/src/core/perf_render.{h,c}` — capture-dir
+- [ ] `packages/segno_engine/src/core/perf_render.{h,c}` — capture-dir
       loaders (sidecar, log, layers, lane PCM), replay state machine,
       stitching, per-track dry mixdown (track-mix math reuse), worker thread
       + progress/cancel atomics.
-- [ ] `loopy_engine_api.h` — `le_perf_render_begin/poll/cancel` (+ per-track
+- [ ] `segno_engine_api.h` — `le_perf_render_begin/poll/cancel` (+ per-track
       status struct).
 - [ ] Dart: capability methods + mock fakes; `performance_repository` render
       orchestration → `stems/dry/`, partial-success mapping.
@@ -77,18 +77,18 @@ looping during a render, and salvage renders are free (umbrella D-RENDER).
 
 ## Files touched (primary)
 
-`packages/loopy_engine/src/core/{perf_render.h,perf_render.c,loopy_engine_api.h}`,
-`packages/loopy_engine/lib/src/{audio_engine.dart,native_audio_engine.dart,mock_audio_engine.dart}`,
-`packages/loopy_engine/lib/src/generated/*`,
+`packages/segno_engine/src/core/{perf_render.h,perf_render.c,segno_engine_api.h}`,
+`packages/segno_engine/lib/src/{audio_engine.dart,native_audio_engine.dart,mock_audio_engine.dart}`,
+`packages/segno_engine/lib/src/generated/*`,
 `packages/performance_repository/lib/src/*`,
-`packages/loopy_engine/src/test/test_engine_core.c`,
-`packages/loopy_engine/src/test/run_native_tests.sh` (source list).
+`packages/segno_engine/src/test/test_engine_core.c`,
+`packages/segno_engine/src/test/run_native_tests.sh` (source list).
 
 ## Verification
 
-1. `bash packages/loopy_engine/src/test/run_native_tests.sh` — "ALL PASSED".
+1. `bash packages/segno_engine/src/test/run_native_tests.sh` — "ALL PASSED".
 2. `flutter analyze` clean; `dart format --set-exit-if-changed .` stable.
-3. `flutter test packages/loopy_engine packages/performance_repository`.
+3. `flutter test packages/segno_engine packages/performance_repository`.
 
 ## Dependencies
 

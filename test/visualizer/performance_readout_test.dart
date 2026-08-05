@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/theme/theme.dart';
-import 'package:loopy/visualizer/performance_readout.dart';
-import 'package:loopy/visualizer/performance_readout_view.dart';
-import 'package:loopy_engine/loopy_engine.dart' show TrackState;
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/visualizer/performance_readout.dart';
+import 'package:segno/visualizer/performance_readout_view.dart';
+import 'package:segno_engine/segno_engine.dart' show TrackState;
 
 void main() {
   const readout = PerformanceReadout(

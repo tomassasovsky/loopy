@@ -10,8 +10,8 @@ index: 2026-07-22-feat-tempo-aware-looper-modes-plan.md
 > **APPROVED.** Plan-gate cleared by the user 2026-07-23. B4 (Song mode
 > engine) is unblocked. Transcribed from the Sheeran Looper X User Guide
 > v1.0.0 (§3.1, §4.2, §5.9, §6.2). Engine work for Song/Band (B4) must not
-> start until this is approved. Items marked **[loopy decision]** are places
-> the manual is silent or loopy's 8-track model differs from the Sheeran's
+> start until this is approved. Items marked **[segno decision]** are places
+> the manual is silent or segno's 8-track model differs from the Sheeran's
 > 4-track model; each carries a proposed default.
 
 ## 1. What the manual actually says (normative transcription)
@@ -19,7 +19,7 @@ index: 2026-07-22-feat-tempo-aware-looper-modes-plan.md
 ### Modes (§4.2, §5.9.2)
 
 - **Multi**: four looper tracks locked to the same length. (Ed's workflow;
-  structurally today's loopy.)
+  structurally today's segno.)
 - **Sync**: tracks can vary in length; **one primary track** (crown icon in
   Wave view); the three others "can be a multiple or division of the primary
   track's length, and will be automatically quantized to keep them in sync
@@ -111,14 +111,14 @@ index: 2026-07-22-feat-tempo-aware-looper-modes-plan.md
   operative bullets above reference Multi/Sync/Band and are taken as
   normative.
 
-## 2. Loopy adaptation — the six B1 questions
+## 2. Segno adaptation — the six B1 questions
 
 | # | Question | Answer |
 |---|----------|--------|
-| 1 | How many sections; what is a section? | A section **is a track** (no separate object). Loopy: 8 tracks → up to 8 sections in Song mode; in Band, 1 primary + 7 sections. **[loopy decision]** — the Sheeran has 3 non-primary tracks; loopy's 8 fall out of the same rule. Manifest `songSections` field is DROPPED (nothing to persist beyond tracks themselves); `bandGroups` likewise — Band grouping is just "primary vs. rest". |
-| 2 | Pedal advance gesture? | **None exists on the Sheeran** — sections are started/stopped directly via their track pedals; there is no "advance to next section" action. **[loopy decision]**: drop the planned `advanceSection` LooperAction (D20) in favor of direct section (track) presses, matching the manual. A follow-up convenience action can be added later if wanted. |
+| 1 | How many sections; what is a section? | A section **is a track** (no separate object). Segno: 8 tracks → up to 8 sections in Song mode; in Band, 1 primary + 7 sections. **[segno decision]** — the Sheeran has 3 non-primary tracks; segno's 8 fall out of the same rule. Manifest `songSections` field is DROPPED (nothing to persist beyond tracks themselves); `bandGroups` likewise — Band grouping is just "primary vs. rest". |
+| 2 | Pedal advance gesture? | **None exists on the Sheeran** — sections are started/stopped directly via their track pedals; there is no "advance to next section" action. **[segno decision]**: drop the planned `advanceSection` LooperAction (D20) in favor of direct section (track) presses, matching the manual. A follow-up convenience action can be added later if wanted. |
 | 3 | Quantized transition point? | Song mode: sections start/stop **independently and immediately** (no primary, no shared grid obligation); quantize setting still governs record start/end. Band mode: section starts/stops quantize to the **primary track's cycle** (STOP semantics: "end of the primary track"). |
-| 4 | In-flight recording at a section switch? | No special rule in the manual; recording follows the normal one-capturer + quantize rules. MIDI Stop (slaved) ends recording. **[loopy decision]**: starting another section while one records does a normal hand-off (existing engine behavior). |
+| 4 | In-flight recording at a section switch? | No special rule in the manual; recording follows the normal one-capturer + quantize rules. MIDI Stop (slaved) ends recording. **[segno decision]**: starting another section while one records does a normal hand-off (existing engine behavior). |
 | 5 | Distinct section lengths? | Yes — Song tracks vary freely in length; Band non-primary tracks must be multiple/division of the primary. |
 | 6 | Distinct tempos per section? | **No** — one session tempo. Confirmed: nothing in the manual gives sections independent tempo. |
 
@@ -141,7 +141,7 @@ related — candidate follow-up issue).
 | Running | Multi | next downbeat | tracks stop immediately | ends rec/overdub |
 | Running | Sync | at primary-track top | tracks stop at end of primary | ends rec/overdub |
 | Running | Band | at primary-track top | section/primary stop at end of primary | ends rec/overdub |
-| Running | Song / Free | **receive inactive** (manual: send/receive operate in Multi/Sync/Band only) — **[loopy decision]**: entering Song/Free while slaved drops to internal clock with a UI notice | — | — |
+| Running | Song / Free | **receive inactive** (manual: send/receive operate in Multi/Sync/Band only) — **[segno decision]**: entering Song/Free while slaved drops to internal clock with a UI notice | — | — |
 
 While slaved: manual tempo/tap rejected; Sync Audio to Tempo forced on
 (index D3/D14 unchanged).
@@ -149,7 +149,7 @@ While slaved: manual tempo/tap rejected; Sync Audio to Tempo forced on
 ## 4. Corrections this spec feeds back into the plan (applied)
 
 1. Time signatures: **17**, exact set above (index D1, A1).
-2. Tempo range: Sheeran is 30–280; loopy keeps **30–300** as a deliberate
+2. Tempo range: Sheeran is 30–280; segno keeps **30–300** as a deliberate
    superset (documented deviation).
 3. Click: 4-value **click mode**, not boolean (A2); click level is a mix
    control (already planned as click volume).
@@ -160,7 +160,7 @@ While slaved: manual tempo/tap rejected; Sync Audio to Tempo forced on
 6. Clock send restricted to Multi/Sync/Band (C1/D15); receive likewise
    (E1/E2, table above).
 7. Time-stretch is a **two-toggle model** (Sync Audio to Tempo ∥ Time
-   Stretch); whether loopy implements the varispeed (stretch-off) leg is a
+   Stretch); whether segno implements the varispeed (stretch-off) leg is a
    D0 spike decision — pitch-preserved-only remains the part-4 default with
    varispeed as documented deviation if skipped.
 8. `advanceSection` dropped from D20; `songSections`/`bandGroups` manifest

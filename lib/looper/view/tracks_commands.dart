@@ -5,16 +5,16 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/app/loopy_navigator.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
-import 'package:loopy/looper/view/shortcuts_help_sheet.dart';
-import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
-import 'package:loopy/performance/performance.dart';
-import 'package:loopy/session/session.dart';
-import 'package:loopy/window/window_chrome.dart';
+import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/view/shortcuts_help_sheet.dart';
+import 'package:segno/looper/view/signal_graph/signal_graph.dart';
+import 'package:segno/performance/performance.dart';
+import 'package:segno/session/session.dart';
+import 'package:segno/window/window_chrome.dart';
 
 /// The commands for `TracksView`: the keyboard map plus the dispatch+announce
 /// helpers that the toolbar buttons and track tiles share, so the pointer and
@@ -208,7 +208,7 @@ class TracksCommands {
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.keyS) {
-      unawaited(openLoopySettings());
+      unawaited(openSegnoSettings());
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.keyG) {
@@ -216,7 +216,7 @@ class TracksCommands {
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.keyF) {
-      unawaited(toggleLoopyFullScreen());
+      unawaited(toggleSegnoFullScreen());
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.space) {

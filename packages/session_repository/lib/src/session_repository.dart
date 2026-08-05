@@ -3,15 +3,15 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:loopy_engine/loopy_engine.dart';
 import 'package:meta/meta.dart';
+import 'package:segno_engine/segno_engine.dart';
 import 'package:session_repository/src/models/session.dart';
 import 'package:session_repository/src/models/session_summary.dart';
 import 'package:session_repository/src/session_exception.dart';
 import 'package:session_repository/src/session_name.dart';
 import 'package:wav_codec/wav_codec.dart';
 
-/// The decoded contents of a `.loopy` session bundle: the manifest plus each
+/// The decoded contents of a `.segno` session bundle: the manifest plus each
 /// lane's ordinal-ordered layer PCM (undo… live … redo), keyed by
 /// `(channel, lane)`.
 typedef SessionBundle = ({
@@ -52,9 +52,9 @@ class SessionChains {
   final String masterChain;
 }
 
-/// Saves Loopy sessions, reads them back, and exports audio.
+/// Saves Segno sessions, reads them back, and exports audio.
 ///
-/// A session is a `.loopy` bundle directory: a [Session.manifestName] manifest,
+/// A session is a `.segno` bundle directory: a [Session.manifestName] manifest,
 /// one 32-bit-float stem WAV per track, and a `mixdown.wav`. This repository
 /// only does file I/O plus the engine READS a save/export needs (snapshot +
 /// loop PCM); applying a loaded session to the engine is the looper
@@ -95,7 +95,7 @@ class SessionRepository {
   // A name-keyed view over the `sessions/<slug>/` bundles. These do NOT touch
   // the path-addressed read/save/export below — the bloc layer resolves a name
   // to a path via [bundlePath] and feeds that into those. The sessions root is
-  // a sibling of the legacy single `loopy_session/` bundle, so the old bundle
+  // a sibling of the legacy single `segno_session/` bundle, so the old bundle
   // is never enumerated here.
 
   Future<String> _rootPath() async {
@@ -200,7 +200,7 @@ class SessionRepository {
   static String _basename(String path) =>
       path.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).last;
 
-  /// Saves the engine's current state to the `.loopy` bundle [directory],
+  /// Saves the engine's current state to the `.segno` bundle [directory],
   /// writing the manifest, per-track stems, and a mixdown. Returns the saved
   /// [Session] manifest.
   ///
@@ -286,7 +286,7 @@ class SessionRepository {
     }
   }
 
-  /// Reads and validates the `.loopy` bundle [directory]: decodes the manifest
+  /// Reads and validates the `.segno` bundle [directory]: decodes the manifest
   /// and every lane's live-buffer WAV. Pure I/O — the engine is never driven;
   /// the caller (the bloc layer) hands the result to the looper repository's
   /// `applySession`, the one apply path.

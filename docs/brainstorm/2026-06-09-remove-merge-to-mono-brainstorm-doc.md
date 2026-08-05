@@ -62,16 +62,16 @@ possible future enhancement, not built).
 
 ## Affected files (for planning)
 
-Native: `packages/loopy_engine/src/engine.c`,
-`packages/loopy_engine/src/loopy_engine_api.h`,
-`packages/loopy_engine/lib/src/generated/loopy_engine_bindings.dart` (regen),
-`packages/loopy_engine/src/test/test_engine_core.c`.
-Dart libs: `packages/loopy_engine/lib/src/engine_config.dart`,
+Native: `packages/segno_engine/src/engine.c`,
+`packages/segno_engine/src/segno_engine_api.h`,
+`packages/segno_engine/lib/src/generated/segno_engine_bindings.dart` (regen),
+`packages/segno_engine/src/test/test_engine_core.c`.
+Dart libs: `packages/segno_engine/lib/src/engine_config.dart`,
 `packages/settings_repository/lib/src/settings_repository.dart`,
 `lib/app/audio_bootstrap.dart`, `lib/audio_setup/cubit/audio_setup_state.dart`,
 `lib/audio_setup/cubit/audio_setup_cubit.dart`,
 `lib/audio_setup/view/audio_setup_steps.dart`.
-Tests: `packages/loopy_engine/test/engine_config_test.dart`,
+Tests: `packages/segno_engine/test/engine_config_test.dart`,
 `packages/settings_repository/test/settings_repository_test.dart`,
 `test/app/audio_bootstrap_test.dart`,
 `test/audio_setup/cubit/audio_setup_cubit_test.dart`,

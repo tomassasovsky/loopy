@@ -60,7 +60,7 @@ VERIFICATION COMMAND: ruby -ryaml -e "d=YAML.load_file('.github/workflows/licens
   that reads the resolved `pubspec.lock` to enumerate transitive licenses — it
   is unaffected by this change; only the trigger paths change.
 - Repo has 13 packages under `packages/*/pubspec.yaml`, each with their own
-  `dependencies:` (e.g. `packages/loopy_engine/pubspec.yaml` declares
+  `dependencies:` (e.g. `packages/segno_engine/pubspec.yaml` declares
   `ffi: ^2.1.3`, absent from root `pubspec.yaml`). Adding or bumping any such
   dependency changes the committed root `pubspec.lock` without touching root
   `pubspec.yaml`.
@@ -124,5 +124,5 @@ Context, MVP) have been updated to reflect this.
 ## References
 
 - Issue: license_check.yaml path filter misses dependency additions made in packages/*/pubspec.yaml (medium severity, ci category)
-- Related repo docs: `docs/loopy-vst3-mit.md` context (VST3 SDK MIT relicensing) — motivates why license classification is load-bearing here
+- Related repo docs: `docs/segno-vst3-mit.md` context (VST3 SDK MIT relicensing) — motivates why license classification is load-bearing here
 - Brainstorm: `docs/brainstorm/2026-07-13-license-check-path-filter-brainstorm-doc.md`

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/theme/surface_theme.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 /// A dark-styled dropdown that picks an audio device by id: optionally
 /// "System default" (empty id) plus the enumerated [devices]. A selected id

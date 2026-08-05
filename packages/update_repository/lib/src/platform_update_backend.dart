@@ -5,7 +5,7 @@ import 'package:update_repository/src/update_manifest.dart';
 /// app-facing `UpdateRepository` and `UpdateCubit` stay platform-agnostic.
 ///
 /// Implementations:
-///   * appliance (Raspberry Pi) — reads `/etc/loopy/build-version`, fetches the
+///   * appliance (Raspberry Pi) — reads `/etc/segno/build-version`, fetches the
 ///     channel manifest over HTTPS, stages the signed bundle to the inactive
 ///     RAUC slot via a privileged helper, and reboots to apply;
 ///   * desktop (macOS/Windows) — drives Sparkle / WinSparkle;

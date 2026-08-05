@@ -33,9 +33,9 @@
     {
       "type": "chrome",
       "request": "launch",
-      "name": "vamp-viewer",
+      "name": "segno-viewer",
       "url": "http://localhost:8765/viewer.html",
-      "preLaunchTask": "vamp-viewer-server"
+      "preLaunchTask": "segno-viewer-server"
     }
   ]
 }

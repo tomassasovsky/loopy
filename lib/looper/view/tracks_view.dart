@@ -3,21 +3,21 @@ import 'dart:async';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/app/loopy_navigator.dart';
-import 'package:loopy/appliance/display_brightness_cubit.dart';
-import 'package:loopy/common/console_mode.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/cubit/settings_tray_cubit.dart';
-import 'package:loopy/looper/cubit/tracks_cubit.dart';
-import 'package:loopy/looper/view/settings_tray.dart';
-import 'package:loopy/looper/view/track_column.dart';
-import 'package:loopy/looper/view/tracks_chrome.dart';
-import 'package:loopy/looper/view/tracks_commands.dart';
-import 'package:loopy/performance/performance.dart';
-import 'package:loopy/session/session.dart';
-import 'package:loopy/theme/theme.dart';
+import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/appliance/display_brightness_cubit.dart';
+import 'package:segno/common/console_mode.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/settings_tray_cubit.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/view/settings_tray.dart';
+import 'package:segno/looper/view/track_column.dart';
+import 'package:segno/looper/view/tracks_chrome.dart';
+import 'package:segno/looper/view/tracks_commands.dart';
+import 'package:segno/performance/performance.dart';
+import 'package:segno/session/session.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// The full-screen Tracks view (Chewie-Monsta style): a row
@@ -125,7 +125,7 @@ class _TracksViewState extends State<TracksView> {
                 child: GestureDetector(
                   key: const Key('tracks_settings_secondaryTap'),
                   behavior: HitTestBehavior.translucent,
-                  onSecondaryTapUp: (_) => unawaited(openLoopySettings()),
+                  onSecondaryTapUp: (_) => unawaited(openSegnoSettings()),
                   child: Scaffold(
                     body: SafeArea(
                       child: Padding(

@@ -5,12 +5,12 @@ import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/appliance/host_page_chrome.dart';
-import 'package:loopy/bluetooth/bluetooth_cubit.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/setup/setup_surface.dart';
-import 'package:loopy/theme/page_transitions.dart';
-import 'package:loopy/theme/theme.dart';
+import 'package:segno/appliance/host_page_chrome.dart';
+import 'package:segno/bluetooth/bluetooth_cubit.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/setup/setup_surface.dart';
+import 'package:segno/theme/page_transitions.dart';
+import 'package:segno/theme/theme.dart';
 
 /// Opens the Bluetooth surface as a full-screen page from the settings tray.
 Future<void> showBluetoothPage(BuildContext context) {
@@ -100,7 +100,7 @@ class _BluetoothPageState extends State<BluetoothPage> {
                             padding: const EdgeInsets.all(20),
                             child: Text(
                               l10n.bluetoothUnsupportedBody,
-                              style: setupBody,
+                              style: context.setupBody,
                             ),
                           )
                         : LayoutBuilder(
@@ -142,7 +142,7 @@ class _BluetoothPageState extends State<BluetoothPage> {
                                         const SizedBox(height: 8),
                                         Text(
                                           state.errorMessage!,
-                                          style: setupBody.copyWith(
+                                          style: context.setupBody.copyWith(
                                             fontSize: 12,
                                           ),
                                         ),
@@ -182,7 +182,7 @@ class _BluetoothControlStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final alias = state.status.alias.isEmpty ? 'Loopy' : state.status.alias;
+    final alias = state.status.alias.isEmpty ? 'Segno' : state.status.alias;
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -285,7 +285,7 @@ class _BluetoothDeviceList extends StatelessWidget {
         SetupGroupLabel(l10n.bluetoothDevicesGroup),
         const SizedBox(height: 6),
         if (state.devices.isEmpty && !state.scanning)
-          Text(l10n.bluetoothEmptyDevices, style: setupBody)
+          Text(l10n.bluetoothEmptyDevices, style: context.setupBody)
         else
           DecoratedBox(
             decoration: BoxDecoration(

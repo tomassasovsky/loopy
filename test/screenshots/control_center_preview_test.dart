@@ -8,11 +8,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/cubit/settings_tray_cubit.dart';
-import 'package:loopy/looper/view/settings_tray.dart';
-import 'package:loopy/theme/theme.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/settings_tray_cubit.dart';
+import 'package:segno/looper/view/settings_tray.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
@@ -110,7 +110,7 @@ class _PreviewBluetoothHomeClient implements BluetoothClient {
     powered: true,
     discoverable: false,
     advertising: false,
-    alias: 'Loopy',
+    alias: 'Segno',
   );
 
   @override
@@ -136,7 +136,7 @@ class _PreviewBluetoothClient implements BluetoothClient {
     powered: true,
     discoverable: true,
     advertising: true,
-    alias: 'Loopy',
+    alias: 'Segno',
   );
 
   @override

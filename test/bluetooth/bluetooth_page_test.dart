@@ -2,10 +2,10 @@ import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/bluetooth/bluetooth_cubit.dart';
-import 'package:loopy/bluetooth/bluetooth_page.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/theme/theme.dart';
+import 'package:segno/bluetooth/bluetooth_cubit.dart';
+import 'package:segno/bluetooth/bluetooth_page.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/theme/theme.dart';
 
 void main() {
   testWidgets('shows unsupported body when the helper is absent', (

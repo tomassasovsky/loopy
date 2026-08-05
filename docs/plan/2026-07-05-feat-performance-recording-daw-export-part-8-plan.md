@@ -17,7 +17,7 @@ date: 2026-07-05
 Extend the part 7 renderer with a **wet pass** — FX chains applied per the
 log (types/params from the arm snapshot, deltas replayed from logged events)
 via the engine's own `fx_apply_chain`
-([engine_fx.c:978](../../packages/loopy_engine/src/core/engine_fx.c)) — and a
+([engine_fx.c:978](../../packages/segno_engine/src/core/engine_fx.c)) — and a
 **master reconstruction** (track sum + master gain + limiter, from the
 snapshot's settings) that exists to power the golden parity gate. Stems land
 in `stems/wet/`.
@@ -60,7 +60,7 @@ in `stems/wet/`.
 
 ## Tasks
 
-- [ ] `packages/loopy_engine/src/core/perf_render.c` — wet pass (per-lane
+- [ ] `packages/segno_engine/src/core/perf_render.c` — wet pass (per-lane
       `le_fx_state` allocation, chain application per log, plugin
       passthrough), master reconstruction (sum + gain + limiter from
       snapshot).
@@ -74,13 +74,13 @@ in `stems/wet/`.
 
 ## Files touched (primary)
 
-`packages/loopy_engine/src/core/perf_render.c`,
-`packages/loopy_engine/src/test/test_engine_core.c`,
+`packages/segno_engine/src/core/perf_render.c`,
+`packages/segno_engine/src/test/test_engine_core.c`,
 `packages/performance_repository/lib/src/*`.
 
 ## Verification
 
-1. `bash packages/loopy_engine/src/test/run_native_tests.sh` — "ALL PASSED"
+1. `bash packages/segno_engine/src/test/run_native_tests.sh` — "ALL PASSED"
    (includes the parity gate).
 2. `flutter analyze` clean; `dart format --set-exit-if-changed .` stable.
 3. `flutter test packages/performance_repository`.

@@ -124,7 +124,7 @@ input, for each `lane < lane_count`, skip if muted, run its chain on the clean
 input, then `le_fx_route(out, f, ch_out, mask, wet*g, wet_r*g, stereo)` — which
 already handles the stereo-reverb spread. A no-FX lane routes the clean sample.
 
-### C API (`loopy_engine_api.h` + `engine.c`)
+### C API (`segno_engine_api.h` + `engine.c`)
 
 Remove: `le_engine_set_monitor_input_dry`, `_volume`, `_fx`, `_fx_count`,
 `_fx_param` (single-input). Change `le_engine_set_monitor_input(engine, input,
@@ -157,7 +157,7 @@ No per-frame atomic re-reads.
 
 ### Dart layers
 
-- **FFI** (`generated/loopy_engine_bindings.dart`, hand-synced): update the
+- **FFI** (`generated/segno_engine_bindings.dart`, hand-synced): update the
   command-enum constants; replace the monitor functions with the lane-addressed
   ones (`int`/`double` signatures, `ffi.Float` for volume).
 - **`AudioEngine`** interface (`audio_engine.dart`): replace monitor methods with
@@ -192,7 +192,7 @@ No per-frame atomic re-reads.
 
 Follow the repo's **existing** migration pattern, not the cubit. The project
 already has `lib/app/monitor_migration.dart` (`runMonitorMigration`) run from
-`runLoopy` at bootstrap, guarded by a versioned flag
+`runSegno` at bootstrap, guarded by a versioned flag
 (`SettingsRepository.loadMonitorMigratedV1` / `save…`). Add a **v2** step there:
 
 - Guard with a new `monitor.migrated_v2` flag (`loadMonitorMigratedV2` /
@@ -211,7 +211,7 @@ already has `lib/app/monitor_migration.dart` (`runMonitorMigration`) run from
 `MonitorCubit.load` then only ever reads the **new** keys. Covered by a
 migration unit test (legacy save → expected lanes) **and** an idempotency test
 (second run is a no-op once the flag is set). Impacted files:
-`lib/app/monitor_migration.dart`, `lib/app/run_loopy.dart`,
+`lib/app/monitor_migration.dart`, `lib/app/run_segno.dart`,
 `packages/settings_repository/lib/src/settings_repository.dart`,
 `test/app/monitor_migration_test.dart`.
 

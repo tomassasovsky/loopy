@@ -1,4 +1,4 @@
-/// The control layer: loopy's ONE home for stored user intent and its
+/// The control layer: segno's ONE home for stored user intent and its
 /// derivations.
 ///
 /// - `ControlCubit` (business logic layer) owns the closed stored-intent

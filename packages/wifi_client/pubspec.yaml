@@ -1,6 +1,6 @@
 name: wifi_client
 description: >-
-  Data client for Loopy appliance WiFi (`loopy-wifi-ctl`). Pure Dart —
+  Data client for Segno appliance WiFi (`segno-wifi-ctl`). Pure Dart —
   Process.run + JSON parse only; no Flutter dependency.
 version: 0.1.0
 publish_to: none

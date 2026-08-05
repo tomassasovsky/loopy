@@ -17,7 +17,7 @@ driving toggle/momentary bindings [A10] — sharing Part 6b's target model so
 generic MIDI footswitches and the future Part 8 FS-6 work with zero extra
 plumbing. Adds repo-side smoothing, global-only persistence via a
 `controller.mappings` settings blob [R19], learn hygiene that ignores the
-Loopy pedal's own traffic [B8], and a fully specified MIDI-learn settings-tray
+Segno pedal's own traffic [B8], and a fully specified MIDI-learn settings-tray
 UI [R28].
 
 ## Dependencies
@@ -110,7 +110,7 @@ Constraints lifted from the index (pinned decisions — do not change):
       threshold + behavior; everything serializes into the single
       `controller.mappings` JSON blob in `settings_repository`
       (global-only v1); load on startup, round-trips byte-stable
-- [ ] **Learn hygiene** [B8]: MIDI-learn ignores the Loopy pedal's own
+- [ ] **Learn hygiene** [B8]: MIDI-learn ignores the Segno pedal's own
       protocol traffic (its note range + relative encoder CC) so learning
       while the pedal is connected never captures pedal chatter; learn
       captures CC identity (kind, id, channel); fan-out allowed (one CC →

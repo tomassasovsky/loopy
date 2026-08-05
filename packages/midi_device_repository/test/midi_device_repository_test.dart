@@ -241,9 +241,12 @@ void main() {
   });
 
   group('console auto-detect', () {
-    const pedal = MidiDevice(id: 'id-p', name: 'VAMP Loopstation MIDI 1');
-    const otherPedal = MidiDevice(id: 'id-p2', name: 'VAMP Loopstation MIDI 2');
-    const productNames = ['VAMP Loopstation'];
+    const pedal = MidiDevice(id: 'id-p', name: 'Segno Loopstation MIDI 1');
+    const otherPedal = MidiDevice(
+      id: 'id-p2',
+      name: 'Segno Loopstation MIDI 2',
+    );
+    const productNames = ['Segno Loopstation'];
 
     // A repository with auto-detect on and the hotplug timer disabled.
     MidiDeviceRepository buildAuto() => MidiDeviceRepository(
@@ -266,7 +269,7 @@ void main() {
       addTearDown(repository.dispose);
 
       expect(repository.connection.selectedId, 'id-p');
-      expect(repository.connection.selectedName, 'VAMP Loopstation MIDI 1');
+      expect(repository.connection.selectedName, 'Segno Loopstation MIDI 1');
       expect(repository.connection.status, MidiConnectionStatus.connected);
       verify(() => source.open('id-p')).called(1);
     });
@@ -350,7 +353,7 @@ void main() {
 
       const renumbered = MidiDevice(
         id: 'id-p-renumbered',
-        name: 'VAMP Loopstation MIDI 1',
+        name: 'Segno Loopstation MIDI 1',
       );
       enumerated = const [renumbered];
       repository.refresh();
@@ -369,7 +372,7 @@ void main() {
 
         const renumbered = MidiDevice(
           id: 'id-p-renumbered',
-          name: 'VAMP Loopstation MIDI 1',
+          name: 'Segno Loopstation MIDI 1',
         );
         enumerated = const [renumbered];
         repository.refresh();

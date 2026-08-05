@@ -1,6 +1,6 @@
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/looper/cubit/high_contrast_cubit.dart';
+import 'package:segno/looper/cubit/high_contrast_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';

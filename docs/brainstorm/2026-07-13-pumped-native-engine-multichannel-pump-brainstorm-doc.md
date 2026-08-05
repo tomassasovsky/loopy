@@ -14,7 +14,7 @@ assumptions instead of blocking on questions.
 ## What We're Building
 
 `PumpedNativeEngine.pump()` in
-`packages/loopy_engine/lib/src/native_audio_engine.dart` currently allocates
+`packages/segno_engine/lib/src/native_audio_engine.dart` currently allocates
 its native input/output scratch buffers sized by `frames` alone:
 
 ```dart
@@ -37,7 +37,7 @@ overflow with no Dart-side error.
 This is currently **latent, not exercised**: every in-repo caller either uses
 1-channel configs, or (the one 2-channel test,
 `'importTrackLane restores multiple lanes...'` in
-`packages/loopy_engine/test/pumped_native_engine_test.dart`) only ever calls
+`packages/segno_engine/test/pumped_native_engine_test.dart`) only ever calls
 `pump(frames: 0)`, which touches zero elements regardless of channel count.
 
 The fix: make `pump()`'s buffer allocation channel-aware, by tracking the
@@ -125,14 +125,14 @@ simple and uniform across channels.
 - **No guard/assertion added to `start()`** rejecting non-mono channel
   counts — direction (b) was rejected as a regression risk (see above).
 - **New regression test**: extend
-  `packages/loopy_engine/test/pumped_native_engine_test.dart` with a case
+  `packages/segno_engine/test/pumped_native_engine_test.dart` with a case
   that starts a 2-channel (or asymmetric, e.g. 2-in/1-out) `PumpedNativeEngine`
   and calls `pump(frames: N)` with `N > 0` (not just `frames: 0`), then
   performs a real record/play/export round trip to prove the corrected
   buffers behave sanely end-to-end (not just "didn't crash"). This is the
   exact gap the review finding calls out.
 - **No sanitizer/ASAN wiring added.** Checked
-  `packages/loopy_engine/tool/build_test_lib.sh`: it compiles with plain
+  `packages/segno_engine/tool/build_test_lib.sh`: it compiles with plain
   `gcc -O2 -fPIC`, no `-fsanitize=address`. Adding sanitizer support to the
   test-lib build script is out of scope for this narrowly-scoped Dart-side
   fix (it's shared native build infra, not part of the reported issue, and

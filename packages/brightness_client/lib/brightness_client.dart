@@ -1,4 +1,4 @@
-/// Data client for appliance display brightness (`loopy-brightness-ctl`).
+/// Data client for appliance display brightness (`segno-brightness-ctl`).
 library;
 
 export 'src/brightness_client.dart'

@@ -1,4 +1,4 @@
-/// I/O boundary for appliance display brightness (`loopy-brightness-ctl`).
+/// I/O boundary for appliance display brightness (`segno-brightness-ctl`).
 abstract class BrightnessClient {
   /// Whether DDC/CI brightness control is available.
   Future<bool> isSupported();

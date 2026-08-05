@@ -58,7 +58,7 @@ Key files (all paths repo-relative unless absolute):
   (:307) — named explicitly because object-pattern churn won't flag them
   [R16]; codec bridge to the engine entries codec (:337, :343);
   `trackChainFingerprint` (:357).
-- `packages/loopy_engine/lib/src/track_effect.dart` — engine-side
+- `packages/segno_engine/lib/src/track_effect.dart` — engine-side
   `TrackEffectParam` (:156) and sealed `TrackEffect` (:229) + the engine
   entries codec (`encodeTrackEffects` / `decodeTrackEffects`). The C engine
   receives chains via FFI structs — `slotId` never crosses the FFI boundary;
@@ -83,10 +83,10 @@ Key files (all paths repo-relative unless absolute):
   gains Track/Master chain events + state [VGV].
 - `.github/workflows/main.yaml` — root app job (`flutter_package.yml@v1`,
   `min_coverage: 90` at :37), `daw_export` job (`min_coverage: 100` at :49),
-  fuzz job (builds `LOOPY_ENGINE_LIB`, runs `flutter test --tags fuzz`,
+  fuzz job (builds `SEGNO_ENGINE_LIB`, runs `flutter test --tags fuzz`,
   ~:172–:190). The five domain packages have **no jobs today**.
 - Tests to extend: `packages/looper_repository/test/fx_fingerprint_agreement_test.dart`
-  (fuzz-tagged, self-skips without `LOOPY_ENGINE_LIB`),
+  (fuzz-tagged, self-skips without `SEGNO_ENGINE_LIB`),
   `packages/looper_repository/test/models/track_effect_test.dart`.
 
 Constraints lifted from the index (pinned decisions — do not change):
@@ -109,7 +109,7 @@ Constraints lifted from the index (pinned decisions — do not change):
   targets cross the `controller_repository` / `pedal_repository` boundary as
   canonical-JSON strings — those packages gain no looper/engine dependency.
   The chain envelope is **owned by `looper_repository`**, wrapping
-  `loopy_engine`'s existing entries codec — the engine never consumes
+  `segno_engine`'s existing entries codec — the engine never consumes
   provenance/meta.
 - **State ownership [VGV]:** `LooperBloc` owns Track and Master chain state
   (events + push, like lane chains today); `MonitorCubit` stays input-only.
@@ -168,7 +168,7 @@ Constraints lifted from the index (pinned decisions — do not change):
       `String? slotId`, threaded through `copyWith` / `props` / `toJson` /
       `fromJson` on every subclass. Decode defaults: missing `enabled` →
       `true`; missing `slotId` → left null for the repo boundary to mint.
-- [ ] Engine hierarchy (`packages/loopy_engine/lib/src/track_effect.dart:229`):
+- [ ] Engine hierarchy (`packages/segno_engine/lib/src/track_effect.dart:229`):
       same two fields + codec support in `encodeTrackEffects` /
       `decodeTrackEffects` (entries carry both fields; the C engine never
       parses `slotId` — it is Dart-side passthrough; `enabled` reaches the
@@ -213,7 +213,7 @@ Constraints lifted from the index (pinned decisions — do not change):
       `le_engine_*_fx_fingerprint` values (lane + monitor stages, where the
       native per-chain fingerprint APIs exist). Keep the `@Tags(['fuzz'])`
       self-skip pattern so plain `flutter test` stays green without
-      `LOOPY_ENGINE_LIB`.
+      `SEGNO_ENGINE_LIB`.
 
 ### T4 — Chain envelope `{chainEnabled, meta, entries}` [R13][R15]
 
@@ -222,7 +222,7 @@ Constraints lifted from the index (pinned decisions — do not change):
       `decodeFxChain` producing/consuming
       `{chainEnabled: bool, meta: {...}?, entries: [...]}` where `entries`
       is the engine entries codec's payload (the envelope **wraps**
-      `loopy_engine`'s codec; the engine never consumes `chainEnabled` or
+      `segno_engine`'s codec; the engine never consumes `chainEnabled` or
       `meta` [VGV-critical]). `meta` carries inherited provenance:
       `inheritedFrom` as a **list of input indices in input order** [A8]
       (single-input inherits produce a one-element list).
@@ -344,7 +344,7 @@ Constraints lifted from the index (pinned decisions — do not change):
 - [ ] Native-lib-dependent tests (the agreement test) keep the
       `@Tags(['fuzz'])` self-skip so the new package jobs stay green
       without an engine build; extend the existing fuzz job (which already
-      builds `LOOPY_ENGINE_LIB`) to also run
+      builds `SEGNO_ENGINE_LIB`) to also run
       `flutter test --tags fuzz` inside `packages/looper_repository`, so
       the [R16] mixed-enabled agreement test is genuinely CI-gated rather
       than silently skipped everywhere.
@@ -437,8 +437,8 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test packages
   environment — use the absolute flutter path
   (`/Users/Tomas/development/flutter/bin/flutter`), as the verification
   commands already do. The agreement test self-skips without
-  `LOOPY_ENGINE_LIB`; to run it locally:
-  `export LOOPY_ENGINE_LIB="$(bash packages/loopy_engine/tool/build_test_lib.sh)"`.
+  `SEGNO_ENGINE_LIB`; to run it locally:
+  `export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"`.
 - **Before opening the PR:** check the cspell dictionary for new vocabulary
   (`FxAddress`, `slotId`/`slotIds`, `chainEnabled`, envelope terms — the
   epic already added stomp/plog/FS-6/TRS) and the semantic PR title

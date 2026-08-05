@@ -8,7 +8,7 @@ topic: per-os-engine-subdivision
 ## What We're Building
 
 Split the platform-specific C currently living inside the ~3,200-line
-[`packages/loopy_engine/src/engine.c`](../../packages/loopy_engine/src/engine.c)
+[`packages/segno_engine/src/engine.c`](../../packages/segno_engine/src/engine.c)
 into **per-OS translation units** — `engine_linux.c`, `engine_apple.c`,
 `engine_windows.c` — that each implement a small, fixed set of **seam functions**
 (`le_platform_*`) the portable core calls at well-defined lifecycle points. After
@@ -102,7 +102,7 @@ the `jack_*` dlfcn typedefs, `k_backends[]`) become **file-local statics inside
 `le_platform_after_device_start` needs the engine struct (it touches
 `engine->context.backend`, `engine->device.jack.*`, `engine->in/out_channels`,
 and `store_i32(&engine->a_in_channels, …)`). Today `struct le_engine` is defined
-**inside `engine.c`** ([line 186](../../packages/loopy_engine/src/engine.c#L186)),
+**inside `engine.c`** ([line 186](../../packages/segno_engine/src/engine.c#L186)),
 and the existing `engine_internal.h` only declares functions, not the struct.
 
 So the split requires moving the `struct le_engine` definition + a couple of
@@ -119,9 +119,9 @@ per-OS TUs. Options for where:
 **Leaning toward `engine_private.h`** to keep the test surface and the
 implementation-internal surface distinct. Helpers to promote from `static` to
 shared (declared in that header): `enumerate_devices`
-([engine.c:1825](../../packages/loopy_engine/src/engine.c#L1825), used by
+([engine.c:1825](../../packages/segno_engine/src/engine.c#L1825), used by
 `le_jack_device_name`) and the atomic accessors `store_i32`/`load_i32`
-([engine.c:344](../../packages/loopy_engine/src/engine.c#L344)).
+([engine.c:344](../../packages/segno_engine/src/engine.c#L344)).
 
 ## Build-System Implications
 
@@ -130,9 +130,9 @@ non-matching platform it's an **empty translation unit** (no symbols, no duplica
 definitions). That lets every build list all three unconditionally:
 
 - **Linux / Windows (CMake)** —
-  [`src/CMakeLists.txt`](../../packages/loopy_engine/src/CMakeLists.txt) adds
+  [`src/CMakeLists.txt`](../../packages/segno_engine/src/CMakeLists.txt) adds
   `engine_linux.c engine_apple.c engine_windows.c` to the existing
-  `add_library(loopy_engine SHARED …)`. On Linux only `engine_linux.c` has a
+  `add_library(segno_engine SHARED …)`. On Linux only `engine_linux.c` has a
   body; the other two compile to nothing. (Same pattern that already silently
   works for `loop_clock.c`.)
 - **macOS / iOS (CocoaPods)** — the podspec compiles via `Classes/*.c` forwarders
@@ -149,7 +149,7 @@ definitions). That lets every build list all three unconditionally:
   the strict `-std=c11` note that already gates `setenv` via the `extern`
   declaration — that declaration moves into `engine_linux.c`.
 
-No change to the FFI surface (`loopy_engine_api.h`), the Dart loader, or ffigen —
+No change to the FFI surface (`segno_engine_api.h`), the Dart loader, or ffigen —
 the seam is purely internal.
 
 ## Migration Strategy (incremental, tests green at each step)

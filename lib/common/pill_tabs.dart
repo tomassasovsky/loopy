@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:loopy/theme/theme.dart';
+import 'package:segno/theme/theme.dart';
 
 /// One choice in a [PillTabs] strip.
 @immutable
