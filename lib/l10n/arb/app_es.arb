@@ -1343,6 +1343,10 @@
     "@midiControlThreshold": {
         "description": "Caption on the value a switch mapping fires at."
     },
+    "pedalControlBank": "Banco",
+    "@pedalControlBank": {
+        "description": "Caption beside the A/B selector over the track footswitch cards."
+    },
     "trayNetworkLabel": "Red",
     "@trayNetworkLabel": {
         "description": "Navigation rail entry for the settings tray's Network face, which holds the WiFi and Bluetooth tabs."

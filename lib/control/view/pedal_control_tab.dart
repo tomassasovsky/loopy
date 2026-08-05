@@ -22,6 +22,13 @@ import 'package:segno/theme/theme.dart';
 /// bypasses "Dirty rhythm" survives its contents being re-arranged; individual
 /// effects are one tap further down, behind "Show individual effects", since a
 /// binding to one slot breaks when that slot moves.
+///
+/// The track row is a second bank of cards under the first, with an A/B
+/// selector between them. The mockups draw four switches because the
+/// prototype's pedal has four; this one has ten, and the four track
+/// footswitches hold a binding EACH PER BANK (A3) — eight assignable slots
+/// that would otherwise be reachable only from the full-screen plate inside
+/// Settings, which this reorganisation deletes.
 class PedalControlTab extends StatefulWidget {
   /// Creates a [PedalControlTab].
   const PedalControlTab({super.key});
@@ -32,8 +39,14 @@ class PedalControlTab extends StatefulWidget {
 
 class _PedalControlTabState extends State<PedalControlTab> {
   /// The switch whose targets are listed, or null when nothing is selected —
-  /// the `CONTROL / control` base state, which is four cards and nothing else.
+  /// the `CONTROL / control` base state, which is cards and nothing else.
   PedalButton? _selected;
+
+  /// The bank the track cards are showing. Null until the first build, which
+  /// seeds it from the bank the pedal is actually on — editing the bank the
+  /// performer is standing in is the common case, and starting anywhere else
+  /// invites an edit that appears to do nothing.
+  int? _bank;
 
   /// Whether the target list has been expanded past the named racks.
   bool _showSlots = false;
@@ -52,6 +65,15 @@ class _PedalControlTabState extends State<PedalControlTab> {
     PedalButton.clear,
   ];
 
+  /// The track footswitches, in floor order. Bank-keyed, so which binding a
+  /// card shows depends on [_bank].
+  static const List<PedalButton> _trackSwitches = [
+    PedalButton.track1,
+    PedalButton.track2,
+    PedalButton.track3,
+    PedalButton.track4,
+  ];
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -59,37 +81,63 @@ class _PedalControlTabState extends State<PedalControlTab> {
     final looper = context.read<LooperRepository>();
     final editing = cubit.state.bindings;
     final selected = _selected;
+    final bank = _bank ??= cubit.state.activeBank;
 
     return KeyedSubtree(
       key: const Key('pedal_control_tab'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _CardRow(
+            buttons: _switches,
+            label: (button) => _targetLabel(l10n, looper, editing, button),
+            assigned: (button) => _bindingFor(editing, button) != null,
+            selected: selected,
+            onTap: _select,
+          ),
+          const SizedBox(height: 14),
           Row(
             children: [
-              for (final button in _switches) ...[
-                if (button != _switches.first) const SizedBox(width: 14),
-                Expanded(
-                  child: _SwitchCard(
-                    button: button,
-                    label: _targetLabel(l10n, looper, editing, button),
-                    assigned: _bindingFor(editing, button) != null,
-                    selected: selected == button,
-                    onTap: () => setState(() {
-                      _selected = selected == button ? null : button;
-                      _showSlots = false;
-                    }),
-                  ),
+              Text(
+                l10n.pedalControlBank,
+                style: TextStyle(
+                  color: context.surface.textMuted,
+                  fontSize: 13,
+                  letterSpacing: 0.6,
                 ),
-              ],
+              ),
+              const SizedBox(width: 14),
+              ConsoleSegmented<int>(
+                key: const Key('pedal_bank'),
+                selected: bank,
+                onChanged: (next) => setState(() => _bank = next),
+                options: [
+                  for (var b = 0; b < PedalBindingKey.bankCount; b++)
+                    // The letter alone: the caption beside the strip already
+                    // says Bank, and "Bank  Bank A  Bank B" reads as a
+                    // stutter.
+                    ConsoleSegment(
+                      value: b,
+                      label: String.fromCharCode(65 + b),
+                    ),
+                ],
+              ),
             ],
+          ),
+          const SizedBox(height: 14),
+          _CardRow(
+            buttons: _trackSwitches,
+            label: (button) => _targetLabel(l10n, looper, editing, button),
+            assigned: (button) => _bindingFor(editing, button) != null,
+            selected: selected,
+            onTap: _select,
           ),
           if (selected != null) ...[
             const SizedBox(height: 14),
             Flexible(
               child: SingleChildScrollView(
                 child: _TargetList(
-                  button: selected,
+                  bindingKey: _keyFor(selected),
                   showSlots: _showSlots,
                   onShowSlots: () => setState(() => _showSlots = true),
                 ),
@@ -101,8 +149,20 @@ class _PedalControlTabState extends State<PedalControlTab> {
     );
   }
 
+  void _select(PedalButton button) => setState(() {
+    _selected = _selected == button ? null : button;
+    _showSlots = false;
+  });
+
+  /// The key a binding for [button] is stored under: bank-qualified for a
+  /// track switch, bare for the rest.
+  PedalBindingKey _keyFor(PedalButton button) => PedalBindingKey(
+    button: button,
+    bank: PedalBindingKey.isBankKeyed(button) ? _bank : null,
+  );
+
   PedalBinding? _bindingFor(PedalBindingSet set, PedalButton button) {
-    final key = PedalBindingKey(button: button);
+    final key = _keyFor(button);
     return set.bindings.where((b) => b.key == key).firstOrNull;
   }
 
@@ -121,6 +181,43 @@ class _PedalControlTabState extends State<PedalControlTab> {
       return l10n.pedalControlMissingTarget;
     }
     return bindingTargetLabel(l10n, target);
+  }
+}
+
+/// A row of switch cards, evenly divided.
+class _CardRow extends StatelessWidget {
+  const _CardRow({
+    required this.buttons,
+    required this.label,
+    required this.assigned,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final List<PedalButton> buttons;
+  final String Function(PedalButton button) label;
+  final bool Function(PedalButton button) assigned;
+  final PedalButton? selected;
+  final ValueChanged<PedalButton> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        for (final button in buttons) ...[
+          if (button != buttons.first) const SizedBox(width: 14),
+          Expanded(
+            child: _SwitchCard(
+              button: button,
+              label: label(button),
+              assigned: assigned(button),
+              selected: selected == button,
+              onTap: () => onTap(button),
+            ),
+          ),
+        ],
+      ],
+    );
   }
 }
 
@@ -193,12 +290,13 @@ class _SwitchCard extends StatelessWidget {
 /// request — every individual effect inside them.
 class _TargetList extends StatelessWidget {
   const _TargetList({
-    required this.button,
+    required this.bindingKey,
     required this.showSlots,
     required this.onShowSlots,
   });
 
-  final PedalButton button;
+  /// The key being edited — bank-qualified for a track switch.
+  final PedalBindingKey bindingKey;
   final bool showSlots;
   final VoidCallback onShowSlots;
 
@@ -207,7 +305,7 @@ class _TargetList extends StatelessWidget {
     final l10n = context.l10n;
     final cubit = context.watch<ControlCubit>();
     final looper = context.read<LooperRepository>();
-    final key = PedalBindingKey(button: button);
+    final key = bindingKey;
     final editing = cubit.state.bindings;
     final current = editing.bindings
         .where((b) => b.key == key)
