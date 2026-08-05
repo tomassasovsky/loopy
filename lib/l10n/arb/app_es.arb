@@ -1407,6 +1407,188 @@
     "@midiControlIdle": {
         "description": "Notice at the head of the mapping list while no MIDI input is delivering."
     },
+    "trayLoopLabel": "Loop",
+    "@trayLoopLabel": {
+        "description": "Navigation rail entry for the settings tray's Loop face."
+    },
+    "loopTempoTab": "Tempo",
+    "@loopTempoTab": {
+        "description": "Tab label for the tempo half of the Loop face."
+    },
+    "loopClickTab": "Clic",
+    "@loopClickTab": {
+        "description": "Tab label for the metronome half of the Loop face."
+    },
+    "loopModeTab": "Modo",
+    "@loopModeTab": {
+        "description": "Tab label for the looper-mode half of the Loop face."
+    },
+    "loopTempoGroup": "Tempo",
+    "@loopTempoGroup": {
+        "description": "Group heading over the tempo rows."
+    },
+    "loopTempoTitle": "Tempo",
+    "@loopTempoTitle": {
+        "description": "Row that opens the tempo editor."
+    },
+    "loopTempoSubtitle": "tocá o escribí",
+    "@loopTempoSubtitle": {
+        "description": "Subtitle on the tempo row: both ways of setting it work."
+    },
+    "loopBpmValue": "{bpm} bpm",
+    "@loopBpmValue": {
+        "description": "A tempo value with its unit.",
+        "placeholders": {
+            "bpm": {
+                "type": "String"
+            }
+        }
+    },
+    "loopSignatureTitle": "Compás",
+    "@loopSignatureTitle": {
+        "description": "Row that opens the time-signature picker."
+    },
+    "loopLengthTitle": "Largo del loop",
+    "@loopLengthTitle": {
+        "description": "Row that opens the default loop-length picker."
+    },
+    "loopLengthSubtitle": "la primera toma lo define",
+    "@loopLengthSubtitle": {
+        "description": "Subtitle on the loop-length row while it is Auto."
+    },
+    "loopQuantiseTitle": "Cuantizar",
+    "@loopQuantiseTitle": {
+        "description": "Row that opens the quantise-grid picker."
+    },
+    "loopQuantiseSubtitle": "cuándo se aplica un cambio",
+    "@loopQuantiseSubtitle": {
+        "description": "Subtitle explaining what the quantise grid governs."
+    },
+    "loopQuantiseOff": "Off",
+    "@loopQuantiseOff": {
+        "description": "Quantise value meaning no grid."
+    },
+    "loopCountInTitle": "Conteo previo",
+    "@loopCountInTitle": {
+        "description": "Row that opens the count-in picker."
+    },
+    "loopCountInOff": "Off",
+    "@loopCountInOff": {
+        "description": "Count-in value meaning none."
+    },
+    "loopBarsValue": "{bars, plural, =1{1 compás} other{{bars} compases}}",
+    "@loopBarsValue": {
+        "description": "A length in bars.",
+        "placeholders": {
+            "bars": {
+                "type": "int"
+            }
+        }
+    },
+    "loopDivisionHalf": "1/2",
+    "@loopDivisionHalf": {
+        "description": "Quantise grid of a half note."
+    },
+    "loopDivisionQuarter": "1/4",
+    "@loopDivisionQuarter": {
+        "description": "Quantise grid of a quarter note."
+    },
+    "loopDivisionEighth": "1/8",
+    "@loopDivisionEighth": {
+        "description": "Quantise grid of an eighth note."
+    },
+    "loopDivisionSixteenth": "1/16",
+    "@loopDivisionSixteenth": {
+        "description": "Quantise grid of a sixteenth note."
+    },
+    "loopSyncTitle": "Sincronizar loop al tempo",
+    "@loopSyncTitle": {
+        "description": "Switch row that locks loop length to the tempo grid."
+    },
+    "loopSyncSubtitle": "Mantiene el largo del loop atado a la grilla de tempo; una grabación inicial nueva puede derivar el tempo de su largo.",
+    "@loopSyncSubtitle": {
+        "description": "Explains what syncing the loop to the tempo does."
+    },
+    "loopClickGroup": "Clic",
+    "@loopClickGroup": {
+        "description": "Group heading over the metronome rows."
+    },
+    "loopClickWhenTitle": "Cuándo suena",
+    "@loopClickWhenTitle": {
+        "description": "Row that opens the click-mode picker."
+    },
+    "loopClickOff": "Nunca",
+    "@loopClickOff": {
+        "description": "Click mode: never audible."
+    },
+    "loopClickRecording": "Grabando",
+    "@loopClickRecording": {
+        "description": "Click mode: audible while recording or overdubbing."
+    },
+    "loopClickFirstTake": "Primera toma",
+    "@loopClickFirstTake": {
+        "description": "Click mode: audible only during the defining recording."
+    },
+    "loopClickAlways": "Reproduciendo y grabando",
+    "@loopClickAlways": {
+        "description": "Click mode: audible whenever the transport runs."
+    },
+    "loopClickOutputTitle": "Salida",
+    "@loopClickOutputTitle": {
+        "description": "Row that opens the click-output picker."
+    },
+    "loopClickOutputNone": "ninguna",
+    "@loopClickOutputNone": {
+        "description": "Click output: neither output carries the click."
+    },
+    "loopClickOutputMain": "solo principal",
+    "@loopClickOutputMain": {
+        "description": "Click output: the main output only."
+    },
+    "loopClickOutputPhones": "solo auriculares",
+    "@loopClickOutputPhones": {
+        "description": "Click output: the headphone output only."
+    },
+    "loopClickOutputBoth": "principal y auriculares",
+    "@loopClickOutputBoth": {
+        "description": "Click output: both outputs."
+    },
+    "loopClickVolumeLabel": "VOLUMEN DEL CLIC",
+    "@loopClickVolumeLabel": {
+        "description": "Caption on the click volume bar."
+    },
+    "loopModeGroup": "Modo",
+    "@loopModeGroup": {
+        "description": "Group heading over the looper-mode rows."
+    },
+    "loopModeTitle": "Modo del looper",
+    "@loopModeTitle": {
+        "description": "Row that opens the looper-mode picker."
+    },
+    "loopDefaultsGroup": "Predeterminados",
+    "@loopDefaultsGroup": {
+        "description": "Group heading over the boot-default rows."
+    },
+    "defaultModeTitle": "Modo predeterminado",
+    "@defaultModeTitle": {
+        "description": "Row that opens the boot interaction-mode picker."
+    },
+    "loopBpmUnit": "bpm",
+    "@loopBpmUnit": {
+        "description": "Unit shown beside the tempo sheet's title."
+    },
+    "loopTempoTapAction": "Tocar",
+    "@loopTempoTapAction": {
+        "description": "Key that taps a tempo in rather than typing it."
+    },
+    "loopTempoSetAction": "Fijar",
+    "@loopTempoSetAction": {
+        "description": "Key that applies the typed tempo."
+    },
+    "fxModeLabel": "FX",
+    "@fxModeLabel": {
+        "description": "Name of the pedal's FX interaction mode."
+    },
     "trayNetworkLabel": "Red",
     "@trayNetworkLabel": {
         "description": "Navigation rail entry for the settings tray's Network face, which holds the WiFi and Bluetooth tabs."

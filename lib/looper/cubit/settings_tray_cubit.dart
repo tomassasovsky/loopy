@@ -4,6 +4,7 @@ import 'package:equatable/equatable.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/control/control_tab.dart';
+import 'package:segno/looper/loop_tab.dart';
 import 'package:segno/network/network_tab.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -121,6 +122,9 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// Switches the Control face's tab. Like [showNetworkTab], the strip is
   /// only reachable while its domain is already showing.
   void showControlTab(ControlTab tab) => emit(state.copyWith(controlTab: tab));
+
+  /// Switches the Loop face's tab.
+  void showLoopTab(LoopTab tab) => emit(state.copyWith(loopTab: tab));
 
   /// Switches the Network face's tab. Does not touch
   /// [SettingsTrayState.destination]:
