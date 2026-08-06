@@ -28,7 +28,6 @@ class TrayPanel extends StatelessWidget {
     final surface = context.surface;
     final state = context.watch<SettingsTrayCubit>().state;
     final cubit = context.read<SettingsTrayCubit>();
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     return Material(
       color: Colors.transparent,
@@ -67,64 +66,34 @@ class TrayPanel extends StatelessWidget {
                           // [_TrayFaceFrame] footprint and are centred
                           // individually, since a WiFi list stretched across
                           // a 1080p sheet reads worse than a centred panel.
-                          child: AnimatedSwitcher(
-                            duration: reduceMotion
-                                ? Duration.zero
-                                : const Duration(milliseconds: 240),
-                            switchInCurve: Curves.easeOutCubic,
-                            switchOutCurve: Curves.easeInCubic,
-                            transitionBuilder: (child, animation) {
-                              // Vertical handoff: incoming rises from below.
-                              final offset =
-                                  Tween<Offset>(
-                                    begin: const Offset(0, 0.12),
-                                    end: Offset.zero,
-                                  ).animate(
-                                    CurvedAnimation(
-                                      parent: animation,
-                                      curve: Curves.easeOutCubic,
-                                    ),
-                                  );
-                              return FadeTransition(
-                                opacity: animation,
-                                child: SlideTransition(
-                                  position: offset,
-                                  child: child,
+                          child: KeyedSubtree(
+                            key: ValueKey(state.destination),
+                            child: switch (state.destination) {
+                              SettingsTrayDestination.home => const TrayHome(),
+                              SettingsTrayDestination.control => _TrayFaceFrame(
+                                child: ControlTrayPanel(
+                                  tab: state.controlTab,
+                                  onTabChanged: cubit.showControlTab,
                                 ),
-                              );
+                              ),
+                              SettingsTrayDestination.loop => _TrayFaceFrame(
+                                child: LoopTrayPanel(
+                                  tab: state.loopTab,
+                                  onTabChanged: cubit.showLoopTab,
+                                ),
+                              ),
+                              SettingsTrayDestination.tuner => _TrayFaceFrame(
+                                child: TunerTrayPanel(
+                                  onBack: cubit.showHome,
+                                ),
+                              ),
+                              SettingsTrayDestination.network => _TrayFaceFrame(
+                                child: NetworkTrayPanel(
+                                  tab: state.networkTab,
+                                  onTabChanged: cubit.showNetworkTab,
+                                ),
+                              ),
                             },
-                            child: KeyedSubtree(
-                              key: ValueKey(state.destination),
-                              child: switch (state.destination) {
-                                SettingsTrayDestination.home =>
-                                  const TrayHome(),
-                                SettingsTrayDestination.control =>
-                                  _TrayFaceFrame(
-                                    child: ControlTrayPanel(
-                                      tab: state.controlTab,
-                                      onTabChanged: cubit.showControlTab,
-                                    ),
-                                  ),
-                                SettingsTrayDestination.loop => _TrayFaceFrame(
-                                  child: LoopTrayPanel(
-                                    tab: state.loopTab,
-                                    onTabChanged: cubit.showLoopTab,
-                                  ),
-                                ),
-                                SettingsTrayDestination.tuner => _TrayFaceFrame(
-                                  child: TunerTrayPanel(
-                                    onBack: cubit.showHome,
-                                  ),
-                                ),
-                                SettingsTrayDestination.network =>
-                                  _TrayFaceFrame(
-                                    child: NetworkTrayPanel(
-                                      tab: state.networkTab,
-                                      onTabChanged: cubit.showNetworkTab,
-                                    ),
-                                  ),
-                              },
-                            ),
                           ),
                         ),
                       ),

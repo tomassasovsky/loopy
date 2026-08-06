@@ -2,30 +2,44 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/theme/theme.dart';
 
 /// Asks for a tempo, drawn to `LOOP / loop-tempo`: a number pad with a tap pad
 /// beside it, because the row says "tap or type" and both have to work.
 ///
-/// Returns the typed bpm, or null when dismissed. Tapping is different: it
-/// goes straight to the engine as it happens (a tempo derived from taps is
-/// runtime state, not something to hold and submit), so the sheet reports it
-/// through [onTap] and closes on the first result.
+/// Returns the bpm to apply, or null when dismissed.
+///
+/// Tapping goes straight to the engine — a tempo derived from taps is the
+/// engine's own runtime state — so the sheet reports each tap through [onTap]
+/// and then MIRRORS what the engine made of it, which is the only feedback a
+/// tap has. Without that the pad looks dead: taps land, the engine converges,
+/// and the field goes on showing whatever it opened with.
 Future<double?> showTempoSheet(
   BuildContext context, {
   required double initial,
   required EngineResult Function() onTap,
-}) => showModalBottomSheet<double>(
-  context: context,
-  isScrollControlled: true,
-  backgroundColor: Colors.transparent,
-  barrierColor: context.surface.scrim,
-  constraints: const BoxConstraints(),
-  builder: (sheetContext) => _TempoSheet(initial: initial, onTap: onTap),
-);
+}) {
+  // A modal route is built by the navigator, not by the caller, so it sees
+  // nothing the caller's subtree provides. The bloc is handed across
+  // explicitly — the sheet needs it to show what the taps did.
+  final bloc = context.read<LooperBloc>();
+  return showModalBottomSheet<double>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    barrierColor: context.surface.scrim,
+    constraints: const BoxConstraints(),
+    builder: (sheetContext) => BlocProvider<LooperBloc>.value(
+      value: bloc,
+      child: _TempoSheet(initial: initial, onTap: onTap),
+    ),
+  );
+}
 
 class _TempoSheet extends StatefulWidget {
   const _TempoSheet({required this.initial, required this.onTap});
@@ -38,10 +52,19 @@ class _TempoSheet extends StatefulWidget {
 }
 
 class _TempoSheetState extends State<_TempoSheet> {
-  late String _value = widget.initial.toStringAsFixed(1);
-  bool _typed = false;
+  // No tempo yet (`0`) opens an empty field rather than a literal "0.0" the
+  // performer would have to clear first.
+  late String _value = widget.initial > 0
+      ? widget.initial.toStringAsFixed(1)
+      : '';
+  late bool _typed = widget.initial <= 0;
+
+  /// True once the pad has been tapped: from then on the field follows the
+  /// engine's derived tempo rather than the text, until something is typed.
+  bool _tapping = false;
 
   void _press(String key) => setState(() {
+    _tapping = false;
     // The first keypress replaces the shown tempo rather than appending to
     // it: the field opens with the current value, and a performer typing 90
     // means 90, not 120.090.
@@ -55,12 +78,22 @@ class _TempoSheetState extends State<_TempoSheet> {
   });
 
   void _backspace() => setState(() {
+    _tapping = false;
     _typed = true;
     if (_value.isNotEmpty) _value = _value.substring(0, _value.length - 1);
   });
 
-  double? get _parsed {
-    final bpm = double.tryParse(_value);
+  /// What the field shows: the engine's tempo while tapping, the typed text
+  /// otherwise.
+  String _display(BuildContext context) {
+    if (!_tapping) return _value;
+    final engine = context.watch<LooperBloc>().state.transport.tempoBpm;
+    if (engine <= 0) return _value;
+    return engine.toStringAsFixed(1);
+  }
+
+  double? _parsed(String display) {
+    final bpm = double.tryParse(display);
     if (bpm == null || bpm <= 0) return null;
     return bpm;
   }
@@ -69,6 +102,8 @@ class _TempoSheetState extends State<_TempoSheet> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
+    final display = _display(context);
+    final parsed = _parsed(display);
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -124,7 +159,7 @@ class _TempoSheetState extends State<_TempoSheet> {
                     vertical: 15,
                   ),
                   child: Text(
-                    _value,
+                    display,
                     key: const Key('tempo_sheet_field'),
                     style: TextStyle(
                       color: surface.textPrimary,
@@ -145,10 +180,15 @@ class _TempoSheetState extends State<_TempoSheet> {
                     onTap: () {
                       unawaited(HapticFeedback.selectionClick());
                       widget.onTap();
+                      // Two taps make a tempo; the first only starts the
+                      // measurement. Following the engine from the first tap
+                      // means the field moves as soon as it has anything to
+                      // say.
+                      setState(() => _tapping = true);
                     },
-                    onSet: _parsed == null
+                    onSet: parsed == null
                         ? null
-                        : () => Navigator.of(context).pop(_parsed),
+                        : () => Navigator.of(context).pop(parsed),
                   ),
                 ),
               ),

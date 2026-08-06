@@ -5,10 +5,14 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 
 /// The Click tab of the console's Loop domain, drawn to `LOOP / loop-click`:
 /// when the metronome plays, where it goes, and how loud.
+///
+/// Live values come from [LooperBloc]'s transport and mutations go through
+/// [TempoCubit] — see `TempoLoopTab` for why the two are not interchangeable.
 class ClickLoopTab extends StatelessWidget {
   /// Creates a [ClickLoopTab].
   const ClickLoopTab({super.key});
@@ -16,8 +20,8 @@ class ClickLoopTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tempo = context.watch<TempoCubit>();
-    final state = tempo.state;
+    final tempo = context.read<TempoCubit>();
+    final transport = context.watch<LooperBloc>().state.transport;
 
     return KeyedSubtree(
       key: const Key('click_loop_tab'),
@@ -32,14 +36,14 @@ class ClickLoopTab extends StatelessWidget {
                 ConsoleRow(
                   key: const Key('click_mode_row'),
                   title: l10n.loopClickWhenTitle,
-                  value: _modeLabel(l10n, state.clickMode),
+                  value: _modeLabel(l10n, transport.clickMode),
                   onTap: () => unawaited(_pickMode(context, tempo)),
                 ),
                 ConsoleRow(
                   key: const Key('click_output_row'),
                   divider: false,
                   title: l10n.loopClickOutputTitle,
-                  value: _outputLabel(l10n, state.clickOutputMask),
+                  value: _outputLabel(l10n, transport.clickMask),
                   onTap: () => unawaited(_pickOutput(context, tempo)),
                 ),
               ],
@@ -52,10 +56,18 @@ class ClickLoopTab extends StatelessWidget {
                   child: ConsoleValueBar(
                     key: const Key('click_volume_bar'),
                     label: l10n.loopClickVolumeLabel,
-                    value: state.clickVolume,
-                    readout: '${(state.clickVolume * 100).round()}%',
+                    // The bar spans the click's whole gain stage, so the
+                    // +6 dB of headroom above unity stays reachable here and
+                    // not only on the old settings slider; the readout stays
+                    // in the same percent-of-unity the rest of the app uses,
+                    // which puts a normal click at half the bar.
+                    value: transport.clickVolume / kMaxClickGain,
+                    // Double tap returns the click to unity — the one value
+                    // on this bar worth aiming at.
+                    resetValue: 1 / kMaxClickGain,
+                    readout: '${(transport.clickVolume * 100).round()}%',
                     onChanged: (value) =>
-                        unawaited(tempo.setClickVolume(value)),
+                        unawaited(tempo.setClickVolume(value * kMaxClickGain)),
                   ),
                 ),
               ],
@@ -71,7 +83,7 @@ class ClickLoopTab extends StatelessWidget {
     final chosen = await showConsolePickerSheet<ClickMode>(
       context,
       title: l10n.loopClickWhenTitle,
-      selected: tempo.state.clickMode,
+      selected: context.read<LooperBloc>().state.transport.clickMode,
       options: [
         for (final mode in ClickMode.values)
           ConsolePickerOption(value: mode, label: _modeLabel(l10n, mode)),
@@ -86,7 +98,7 @@ class ClickLoopTab extends StatelessWidget {
     final chosen = await showConsolePickerSheet<int>(
       context,
       title: l10n.loopClickOutputTitle,
-      selected: tempo.state.clickOutputMask,
+      selected: context.read<LooperBloc>().state.transport.clickMask,
       options: [
         for (final mask in const [0, 1, 2, 3])
           ConsolePickerOption(value: mask, label: _outputLabel(l10n, mask)),

@@ -48,15 +48,19 @@ class ModeLoopTab extends StatelessWidget {
                 ConsoleRow(
                   key: const Key('one_shot_row'),
                   divider: false,
-                  title: l10n.oneShotGroupLabel,
+                  title: l10n.loopOneShotTitle,
                   subtitle: l10n.oneShotIntro,
                   trailing: ConsoleSwitch(
                     key: const Key('one_shot_switch'),
                     // One-shot is per track in the engine; this is the rig
                     // default applied to every track at once, which is what
-                    // the mockups' single switch means.
-                    value: looper.tracks.every((t) => t.oneShot),
-                    semanticLabel: l10n.oneShotGroupLabel,
+                    // the mockups' single switch means. `every` on no tracks
+                    // is vacuously true, which read as "on" before a session
+                    // had anything in it.
+                    value:
+                        looper.tracks.isNotEmpty &&
+                        looper.tracks.every((t) => t.oneShot),
+                    semanticLabel: l10n.loopOneShotTitle,
                     onChanged: (on) {
                       final bloc = context.read<LooperBloc>();
                       for (var i = 0; i < looper.tracks.length; i++) {
@@ -98,6 +102,9 @@ class ModeLoopTab extends StatelessWidget {
           ConsolePickerOption(
             value: mode,
             label: looperModeLabels(l10n, mode).$1,
+            // Naming five modes without saying what they do makes the picker
+            // a quiz. Same blurb the face shows under the current value.
+            subtitle: looperModeLabels(l10n, mode).$2,
           ),
       ],
     );

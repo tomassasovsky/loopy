@@ -10,11 +10,6 @@ import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/setup/setup_surface.dart';
 import 'package:segno/theme/surface_theme.dart';
 
-/// The click's own gain-stage ceiling — matches the engine's `LE_MAX_GAIN`
-/// (2.0, +6.02 dB headroom above unity), the same ceiling every other volume
-/// control in the app (lane/monitor) uses.
-const double _kMaxClickGain = 2;
-
 /// The looper feature's own tempo settings surface (index plan's UI
 /// conventions: tempo/click/quantize/count-in controls live here, not in
 /// `audio_setup`, which stays device/routing-oriented): BPM + tap tempo, the
@@ -432,7 +427,7 @@ class _ClickVolumeSlider extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final clamped = volume.clamp(0.0, _kMaxClickGain);
+    final clamped = volume.clamp(0.0, kMaxClickGain);
     return Row(
       children: [
         Expanded(
@@ -448,7 +443,7 @@ class _ClickVolumeSlider extends StatelessWidget {
                 child: Slider(
                   key: const Key('tempoSettings_clickVolume_slider'),
                   value: clamped,
-                  max: _kMaxClickGain,
+                  max: kMaxClickGain,
                   onChanged: onChanged,
                 ),
               ),

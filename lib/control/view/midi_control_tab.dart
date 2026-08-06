@@ -391,6 +391,7 @@ class _MappingEditor extends StatelessWidget {
                     label: l10n.midiControlLo,
                     value: sweep.lo,
                     readout: '${(sweep.lo * 100).round()}%',
+                    resetValue: 0,
                     onChanged: (value) => onChanged(sweep.copyWith(lo: value)),
                   ),
                   const SizedBox(height: 10),
@@ -399,6 +400,7 @@ class _MappingEditor extends StatelessWidget {
                     label: l10n.midiControlHi,
                     value: sweep.hi,
                     readout: '${(sweep.hi * 100).round()}%',
+                    resetValue: 1,
                     onChanged: (value) => onChanged(sweep.copyWith(hi: value)),
                   ),
                 ],
@@ -410,6 +412,7 @@ class _MappingEditor extends StatelessWidget {
                     label: l10n.midiControlThreshold,
                     value: sw.threshold / 127,
                     readout: '${sw.threshold}',
+                    resetValue: 64 / 127,
                     onChanged: (value) => onChanged(
                       sw.copyWith(threshold: (value * 127).round()),
                     ),

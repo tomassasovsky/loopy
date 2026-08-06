@@ -1561,6 +1561,10 @@
     "@loopModeGroup": {
         "description": "Group heading over the looper-mode rows."
     },
+    "loopOneShotTitle": "Pistas de un disparo",
+    "@loopOneShotTitle": {
+        "description": "Row title for the rig-wide one-shot switch on the Loop face's Mode tab."
+    },
     "loopModeTitle": "Modo del looper",
     "@loopModeTitle": {
         "description": "Row that opens the looper-mode picker."

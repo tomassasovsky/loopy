@@ -23,15 +23,17 @@ class TrayNavigationRail extends StatelessWidget {
   /// Creates a [TrayNavigationRail].
   const TrayNavigationRail({super.key});
 
-  /// Rail width. Sized for an icon beside a full-size label, because the rail
-  /// is a navigation spine and should read as one — a column of icon-over-
-  /// caption tiles reads as more of the tile grid the rail exists to replace.
-  ///
-  /// From the redesign mockups (#490); the earlier 84px stacked form was built
-  /// without them, since the decision record carries no diagrams.
-  static const double _width = 165;
+  /// Rail width, straight off the mockups (every `AREA / *` screen draws the
+  /// same 180px spine). Sized for an icon beside a full-size label, because
+  /// the rail is a navigation spine and should read as one — a column of
+  /// icon-over-caption tiles reads as more of the tile grid the rail exists
+  /// to replace.
+  static const double _width = 180;
 
-  static const double _itemGap = 4;
+  /// Item pitch: 46px entries 5px apart, inset 10 from the left edge and 11
+  /// from the border, first entry 19 down. All from the mockups.
+  static const double _itemGap = 5;
+  static const EdgeInsets _railPadding = EdgeInsets.fromLTRB(10, 19, 11, 0);
 
   /// The glyph for [destination].
   ///
@@ -104,19 +106,16 @@ class TrayNavigationRail extends StatelessWidget {
               label: l10n.a11yTrayRail,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  border: Border(
-                    right: BorderSide(
-                      color: surface.line.withValues(alpha: 0.4),
-                    ),
-                  ),
+                  border: Border(right: BorderSide(color: surface.line)),
                 ),
                 child: SingleChildScrollView(
                   // The drag handle rides at the open panel's bottom edge, over
                   // the rail's last band — pad past it so a future destination
-                  // cannot land under a control that closes the tray.
+                  // cannot land under a control that closes the tray. The
+                  // mockups' 41px bottom band is this handle plus its margin.
                   padding: const EdgeInsets.only(bottom: kTrayHandleHeight),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    padding: _railPadding,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -164,7 +163,12 @@ class _RailItem extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  static const double _radius = 24;
+  /// Mockup geometry: a 46px pill, 11px corners, a 22px glyph 12px from its
+  /// label, 17px caption. The selected entry is a filled accent-surface pill
+  /// with an accent, semibold caption — not a tinted wash of the accent,
+  /// which read as a hover state rather than "this is the panel you are on".
+  static const double _radius = 11;
+  static const double _height = 46;
 
   @override
   Widget build(BuildContext context) {
@@ -178,34 +182,29 @@ class _RailItem extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 11),
-        margin: const EdgeInsets.symmetric(horizontal: 8),
+        height: _height,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(_radius),
-          color: selected
-              ? surface.accent.withValues(alpha: 0.18)
-              : Colors.transparent,
+          color: selected ? surface.accentSurface : Colors.transparent,
         ),
         // Icon beside the label, one row per destination. The label is at
         // reading size rather than caption size: this is the surface you aim
         // at to change what the sheet is showing, not a dense tile.
         child: Row(
           children: [
-            Icon(icon, color: tint, size: 20),
-            const SizedBox(width: 9),
+            Icon(icon, color: tint, size: 22),
+            const SizedBox(width: 12),
             Expanded(
-              child: Transform.translate(
-                offset: const Offset(0, 1),
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: tint,
-                    fontSize: 14,
-                    height: 1.1,
-                    fontWeight: FontWeight.w500,
-                  ),
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: tint,
+                  fontSize: 17,
+                  height: 1.1,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                 ),
               ),
             ),

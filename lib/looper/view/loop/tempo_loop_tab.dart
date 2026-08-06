@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/view/loop/tempo_sheet.dart';
@@ -12,9 +13,15 @@ import 'package:segno/looper/view/loop/tempo_sheet.dart';
 /// The Tempo tab of the console's Loop domain, drawn to `LOOP / loop`.
 ///
 /// The grid itself: what the tempo is, how it is counted, how long a loop
-/// runs, and when a switch takes effect. Every row is a value the rig already
-/// holds — this face is a presentation of `TempoCubit`, not a second copy of
-/// its rules.
+/// runs, and when a switch takes effect.
+///
+/// Every live value is read from [LooperBloc]'s [TransportState], never from
+/// [TempoCubit]'s own state — same rule `TempoSettingsSection` documents.
+/// [TempoCubit] holds the *explicitly configured* intent, which is `0` until
+/// someone types a tempo and never moves when one is tapped or derived from a
+/// loop; the transport holds what the rig is actually running on. Reading the
+/// cubit here is what made tap tempo look broken: the taps landed, the engine
+/// converged, and this face went on showing the intent.
 class TempoLoopTab extends StatelessWidget {
   /// Creates a [TempoLoopTab].
   const TempoLoopTab({super.key});
@@ -32,8 +39,8 @@ class TempoLoopTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tempo = context.watch<TempoCubit>();
-    final state = tempo.state;
+    final tempo = context.read<TempoCubit>();
+    final transport = context.watch<LooperBloc>().state.transport;
     final record = context.watch<RecordOptionsCubit>();
 
     return KeyedSubtree(
@@ -50,13 +57,15 @@ class TempoLoopTab extends StatelessWidget {
                   key: const Key('loop_tempo_row'),
                   title: l10n.loopTempoTitle,
                   subtitle: l10n.loopTempoSubtitle,
-                  value: l10n.loopBpmValue(state.bpm.toStringAsFixed(1)),
+                  value: transport.tempoBpm > 0
+                      ? l10n.loopBpmValue(transport.tempoBpm.toStringAsFixed(1))
+                      : l10n.tempoNotSetLabel,
                   onTap: () => unawaited(_editTempo(context, tempo)),
                 ),
                 ConsoleRow(
                   key: const Key('loop_signature_row'),
                   title: l10n.loopSignatureTitle,
-                  value: '${state.tsNum}/${state.tsDen}',
+                  value: '${transport.tsNum}/${transport.tsDen}',
                   onTap: () => unawaited(_pickSignature(context, tempo)),
                 ),
                 ConsoleRow(
@@ -75,14 +84,14 @@ class TempoLoopTab extends StatelessWidget {
                   key: const Key('loop_quantise_row'),
                   title: l10n.loopQuantiseTitle,
                   subtitle: l10n.loopQuantiseSubtitle,
-                  value: _divisionLabel(l10n, state.quantizeDiv),
+                  value: _divisionLabel(l10n, transport.quantizeDiv),
                   onTap: () => unawaited(_pickQuantise(context, tempo)),
                 ),
                 ConsoleRow(
                   key: const Key('loop_countin_row'),
                   divider: false,
                   title: l10n.loopCountInTitle,
-                  value: _barsLabel(l10n, state.countInBars),
+                  value: _barsLabel(l10n, transport.countInBars),
                   onTap: () => unawaited(_pickCountIn(context, tempo)),
                 ),
               ],
@@ -96,7 +105,7 @@ class TempoLoopTab extends StatelessWidget {
                   subtitle: l10n.loopSyncSubtitle,
                   trailing: ConsoleSwitch(
                     key: const Key('loop_sync_switch'),
-                    value: state.syncTempo,
+                    value: transport.syncTempo,
                     semanticLabel: l10n.loopSyncTitle,
                     onChanged: (on) => unawaited(tempo.setSyncTempo(value: on)),
                   ),
@@ -112,7 +121,7 @@ class TempoLoopTab extends StatelessWidget {
   Future<void> _editTempo(BuildContext context, TempoCubit tempo) async {
     final bpm = await showTempoSheet(
       context,
-      initial: tempo.state.bpm,
+      initial: context.read<LooperBloc>().state.transport.tempoBpm,
       onTap: tempo.tapTempo,
     );
     if (bpm == null) return;
@@ -120,10 +129,11 @@ class TempoLoopTab extends StatelessWidget {
   }
 
   Future<void> _pickSignature(BuildContext context, TempoCubit tempo) async {
+    final transport = context.read<LooperBloc>().state.transport;
     final chosen = await showConsolePickerSheet<(int, int)>(
       context,
       title: context.l10n.loopSignatureTitle,
-      selected: (tempo.state.tsNum, tempo.state.tsDen),
+      selected: (transport.tsNum, transport.tsDen),
       options: [
         for (final (num, den) in _signatures)
           ConsolePickerOption(value: (num, den), label: '$num/$den'),
@@ -135,10 +145,11 @@ class TempoLoopTab extends StatelessWidget {
 
   Future<void> _pickQuantise(BuildContext context, TempoCubit tempo) async {
     final l10n = context.l10n;
+    final transport = context.read<LooperBloc>().state.transport;
     final chosen = await showConsolePickerSheet<GridDivision>(
       context,
       title: l10n.loopQuantiseTitle,
-      selected: tempo.state.quantizeDiv,
+      selected: transport.quantizeDiv,
       options: [
         for (final division in GridDivision.values)
           ConsolePickerOption(
@@ -153,10 +164,11 @@ class TempoLoopTab extends StatelessWidget {
 
   Future<void> _pickCountIn(BuildContext context, TempoCubit tempo) async {
     final l10n = context.l10n;
+    final transport = context.read<LooperBloc>().state.transport;
     final chosen = await showConsolePickerSheet<int>(
       context,
       title: l10n.loopCountInTitle,
-      selected: tempo.state.countInBars,
+      selected: transport.countInBars,
       options: [
         for (final bars in const [0, 1, 2, 4])
           ConsolePickerOption(value: bars, label: _barsLabel(l10n, bars)),

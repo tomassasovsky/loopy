@@ -1852,6 +1852,10 @@
     "@loopModeGroup": {
         "description": "Group heading over the looper-mode rows."
     },
+    "loopOneShotTitle": "One-shot tracks",
+    "@loopOneShotTitle": {
+        "description": "Row title for the rig-wide one-shot switch on the Loop face's Mode tab."
+    },
     "loopModeTitle": "Looper mode",
     "@loopModeTitle": {
         "description": "Row that opens the looper-mode picker."
