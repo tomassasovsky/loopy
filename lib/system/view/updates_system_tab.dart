@@ -66,8 +66,7 @@ class UpdatesSystemTab extends StatelessWidget {
                     key: const Key('system_autocheck_switch'),
                     value: state.autoCheck,
                     semanticLabel: l10n.systemAutoCheckTitle,
-                    onChanged: (on) =>
-                        unawaited(cubit.setAutoCheck(value: on)),
+                    onChanged: (on) => unawaited(cubit.setAutoCheck(value: on)),
                   ),
                 ),
                 ConsoleRow(

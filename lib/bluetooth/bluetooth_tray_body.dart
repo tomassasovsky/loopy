@@ -116,7 +116,7 @@ class _BluetoothTrayBodyState extends State<BluetoothTrayBody> {
                     ),
                     const SizedBox(height: 14),
                     ConsoleCard(
-                                            children: [
+                      children: [
                         ConsoleRow(
                           title: l10n.bluetoothDiscoverableTitle,
                           subtitle: l10n.bluetoothDiscoverableSubtitle,
