@@ -185,22 +185,35 @@ void main() {
 
   group('Device tab', () {
     testWidgets('opens the device list, one row at a time', (tester) async {
+      // The host lists the two directions separately; one interface is both.
       when(repository.devices).thenReturn(const [
         AudioDevice(
-          id: 'scarlett',
+          id: 'scarlett-out',
           name: 'Scarlett 18i20',
           isDefault: true,
           isInput: false,
-          inputChannels: 18,
           outputChannels: 20,
         ),
         AudioDevice(
-          id: 'builtin',
+          id: 'scarlett-in',
+          name: 'Scarlett 18i20',
+          isDefault: true,
+          isInput: true,
+          inputChannels: 18,
+        ),
+        AudioDevice(
+          id: 'builtin-out',
           name: 'Built-in audio',
           isDefault: false,
           isInput: false,
-          inputChannels: 2,
           outputChannels: 2,
+        ),
+        AudioDevice(
+          id: 'builtin-in',
+          name: 'Built-in audio',
+          isDefault: false,
+          isInput: true,
+          inputChannels: 2,
         ),
       ]);
       cubit.refreshDevices();
@@ -212,6 +225,7 @@ void main() {
       expect(find.text('18 in · 20 out'), findsNothing);
       await tester.tap(find.byKey(const Key('audio_device_row')));
       await tester.pumpAndSettle();
+      // Paired by name across the two lists: one row, both directions.
       expect(find.text('18 in · 20 out'), findsOneWidget);
       expect(find.text('2 in · 2 out'), findsOneWidget);
 
@@ -220,6 +234,30 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('18 in · 20 out'), findsNothing);
       expect(find.byKey(const Key('audio_buffer_128')), findsOneWidget);
+    });
+
+    testWidgets('a device with unknown counts says nothing, not zero', (
+      tester,
+    ) async {
+      // What every miniaudio host used to report, and what a host that cannot
+      // answer still reports: unknown, which is not a count of zero.
+      when(repository.devices).thenReturn(const [
+        AudioDevice(
+          id: 'mystery',
+          name: 'Mystery box',
+          isDefault: true,
+          isInput: false,
+        ),
+      ]);
+      cubit.refreshDevices();
+      await pump(tester, AudioTab.device);
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('audio_device_row')));
+      await tester.pumpAndSettle();
+
+      // Named on the closed row and in the open list; no invented counts.
+      expect(find.text('Mystery box'), findsNWidgets(2));
+      expect(find.text('0 in · 0 out'), findsNothing);
     });
 
     testWidgets('every buffer carries what it costs, not just the chosen one', (

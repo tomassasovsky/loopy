@@ -76,6 +76,7 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
                   onTap: () => _toggle(_OpenRow.device),
                   child: _DeviceList(
                     devices: state.playbackDevices,
+                    captureDevices: state.captureDevices,
                     selectedId: state.playbackDeviceId,
                     openDeviceName: status.deviceName,
                     openInputChannels: status.inputChannels,
@@ -278,6 +279,7 @@ class _OpenableRow extends StatelessWidget {
 class _DeviceList extends StatelessWidget {
   const _DeviceList({
     required this.devices,
+    required this.captureDevices,
     required this.selectedId,
     required this.lostDeviceName,
     required this.openDeviceName,
@@ -287,6 +289,14 @@ class _DeviceList extends StatelessWidget {
   });
 
   final List<AudioDevice> devices;
+
+  /// The capture side of the same hardware.
+  ///
+  /// The host lists playback and capture separately; one interface is both,
+  /// and the mockups name it once — `18 in · 20 out`. Matching on the name is
+  /// what the OS gives us to pair them with.
+  final List<AudioDevice> captureDevices;
+
   final String selectedId;
 
   /// What the engine has open, and the channel counts it negotiated.
@@ -308,13 +318,21 @@ class _DeviceList extends StatelessWidget {
   final ValueChanged<String> onSelected;
 
   /// `18 in · 20 out` when the counts are known, else nothing.
+  ///
+  /// Outputs come from the device itself, inputs from the capture device of
+  /// the same name. The device the engine has OPEN can borrow the counts it
+  /// negotiated, which are the truest numbers available for it.
   String? _channels(AppLocalizations l10n, AudioDevice device) {
-    var inputs = device.inputChannels;
+    final open = device.name == openDeviceName;
     var outputs = device.outputChannels;
-    if (inputs <= 0 && outputs <= 0 && device.name == openDeviceName) {
-      inputs = openInputChannels;
-      outputs = openOutputChannels;
-    }
+    if (outputs <= 0 && open) outputs = openOutputChannels;
+    var inputs =
+        captureDevices
+            .where((capture) => capture.name == device.name)
+            .map((capture) => capture.inputChannels)
+            .firstOrNull ??
+        0;
+    if (inputs <= 0 && open) inputs = openInputChannels;
     if (inputs <= 0 && outputs <= 0) return null;
     return l10n.audioDeviceChannels(inputs, outputs);
   }
