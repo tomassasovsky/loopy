@@ -19,7 +19,12 @@ import 'package:segno/control/control.dart';
 import 'package:segno/control/control_tab.dart';
 import 'package:segno/control/view/control_tray_panel.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
+import 'package:segno/looper/cubit/tempo_cubit.dart';
+import 'package:segno/looper/loop_tab.dart';
+import 'package:segno/looper/view/loop/loop_tray_panel.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -538,7 +543,93 @@ void main() {
       matchesGoldenFile('goldens/control_center_control_pedal.png'),
     );
   }, skip: !hasFonts);
+
+  Future<void> pumpLoop(WidgetTester tester, LoopTab tab) async {
+    await size(tester);
+    // An explicit (empty) ticker: the default 16ms poll timer outlives the
+    // widget tree, and the binding fails a test that leaves one pending.
+    final looper = LooperRepository(
+      engine: FakeAudioEngine(),
+      ticker: const Stream<void>.empty(),
+      reconnectTicker: const Stream<void>.empty(),
+    );
+    addTearDown(looper.dispose);
+    final performance = PerformanceRepository(
+      engine: FakeAudioEngine(),
+      exportsRoot: () async => '.',
+    );
+    addTearDown(performance.dispose);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final control = ControlCubit(
+      looper: looper,
+      pedal: PedalRepository(const NoopPedalTransport()),
+      settings: settings,
+      performance: performance,
+      keepAliveInterval: Duration.zero,
+      mappingsWriteDebounce: Duration.zero,
+    );
+    addTearDown(() => unawaited(control.close()));
+    final bloc = LooperBloc(repository: looper);
+    addTearDown(() => unawaited(bloc.close()));
+    final tempo = TempoCubit(repository: looper, settings: settings);
+    addTearDown(() => unawaited(tempo.close()));
+    final record = RecordOptionsCubit(repository: looper, settings: settings);
+    addTearDown(() => unawaited(record.close()));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: _theme(),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: MultiBlocProvider(
+          providers: [
+            BlocProvider<LooperBloc>.value(value: bloc),
+            BlocProvider<TempoCubit>.value(value: tempo),
+            BlocProvider<RecordOptionsCubit>.value(value: record),
+            BlocProvider<ControlCubit>.value(value: control),
+          ],
+          child: Scaffold(
+            body: ColoredBox(
+              color: SurfaceTheme.dark.background,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(19, 19, 19, 41),
+                child: LoopTrayPanel(tab: tab, onTabChanged: _ignoreLoopTab),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('Loop face, Tempo tab', (tester) async {
+    await pumpLoop(tester, LoopTab.tempo);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_loop_tempo.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Loop face, Click tab', (tester) async {
+    await pumpLoop(tester, LoopTab.click);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_loop_click.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Loop face, Mode tab', (tester) async {
+    await pumpLoop(tester, LoopTab.mode);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_loop_mode.png'),
+    );
+  }, skip: !hasFonts);
 }
+
+/// The golden pumps one tab; switching is covered by the widget tests.
+void _ignoreLoopTab(LoopTab _) {}
 
 /// The golden pumps one tab; switching is covered by the widget tests.
 void _ignoreTab(ControlTab _) {}

@@ -22,6 +22,10 @@ enum SettingsTrayDestination {
   /// Settings.
   control,
 
+  /// In-tray Loop panel: tempo, click and mode as three tabs of one domain
+  /// (#518).
+  loop,
+
   /// In-tray tuner panel. Placement only — the tuner itself is not
   /// implemented, and this face says so.
   tuner,
@@ -45,6 +49,7 @@ class SettingsTrayState extends Equatable {
     this.destination = SettingsTrayDestination.home,
     this.networkTab = NetworkTab.wifi,
     this.controlTab = ControlTab.pedal,
+    this.loopTab = LoopTab.tempo,
   });
 
   /// Live drag/settle progress in `0..1` — `0` fully closed, `1` fully open.
@@ -72,6 +77,9 @@ class SettingsTrayState extends Equatable {
   /// reason as [networkTab].
   final ControlTab controlTab;
 
+  /// Which tab the Loop face shows. Kept across navigation, like the others.
+  final LoopTab loopTab;
+
   /// Which tab the Network face shows. Kept while the tray navigates
   /// elsewhere so returning to Network lands where it was left, and
   /// deliberately not reset by `closeTray`: only [destination] goes home.
@@ -85,6 +93,7 @@ class SettingsTrayState extends Equatable {
     SettingsTrayDestination? destination,
     NetworkTab? networkTab,
     ControlTab? controlTab,
+    LoopTab? loopTab,
   }) => SettingsTrayState(
     dragProgress: dragProgress ?? this.dragProgress,
     isNavigating: isNavigating ?? this.isNavigating,
@@ -92,6 +101,7 @@ class SettingsTrayState extends Equatable {
     destination: destination ?? this.destination,
     networkTab: networkTab ?? this.networkTab,
     controlTab: controlTab ?? this.controlTab,
+    loopTab: loopTab ?? this.loopTab,
   );
 
   @override
@@ -102,5 +112,6 @@ class SettingsTrayState extends Equatable {
     destination,
     networkTab,
     controlTab,
+    loopTab,
   ];
 }

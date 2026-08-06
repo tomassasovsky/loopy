@@ -13,7 +13,9 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -1059,13 +1061,14 @@ class ConsoleGroupLabel extends StatelessWidget {
 /// A bar rather than a knob: these are set once with a finger on a touch
 /// panel, and a knob's rotational gesture is the wrong shape for that. The
 /// caret marks the value so the bar reads as a scale rather than a meter.
-class ConsoleValueBar extends StatelessWidget {
+class ConsoleValueBar extends StatefulWidget {
   /// Creates a [ConsoleValueBar].
   const ConsoleValueBar({
     required this.label,
     required this.value,
     required this.readout,
     required this.onChanged,
+    this.resetValue,
     super.key,
   });
 
@@ -1081,12 +1084,59 @@ class ConsoleValueBar extends StatelessWidget {
   /// Called with the new normalized value as the finger moves.
   final ValueChanged<double> onChanged;
 
+  /// Where a double tap puts the value — the control's own default, in the
+  /// same normalized `0..1` the bar is drawn in. Null leaves double tap
+  /// doing nothing.
+  ///
+  /// A bar has no numbers to aim at, so getting back to unity by dragging is
+  /// luck; double tap is the fader-cap gesture for exactly that.
+  final double? resetValue;
+
+  @override
+  State<ConsoleValueBar> createState() => _ConsoleValueBarState();
+}
+
+class _ConsoleValueBarState extends State<ConsoleValueBar> {
   static const double _height = 44;
-  static const double _labelWidth = 92;
+  // Wide enough for CLICK VOLUME on one line, as the mockups draw it.
+  static const double _labelWidth = 112;
+
+  /// Open while a second tap would still count as a double tap.
+  ///
+  /// Handing [GestureDetector.onDoubleTap] the job instead would make EVERY
+  /// tap wait out the double-tap window before the bar moved — 300ms of
+  /// nothing on a control people drag. Counting the taps here keeps the
+  /// first one instant and lets the second one override it.
+  Timer? _tapWindow;
+
+  @override
+  void dispose() {
+    _tapWindow?.cancel();
+    super.dispose();
+  }
+
+  void _tapped(double fraction) {
+    final reset = widget.resetValue;
+    if (reset != null && (_tapWindow?.isActive ?? false)) {
+      _tapWindow?.cancel();
+      _tapWindow = null;
+      unawaited(HapticFeedback.selectionClick());
+      widget.onChanged(reset.clamp(0.0, 1.0));
+      return;
+    }
+    if (reset != null) {
+      _tapWindow?.cancel();
+      _tapWindow = Timer(kDoubleTapTimeout, () => _tapWindow = null);
+    }
+    widget.onChanged(fraction);
+  }
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
+    final label = widget.label;
+    final value = widget.value;
+    final readout = widget.readout;
     return Row(
       children: [
         SizedBox(
@@ -1103,17 +1153,17 @@ class ConsoleValueBar extends StatelessWidget {
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              void report(Offset local) => onChanged(
-                (local.dx / constraints.maxWidth).clamp(0.0, 1.0),
-              );
+              double fraction(Offset local) =>
+                  (local.dx / constraints.maxWidth).clamp(0.0, 1.0);
               return Semantics(
                 slider: true,
                 label: label,
                 value: readout,
                 child: GestureDetector(
-                  onTapDown: (details) => report(details.localPosition),
+                  onTapDown: (details) =>
+                      _tapped(fraction(details.localPosition)),
                   onHorizontalDragUpdate: (details) =>
-                      report(details.localPosition),
+                      widget.onChanged(fraction(details.localPosition)),
                   child: Container(
                     height: _height,
                     decoration: BoxDecoration(
@@ -1123,16 +1173,20 @@ class ConsoleValueBar extends StatelessWidget {
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(9),
-                      child: Align(
+                      // heightFactor as well as widthFactor: an Align hands
+                      // its child LOOSE constraints, and a childless
+                      // DecoratedBox given a loose height takes zero of it —
+                      // the fill was the right width and invisible.
+                      child: FractionallySizedBox(
                         alignment: Alignment.centerLeft,
-                        child: FractionallySizedBox(
-                          widthFactor: value.clamp(0.0, 1.0),
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: surface.accentSurface,
-                              border: Border(
-                                right: BorderSide(color: surface.accent),
-                              ),
+                        widthFactor: value.clamp(0.0, 1.0),
+                        heightFactor: 1,
+                        child: DecoratedBox(
+                          key: const Key('console_value_bar_fill'),
+                          decoration: BoxDecoration(
+                            color: surface.accentSurface,
+                            border: Border(
+                              right: BorderSide(color: surface.accent),
                             ),
                           ),
                         ),
@@ -1247,13 +1301,25 @@ class ConsoleSegmented<T> extends StatelessWidget {
 @immutable
 class ConsolePickerOption<T> {
   /// Creates a [ConsolePickerOption].
-  const ConsolePickerOption({required this.value, required this.label});
+  const ConsolePickerOption({
+    required this.value,
+    required this.label,
+    this.subtitle,
+  });
 
   /// What choosing this returns.
   final T value;
 
   /// Its caption.
   final String label;
+
+  /// What the option MEANS, when the name alone doesn't say it.
+  ///
+  /// Looper modes are the case this exists for: "Multi" and "Band" are labels
+  /// for behaviours, and a picker that lists five bare names asks the user to
+  /// already know the answer. The row carries the same one-liner the face
+  /// shows under the current value, so choosing reads like the face does.
+  final String? subtitle;
 }
 
 /// Asks for one of [options], as a sheet of the console's own rows.
@@ -1304,6 +1370,7 @@ Future<T?> showConsolePickerSheet<T>(
                         ConsoleRow(
                           key: Key('console_picker_${option.label}'),
                           title: option.label,
+                          subtitle: option.subtitle,
                           selected: option.value == selected,
                           showDisclosure: false,
                           divider: option != options.last,
