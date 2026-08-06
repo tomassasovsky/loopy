@@ -435,14 +435,6 @@
         }
     },
     "trackSettingsTooltip": "Track settings",
-    "trackSettingsDialogTitle": "Track {trackNumber} settings",
-    "@trackSettingsDialogTitle": {
-        "placeholders": {
-            "trackNumber": {
-                "type": "int"
-            }
-        }
-    },
     "quantizeRecording": "Quantize recording",
     "loopLength": "Loop length",
     "done": "Done",
@@ -2406,5 +2398,178 @@
     "bluetoothEmptyDevices": "No devices found yet. Tap scan to search.",
     "@bluetoothEmptyDevices": {
         "description": "Empty state when a Bluetooth scan returns nothing."
+    },
+    "trayTracksLabel": "Tracks",
+    "@trayTracksLabel": {
+        "description": "Rail label for the console’s Tracks domain."
+    },
+    "tracksNamesTab": "Names",
+    "@tracksNamesTab": {
+        "description": "Tab label: rename the tracks."
+    },
+    "tracksLengthsTab": "Lengths",
+    "@tracksLengthsTab": {
+        "description": "Tab label: per-track loop length."
+    },
+    "tracksRoutingTab": "Routing",
+    "@tracksRoutingTab": {
+        "description": "Tab label: per-track input, outputs and quantize."
+    },
+    "tracksNamesFooter": "Rename tracks. The name is what the stage, the pedal targets and the 7-inch readout all show.",
+    "@tracksNamesFooter": {
+        "description": "Footnote under the Names tab."
+    },
+    "tracksLengthsFooter": "Auto takes its length from the first take; a preset records that many bars.",
+    "@tracksLengthsFooter": {
+        "description": "Footnote under the Lengths tab."
+    },
+    "tracksRoutingFooter": "A track records any set of inputs — one dry lane each, sharing the loop — and is sent to any set of outputs. Quantize follows the global setting unless a track overrides it.",
+    "@tracksRoutingFooter": {
+        "description": "Footnote under the Routing tab."
+    },
+    "tracksRowOrdinal": "track {number}",
+    "@tracksRowOrdinal": {
+        "description": "Right-hand ordinal on a Names row, lowercase as the mockups draw it.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "trackQuantizeGroup": "QUANTIZE RECORDING",
+    "@trackQuantizeGroup": {
+        "description": "Group heading over the quantize override."
+    },
+    "trackInputLive": "live",
+    "@trackInputLive": {
+        "description": "Marks the input the track is recording right now."
+    },
+    "trackQuantizeFollow": "Follow the global setting",
+    "@trackQuantizeFollow": {
+        "description": "Quantize override: inherit."
+    },
+    "trackQuantizeAlways": "Always quantize",
+    "@trackQuantizeAlways": {
+        "description": "Quantize override: forced on."
+    },
+    "trackQuantizeNever": "Never quantize",
+    "@trackQuantizeNever": {
+        "description": "Quantize override: forced off."
+    },
+    "trackRoutingSummaryNone": "not routed",
+    "@trackRoutingSummaryNone": {
+        "description": "Right-hand value on a Routing row when no output is set."
+    },
+    "trackQuantizeOn": "quantize on",
+    "@trackQuantizeOn": {
+        "description": "Routing row detail: the track forces quantize on."
+    },
+    "trackQuantizeOff": "quantize off",
+    "@trackQuantizeOff": {
+        "description": "Routing row detail: the track forces quantize off."
+    },
+    "trackRenameTitle": "Rename track",
+    "@trackRenameTitle": {
+        "description": "Title of the console rename sheet."
+    },
+    "trackSettingsNamedTitle": "{name} settings",
+    "@trackSettingsNamedTitle": {
+        "description": "Title of the per-track routing panel, by track name.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "renameTrackNamedTitle": "Rename {name}",
+    "@renameTrackNamedTitle": {
+        "description": "Title of the rename dialog, by track name.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "fxEditorTrackNamedTitle": "{name} bus",
+    "@fxEditorTrackNamedTitle": {
+        "description": "FX editor scope label for a track bus, by name.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "trackVolumeNamedTarget": "{name} volume",
+    "@trackVolumeNamedTarget": {
+        "description": "MIDI-learn target: a track volume, by name.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "trackLaneNamedTarget": "{name} lane {lane}",
+    "@trackLaneNamedTarget": {
+        "description": "Pedal-assignment target: one lane of a named track.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            },
+            "lane": {
+                "type": "int"
+            }
+        }
+    },
+    "trackStateNamedSemantics": "{name}, {state}",
+    "@trackStateNamedSemantics": {
+        "description": "Accessible label for a track pad: its name and state.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            },
+            "state": {
+                "type": "String"
+            }
+        }
+    },
+    "trackLanesGroup": "LANES",
+    "@trackLanesGroup": {
+        "description": "Group heading over the routing panel's lane list."
+    },
+    "laneUnroutedWarning": "Nothing routed here — this lane will not be heard.",
+    "@laneUnroutedWarning": {
+        "description": "Shown inside a lane that records but has no output."
+    },
+    "laneOutputsGroup": "OUTPUTS FOR THIS LANE",
+    "@laneOutputsGroup": {
+        "description": "Caption over one lane's output chips."
+    },
+    "laneEffectsNote": "Effects for this lane live on the Signal page.",
+    "@laneEffectsNote": {
+        "description": "Says where a lane's FX chain is edited."
+    },
+    "loopSignatureExplain": "How many beats a bar has, and what counts as a beat.",
+    "@loopSignatureExplain": {
+        "description": "Explanation line in the time-signature chip dialog."
+    },
+    "loopLengthExplain": "How long a new loop runs: the first take sets it, or fix it to a multiple.",
+    "@loopLengthExplain": {
+        "description": "Explanation line in the loop-length chip dialog."
+    },
+    "loopClickOutputExplain": "Where the click is heard — usually the phones, not the mains.",
+    "@loopClickOutputExplain": {
+        "description": "Explanation line in the click-output chip dialog."
+    },
+    "defaultModeExplain": "What the pedal starts in when the rig comes up.",
+    "@defaultModeExplain": {
+        "description": "Explanation line in the default-mode chip dialog."
+    },
+    "trackLengthExplain": "Auto takes its length from the first take; a preset records that many bars.",
+    "@trackLengthExplain": {
+        "description": "Explanation line in a track's length chip dialog."
+    },
+    "tracksEmptyMessage": "No tracks — the engine is not running.",
+    "@tracksEmptyMessage": {
+        "description": "Shown on the Tracks face when the engine reports no tracks."
     }
 }

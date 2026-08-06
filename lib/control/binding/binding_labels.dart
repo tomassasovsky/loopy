@@ -31,21 +31,32 @@ String pedalButtonLabel(AppLocalizations l10n, PedalButton button) =>
     };
 
 /// Names the chain at [address] — its stage and position.
-String fxStageLabel(AppLocalizations l10n, FxAddress address) =>
-    switch (address.stage) {
-      FxStage.input => l10n.pedalAssignStageInput(address.index),
-      FxStage.loop => l10n.pedalAssignStageLoop(
-        address.index,
-        address.lane ?? 0,
-      ),
-      FxStage.track => l10n.pedalAssignStageTrack(address.index),
-      FxStage.master => l10n.pedalAssignStageMaster,
-    };
+///
+/// [trackNames] lets a track-addressed stage say what the track is CALLED
+/// (#526). Empty — the default, for a caller with no names to hand — falls
+/// back to the ordinal, which is what every caller used to show.
+String fxStageLabel(
+  AppLocalizations l10n,
+  FxAddress address, {
+  List<String> trackNames = const [],
+}) => switch (address.stage) {
+  FxStage.input => l10n.pedalAssignStageInput(address.index),
+  FxStage.loop => l10n.trackLaneNamedTarget(
+    l10n.trackName(trackNames, address.index),
+    address.lane ?? 0,
+  ),
+  FxStage.track => l10n.trackName(trackNames, address.index),
+  FxStage.master => l10n.pedalAssignStageMaster,
+};
 
 /// Names a discrete (`enabled`-flipping) [target] — one whole chain, or one
 /// effect inside it.
-String bindingTargetLabel(AppLocalizations l10n, FxBindingTarget target) {
-  final stage = fxStageLabel(l10n, target.address);
+String bindingTargetLabel(
+  AppLocalizations l10n,
+  FxBindingTarget target, {
+  List<String> trackNames = const [],
+}) {
+  final stage = fxStageLabel(l10n, target.address, trackNames: trackNames);
   return switch (target) {
     FxChainTarget() => l10n.pedalAssignChainTarget(stage),
     // The slot id is the only stable name an effect has here — the effect TYPE
@@ -64,13 +75,16 @@ String bindingTargetLabel(AppLocalizations l10n, FxBindingTarget target) {
 String valueTargetLabel(
   AppLocalizations l10n,
   LooperRepository looper,
-  ControlValueTarget target,
-) => switch (target) {
-  TrackVolumeTarget(:final channel) => l10n.midiLearnTargetVolume(channel),
+  ControlValueTarget target, {
+  List<String> trackNames = const [],
+}) => switch (target) {
+  TrackVolumeTarget(:final channel) => l10n.trackVolumeNamedTarget(
+    l10n.trackName(trackNames, channel),
+  ),
   MasterGainTarget() => l10n.midiLearnTargetMaster,
   FxParamTarget(:final address, :final slotId, :final param) =>
     l10n.midiLearnTargetParam(
-      fxStageLabel(l10n, address),
+      fxStageLabel(l10n, address, trackNames: trackNames),
       slotId,
       _paramLabel(looper, target) ?? '#$param',
     ),

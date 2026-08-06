@@ -51,6 +51,8 @@ class TrayNavigationRail extends StatelessWidget {
         SettingsTrayDestination.control => Icons.videogame_asset_outlined,
         // The mockups' Loop glyph: a repeat arrow.
         SettingsTrayDestination.loop => Icons.repeat,
+        // The mockups' Tracks glyph: three faders side by side.
+        SettingsTrayDestination.tracks => Icons.view_week_outlined,
         SettingsTrayDestination.tuner => Icons.graphic_eq,
         // An antenna, not a WiFi fan or a Bluetooth rune: the entry is both
         // radios, and either radio's own glyph would read as only that one.
@@ -66,6 +68,7 @@ class TrayNavigationRail extends StatelessWidget {
     SettingsTrayDestination.home => l10n.trayHomeLabel,
     SettingsTrayDestination.control => l10n.trayControlLabel,
     SettingsTrayDestination.loop => l10n.trayLoopLabel,
+    SettingsTrayDestination.tracks => l10n.trayTracksLabel,
     SettingsTrayDestination.tuner => l10n.trayTunerLabel,
     SettingsTrayDestination.network => l10n.trayNetworkLabel,
   };

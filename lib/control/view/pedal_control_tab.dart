@@ -7,6 +7,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The Pedal tab of the console's Control domain, drawn to `CONTROL / pedal`
@@ -75,6 +76,9 @@ class _PedalControlTabState extends State<PedalControlTab> {
     final surface = context.surface;
     final cubit = context.watch<ControlCubit>();
     final looper = context.read<LooperRepository>();
+    // What the tracks are CALLED — a target list that says "Track 3" when the
+    // rig calls it "rhythm" is a list you have to translate in your head.
+    final names = context.watch<TracksCubit>().state.names;
     final editing = cubit.state.bindings;
     final selected = _selected;
     final bank = _bank ??= cubit.state.activeBank;
@@ -93,7 +97,7 @@ class _PedalControlTabState extends State<PedalControlTab> {
                 Expanded(
                   child: _SwitchCard(
                     button: button,
-                    label: _targetLabel(l10n, looper, editing, button),
+                    label: _targetLabel(l10n, looper, editing, button, names),
                     assigned: _bindingFor(editing, button) != null,
                     selected: selected == button,
                     onTap: () => _select(button),
@@ -131,7 +135,7 @@ class _PedalControlTabState extends State<PedalControlTab> {
                 ConsoleRow(
                   key: Key('pedal_switch_${button.name}'),
                   title: pedalButtonLabel(l10n, button),
-                  value: _targetLabel(l10n, looper, editing, button),
+                  value: _targetLabel(l10n, looper, editing, button, names),
                   valueColor: _valueColour(surface, looper, editing, button),
                   expanded: selected == button,
                   selected: selected == button,
@@ -209,11 +213,12 @@ class _PedalControlTabState extends State<PedalControlTab> {
     LooperRepository looper,
     PedalBindingSet set,
     PedalButton button,
+    List<String> names,
   ) {
     final binding = _bindingFor(set, button);
     if (binding == null) return l10n.pedalControlUnassigned;
     if (_isStale(looper, set, button)) return l10n.pedalControlMissingTarget;
-    return bindingTargetLabel(l10n, binding.decodeTarget()!);
+    return bindingTargetLabel(l10n, binding.decodeTarget()!, trackNames: names);
   }
 
   /// Names what the assign list is assigning — and, for a track switch, which
@@ -316,6 +321,9 @@ class _AssignList extends StatelessWidget {
     final surface = context.surface;
     final cubit = context.watch<ControlCubit>();
     final looper = context.read<LooperRepository>();
+    // What the tracks are CALLED — a target list that says "Track 3" when the
+    // rig calls it "rhythm" is a list you have to translate in your head.
+    final names = context.watch<TracksCubit>().state.names;
     final editing = cubit.state.bindings;
     final current = editing.bindings
         .where((b) => b.key == bindingKey)
@@ -346,12 +354,12 @@ class _AssignList extends StatelessWidget {
         for (final target in rows)
           ConsoleRow(
             key: Key('pedal_target_${target.canonicalString().hashCode}'),
-            title: _title(l10n, target),
+            title: _title(l10n, target, names),
             showDisclosure: false,
             indented: target is FxSlotTarget,
             divider: target != rows.last || !showSlots,
             onTap: () => unawaited(assign(target)),
-            value: target == current ? null : _placement(l10n, target),
+            value: target == current ? null : _placement(l10n, target, names),
             // The current value is CHECKED, not tinted: tint already means
             // "the row you opened", and one mark cannot carry two meanings on
             // the same pane.
@@ -361,7 +369,7 @@ class _AssignList extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        _placement(l10n, target),
+                        _placement(l10n, target, names),
                         style: TextStyle(color: surface.accent, fontSize: 14),
                       ),
                       const SizedBox(width: 14),
@@ -389,18 +397,24 @@ class _AssignList extends StatelessWidget {
   /// such thing yet — a chain is identified by where it sits — so the shared
   /// [bindingTargetLabel] vocabulary is used instead, and an effect row is
   /// named by its slot rather than repeating its chain.
-  String _title(AppLocalizations l10n, FxBindingTarget target) =>
-      switch (target) {
-        FxChainTarget() => bindingTargetLabel(l10n, target),
-        FxSlotTarget(:final slotId) => slotId,
-      };
+  String _title(
+    AppLocalizations l10n,
+    FxBindingTarget target,
+    List<String> names,
+  ) => switch (target) {
+    FxChainTarget() => bindingTargetLabel(l10n, target, trackNames: names),
+    FxSlotTarget(:final slotId) => slotId,
+  };
 
   /// Where in the rig the target sits, down the right-hand edge as drawn.
-  String _placement(AppLocalizations l10n, FxBindingTarget target) =>
-      switch (target) {
-        FxChainTarget() => fxStageLabel(l10n, target.address),
-        FxSlotTarget() => l10n.pedalControlInChain(
-          fxStageLabel(l10n, target.address),
-        ),
-      };
+  String _placement(
+    AppLocalizations l10n,
+    FxBindingTarget target,
+    List<String> names,
+  ) => switch (target) {
+    FxChainTarget() => fxStageLabel(l10n, target.address, trackNames: names),
+    FxSlotTarget() => l10n.pedalControlInChain(
+      fxStageLabel(l10n, target.address, trackNames: names),
+    ),
+  };
 }
