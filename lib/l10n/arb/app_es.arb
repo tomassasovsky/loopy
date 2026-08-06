@@ -2177,7 +2177,7 @@
             }
         }
     },
-    "audioInputRenameTitle": "Nombrar esta entrada",
+    "audioInputRenameTitle": "Renombrar entrada",
     "@audioInputRenameTitle": {
         "description": "Console Audio face, Device tab."
     },

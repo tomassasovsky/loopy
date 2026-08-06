@@ -140,7 +140,7 @@ void main() {
       await tester.tap(find.widgetWithText(InkWell, 'b').first);
       await tester.tap(find.widgetWithText(InkWell, 'a').first);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Done').last);
+      await tester.tap(find.text('Save').last);
       await tester.pumpAndSettle();
 
       expect(names.state.nameOf(1), 'ba');

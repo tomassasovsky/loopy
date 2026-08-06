@@ -53,19 +53,22 @@ class ConsoleCard extends StatelessWidget {
   /// visibility card and leave the primary list of a face unbordered.
   final bool bordered;
 
+  /// Overrides the card border radius.
+  final double borderRadius;
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: color ?? surface.cardHigh,
-        borderRadius: BorderRadius.circular(_cardRadius),
+        borderRadius: BorderRadius.circular(borderRadius),
         border: bordered ? Border.all(color: surface.line) : null,
       ),
       child: Padding(
-        padding: const EdgeInsets.all(1),
+        padding: bordered ? const EdgeInsets.all(1) : EdgeInsets.zero,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(_cardRadius - 1),
+          borderRadius: BorderRadius.circular(borderRadius - 1),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
@@ -255,7 +258,11 @@ class ConsoleRow extends StatelessWidget {
       duration: consoleMotion(context),
       curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
-        color: selected ? surface.accentSurface : Colors.transparent,
+        // An OPEN row is shaded, as the mockups shade it: the strip below it
+        // belongs to this row, and the tint is what says so.
+        color: selected
+            ? surface.accentSurface
+            : (expanded ? surface.control : Colors.transparent),
       ),
       foregroundDecoration: BoxDecoration(
         border: Border(

@@ -64,6 +64,7 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
             ConsoleCard(
               children: [
                 _OpenableRow(
+                  padding: EdgeInsets.zero,
                   key: const Key('audio_device_row'),
                   title: l10n.deviceLabel,
                   // The device that is PINNED, not only one the engine has
@@ -76,6 +77,9 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
                   child: _DeviceList(
                     devices: state.playbackDevices,
                     selectedId: state.playbackDeviceId,
+                    openDeviceName: status.deviceName,
+                    openInputChannels: status.inputChannels,
+                    openOutputChannels: status.outputChannels,
                     lostDeviceName:
                         state.deviceConnectivity == DeviceConnectivity.lost
                         ? state.connectivityDeviceName
@@ -84,6 +88,7 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
                   ),
                 ),
                 _OpenableRow(
+                  padding: EdgeInsets.zero,
                   key: const Key('audio_rate_row'),
                   title: l10n.audioRateBufferTitle,
                   subtitle: l10n.audioRoundTripSubtitle(
@@ -102,6 +107,7 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
                   ),
                 ),
                 _OpenableRow(
+                  padding: EdgeInsets.zero,
                   key: const Key('audio_inputs_row'),
                   divider: false,
                   title: l10n.audioInputsTitle,
@@ -148,8 +154,7 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
                     ),
                   ),
                 ),
-              ]
-              else
+              ] else
                 ConsoleCard(
                   children: [
                     for (final driver in state.asioDrivers)
@@ -232,6 +237,7 @@ class _OpenableRow extends StatelessWidget {
     required this.child,
     this.subtitle,
     this.divider = true,
+    this.padding = const EdgeInsets.fromLTRB(20, 0, 20, 14),
     super.key,
   });
 
@@ -242,6 +248,7 @@ class _OpenableRow extends StatelessWidget {
   final VoidCallback onTap;
   final Widget child;
   final bool divider;
+  final EdgeInsets padding;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -259,7 +266,7 @@ class _OpenableRow extends StatelessWidget {
       ConsoleExpansion(
         expanded: expanded,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+          padding: padding,
           child: child,
         ),
       ),
@@ -273,11 +280,23 @@ class _DeviceList extends StatelessWidget {
     required this.devices,
     required this.selectedId,
     required this.lostDeviceName,
+    required this.openDeviceName,
+    required this.openInputChannels,
+    required this.openOutputChannels,
     required this.onSelected,
   });
 
   final List<AudioDevice> devices;
   final String selectedId;
+
+  /// What the engine has open, and the channel counts it negotiated.
+  ///
+  /// Enumeration only carries channel counts on ASIO, where a probe fills
+  /// them in; everywhere else they come back `0`, meaning unknown. The device
+  /// that is actually OPEN has real numbers, so it can say them.
+  final String openDeviceName;
+  final int openInputChannels;
+  final int openOutputChannels;
 
   /// The pinned device the rig can no longer see, or empty.
   ///
@@ -288,10 +307,23 @@ class _DeviceList extends StatelessWidget {
 
   final ValueChanged<String> onSelected;
 
+  /// `18 in · 20 out` when the counts are known, else nothing.
+  String? _channels(AppLocalizations l10n, AudioDevice device) {
+    var inputs = device.inputChannels;
+    var outputs = device.outputChannels;
+    if (inputs <= 0 && outputs <= 0 && device.name == openDeviceName) {
+      inputs = openInputChannels;
+      outputs = openOutputChannels;
+    }
+    if (inputs <= 0 && outputs <= 0) return null;
+    return l10n.audioDeviceChannels(inputs, outputs);
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return ConsoleCard(
+      borderRadius: 0,
       color: context.surface.background,
       children: [
         for (final device in devices)
@@ -299,10 +331,10 @@ class _DeviceList extends StatelessWidget {
             key: Key('audio_device_${device.id}'),
             divider: device != devices.last || lostDeviceName.isNotEmpty,
             title: device.name,
-            value: l10n.audioDeviceChannels(
-              device.inputChannels,
-              device.outputChannels,
-            ),
+            // Nothing rather than "0 in · 0 out": an unknown count is not a
+            // count of zero, and a device claiming no channels reads as one
+            // that cannot be used.
+            value: _channels(l10n, device),
             valueColor: context.surface.textMuted,
             showDisclosure: false,
             leading: _Check(selected: device.id == selectedId),
@@ -342,6 +374,9 @@ class _RateAndBuffer extends StatelessWidget {
     final rates = state.sampleRateChoices;
     final buffers = state.bufferChoices;
     return ConsoleCard(
+      // Flush and square inside the row's own card, as the mockups draw every
+      // opened list: an inset rounded card would read as a second surface.
+      borderRadius: 0,
       color: context.surface.background,
       children: [
         _Caption(l10n.audioSampleRateGroup),
@@ -392,6 +427,7 @@ class _InputList extends StatelessWidget {
       return ConsoleEmptyCard(message: l10n.audioInputsEmpty);
     }
     return ConsoleCard(
+      borderRadius: 0,
       color: context.surface.background,
       children: [
         for (var i = 0; i < inputs; i++)
@@ -415,7 +451,11 @@ class _InputList extends StatelessWidget {
     final name = await showConsoleRenameSheet(
       context,
       title: l10n.audioInputRenameTitle,
+      // The socket being named, as the mockups put it beside the title.
+      subtitle: l10n.audioInputOrdinal(input + 1),
       initial: cubit.state.nameOf(input),
+      // Empty is a real answer here: it hands the socket back its ordinal.
+      allowEmpty: true,
     );
     if (name == null) return;
     await cubit.rename(input, name);
