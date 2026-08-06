@@ -2225,10 +2225,6 @@
     "@audioAsioLink": {
         "description": "Console Audio face, Device tab."
     },
-    "audioDeviceFootnote": "Cambiar el dispositivo o el búfer reabre el motor de audio; el bucle conserva sus tomas.",
-    "@audioDeviceFootnote": {
-        "description": "Console Audio face, Device tab."
-    },
     "audioInputsEmpty": "Este dispositivo no tiene entradas.",
     "@audioInputsEmpty": {
         "description": "Console Audio face, Device tab."

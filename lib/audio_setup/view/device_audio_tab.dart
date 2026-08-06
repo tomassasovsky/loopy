@@ -41,7 +41,6 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final surface = context.surface;
     final cubit = context.read<AudioSetupCubit>();
     final state = context.watch<AudioSetupCubit>().state;
     final inputs = context.watch<InputsCubit>().state;
@@ -67,14 +66,20 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
                 _OpenableRow(
                   key: const Key('audio_device_row'),
                   title: l10n.deviceLabel,
-                  value: status.deviceName.isEmpty
-                      ? l10n.emDash
-                      : status.deviceName,
+                  // The device that is PINNED, not only one the engine has
+                  // managed to open: the row has to name what the next start
+                  // will use, or picking one and seeing an em-dash reads as a
+                  // tap that did nothing.
+                  value: _deviceName(l10n, state, status),
                   expanded: _open == _OpenRow.device,
                   onTap: () => _toggle(_OpenRow.device),
                   child: _DeviceList(
                     devices: state.playbackDevices,
                     selectedId: state.playbackDeviceId,
+                    lostDeviceName:
+                        state.deviceConnectivity == DeviceConnectivity.lost
+                        ? state.connectivityDeviceName
+                        : '',
                     onSelected: cubit.setPlaybackDevice,
                   ),
                 ),
@@ -162,15 +167,33 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
                   ],
                 ),
             ],
-            const SizedBox(height: 14),
-            Text(
-              l10n.audioDeviceFootnote,
-              style: TextStyle(color: surface.textMuted, fontSize: 14),
-            ),
           ],
         ),
       ),
     );
+  }
+
+  /// What to call the current device: the pinned one by name, else whatever
+  /// the engine reports, else nothing to say.
+  static String _deviceName(
+    AppLocalizations l10n,
+    AudioSetupState state,
+    EngineStatus status,
+  ) {
+    final devices = state.playbackDevices;
+    final pinned = devices
+        .where((device) => device.id == state.playbackDeviceId)
+        .map((device) => device.name)
+        .firstOrNull;
+    if (pinned != null && pinned.isNotEmpty) return pinned;
+    if (status.deviceName.isNotEmpty) return status.deviceName;
+    // Nothing pinned and nothing open yet: the system default is what a start
+    // would use, so that is what the row is about to mean.
+    final fallback = devices
+        .where((device) => device.isDefault)
+        .map((device) => device.name)
+        .firstOrNull;
+    return fallback ?? l10n.emDash;
   }
 
   /// The measured round-trip when there is one, else what this rate and
@@ -249,11 +272,20 @@ class _DeviceList extends StatelessWidget {
   const _DeviceList({
     required this.devices,
     required this.selectedId,
+    required this.lostDeviceName,
     required this.onSelected,
   });
 
   final List<AudioDevice> devices;
   final String selectedId;
+
+  /// The pinned device the rig can no longer see, or empty.
+  ///
+  /// It stays on the list, greyed and inert, as the mockups draw it: a device
+  /// that vanished from the list would read as a device you never had, and
+  /// the pin is still pointing at it.
+  final String lostDeviceName;
+
   final ValueChanged<String> onSelected;
 
   @override
@@ -265,15 +297,27 @@ class _DeviceList extends StatelessWidget {
         for (final device in devices)
           ConsoleRow(
             key: Key('audio_device_${device.id}'),
-            divider: device != devices.last,
+            divider: device != devices.last || lostDeviceName.isNotEmpty,
             title: device.name,
             value: l10n.audioDeviceChannels(
               device.inputChannels,
               device.outputChannels,
             ),
+            valueColor: context.surface.textMuted,
             showDisclosure: false,
             leading: _Check(selected: device.id == selectedId),
             onTap: () => onSelected(device.id),
+          ),
+        if (lostDeviceName.isNotEmpty)
+          ConsoleRow(
+            key: const Key('audio_device_unplugged'),
+            divider: false,
+            title: lostDeviceName,
+            titleColor: context.surface.textMuted,
+            value: l10n.audioDeviceUnplugged,
+            valueColor: context.surface.textMuted,
+            showDisclosure: false,
+            leading: const _Check(selected: false),
           ),
       ],
     );
@@ -300,11 +344,7 @@ class _RateAndBuffer extends StatelessWidget {
     return ConsoleCard(
       color: context.surface.background,
       children: [
-        ConsoleRow(
-          title: l10n.audioSampleRateGroup,
-          centred: true,
-          showDisclosure: false,
-        ),
+        _Caption(l10n.audioSampleRateGroup),
         for (final rate in rates)
           ConsoleRow(
             key: Key('audio_rate_$rate'),
@@ -315,11 +355,7 @@ class _RateAndBuffer extends StatelessWidget {
             leading: _Check(selected: rate == state.sampleRate),
             onTap: () => onRate(rate),
           ),
-        ConsoleRow(
-          title: l10n.audioBufferGroup,
-          centred: true,
-          showDisclosure: false,
-        ),
+        _Caption(l10n.audioBufferGroup),
         for (final frames in buffers)
           ConsoleRow(
             key: Key('audio_buffer_$frames'),
@@ -331,6 +367,7 @@ class _RateAndBuffer extends StatelessWidget {
                 state.sampleRate,
               ).toStringAsFixed(1),
             ),
+            valueColor: context.surface.textMuted,
             showDisclosure: false,
             leading: _Check(selected: frames == state.bufferFrames),
             onTap: () => onBuffer(frames),
@@ -364,6 +401,7 @@ class _InputList extends StatelessWidget {
             title: l10n.inputName(names, i),
             // The socket it is, under the name you gave it.
             value: l10n.audioInputOrdinal(i + 1),
+            valueColor: context.surface.textMuted,
             leading: _Check(selected: i < names.length && names[i].isNotEmpty),
             onTap: () => unawaited(_rename(context, i)),
           ),
@@ -382,6 +420,21 @@ class _InputList extends StatelessWidget {
     if (name == null) return;
     await cubit.rename(input, name);
   }
+}
+
+/// A caption inside an opened list — the mockups' 13px muted heading over the
+/// sample-rate and buffer groups. Not a [ConsoleRow]: a row is 70px and
+/// tappable, and these are neither.
+class _Caption extends StatelessWidget {
+  const _Caption(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(20, 14, 20, 7),
+    child: ConsoleGroupLabel(text),
+  );
 }
 
 /// The mockups' check gutter, at their 40px inset.

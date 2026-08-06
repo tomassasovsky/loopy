@@ -36,6 +36,9 @@ import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/tracks/tracks_tray_panel.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno_engine/segno_engine.dart'
+    as engine_device
+    show AudioDevice;
+import 'package:segno_engine/segno_engine.dart'
     as snapshot
     show EngineSnapshot, LaneSnapshot, LatencyState, TrackSnapshot;
 import 'package:settings_repository/settings_repository.dart';
@@ -830,6 +833,25 @@ void main() {
   Future<void> pumpAudio(WidgetTester tester, AudioTab tab) async {
     await size(tester);
     final engine = FakeAudioEngine()
+      ..runningDeviceName = 'Scarlett 18i20'
+      ..devices = const [
+        engine_device.AudioDevice(
+          id: 'scarlett',
+          name: 'Scarlett 18i20',
+          isDefault: true,
+          isInput: false,
+          inputChannels: 18,
+          outputChannels: 20,
+        ),
+        engine_device.AudioDevice(
+          id: 'builtin',
+          name: 'Built-in audio',
+          isDefault: false,
+          isInput: false,
+          inputChannels: 2,
+          outputChannels: 2,
+        ),
+      ]
       ..nextSnapshot = const snapshot.EngineSnapshot(
         isRunning: true,
         devicePresent: true,
@@ -858,6 +880,9 @@ void main() {
       deviceRefreshInterval: const Duration(days: 1),
     );
     addTearDown(() => unawaited(audio.close()));
+    // The cubit enumerates on its own schedule; the golden asks once so the
+    // face has the rig the mockups draw.
+    audio.refreshDevices();
     final inputs = InputsCubit(settings: settings);
     addTearDown(() => unawaited(inputs.close()));
     await inputs.rename(0, 'guitar');
