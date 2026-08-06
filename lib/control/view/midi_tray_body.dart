@@ -30,10 +30,37 @@ class MidiTrayBody extends StatefulWidget {
   State<MidiTrayBody> createState() => _MidiTrayBodyState();
 }
 
+/// What the face currently has open. At most one thing — an accordion across
+/// the WHOLE face, not one per card: the device chooser, an add-target
+/// chooser and a mapping's calibration are all drawers, and two open at once
+/// would push the second past the sheet it has to fit in.
+sealed class _Open {
+  const _Open();
+}
+
+/// The device row's chooser.
+class _DeviceOpen extends _Open {
+  const _DeviceOpen();
+}
+
+/// An Add sweep / Add switch target chooser.
+class _AddOpen extends _Open {
+  const _AddOpen({required this.continuous});
+
+  /// Whether the mapping being added is a sweep rather than a switch.
+  final bool continuous;
+}
+
+/// One mapping's calibration.
+class _MappingOpen extends _Open {
+  const _MappingOpen(this.key);
+
+  final (MappingTrigger, String) key;
+}
+
 class _MidiTrayBodyState extends State<MidiTrayBody> {
-  /// Which mapping is open. At most one — an accordion, so the list never
-  /// grows past the sheet it has to fit in.
-  (MappingTrigger, String)? _openKey;
+  /// What is open, or null. See [_Open].
+  _Open? _open;
 
   /// Whether a message has arrived recently enough to call the link busy.
   bool _receiving = false;
@@ -85,7 +112,7 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
               const SizedBox(height: _groupGap),
               ConsoleGroupLabel(l10n.midiDeviceGroup),
               const SizedBox(height: _labelGap),
-              ConsoleCard(children: [_deviceRow(context, connection)]),
+              _deviceCard(context, connection),
               const SizedBox(height: _blockGap),
               _statusCard(context, connection),
               const SizedBox(height: _blockGap),
@@ -105,41 +132,81 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
 
   // ---------------------------------------------------------------- device
 
-  Widget _deviceRow(BuildContext context, MidiConnection connection) {
+  /// The device row, and the chooser it opens onto.
+  ///
+  /// **Opens in place**, like every other row on this console — the mockups'
+  /// `AUDIO / settings-device` draws exactly this shape for the same question,
+  /// and a modal would lose the status card underneath that says whether the
+  /// choice worked.
+  Widget _deviceCard(BuildContext context, MidiConnection connection) {
     final l10n = context.l10n;
-    return ConsoleRow(
-      key: const Key('midi_device_row'),
-      title: l10n.midiDeviceRow,
-      state: connection.hasSelection
-          ? connection.selectedName
-          : l10n.midiDeviceNone,
-      expanded: false,
-      showDivider: false,
-      onTap: () => unawaited(_pickDevice(context, connection)),
-    );
-  }
-
-  Future<void> _pickDevice(
-    BuildContext context,
-    MidiConnection connection,
-  ) async {
-    final l10n = context.l10n;
+    final surface = context.surface;
     final cubit = context.read<MidiSetupCubit>();
-    final picked = await showConsolePickerSheet<String>(
-      context,
-      title: l10n.midiPickDeviceTitle,
-      current: connection.selectedId,
-      entries: [
-        // "None" is a real choice, not the absence of one: an operator who
-        // wants the rig off MIDI has to be able to say so, and the repository
-        // treats an empty id as exactly that.
-        ConsolePickerEntry(value: '', title: l10n.midiDeviceNone),
-        for (final device in connection.devices)
-          ConsolePickerEntry(value: device.id, title: device.name),
+    final open = _open is _DeviceOpen;
+
+    // The pinned device is listed even when the enumeration has lost it: the
+    // selection is what survives the cable being found again, so hiding it
+    // would make an unplugged controller look like one nobody ever chose.
+    final absent =
+        connection.hasSelection &&
+        !connection.devices.any((d) => d.id == connection.selectedId);
+    final choices = <({String id, String name, bool dimmed})>[
+      (id: '', name: l10n.midiDeviceNone, dimmed: false),
+      for (final device in connection.devices)
+        (id: device.id, name: device.name, dimmed: false),
+      if (absent)
+        (
+          id: connection.selectedId,
+          name: connection.selectedName,
+          dimmed: true,
+        ),
+    ];
+
+    return ConsoleCard(
+      children: [
+        ConsoleRow(
+          key: const Key('midi_device_row'),
+          title: l10n.midiDeviceRow,
+          state: connection.hasSelection
+              ? connection.selectedName
+              : l10n.midiDeviceNone,
+          expanded: open,
+          showDivider: false,
+          fill: open ? surface.control : null,
+          onTap: () =>
+              setState(() => _open = open ? null : const _DeviceOpen()),
+        ),
+        ConsoleExpansion(
+          key: const Key('midi_device_slot'),
+          expanded: open,
+          child: open
+              ? ConsoleDrawer(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final (index, choice) in choices.indexed)
+                        ConsolePickRow(
+                          key: Key('midi_device_choice_${choice.id}'),
+                          title: choice.name,
+                          state: choice.dimmed
+                              ? l10n.midiDeviceUnplugged
+                              : null,
+                          dimmed: choice.dimmed,
+                          selected: choice.id == connection.selectedId,
+                          showDivider: index < choices.length - 1,
+                          onTap: () {
+                            setState(() => _open = null);
+                            unawaited(cubit.select(choice.id));
+                          },
+                        ),
+                    ],
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
       ],
     );
-    if (picked == null) return;
-    await cubit.select(picked);
   }
 
   // ---------------------------------------------------------------- status
@@ -282,13 +349,21 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
           _MappingRow(
             key: Key('midi_mapping_${binding.key.$1.id}_${binding.key.$2}'),
             binding: binding,
-            open: _openKey == binding.key,
+            open: switch (_open) {
+              _MappingOpen(:final key) => key == binding.key,
+              _ => false,
+            },
             learn: learn?.replacingKey == binding.key ? learn : null,
-            onToggle: () => setState(
-              () => _openKey = _openKey == binding.key ? null : binding.key,
-            ),
+            onToggle: () => setState(() {
+              final already = switch (_open) {
+                _MappingOpen(:final key) => key == binding.key,
+                _ => false,
+              };
+              _open = already ? null : _MappingOpen(binding.key);
+            }),
           ),
         _addRow(context, cubit, connected: connected),
+        _addChooser(context, cubit),
       ],
     );
   }
@@ -299,82 +374,117 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
     required bool connected,
   }) {
     final l10n = context.l10n;
-    final looper = context.read<LooperRepository>();
     return Padding(
-      padding: const EdgeInsets.all(kConsoleRowInset).copyWith(
-        top: _blockGap,
-        bottom: _blockGap,
-      ),
+      padding: const EdgeInsets.all(
+        kConsoleRowInset,
+      ).copyWith(top: _blockGap, bottom: _blockGap),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          ConsoleActionChip(
-            key: const Key('midi_add_sweep'),
+          _addChip(
+            id: 'midi_add_sweep',
             label: l10n.midiLearnAddSweep,
-            // Inert with nothing attached. A capture needs a control to move,
-            // and offering to listen when nothing can arrive is a button that
-            // does nothing on purpose.
-            onPressed: !connected
-                ? null
-                : () => unawaited(
-                    _addMapping(
-                      context,
-                      cubit,
-                      title: l10n.midiPickSweepTitle,
-                      entries: [
-                        for (final target in looper.availableValueTargets())
-                          ConsolePickerEntry(
-                            value: target.canonicalString(),
-                            title: valueTargetLabel(l10n, looper, target),
-                          ),
-                      ],
-                      continuous: true,
-                    ),
-                  ),
+            continuous: true,
+            connected: connected,
           ),
           const SizedBox(width: 10),
-          ConsoleActionChip(
-            key: const Key('midi_add_switch'),
+          _addChip(
+            id: 'midi_add_switch',
             label: l10n.midiLearnAddSwitch,
-            onPressed: !connected
-                ? null
-                : () => unawaited(
-                    _addMapping(
-                      context,
-                      cubit,
-                      title: l10n.midiPickSwitchTitle,
-                      entries: [
-                        for (final target in looper.availableBindingTargets())
-                          ConsolePickerEntry(
-                            value: target.canonicalString(),
-                            title: bindingTargetLabel(l10n, target),
-                            state: fxStageLabel(l10n, target.address),
-                            indented: target is FxSlotTarget,
-                          ),
-                      ],
-                      continuous: false,
-                    ),
-                  ),
+            continuous: false,
+            connected: connected,
           ),
         ],
       ),
     );
   }
 
-  Future<void> _addMapping(
-    BuildContext context,
-    ControlCubit cubit, {
-    required String title,
-    required List<ConsolePickerEntry<String>> entries,
+  Widget _addChip({
+    required String id,
+    required String label,
     required bool continuous,
-  }) async {
-    final target = await showConsolePickerSheet<String>(
-      context,
-      title: title,
-      entries: entries,
+    required bool connected,
+  }) => ConsoleActionChip(
+    key: Key(id),
+    label: label,
+    // Inert with nothing attached. A capture needs a control to move, and
+    // offering to listen when nothing can arrive is a button that does
+    // nothing on purpose.
+    onPressed: !connected
+        ? null
+        : () => setState(
+            () => _open = _openIsAdd(continuous)
+                ? null
+                : _AddOpen(continuous: continuous),
+          ),
+  );
+
+  bool _openIsAdd(bool continuous) => switch (_open) {
+    _AddOpen(continuous: final c) => c == continuous,
+    _ => false,
+  };
+
+  /// The target chooser an Add button opens onto.
+  ///
+  /// The same drawer the device row uses, for the same reason: a button that
+  /// raised a modal would be the only control on this console that leaves the
+  /// list it belongs to.
+  Widget _addChooser(BuildContext context, ControlCubit cubit) {
+    final l10n = context.l10n;
+    final looper = context.read<LooperRepository>();
+    final adding = switch (_open) {
+      _AddOpen(:final continuous) => continuous,
+      _ => null,
+    };
+
+    final choices = <({String target, String title, String? state})>[
+      if (adding == true)
+        for (final target in looper.availableValueTargets())
+          (
+            target: target.canonicalString(),
+            title: valueTargetLabel(l10n, looper, target),
+            state: null,
+          )
+      else if (adding == false)
+        for (final target in looper.availableBindingTargets())
+          (
+            target: target.canonicalString(),
+            title: bindingTargetLabel(l10n, target),
+            state: fxStageLabel(l10n, target.address),
+          ),
+    ];
+
+    return ConsoleExpansion(
+      key: const Key('midi_add_slot'),
+      expanded: adding != null,
+      child: adding == null
+          ? const SizedBox(width: double.infinity)
+          : ConsoleDrawer(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final (index, choice) in choices.indexed)
+                    ConsolePickRow(
+                      key: Key('midi_add_target_${choice.target}'),
+                      title: choice.title,
+                      state: choice.state,
+                      // Nothing is chosen yet: this mapping does not exist
+                      // until a control has been moved for it.
+                      selected: false,
+                      showDivider: index < choices.length - 1,
+                      onTap: () {
+                        setState(() => _open = null);
+                        cubit.learnControllerBinding(
+                          target: choice.target,
+                          continuous: adding,
+                        );
+                      },
+                    ),
+                ],
+              ),
+            ),
     );
-    if (target == null) return;
-    cubit.learnControllerBinding(target: target, continuous: continuous);
   }
 
   Widget _learnBanner(

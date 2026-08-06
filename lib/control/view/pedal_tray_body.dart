@@ -176,9 +176,12 @@ class _PedalTrayBodyState extends State<PedalTrayBody> {
     }
     _selected = button;
     _showEffects = false;
-    // Follow the plate's own bank, so the row being edited is the one the
-    // highlighted switch would actually act on.
-    if (PedalBindingKey.isBankKeyed(button)) _bank = state.activeBank;
+    // Seed from the plate's own bank ONCE, so the first thing edited is the
+    // bank the performer is standing in — and then never again. Re-seeding on
+    // every selection snapped the list back to the pedal's bank the instant a
+    // switch was tapped, which made the other bank's four switches literally
+    // unselectable: you could move the toggle, but not then pick a row.
+    _bank ??= state.activeBank;
   });
 
   Widget _trackRow(

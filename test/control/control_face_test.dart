@@ -77,6 +77,7 @@ void main() {
     when(() => midiDevices.connections).thenAnswer((_) => connections.stream);
     when(() => midiDevices.activity).thenAnswer((_) => activity.stream);
     when(() => midiDevices.connection).thenReturn(const MidiConnection());
+    when(() => midiDevices.select(any())).thenAnswer((_) async {});
   });
 
   tearDown(() async {
@@ -105,11 +106,18 @@ void main() {
       exportsRoot: () async => '.',
     );
     addTearDown(performance.dispose);
+    // A real ControllerRepository with no sources: the learn path needs one to
+    // exist at all — without it `learnControllerBinding` returns on its first
+    // line, which is exactly the app-wiring bug this slice fixed.
+    final controller = ControllerRepository(sources: const []);
+    addTearDown(controller.dispose);
     control = ControlCubit(
       looper: looper,
       pedal: PedalRepository(const NoopPedalTransport()),
       settings: settings,
       performance: performance,
+      controller: controller,
+      midiDevices: midiDevices,
       keepAliveInterval: Duration.zero,
     );
     midi = MidiSetupCubit(repository: midiDevices);
@@ -269,6 +277,34 @@ void main() {
       );
     });
 
+    testWidgets('bank B stays put once picked, so its switches are usable', (
+      tester,
+    ) async {
+      await pump(tester);
+      await tester.tap(find.text('B'));
+      await tester.pumpAndSettle();
+
+      // Regression: selecting a switch used to re-seed the bank from the
+      // pedal's own, which snapped the list back to A on the tap and left
+      // bank B's four switches impossible to reach.
+      await tester.tap(find.byKey(const Key('pedal_switch_track2')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(l10nOf(tester).controlAssignGroup('TRACK 2', 'B')),
+        findsOneWidget,
+      );
+
+      final chain = const FxChainTarget(_master).canonicalString();
+      await tester.tap(find.byKey(Key('pedal_target_$chain')));
+      await tester.pumpAndSettle();
+
+      expect(
+        control.state.globalBindings.bindings.single.key,
+        const PedalBindingKey(button: PedalButton.track2, bank: 1),
+      );
+    });
+
     testWidgets('a track switch holds a binding per bank', (tester) async {
       await pump(tester);
       await tester.tap(find.byKey(const Key('pedal_switch_track1')));
@@ -387,6 +423,61 @@ void main() {
         target: const FxChainTarget(_master).canonicalString(),
       ),
     ]);
+
+    testWidgets('the device row opens a chooser in place, not a modal', (
+      tester,
+    ) async {
+      await pump(tester, connection: connected);
+      await showMidi(tester);
+
+      expect(find.byKey(const Key('midi_device_choice_dev-1')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('midi_device_row')));
+      await tester.pumpAndSettle();
+
+      // In the list, under the row that opened it — no route was pushed, so
+      // the status card underneath is still on screen.
+      expect(find.byType(Dialog), findsNothing);
+      expect(find.byKey(const Key('midi_status')), findsOneWidget);
+      expect(find.byKey(const Key('midi_device_choice_')), findsOneWidget);
+      expect(find.byKey(const Key('midi_device_choice_dev-1')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('midi_device_choice_')));
+      await tester.pumpAndSettle();
+
+      verify(() => midiDevices.select('')).called(1);
+      expect(find.byKey(const Key('midi_device_choice_dev-1')), findsNothing);
+    });
+
+    testWidgets('an add button opens its target chooser in place', (
+      tester,
+    ) async {
+      await pump(tester, connection: connected);
+      await showMidi(tester);
+
+      final target = const FxChainTarget(_master).canonicalString();
+      expect(find.byKey(Key('midi_add_target_$target')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('midi_add_switch')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Dialog), findsNothing);
+      expect(find.byKey(Key('midi_add_target_$target')), findsOneWidget);
+
+      await tester.tap(find.byKey(Key('midi_add_target_$target')));
+      await tester.pumpAndSettle();
+
+      // Picking a target starts the capture and shuts the chooser.
+      expect(control.state.controllerLearn?.target, target);
+      expect(control.state.controllerLearn?.continuous, isFalse);
+      expect(find.byKey(Key('midi_add_target_$target')), findsNothing);
+      expect(find.byKey(const Key('midi_add_banner')), findsOneWidget);
+
+      // A live capture holds the learn-timeout timer, which the binding fails
+      // the test for if it outlives the tree.
+      control.cancelControllerLearn();
+      await tester.pumpAndSettle();
+    });
 
     testWidgets('stacks the device, its status and the mappings', (
       tester,

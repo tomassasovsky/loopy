@@ -1756,5 +1756,9 @@
     "midiMappingsEmpty": "Todavía no hay nada asignado. Añade un barrido o un conmutador y luego mueve el control que quieras usar.",
     "@midiMappingsEmpty": {
         "description": "Empty state at the head of the mapping list."
+    },
+    "midiDeviceUnplugged": "desconectado",
+    "@midiDeviceUnplugged": {
+        "description": "Trailing readout on a MIDI device the enumeration has lost — it is still listed, because the selection is what survives the cable being found again."
     }
 }

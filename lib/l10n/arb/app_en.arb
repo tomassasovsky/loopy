@@ -2230,5 +2230,9 @@
     "midiMappingsEmpty": "Nothing is mapped yet. Add a sweep or a switch, then move the control you want to use.",
     "@midiMappingsEmpty": {
         "description": "Empty state at the head of the mapping list."
+    },
+    "midiDeviceUnplugged": "unplugged",
+    "@midiDeviceUnplugged": {
+        "description": "Trailing readout on a MIDI device the enumeration has lost — it is still listed, because the selection is what survives the cable being found again."
     }
 }

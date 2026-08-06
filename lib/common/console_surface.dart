@@ -1460,102 +1460,158 @@ class ConsoleMiniToggle<T> extends StatelessWidget {
   }
 }
 
-/// One entry offered by [showConsolePickerSheet].
-@immutable
-class ConsolePickerEntry<T> {
-  /// Creates a [ConsolePickerEntry].
-  const ConsolePickerEntry({
-    required this.value,
-    required this.title,
-    this.state,
-    this.indented = false,
-  });
+/// What an opened row reveals: a full-bleed block on the sheet's own
+/// background, under a rule.
+///
+/// Darker than the card it sits in rather than lighter, which is what makes it
+/// read as *inside* the row rather than as another row. Its own contents keep
+/// the 40px inset an opened row's children take, so the block lines up with
+/// the marker that opened it instead of with the list.
+class ConsoleDrawer extends StatelessWidget {
+  /// Creates a [ConsoleDrawer].
+  const ConsoleDrawer({required this.child, super.key});
 
-  /// The value returned when this entry is chosen.
-  final T value;
+  /// The revealed block.
+  final Widget child;
 
-  /// The entry's name.
-  final String title;
-
-  /// A mono readout at the trailing edge — where the entry sits in the rig.
-  final String? state;
-
-  /// Whether this entry is one step in under the one above it.
-  final bool indented;
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: surface.background,
+        border: Border(top: BorderSide(color: surface.line)),
+      ),
+      child: Padding(padding: const EdgeInsets.only(top: 1), child: child),
+    );
+  }
 }
 
-/// Asks the user to pick one of [entries]; resolves to the chosen value, or
-/// null when the sheet is dismissed.
+/// One choice inside a [ConsoleDrawer]: a check slot, a name, and the thing's
+/// own facts at the trailing edge.
 ///
-/// Built from the same [ConsoleRow]s as everything else rather than from
-/// Material's popup menu. A popup is a mouse-sized floating card of 32px
-/// items; every list on this console is a 70px row, and mixing the two makes
-/// the picker read as a control borrowed from another input device.
+/// **The check leads here and trails in the pedal assign list**, and that is
+/// the mockups' own distinction rather than an inconsistency. A chooser is a
+/// column of alternatives, and a leading column of checks is what lets the eye
+/// run down it and find the current one without reading; the assign list is a
+/// list of *targets in the rig*, read left to right as a name, so its mark
+/// belongs with the other trailing marks.
 ///
-/// The mockups draw no picker. This is derived from the rows around it, which
-/// is the least it can be and still belong to the same surface.
-Future<T?> showConsolePickerSheet<T>(
-  BuildContext context, {
-  required String title,
-  required List<ConsolePickerEntry<T>> entries,
-  T? current,
-}) {
-  final surface = context.surface;
-  return showDialog<T>(
-    context: context,
-    barrierColor: surface.scrim,
-    builder: (dialogContext) => Center(
-      child: Material(
-        color: Colors.transparent,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720, maxHeight: 640),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(left: 4, bottom: 12),
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    color: surface.textPrimary,
-                    fontSize: 20,
-                    height: 1.15,
-                    leadingDistribution: TextLeadingDistribution.even,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              Flexible(
-                child: SingleChildScrollView(
-                  child: ConsoleCard(
-                    children: [
-                      for (final (index, entry) in entries.indexed)
-                        ConsoleRow(
-                          key: Key('console_picker_$index'),
-                          title: entry.title,
-                          state: entry.state,
-                          indented: entry.indented,
-                          showDisclosure: false,
-                          mark: entry.value == current
-                              ? const ConsoleCheck(
-                                  key: Key('console_picker_current'),
-                                )
-                              : null,
-                          showDivider: index < entries.length - 1,
-                          onTap: () =>
-                              Navigator.of(dialogContext).pop(entry.value),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+/// The slot is reserved whether or not this row is the chosen one — a check
+/// that pushes the names sideways when the choice moves makes the list twitch
+/// on every pick.
+class ConsolePickRow extends StatelessWidget {
+  /// Creates a [ConsolePickRow].
+  const ConsolePickRow({
+    required this.title,
+    required this.selected,
+    required this.onTap,
+    this.state,
+    this.dimmed = false,
+    this.showDivider = true,
+    super.key,
+  });
+
+  /// The choice's name.
+  final String title;
+
+  /// Whether this is the current choice.
+  final bool selected;
+
+  /// Choose this one.
+  final VoidCallback? onTap;
+
+  /// A mono readout at the trailing edge — the thing's own facts (`18 in · 20
+  /// out`, `unplugged`, where a target sits).
+  final String? state;
+
+  /// Whether this choice is present but not currently usable — an unplugged
+  /// device. Still listed, and still choosable: the selection is what survives
+  /// the cable being found again.
+  final bool dimmed;
+
+  /// Whether to paint the hairline below. False on the last row.
+  final bool showDivider;
+
+  /// Width of the check column.
+  static const double checkWidth = 13;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final row = Container(
+      height: kConsoleRowHeight,
+      padding: const EdgeInsets.only(
+        left: ConsoleRow.indentedInset,
+        right: kConsoleRowInset,
+      ),
+      foregroundDecoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: showDivider ? surface.borderHairline : Colors.transparent,
           ),
         ),
       ),
-    ),
-  );
+      child: Row(
+        children: [
+          SizedBox(
+            width: checkWidth,
+            child: selected
+                ? Text(
+                    '✓',
+                    // Set in the bundled mono face, like the disclosure
+                    // markers: the check is a glyph the text face is not
+                    // guaranteed to carry, and a tofu box is a worse mark than
+                    // none.
+                    style: TextStyle(
+                      color: surface.accent,
+                      fontFamily: SurfaceTheme.monoFont,
+                      fontSize: 14,
+                      height: 1.2,
+                      leadingDistribution: TextLeadingDistribution.even,
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+          const SizedBox(width: kConsoleRowGap),
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: dimmed ? surface.textMuted : surface.textPrimary,
+                fontSize: 17,
+                height: 1.18,
+                leadingDistribution: TextLeadingDistribution.even,
+              ),
+            ),
+          ),
+          if (state case final word?) ...[
+            const SizedBox(width: kConsoleRowGap),
+            Text(
+              word,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: surface.textMuted,
+                fontFamily: SurfaceTheme.monoFont,
+                fontSize: 14,
+                height: 1.14,
+                leadingDistribution: TextLeadingDistribution.even,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+
+    return FocusableTapTarget(
+      onTap: onTap,
+      selected: selected,
+      semanticLabel: [title, state].whereType<String>().join(', '),
+      child: InkWell(onTap: onTap, child: row),
+    );
+  }
 }
 
 /// The check that marks the target something is already pointed at.
@@ -1567,8 +1623,11 @@ class ConsoleCheck extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       '✓',
+      // Mono, for the same reason [ConsolePickRow]'s check is: the glyph is
+      // not in every text face, and a tofu box marks nothing.
       style: TextStyle(
         color: context.surface.accent,
+        fontFamily: SurfaceTheme.monoFont,
         fontSize: 15,
         height: 1.2,
         leadingDistribution: TextLeadingDistribution.even,

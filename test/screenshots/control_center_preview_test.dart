@@ -616,4 +616,37 @@ void main() {
       matchesGoldenFile('goldens/control_center_control_midi.png'),
     );
   }, skip: !hasFonts);
+
+  testWidgets('control domain, midi device chooser open', (tester) async {
+    await size(tester);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.control)
+      ..showControlTab(ControlTab.midi);
+    addTearDown(cubit.close);
+
+    final rig = controlProviders(
+      tester,
+      connection: const MidiConnection(
+        devices: [
+          MidiDevice(id: 'dev-1', name: 'Nektar Pacer'),
+          MidiDevice(id: 'dev-2', name: 'AirTurn BT-200'),
+        ],
+        selectedId: 'dev-1',
+        selectedName: 'Nektar Pacer',
+        status: MidiConnectionStatus.connected,
+      ),
+    );
+    await pumpTray(tester, cubit: cubit, control: rig);
+    await tester.pumpAndSettle();
+    // Opens in place, under the row — the shape `AUDIO / settings-device`
+    // draws for the same question.
+    await tester.tap(find.byKey(const Key('midi_device_row')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_control_midi_device.png'),
+    );
+  }, skip: !hasFonts);
 }
