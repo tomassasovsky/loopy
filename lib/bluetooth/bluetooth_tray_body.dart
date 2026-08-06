@@ -123,7 +123,18 @@ class _BluetoothTrayBodyState extends State<BluetoothTrayBody> {
                   else
                     NetworkCard(
                       children: [
-                        ?banner,
+                        // Always present so arriving and leaving both animate:
+                        // as a bare conditional child the banner appeared
+                        // between two frames and shoved the whole list down.
+                        // NetworkExpansion keeps drawing the outgoing banner
+                        // for the length of the close, so the rows travel back
+                        // up rather than snapping.
+                        NetworkExpansion(
+                          key: const Key('bluetooth_banner_slot'),
+                          expanded: banner != null,
+                          child:
+                              banner ?? const SizedBox(width: double.infinity),
+                        ),
                         for (final (index, device) in devices.indexed)
                           _row(
                             context,

@@ -497,6 +497,42 @@ void main() {
       },
     );
 
+    testWidgets('the banner grows the list open rather than shoving it', (
+      tester,
+    ) async {
+      final client = _FaceBluetoothClient()..gate = Completer<void>();
+      await pumpFace(tester, bluetooth: client, tab: NetworkTab.bluetooth);
+
+      final firstRow = find.byKey(
+        const Key('bluetooth_device_AA:AA:AA:AA:AA:AA'),
+      );
+      final restingTop = tester.getTopLeft(firstRow).dy;
+
+      await tester.tap(
+        find.byKey(const Key('bluetooth_device_CC:CC:CC:CC:CC:CC')),
+      );
+      await tester.pump();
+
+      // One frame in, the banner is on screen but has no height yet, so the
+      // rows have not moved: arriving is a transition, not a jump.
+      final banner = find.byKey(const Key('bluetooth_banner'));
+      expect(banner, findsOneWidget);
+      expect(tester.getTopLeft(firstRow).dy, closeTo(restingTop, 1));
+
+      // Part way through, the rows are on their way down but not yet arrived.
+      await tester.pump(kNetworkMotion ~/ 2);
+      final midTop = tester.getTopLeft(firstRow).dy;
+      expect(midTop, greaterThan(restingTop));
+
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(firstRow).dy, greaterThan(midTop));
+
+      client.gate!.complete();
+      await tester.pumpAndSettle();
+      // And back up again once the banner goes.
+      expect(tester.getTopLeft(firstRow).dy, closeTo(restingTop, 1));
+    });
+
     testWidgets('a refusal offers Try again, not a dialog', (tester) async {
       final client = _FaceBluetoothClient()..failNextPair = true;
       await pumpFace(tester, bluetooth: client, tab: NetworkTab.bluetooth);

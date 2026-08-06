@@ -135,7 +135,14 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
               child: SingleChildScrollView(
                 child: NetworkCard(
                   children: [
-                    ?banner,
+                    // See the Bluetooth face: kept in the tree so the banner
+                    // grows the list open and shrinks it shut instead of
+                    // appearing between two frames.
+                    NetworkExpansion(
+                      key: const Key('wifi_banner_slot'),
+                      expanded: banner != null,
+                      child: banner ?? const SizedBox(width: double.infinity),
+                    ),
                     for (final (index, network) in networks.indexed)
                       _row(
                         context,
