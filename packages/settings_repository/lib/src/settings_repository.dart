@@ -817,6 +817,20 @@ class SettingsRepository {
   Future<void> saveTrackName(int channel, String name) =>
       _store.setString(_trackNameKey(channel), name);
 
+  String _inputNameKey(int input) => 'input_name.$input';
+
+  /// Loads the given name for hardware input [input], or `null` if unset.
+  ///
+  /// The hardware says "input 2"; the player says "mic". Same shape as
+  /// [loadTrackName], and for the same reason: the ordinal identifies the
+  /// socket, not what is plugged into it.
+  Future<String?> loadInputName(int input) =>
+      _store.getString(_inputNameKey(input));
+
+  /// Saves the given [name] for hardware input [input].
+  Future<void> saveInputName(int input, String name) =>
+      _store.setString(_inputNameKey(input), name);
+
   String _trackQuantizeKey(int channel) => 'track_quantize.$channel';
 
   /// Loads track [channel]'s quantize override: `null` (inherit the global

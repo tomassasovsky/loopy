@@ -85,6 +85,13 @@ extension EngineLocalizations on AppLocalizations {
       ? displayTrackName(names[channel], channel)
       : trackNumberLabel(channel + 1);
 
+  /// What to CALL hardware input [input] — the name it was given, or the
+  /// ordinal when it has none. The input-side twin of [trackName].
+  String inputName(List<String> names, int input) {
+    final given = input >= 0 && input < names.length ? names[input] : '';
+    return given.isEmpty ? inputChannelLabel(input + 1) : given;
+  }
+
   String displayTrackName(String name, int channel) {
     final defaultName = 'TRACK ${channel + 1}';
     if (name == defaultName) {
