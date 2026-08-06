@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/theme/theme.dart';
@@ -226,7 +227,7 @@ class PedalPlate extends StatelessWidget {
                 // CLEAR / BANK pair (upper centre).
                 footswitch(
                   PedalButton.clear,
-                  'CLEAR',
+                  _silk(PedalButton.clear),
                   _pedalU(2),
                   _row2V,
                   statusLed: _Led(
@@ -239,7 +240,7 @@ class PedalPlate extends StatelessWidget {
                 ),
                 footswitch(
                   PedalButton.bank,
-                  'BANK',
+                  _silk(PedalButton.bank),
                   _pedalU(3),
                   _row2V,
                   statusLed: _Led(
@@ -250,15 +251,30 @@ class PedalPlate extends StatelessWidget {
                     glow: frame.activeBank == 1,
                   ),
                 ),
-                ...silkLabels('CLEAR', _pedalU(2), _row2V),
-                ...silkLabels('BANK', _pedalU(3), _row2V),
+                ...silkLabels(_silk(PedalButton.clear), _pedalU(2), _row2V),
+                ...silkLabels(_silk(PedalButton.bank), _pedalU(3), _row2V),
                 // Front row: transport switches then the four track switches.
-                footswitch(PedalButton.recPlay, 'REC/PLAY', _pedalU(0), _row1V),
-                footswitch(PedalButton.stop, 'STOP', _pedalU(1), _row1V),
-                footswitch(PedalButton.undo, 'UNDO', _pedalU(2), _row1V),
+                footswitch(
+                  PedalButton.recPlay,
+                  _silk(PedalButton.recPlay),
+                  _pedalU(0),
+                  _row1V,
+                ),
+                footswitch(
+                  PedalButton.stop,
+                  _silk(PedalButton.stop),
+                  _pedalU(1),
+                  _row1V,
+                ),
+                footswitch(
+                  PedalButton.undo,
+                  _silk(PedalButton.undo),
+                  _pedalU(2),
+                  _row1V,
+                ),
                 footswitch(
                   PedalButton.mode,
-                  'MODE',
+                  _silk(PedalButton.mode),
                   _pedalU(3),
                   _row1V,
                   // The tri-state mode indicator (A1), mirroring the firmware
@@ -279,10 +295,10 @@ class PedalPlate extends StatelessWidget {
                           glow: !frame.isGoodbye,
                         ),
                 ),
-                ...silkLabels('REC/PLAY', _pedalU(0), _row1V),
-                ...silkLabels('STOP', _pedalU(1), _row1V),
-                ...silkLabels('UNDO', _pedalU(2), _row1V),
-                ...silkLabels('MODE', _pedalU(3), _row1V),
+                ...silkLabels(_silk(PedalButton.recPlay), _pedalU(0), _row1V),
+                ...silkLabels(_silk(PedalButton.stop), _pedalU(1), _row1V),
+                ...silkLabels(_silk(PedalButton.undo), _pedalU(2), _row1V),
+                ...silkLabels(_silk(PedalButton.mode), _pedalU(3), _row1V),
                 for (var t = 0; t < _trackButtons.length; t++)
                   footswitch(
                     _trackButtons[t],
@@ -337,6 +353,15 @@ class _SilkLine {
   final double blockW;
   final TextAlign align;
 }
+
+/// The silkscreen form of a footswitch's shared legend.
+///
+/// The legend itself lives beside the binding model, so this diagram and the
+/// Control face can never call one switch two things. Only the SETTING differs:
+/// a 22mm cap has no room for the spaces a list row can afford, so `REC / PLAY`
+/// is printed `REC/PLAY` here — and split across two lines by [_silkLines].
+String _silk(PedalButton button) =>
+    pedalButtonLegend(button).replaceAll(' / ', '/');
 
 /// Mirrors segno_enclosure._silk_lines.
 List<String> _silkLines(String label) {

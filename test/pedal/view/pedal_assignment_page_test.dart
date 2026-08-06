@@ -9,7 +9,6 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/view/tray/pedal_tray_panel.dart';
 import 'package:segno/pedal/view/pedal_assignment_page.dart';
 import 'package:segno/theme/surface_theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -90,45 +89,6 @@ void main() {
           child: RepositoryProvider<LooperRepository>.value(
             value: looper,
             child: const PedalAssignmentPage(),
-          ),
-        ),
-      ),
-    );
-    await tester.pump();
-  }
-
-  /// Mounts the tray FACE rather than the pushed route, with the providers
-  /// the real tray inherits from `App` (it mounts below them, so the face
-  /// re-provides nothing itself).
-  Future<void> pumpTrayFace(
-    WidgetTester tester, {
-    required VoidCallback onBack,
-  }) async {
-    settings = SettingsRepository(store: FakeKeyValueStore());
-    final performance = PerformanceRepository(
-      engine: FakeAudioEngine(),
-      exportsRoot: () async => '.',
-    );
-    addTearDown(performance.dispose);
-    control = ControlCubit(
-      looper: looper,
-      pedal: PedalRepository(const NoopPedalTransport()),
-      settings: settings,
-      performance: performance,
-      keepAliveInterval: Duration.zero,
-    );
-    addTearDown(() => unawaited(control.close()));
-
-    await tester.pumpWidget(
-      MaterialApp(
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        theme: ThemeData(extensions: const [SurfaceTheme.dark]),
-        home: MultiBlocProvider(
-          providers: [BlocProvider.value(value: control)],
-          child: RepositoryProvider<LooperRepository>.value(
-            value: looper,
-            child: Scaffold(body: PedalTrayPanel(onBack: onBack)),
           ),
         ),
       ),
@@ -434,49 +394,6 @@ void main() {
     expect(find.byKey(const Key('assign_prompt')), findsOneWidget);
   });
 
-  group('PedalTrayPanel (console rail destination, #440)', () {
-    testWidgets('renders the same assignment surface as the pushed route', (
-      tester,
-    ) async {
-      await pumpTrayFace(tester, onBack: () {});
-
-      // The face carries the surface itself, not a copy of it, and brings no
-      // route chrome of its own.
-      expect(find.byType(PedalAssignmentView), findsOneWidget);
-      expect(find.byType(PedalAssignmentPage), findsNothing);
-      expect(find.byType(AppBar), findsNothing);
-    });
-
-    testWidgets('selecting a footswitch still drives the editor', (
-      tester,
-    ) async {
-      await pumpTrayFace(tester, onBack: () {});
-
-      // The extraction moved _selected/_bank into PedalAssignmentView; if that
-      // state had been dropped, the plate would select nothing and the editor
-      // would stay on its prompt.
-      final l10n = AppLocalizations.of(
-        tester.element(find.byType(PedalAssignmentView)),
-      );
-      expect(find.text(l10n.pedalAssignSelectPrompt), findsOneWidget);
-
-      await select(tester, PedalButton.recPlay);
-
-      expect(find.text(l10n.pedalAssignSelectPrompt), findsNothing);
-    });
-
-    testWidgets('back returns to the tray home without dismissing', (
-      tester,
-    ) async {
-      var backs = 0;
-      await pumpTrayFace(tester, onBack: () => backs++);
-
-      await tester.tap(find.byKey(const Key('pedal_back')));
-      await tester.pump();
-
-      expect(backs, 1);
-    });
-  });
 }
 
 extension on WidgetTester {

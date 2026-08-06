@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/network/network_surface.dart';
 import 'package:segno/network/wifi_join_sheet.dart';
 import 'package:segno/wifi/wifi_cubit.dart';
 import 'package:segno/wifi/wifi_error_message.dart';
@@ -14,7 +14,7 @@ import 'package:wifi_repository/wifi_repository.dart';
 ///
 /// No chrome bar and no back chevron: the rail is always on screen, and a
 /// second way back would be a second navigation surface. What was the panel's
-/// title bar is now [NetworkFaceHeader], which belongs to *this tab* because
+/// title bar is now [ConsoleFaceHeader], which belongs to *this tab* because
 /// the controls it carries — rescan, power — are this radio's, not the
 /// domain's.
 class WifiTrayBody extends StatefulWidget {
@@ -55,9 +55,9 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            NetworkFaceHeader(title: l10n.trayWifiLabel),
+            ConsoleFaceHeader(title: l10n.trayWifiLabel),
             const SizedBox(height: 14),
-            NetworkEmptyCard(
+            ConsoleEmptyCard(
               // Helper failures used to leave supported=false with no message,
               // and operators then saw the "appliance only" copy even when the
               // binary was present. Prefer the real error.
@@ -71,7 +71,7 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
     }
 
     final on = state.status.enabled;
-    final header = NetworkFaceHeader(
+    final header = ConsoleFaceHeader(
       title: l10n.trayWifiLabel,
       status: _statusLine(l10n, state),
       actions: [
@@ -79,7 +79,7 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
         // nothing to scan with when it is off, and a disabled button beside a
         // switch invites the wrong tap.
         if (on)
-          NetworkIconButton(
+          ConsoleIconButton(
             key: const Key('wifi_scan'),
             icon: Icons.refresh,
             spinning: state.scanning,
@@ -90,7 +90,7 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
                 ? null
                 : () => unawaited(cubit.scan()),
           ),
-        NetworkSwitch(
+        ConsoleSwitch(
           key: const Key('wifi_power'),
           value: on,
           semanticLabel: l10n.trayWifiLabel,
@@ -125,7 +125,7 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
           header,
           const SizedBox(height: 14),
           if (networks.isEmpty && banner == null)
-            NetworkEmptyCard(
+            ConsoleEmptyCard(
               message: state.scanning
                   ? l10n.wifiScanningSubtitle
                   : l10n.wifiEmptyNetworks,
@@ -133,12 +133,12 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
           else
             Flexible(
               child: SingleChildScrollView(
-                child: NetworkCard(
+                child: ConsoleCard(
                   children: [
                     // See the Bluetooth face: kept in the tree so the banner
                     // grows the list open and shrinks it shut instead of
                     // appearing between two frames.
-                    NetworkExpansion(
+                    ConsoleExpansion(
                       key: const Key('wifi_banner_slot'),
                       expanded: banner != null,
                       child: banner ?? const SizedBox(width: double.infinity),
@@ -198,24 +198,31 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
 
   Widget? _banner(AppLocalizations l10n, WifiState state, WifiCubit cubit) {
     if (state.connectingSsid case final ssid?) {
-      return NetworkBanner(
+      return ConsoleBanner(
         key: const Key('wifi_banner'),
         message: l10n.wifiJoiningBanner(ssid),
-        tone: NetworkBannerTone.pending,
-        actionLabel: l10n.cancel,
-        onAction: () => unawaited(cubit.cancelConnect()),
+        tone: ConsoleBannerTone.pending,
+        actions: [
+          ConsoleSmallButton(
+            label: l10n.cancel,
+            onPressed: () => unawaited(cubit.cancelConnect()),
+          ),
+        ],
       );
     }
     if (state.errorMessage == null) return null;
     final ssid = state.failedSsid;
-    return NetworkBanner(
+    return ConsoleBanner(
       key: const Key('wifi_banner'),
       message: wifiErrorMessage(l10n, state.errorMessage),
-      tone: NetworkBannerTone.failure,
-      actionLabel: ssid == null ? null : l10n.networkTryAgain,
-      onAction: ssid == null
-          ? null
-          : () => unawaited(_join(context, cubit, state, ssid)),
+      tone: ConsoleBannerTone.failure,
+      actions: [
+        if (ssid case final failed?)
+          ConsoleSmallButton(
+            label: l10n.networkTryAgain,
+            onPressed: () => unawaited(_join(context, cubit, state, failed)),
+          ),
+      ],
     );
   }
 
@@ -240,7 +247,7 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
     // the sheet with every row still collapsed.
     final opens = connected || network.saved;
 
-    final row = NetworkRow(
+    final row = ConsoleRow(
       key: Key('wifi_network_${network.ssid}'),
       title: network.ssid,
       subtitle: _subtitle(l10n, state, network, connected: connected),
@@ -263,12 +270,12 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
     // swapping one widget for another.
     if (!opens) return row;
 
-    return NetworkExpandedRow(
+    return ConsoleExpandedRow(
       row: row,
       expanded: open,
       actions: [
         if (connected)
-          NetworkActionChip(
+          ConsoleActionChip(
             key: const Key('wifi_disconnect'),
             label: l10n.wifiDisconnectTitle,
             icon: Icons.link_off,
@@ -277,7 +284,7 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
             onPressed: state.busy ? null : () => unawaited(cubit.disconnect()),
           )
         else
-          NetworkActionChip(
+          ConsoleActionChip(
             key: const Key('wifi_connect'),
             label: l10n.wifiJoinAction,
             icon: Icons.wifi,
@@ -286,7 +293,7 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
                 : () => unawaited(_join(context, cubit, state, network.ssid)),
           ),
         if (network.saved)
-          NetworkActionChip(
+          ConsoleActionChip(
             key: const Key('wifi_forget'),
             label: l10n.wifiForget,
             icon: Icons.delete_outline,
@@ -355,7 +362,7 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
     String ssid,
   ) async {
     final l10n = context.l10n;
-    final confirmed = await showNetworkForgetDialog(
+    final confirmed = await showConsoleForgetDialog(
       context,
       title: l10n.wifiForgetTitleNamed(ssid),
       body: l10n.wifiForgetBody,

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/network/network_surface.dart';
 import 'package:segno/theme/theme.dart';
 
 /// WPA2's own floor. Checked here, where it can be corrected, rather than
@@ -139,7 +139,7 @@ class _WifiJoinSheetState extends State<_WifiJoinSheet> {
                     ),
                   ),
                 ),
-                NetworkSmallButton(
+                ConsoleSmallButton(
                   key: const Key('wifi_join_cancel'),
                   label: l10n.cancel,
                   onPressed: () => Navigator.of(context).pop(),

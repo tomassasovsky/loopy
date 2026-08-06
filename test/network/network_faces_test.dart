@@ -6,9 +6,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/bluetooth/bluetooth_cubit.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
-import 'package:segno/network/network_surface.dart';
 import 'package:segno/network/network_tab.dart';
 import 'package:segno/network/network_tray_panel.dart';
 import 'package:segno/theme/theme.dart';
@@ -241,7 +241,7 @@ void main() {
       // Nothing else exists until it is on — no list, and no rescan control
       // to press against a radio that is down.
       expect(find.byKey(const Key('wifi_scan')), findsNothing);
-      expect(find.byType(NetworkCard), findsNothing);
+      expect(find.byType(ConsoleCard), findsNothing);
     });
 
     testWidgets('the power switch turns the radio on', (tester) async {
@@ -252,7 +252,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(client.enabled, isTrue);
-      expect(find.byType(NetworkCard), findsOneWidget);
+      expect(find.byType(ConsoleCard), findsOneWidget);
     });
 
     testWidgets('a saved row opens in place into its actions', (tester) async {
@@ -293,7 +293,7 @@ void main() {
 
       // Half way through the close the chips are still drawn — clipped and
       // fading — and must not be reachable by a stray tap.
-      await tester.pump(kNetworkMotion ~/ 2);
+      await tester.pump(kConsoleMotion ~/ 2);
       final chip = find.byKey(const Key('wifi_forget'));
       expect(tester.getSize(chip).height, greaterThan(0));
 
@@ -312,7 +312,7 @@ void main() {
       await tester.tap(find.byKey(const Key('wifi_disconnect')));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('network_forget_confirm')), findsNothing);
+      expect(find.byKey(const Key('console_forget_confirm')), findsNothing);
       expect(client.connectedSsid, isEmpty);
     });
 
@@ -327,10 +327,10 @@ void main() {
       await tester.tap(find.byKey(const Key('wifi_forget')));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('network_forget_confirm')), findsOneWidget);
+      expect(find.byKey(const Key('console_forget_confirm')), findsOneWidget);
       expect(client.forgotten, isEmpty, reason: 'not until confirmed');
 
-      await tester.tap(find.byKey(const Key('network_forget_confirm')));
+      await tester.tap(find.byKey(const Key('console_forget_confirm')));
       await tester.pumpAndSettle();
       expect(client.forgotten, ['HomeNet']);
     });
@@ -343,7 +343,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('wifi_forget')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('network_forget_cancel')));
+      await tester.tap(find.byKey(const Key('console_forget_cancel')));
       await tester.pumpAndSettle();
 
       expect(client.forgotten, isEmpty);
@@ -431,7 +431,7 @@ void main() {
       );
 
       expect(find.byKey(const Key('bluetooth_power')), findsOneWidget);
-      expect(find.byType(NetworkCard), findsNothing);
+      expect(find.byType(ConsoleCard), findsNothing);
       // Even the console's own visibility switches go: they describe an
       // adapter that is down.
       expect(find.byKey(const Key('bluetooth_discoverable')), findsNothing);
@@ -445,7 +445,7 @@ void main() {
       expect(find.byKey(const Key('bluetooth_discoverable')), findsOneWidget);
       expect(find.byKey(const Key('bluetooth_advertise')), findsOneWidget);
       // Their own card, below the devices.
-      expect(find.byType(NetworkCard), findsNWidgets(2));
+      expect(find.byType(ConsoleCard), findsNWidgets(2));
     });
 
     testWidgets('a paired row opens into connect/disconnect and forget', (
@@ -487,7 +487,7 @@ void main() {
 
         expect(find.byKey(const Key('bluetooth_banner')), findsOneWidget);
         // The other rows are still tappable while a pairing waits on a human.
-        final row = tester.widget<NetworkRow>(
+        final row = tester.widget<ConsoleRow>(
           find.byKey(const Key('bluetooth_device_AA:AA:AA:AA:AA:AA')),
         );
         expect(row.onTap, isNotNull);
@@ -520,7 +520,7 @@ void main() {
       expect(tester.getTopLeft(firstRow).dy, closeTo(restingTop, 1));
 
       // Part way through, the rows are on their way down but not yet arrived.
-      await tester.pump(kNetworkMotion ~/ 2);
+      await tester.pump(kConsoleMotion ~/ 2);
       final midTop = tester.getTopLeft(firstRow).dy;
       expect(midTop, greaterThan(restingTop));
 
@@ -559,7 +559,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(client.forgotten, isEmpty);
-      await tester.tap(find.byKey(const Key('network_forget_confirm')));
+      await tester.tap(find.byKey(const Key('console_forget_confirm')));
       await tester.pumpAndSettle();
       expect(client.forgotten, ['AA:AA:AA:AA:AA:AA']);
     });
