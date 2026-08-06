@@ -435,14 +435,6 @@
         }
     },
     "trackSettingsTooltip": "Track settings",
-    "trackSettingsDialogTitle": "Track {trackNumber} settings",
-    "@trackSettingsDialogTitle": {
-        "placeholders": {
-            "trackNumber": {
-                "type": "int"
-            }
-        }
-    },
     "quantizeRecording": "Quantize recording",
     "loopLength": "Loop length",
     "done": "Done",
@@ -2444,24 +2436,6 @@
             }
         }
     },
-    "trackSettingsTitle": "Track {number} settings",
-    "@trackSettingsTitle": {
-        "description": "Title of the per-track routing sheet.",
-        "placeholders": {
-            "number": {
-                "type": "int"
-            }
-        }
-    },
-    "trackRoutingSubtitle": "{name} routing",
-    "@trackRoutingSubtitle": {
-        "description": "Subtitle of the per-track routing sheet.",
-        "placeholders": {
-            "name": {
-                "type": "String"
-            }
-        }
-    },
     "trackRecordedInputGroup": "RECORDED INPUT",
     "@trackRecordedInputGroup": {
         "description": "Group heading over the input list."
@@ -2509,5 +2483,65 @@
     "trackRenameTitle": "Rename track",
     "@trackRenameTitle": {
         "description": "Title of the console rename sheet."
+    },
+    "trackSettingsNamedTitle": "{name} settings",
+    "@trackSettingsNamedTitle": {
+        "description": "Title of the per-track routing panel, by track name.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "renameTrackNamedTitle": "Rename {name}",
+    "@renameTrackNamedTitle": {
+        "description": "Title of the rename dialog, by track name.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "fxEditorTrackNamedTitle": "{name} bus",
+    "@fxEditorTrackNamedTitle": {
+        "description": "FX editor scope label for a track bus, by name.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "trackVolumeNamedTarget": "{name} volume",
+    "@trackVolumeNamedTarget": {
+        "description": "MIDI-learn target: a track volume, by name.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "trackLaneNamedTarget": "{name} lane {lane}",
+    "@trackLaneNamedTarget": {
+        "description": "Pedal-assignment target: one lane of a named track.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            },
+            "lane": {
+                "type": "int"
+            }
+        }
+    },
+    "trackStateNamedSemantics": "{name}, {state}",
+    "@trackStateNamedSemantics": {
+        "description": "Accessible label for a track pad: its name and state.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            },
+            "state": {
+                "type": "String"
+            }
+        }
     }
 }

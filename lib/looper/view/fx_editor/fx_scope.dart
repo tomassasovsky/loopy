@@ -25,7 +25,12 @@ abstract class FxScope {
   FxAddress get address;
 
   /// The editor's title for this scope (e.g. `Input 1` / `Lane 1`).
-  String label(AppLocalizations l10n);
+  /// What to call this scope.
+  ///
+  /// [trackNames] is consulted by the scopes that name a TRACK, so an editor
+  /// opened on the rig's "rhythm" bus does not title itself "Track 3 bus"
+  /// (#526). Scopes that name an input or a lane ignore it.
+  String label(AppLocalizations l10n, {List<String> trackNames = const []});
 
   /// The plain-language consequence of editing here — the load-bearing bit of
   /// context (input FX "prints into new takes"; lane FX is non-destructive).
@@ -154,7 +159,8 @@ class InputFxScope extends FxScope {
   FxAddress get address => FxAddress(stage: FxStage.input, index: input);
 
   @override
-  String label(AppLocalizations l10n) => l10n.fxEditorInputTitle(input + 1);
+  String label(AppLocalizations l10n, {List<String> trackNames = const []}) =>
+      l10n.fxEditorInputTitle(input + 1);
 
   @override
   String consequence(AppLocalizations l10n) => l10n.fxEditorInputConsequence;
@@ -257,7 +263,8 @@ class LaneFxScope extends FxScope {
       FxAddress(stage: FxStage.loop, index: track, lane: lane);
 
   @override
-  String label(AppLocalizations l10n) => l10n.laneNumberLabel(lane + 1);
+  String label(AppLocalizations l10n, {List<String> trackNames = const []}) =>
+      l10n.laneNumberLabel(lane + 1);
 
   @override
   String consequence(AppLocalizations l10n) => l10n.fxEditorLaneConsequence;
@@ -412,9 +419,10 @@ class StageFxScope extends FxScope {
   int get _channel => address.index;
 
   @override
-  String label(AppLocalizations l10n) => _isMaster
+  String label(AppLocalizations l10n, {List<String> trackNames = const []}) =>
+      _isMaster
       ? l10n.fxEditorMasterTitle
-      : l10n.fxEditorTrackTitle(_channel + 1);
+      : l10n.fxEditorTrackNamedTitle(l10n.trackName(trackNames, _channel));
 
   @override
   String consequence(AppLocalizations l10n) => _isMaster

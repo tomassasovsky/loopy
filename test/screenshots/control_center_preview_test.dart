@@ -526,6 +526,11 @@ void main() {
             providers: [
               BlocProvider<ControlCubit>.value(value: control),
               BlocProvider<MidiSetupCubit>.value(value: midi),
+              BlocProvider<TracksCubit>(
+                create: (_) => TracksCubit(
+                  settings: SettingsRepository(store: FakeKeyValueStore()),
+                ),
+              ),
             ],
             child: Scaffold(
               body: ColoredBox(

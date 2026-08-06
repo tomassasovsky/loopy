@@ -175,7 +175,10 @@ class _TrackRoutingSheetState extends State<_TrackRoutingSheet> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    l10n.trackSettingsTitle(widget.channel + 1),
+                    // The rig's own word for this track, not its ordinal.
+                    l10n.trackSettingsNamedTitle(
+                      l10n.trackName(names.names, widget.channel),
+                    ),
                     style: TextStyle(
                       color: surface.textPrimary,
                       fontSize: 19,
@@ -184,7 +187,9 @@ class _TrackRoutingSheetState extends State<_TrackRoutingSheet> {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    l10n.trackRoutingSubtitle(names.nameOf(widget.channel)),
+                    // The ordinal belongs UNDER the name, not instead of it:
+                    // it still says which pad on the pedal this is.
+                    l10n.tracksRowOrdinal(widget.channel + 1),
                     style: TextStyle(
                       color: surface.textSecondary,
                       fontSize: 16,

@@ -73,6 +73,18 @@ extension EngineLocalizations on AppLocalizations {
         LatencyState.idle => notMeasured,
       };
 
+  /// What to CALL track [channel] — its name, or the localized default when
+  /// it has none.
+  ///
+  /// The one place that answers this. Every surface that identifies a track
+  /// goes through here: a rig named `drums / bass / rhythm / lead` should not
+  /// read `Track 1 … Track 4` the moment you leave the stage (#526). Falls
+  /// back to the ordinal only for a channel the names list does not cover.
+  String trackName(List<String> names, int channel) =>
+      channel >= 0 && channel < names.length
+      ? displayTrackName(names[channel], channel)
+      : trackNumberLabel(channel + 1);
+
   String displayTrackName(String name, int channel) {
     final defaultName = 'TRACK ${channel + 1}';
     if (name == defaultName) {

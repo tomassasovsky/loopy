@@ -8,6 +8,7 @@ import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/signal_graph/signal_knob.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
 import 'package:segno/setup/setup_surface.dart';
@@ -113,7 +114,15 @@ class _AddRow extends StatelessWidget {
             for (final target in valueTargets)
               PopupMenuItem(
                 value: target,
-                child: Text(valueTargetLabel(l10n, looper, target)),
+                child: Text(
+                  valueTargetLabel(
+                    l10n,
+                    looper,
+                    target,
+                    // read, not watch: an itemBuilder runs outside build.
+                    trackNames: context.read<TracksCubit>().state.names,
+                  ),
+                ),
               ),
           ],
           child: Text(l10n.midiLearnAddSweep),
@@ -130,7 +139,14 @@ class _AddRow extends StatelessWidget {
             for (final target in switchTargets)
               PopupMenuItem(
                 value: target,
-                child: Text(bindingTargetLabel(l10n, target)),
+                child: Text(
+                  bindingTargetLabel(
+                    l10n,
+                    target,
+                    // read, not watch: an itemBuilder runs outside build.
+                    trackNames: context.read<TracksCubit>().state.names,
+                  ),
+                ),
               ),
           ],
           child: Text(l10n.midiLearnAddSwitch),
@@ -165,7 +181,12 @@ class _MappingRow extends StatelessWidget {
     final cubit = context.read<ControlCubit>();
     final looper = context.read<LooperRepository>();
     final capture = learn;
-    final resolved = _resolve(l10n, looper, binding);
+    final resolved = _resolve(
+      l10n,
+      looper,
+      binding,
+      context.watch<TracksCubit>().state.names,
+    );
     final label = resolved ?? l10n.midiLearnStale;
     final control = controlLabel(l10n, binding.trigger);
 
@@ -272,16 +293,17 @@ class _MappingRow extends StatelessWidget {
     AppLocalizations l10n,
     LooperRepository looper,
     ControllerBinding binding,
+    List<String> names,
   ) {
     switch (binding) {
       case ContinuousBinding():
         final target = ControlValueTarget.tryParse(binding.target);
         if (target == null || !looper.valueTargetResolves(target)) return null;
-        return valueTargetLabel(l10n, looper, target);
+        return valueTargetLabel(l10n, looper, target, trackNames: names);
       case DiscreteBinding():
         final target = FxBindingTarget.tryParse(binding.target);
         if (target == null || !looper.bindingResolves(target)) return null;
-        return bindingTargetLabel(l10n, target);
+        return bindingTargetLabel(l10n, target, trackNames: names);
     }
   }
 }

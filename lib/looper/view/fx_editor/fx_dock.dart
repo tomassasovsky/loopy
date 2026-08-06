@@ -6,6 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/fx_editor/fx_scope.dart';
 import 'package:segno/looper/view/signal_graph/plugin_browser.dart';
 import 'package:segno/looper/view/signal_graph/signal_fx_chrome.dart';
@@ -152,7 +153,10 @@ class _FxDockHeader extends StatelessWidget {
             child: Row(
               children: [
                 Text(
-                  scope.label(l10n),
+                  scope.label(
+                    l10n,
+                    trackNames: context.watch<TracksCubit>().state.names,
+                  ),
                   style: signalLabel(
                     color: surface.textPrimary,
                     size: 15,

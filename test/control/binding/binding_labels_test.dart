@@ -68,16 +68,19 @@ void main() {
         fxStageLabel(l10n, const FxAddress(stage: FxStage.input, index: 2)),
         l10n.pedalAssignStageInput(2),
       );
+      // Channel 1 is the rig's SECOND track. These labels used to print the
+      // raw channel — a binding on track 2 read "Track 1" while every other
+      // surface called it TRACK 2.
       expect(
         fxStageLabel(
           l10n,
           const FxAddress(stage: FxStage.loop, index: 1, lane: 0),
         ),
-        l10n.pedalAssignStageLoop(1, 0),
+        l10n.trackLaneNamedTarget(l10n.trackNumberLabel(2), 0),
       );
       expect(
         fxStageLabel(l10n, const FxAddress(stage: FxStage.track, index: 3)),
-        l10n.pedalAssignStageTrack(3),
+        l10n.trackNumberLabel(4),
       );
       expect(
         fxStageLabel(l10n, const FxAddress(stage: FxStage.master)),
@@ -92,7 +95,16 @@ void main() {
 
       expect(
         bindingTargetLabel(l10n, const FxChainTarget(address)),
-        l10n.pedalAssignChainTarget(l10n.pedalAssignStageTrack(3)),
+        l10n.pedalAssignChainTarget(l10n.trackNumberLabel(4)),
+      );
+      // With names to hand, the track is called what the rig calls it.
+      expect(
+        bindingTargetLabel(
+          l10n,
+          const FxChainTarget(address),
+          trackNames: const ['drums', 'bass', 'rhythm', 'lead'],
+        ),
+        l10n.pedalAssignChainTarget('lead'),
       );
       expect(
         bindingTargetLabel(
@@ -108,7 +120,16 @@ void main() {
     test('names the rig-level controls', () {
       expect(
         valueTargetLabel(l10n, looper, const TrackVolumeTarget(2)),
-        l10n.midiLearnTargetVolume(2),
+        l10n.trackVolumeNamedTarget(l10n.trackNumberLabel(3)),
+      );
+      expect(
+        valueTargetLabel(
+          l10n,
+          looper,
+          const TrackVolumeTarget(2),
+          trackNames: const ['drums', 'bass', 'rhythm', 'lead'],
+        ),
+        l10n.trackVolumeNamedTarget('rhythm'),
       );
       expect(
         valueTargetLabel(l10n, looper, const MasterGainTarget()),
@@ -128,7 +149,7 @@ void main() {
         expect(
           valueTargetLabel(l10n, looper, target),
           l10n.midiLearnTargetParam(
-            l10n.pedalAssignStageTrack(3),
+            l10n.trackNumberLabel(4),
             't-1',
             TrackEffectType.drive.params[1].label,
           ),

@@ -39,7 +39,7 @@ class NamesTracksTab extends StatelessWidget {
                   ConsoleRow(
                     key: Key('track_name_row_${track.channel}'),
                     divider: track != tracks.last,
-                    title: names.nameOf(track.channel),
+                    title: l10n.trackName(names.names, track.channel),
                     value: l10n.tracksRowOrdinal(track.channel + 1),
                     onTap: () => unawaited(
                       _rename(
