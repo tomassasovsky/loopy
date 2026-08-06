@@ -39,7 +39,7 @@ class LengthsTracksTab extends StatelessWidget {
                   ConsoleRow(
                     key: Key('track_length_row_${track.channel}'),
                     divider: track != tracks.last,
-                    title: names.nameOf(track.channel),
+                    title: l10n.trackName(names.names, track.channel),
                     value: _label(l10n, track.lengthPresetBars),
                     onTap: () => unawaited(
                       _pick(context, track.channel, track.lengthPresetBars),

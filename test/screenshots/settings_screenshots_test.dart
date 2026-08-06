@@ -490,6 +490,11 @@ void main() {
             providers: [
               BlocProvider<LooperBloc>.value(value: bloc),
               BlocProvider<MonitorCubit>.value(value: monitor),
+              BlocProvider<TracksCubit>(
+                create: (_) => TracksCubit(
+                  settings: SettingsRepository(store: FakeKeyValueStore()),
+                ),
+              ),
             ],
             child: Builder(
               builder: (context) => Scaffold(

@@ -47,7 +47,7 @@ class RoutingTracksTab extends StatelessWidget {
                   ConsoleRow(
                     key: Key('track_routing_row_${track.channel}'),
                     divider: track != tracks.last,
-                    title: names.nameOf(track.channel),
+                    title: l10n.trackName(names.names, track.channel),
                     subtitle: _sourceLine(
                       l10n,
                       track,

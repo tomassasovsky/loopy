@@ -86,6 +86,7 @@ class _PedalFaceplateState extends State<PedalFaceplate> {
           child: ValueListenableBuilder<PedalStateFrame>(
             valueListenable: _sim.frame,
             builder: (context, frame, _) => PedalPlate(
+              trackNames: context.watch<TracksCubit>().state.names,
               frame: frame,
               onPress: _sim.press,
               onTurn: _sim.turn,

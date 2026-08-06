@@ -16,7 +16,11 @@ Future<void> showRenameTrackDialog({
   final result = await showDialog<String>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: Text(l10n.renameTrackTitle(channel + 1)),
+      title: Text(
+        l10n.renameTrackNamedTitle(
+          l10n.trackName(cubit.state.names, channel),
+        ),
+      ),
       content: TextField(
         key: const Key('renameTrack_field'),
         controller: controller,

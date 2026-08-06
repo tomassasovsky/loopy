@@ -284,9 +284,7 @@ class _OutputRow extends StatelessWidget {
   final VoidCallback onToggleGate;
 
   String _trackLabel(AppLocalizations l10n, int track) =>
-      track < trackNames.length
-      ? l10n.displayTrackName(trackNames[track], track)
-      : l10n.trackNumberLabel(track + 1);
+      l10n.trackName(trackNames, track);
 
   @override
   Widget build(BuildContext context) {
