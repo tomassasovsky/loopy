@@ -83,13 +83,12 @@ class TrayPanel extends StatelessWidget {
                                   onTabChanged: cubit.showLoopTab,
                                 ),
                               ),
-                              SettingsTrayDestination.tracks =>
-                                _TrayFaceFrame(
-                                  child: TracksTrayPanel(
-                                    tab: state.tracksTab,
-                                    onTabChanged: cubit.showTracksTab,
-                                  ),
+                              SettingsTrayDestination.tracks => _TrayFaceFrame(
+                                child: TracksTrayPanel(
+                                  tab: state.tracksTab,
+                                  onTabChanged: cubit.showTracksTab,
                                 ),
+                              ),
                               SettingsTrayDestination.tuner => _TrayFaceFrame(
                                 child: TunerTrayPanel(
                                   onBack: cubit.showHome,

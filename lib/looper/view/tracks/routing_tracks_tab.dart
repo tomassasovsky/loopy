@@ -47,25 +47,27 @@ class RoutingTracksTab extends StatelessWidget {
               ConsoleEmptyCard(message: l10n.tracksEmptyMessage)
             else
               ConsoleCard(
-              children: [
-                for (final track in tracks)
-                  ConsoleRow(
-                    key: Key('track_routing_row_${track.channel}'),
-                    divider: track != tracks.last,
-                    title: l10n.trackName(names.names, track.channel),
-                    subtitle: _sourceLine(
-                      l10n,
-                      track,
-                      repository.trackQuantize(track.channel),
+                children: [
+                  for (final track in tracks)
+                    ConsoleRow(
+                      key: Key('track_routing_row_${track.channel}'),
+                      divider: track != tracks.last,
+                      title: l10n.trackName(names.names, track.channel),
+                      subtitle: _sourceLine(
+                        l10n,
+                        track,
+                        repository.trackQuantize(track.channel),
+                      ),
+                      value: _outputLine(l10n, _outputsOf(track)),
+                      // An unrouted track is silent, which the muted tone of an
+                      // ordinary value would not say.
+                      valueColor: _outputsOf(track) == 0
+                          ? surface.warning
+                          : null,
+                      onTap: () => unawaited(_open(context, track.channel)),
                     ),
-                    value: _outputLine(l10n, _outputsOf(track)),
-                    // An unrouted track is silent, which the muted tone of an
-                    // ordinary value would not say.
-                    valueColor: _outputsOf(track) == 0 ? surface.warning : null,
-                    onTap: () => unawaited(_open(context, track.channel)),
-                  ),
-              ],
-            ),
+                ],
+              ),
             TracksFooter(l10n.tracksRoutingFooter),
           ],
         ),

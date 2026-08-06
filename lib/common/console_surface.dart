@@ -1654,8 +1654,7 @@ class _ChipGrid<T> extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final columns = options.length < _perRow ? options.length : _perRow;
-        final width =
-            (constraints.maxWidth - _gap * (columns - 1)) / columns;
+        final width = (constraints.maxWidth - _gap * (columns - 1)) / columns;
         return Wrap(
           spacing: _gap,
           runSpacing: _gap,

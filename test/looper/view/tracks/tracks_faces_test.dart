@@ -287,7 +287,11 @@ void main() {
       tester,
     ) async {
       // In 1 on lane 0, In 3 on lane 1.
-      seed(tracks: [_track(0, inputs: const [0, 2])]);
+      seed(
+        tracks: [
+          _track(0, inputs: const [0, 2]),
+        ],
+      );
       await pump(tester, TracksTab.routing);
       await tester.tap(find.byKey(const Key('track_routing_row_0')));
       await tester.pumpAndSettle();
@@ -311,7 +315,11 @@ void main() {
     testWidgets('a freed lane is reused before the track grows again', (
       tester,
     ) async {
-      seed(tracks: [_track(0, inputs: const [-1, 2])]);
+      seed(
+        tracks: [
+          _track(0, inputs: const [-1, 2]),
+        ],
+      );
       await pump(tester, TracksTab.routing);
       await tester.tap(find.byKey(const Key('track_routing_row_0')));
       await tester.pumpAndSettle();
@@ -324,7 +332,11 @@ void main() {
     });
 
     testWidgets('None (clean) stops every lane recording', (tester) async {
-      seed(tracks: [_track(0, inputs: const [0, 2])]);
+      seed(
+        tracks: [
+          _track(0, inputs: const [0, 2]),
+        ],
+      );
       await pump(tester, TracksTab.routing);
       await tester.tap(find.byKey(const Key('track_routing_row_0')));
       await tester.pumpAndSettle();
@@ -337,7 +349,11 @@ void main() {
     });
 
     testWidgets('an output chip moves ONLY its own lane', (tester) async {
-      seed(tracks: [_track(0, inputs: const [0, 2])]);
+      seed(
+        tracks: [
+          _track(0, inputs: const [0, 2]),
+        ],
+      );
       await pump(tester, TracksTab.routing);
       await tester.tap(find.byKey(const Key('track_routing_row_0')));
       await tester.pumpAndSettle();
@@ -356,7 +372,11 @@ void main() {
     });
 
     testWidgets('only one lane is open at a time', (tester) async {
-      seed(tracks: [_track(0, inputs: const [0, 2])]);
+      seed(
+        tracks: [
+          _track(0, inputs: const [0, 2]),
+        ],
+      );
       await pump(tester, TracksTab.routing);
       await tester.tap(find.byKey(const Key('track_routing_row_0')));
       await tester.pumpAndSettle();

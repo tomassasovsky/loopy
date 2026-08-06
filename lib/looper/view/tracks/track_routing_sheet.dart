@@ -238,7 +238,8 @@ class _TrackRoutingSheetState extends State<_TrackRoutingSheet> {
                           lane: _laneOf(track, i),
                           outputCount: outputCount,
                           outputMask: _outputsOf(track, _laneOf(track, i)),
-                          expanded: _openLane != null &&
+                          expanded:
+                              _openLane != null &&
                               _openLane == _laneOf(track, i),
                           onToggle: () => _toggleInput(track, i),
                           onOpen: () => setState(() {

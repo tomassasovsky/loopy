@@ -39,25 +39,25 @@ class NamesTracksTab extends StatelessWidget {
               ConsoleEmptyCard(message: l10n.tracksEmptyMessage)
             else
               ConsoleCard(
-              children: [
-                for (final track in tracks)
-                  ConsoleRow(
-                    key: Key('track_name_row_${track.channel}'),
-                    divider: track != tracks.last,
-                    title: l10n.trackName(names.names, track.channel),
-                    value: l10n.tracksRowOrdinal(track.channel + 1),
-                    onTap: () => unawaited(
-                      _rename(
-                        context,
-                        track.channel,
-                        names.nameOf(
+                children: [
+                  for (final track in tracks)
+                    ConsoleRow(
+                      key: Key('track_name_row_${track.channel}'),
+                      divider: track != tracks.last,
+                      title: l10n.trackName(names.names, track.channel),
+                      value: l10n.tracksRowOrdinal(track.channel + 1),
+                      onTap: () => unawaited(
+                        _rename(
+                          context,
                           track.channel,
+                          names.nameOf(
+                            track.channel,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-              ],
-            ),
+                ],
+              ),
             TracksFooter(l10n.tracksNamesFooter),
           ],
         ),

@@ -31,7 +31,8 @@ import 'package:segno/looper/view/loop/loop_tray_panel.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/tracks/tracks_tray_panel.dart';
 import 'package:segno/theme/theme.dart';
-import 'package:segno_engine/segno_engine.dart' as snapshot
+import 'package:segno_engine/segno_engine.dart'
+    as snapshot
     show EngineSnapshot, LaneSnapshot, LatencyState, TrackSnapshot;
 import 'package:settings_repository/settings_repository.dart';
 import 'package:wifi_repository/wifi_repository.dart';
@@ -674,8 +675,16 @@ void main() {
               rms: 0,
               peak: 0,
               lengthPresetBars: i == 0 ? 8 : 0,
-              inputMask: switch (i) { 1 => 0x2, 3 => 0, _ => 0x1 },
-              outputMask: switch (i) { 2 => 0x7, 3 => 0, _ => 0x3 },
+              inputMask: switch (i) {
+                1 => 0x2,
+                3 => 0,
+                _ => 0x1,
+              },
+              outputMask: switch (i) {
+                2 => 0x7,
+                3 => 0,
+                _ => 0x3,
+              },
               lanes: [
                 for (final input in switch (i) {
                   // Track 3 is the multi-input case the mockups draw: two
@@ -687,7 +696,10 @@ void main() {
                 })
                   snapshot.LaneSnapshot(
                     inputChannel: input,
-                    outputMask: switch (i) { 2 => 0x7, _ => 0x3 },
+                    outputMask: switch (i) {
+                      2 => 0x7,
+                      _ => 0x3,
+                    },
                     volume: 1,
                     muted: false,
                     lengthFrames: 0,
