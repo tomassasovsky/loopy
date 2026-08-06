@@ -8,6 +8,7 @@ import 'package:segno/control/control_tab.dart';
 import 'package:segno/looper/loop_tab.dart';
 import 'package:segno/looper/tracks_tab.dart';
 import 'package:segno/network/network_tab.dart';
+import 'package:segno/system/system_tab.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'settings_tray_state.dart';
@@ -133,6 +134,9 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
 
   /// Switches the Audio face's tab.
   void showAudioTab(AudioTab tab) => emit(state.copyWith(audioTab: tab));
+
+  /// Switches the System face's tab.
+  void showSystemTab(SystemTab tab) => emit(state.copyWith(systemTab: tab));
 
   /// Switches the Network face's tab. Does not touch
   /// [SettingsTrayState.destination]:

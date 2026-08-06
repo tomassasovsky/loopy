@@ -34,6 +34,9 @@ enum SettingsTrayDestination {
   /// domain (#528).
   audio,
 
+  /// In-tray System panel: display and updates as tabs of one domain (#530).
+  system,
+
   /// In-tray tuner panel. Placement only — the tuner itself is not
   /// implemented, and this face says so.
   tuner,
@@ -60,6 +63,7 @@ class SettingsTrayState extends Equatable {
     this.loopTab = LoopTab.tempo,
     this.tracksTab = TracksTab.names,
     this.audioTab = AudioTab.device,
+    this.systemTab = SystemTab.display,
   });
 
   /// Live drag/settle progress in `0..1` — `0` fully closed, `1` fully open.
@@ -96,6 +100,9 @@ class SettingsTrayState extends Equatable {
   /// Which tab the Audio face shows. Kept across navigation, like the others.
   final AudioTab audioTab;
 
+  /// Which tab the System face shows. Kept across navigation, like the rest.
+  final SystemTab systemTab;
+
   /// Which tab the Network face shows. Kept while the tray navigates
   /// elsewhere so returning to Network lands where it was left, and
   /// deliberately not reset by `closeTray`: only [destination] goes home.
@@ -112,6 +119,7 @@ class SettingsTrayState extends Equatable {
     LoopTab? loopTab,
     TracksTab? tracksTab,
     AudioTab? audioTab,
+    SystemTab? systemTab,
   }) => SettingsTrayState(
     dragProgress: dragProgress ?? this.dragProgress,
     isNavigating: isNavigating ?? this.isNavigating,
@@ -122,6 +130,7 @@ class SettingsTrayState extends Equatable {
     loopTab: loopTab ?? this.loopTab,
     tracksTab: tracksTab ?? this.tracksTab,
     audioTab: audioTab ?? this.audioTab,
+    systemTab: systemTab ?? this.systemTab,
   );
 
   @override
@@ -135,5 +144,6 @@ class SettingsTrayState extends Equatable {
     loopTab,
     tracksTab,
     audioTab,
+    systemTab,
   ];
 }

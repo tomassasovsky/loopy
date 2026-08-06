@@ -56,6 +56,8 @@ class TrayNavigationRail extends StatelessWidget {
         // The mockups' Audio glyph: a speaker.
         SettingsTrayDestination.audio => Icons.volume_up_outlined,
         SettingsTrayDestination.tuner => Icons.graphic_eq,
+        // The mockups' System glyph: a chip.
+        SettingsTrayDestination.system => Icons.memory_outlined,
         // An antenna, not a WiFi fan or a Bluetooth rune: the entry is both
         // radios, and either radio's own glyph would read as only that one.
         SettingsTrayDestination.network => Icons.settings_input_antenna,
@@ -73,6 +75,7 @@ class TrayNavigationRail extends StatelessWidget {
     SettingsTrayDestination.tracks => l10n.trayTracksLabel,
     SettingsTrayDestination.audio => l10n.trayAudioLabel,
     SettingsTrayDestination.tuner => l10n.trayTunerLabel,
+    SettingsTrayDestination.system => l10n.traySystemLabel,
     SettingsTrayDestination.network => l10n.trayNetworkLabel,
   };
 

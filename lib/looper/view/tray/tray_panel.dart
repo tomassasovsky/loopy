@@ -12,6 +12,7 @@ import 'package:segno/looper/view/tray/tray_home.dart';
 import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
 import 'package:segno/looper/view/tray/tuner_tray_panel.dart';
 import 'package:segno/network/network_tray_panel.dart';
+import 'package:segno/system/view/system_tray_panel.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The tray's contents once open — near-fullscreen frosted sheet, split into
@@ -94,6 +95,12 @@ class TrayPanel extends StatelessWidget {
                                 child: AudioTrayPanel(
                                   tab: state.audioTab,
                                   onTabChanged: cubit.showAudioTab,
+                                ),
+                              ),
+                              SettingsTrayDestination.system => _TrayFaceFrame(
+                                child: SystemTrayPanel(
+                                  tab: state.systemTab,
+                                  onTabChanged: cubit.showSystemTab,
                                 ),
                               ),
                               SettingsTrayDestination.tuner => _TrayFaceFrame(

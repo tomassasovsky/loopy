@@ -2730,5 +2730,123 @@
     "audioDefaultLengthSubtitle": "Auto rounds up to whole base loops; a fixed multiple records that many.",
     "@audioDefaultLengthSubtitle": {
         "description": "Console Audio face, Recording tab."
+    },
+    "traySystemLabel": "System",
+    "@traySystemLabel": {
+        "description": "Console System face."
+    },
+    "systemDisplayTab": "Display",
+    "@systemDisplayTab": {
+        "description": "Console System face."
+    },
+    "systemUpdatesTab": "Updates",
+    "@systemUpdatesTab": {
+        "description": "Console System face."
+    },
+    "systemViewGroup": "VIEW",
+    "@systemViewGroup": {
+        "description": "Console System face."
+    },
+    "systemPerformanceGroup": "PERFORMANCE",
+    "@systemPerformanceGroup": {
+        "description": "Console System face."
+    },
+    "systemHelpGroup": "HELP",
+    "@systemHelpGroup": {
+        "description": "Console System face."
+    },
+    "systemAutomaticGroup": "AUTOMATIC",
+    "@systemAutomaticGroup": {
+        "description": "Console System face."
+    },
+    "systemInstalledVersion": "Installed version",
+    "@systemInstalledVersion": {
+        "description": "Console System face."
+    },
+    "systemChannel": "Channel",
+    "@systemChannel": {
+        "description": "Console System face."
+    },
+    "systemAutoCheckTitle": "Check for updates automatically",
+    "@systemAutoCheckTitle": {
+        "description": "Console System face."
+    },
+    "systemAutoCheckSubtitle": "Looks in the background. Never downloads or installs on its own.",
+    "@systemAutoCheckSubtitle": {
+        "description": "Console System face."
+    },
+    "systemExperimentalTitle": "Experimental channel",
+    "@systemExperimentalTitle": {
+        "description": "Console System face."
+    },
+    "systemExperimentalSubtitle": "Pre-release builds. Turn off to follow production releases only.",
+    "@systemExperimentalSubtitle": {
+        "description": "Console System face."
+    },
+    "systemUpdateIdle": "Look for a newer version right now.",
+    "@systemUpdateIdle": {
+        "description": "Console System face."
+    },
+    "systemUpdateChecking": "Looking for a newer version…",
+    "@systemUpdateChecking": {
+        "description": "Console System face."
+    },
+    "systemUpdateAvailable": "{version} is available.",
+    "@systemUpdateAvailable": {
+        "description": "Console System face.",
+        "placeholders": {
+            "version": {
+                "type": "String"
+            }
+        }
+    },
+    "systemUpdateDownloading": "Staging {version} to the standby system — {percent}%",
+    "@systemUpdateDownloading": {
+        "description": "Console System face.",
+        "placeholders": {
+            "version": {
+                "type": "String"
+            },
+            "percent": {
+                "type": "int"
+            }
+        }
+    },
+    "systemUpdateStaged": "{version} is installed and ready. Restart when you're not mid-session.",
+    "@systemUpdateStaged": {
+        "description": "Console System face.",
+        "placeholders": {
+            "version": {
+                "type": "String"
+            }
+        }
+    },
+    "systemUpdateUnsupported": "In-app updates are not offered on this platform.",
+    "@systemUpdateUnsupported": {
+        "description": "Console System face."
+    },
+    "systemCheckNow": "Check now",
+    "@systemCheckNow": {
+        "description": "Console System face."
+    },
+    "systemDownloadInstall": "Download & install",
+    "@systemDownloadInstall": {
+        "description": "Console System face."
+    },
+    "systemRestartNow": "Restart now",
+    "@systemRestartNow": {
+        "description": "Console System face."
+    },
+    "systemRefreshRateTitle": "UI refresh rate",
+    "@systemRefreshRateTitle": {
+        "description": "Console System face, Display tab."
+    },
+    "systemRefreshRateSubtitle": "How often waveforms and meters update. Higher is smoother but uses more CPU.",
+    "@systemRefreshRateSubtitle": {
+        "description": "Console System face, Display tab."
+    },
+    "systemUpdateUpToDate": "Up to date.",
+    "@systemUpdateUpToDate": {
+        "description": "Console System face: the check found nothing newer."
     }
 }

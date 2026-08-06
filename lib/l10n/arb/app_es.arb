@@ -2252,5 +2252,123 @@
     "audioDefaultLengthSubtitle": "Auto redondea a bucles base completos; un múltiplo fijo graba esa cantidad.",
     "@audioDefaultLengthSubtitle": {
         "description": "Console Audio face, Recording tab."
+    },
+    "traySystemLabel": "Sistema",
+    "@traySystemLabel": {
+        "description": "Console System face."
+    },
+    "systemDisplayTab": "Pantalla",
+    "@systemDisplayTab": {
+        "description": "Console System face."
+    },
+    "systemUpdatesTab": "Actualizaciones",
+    "@systemUpdatesTab": {
+        "description": "Console System face."
+    },
+    "systemViewGroup": "VISTA",
+    "@systemViewGroup": {
+        "description": "Console System face."
+    },
+    "systemPerformanceGroup": "RENDIMIENTO",
+    "@systemPerformanceGroup": {
+        "description": "Console System face."
+    },
+    "systemHelpGroup": "AYUDA",
+    "@systemHelpGroup": {
+        "description": "Console System face."
+    },
+    "systemAutomaticGroup": "AUTOMÁTICO",
+    "@systemAutomaticGroup": {
+        "description": "Console System face."
+    },
+    "systemInstalledVersion": "Versión instalada",
+    "@systemInstalledVersion": {
+        "description": "Console System face."
+    },
+    "systemChannel": "Canal",
+    "@systemChannel": {
+        "description": "Console System face."
+    },
+    "systemAutoCheckTitle": "Buscar actualizaciones automáticamente",
+    "@systemAutoCheckTitle": {
+        "description": "Console System face."
+    },
+    "systemAutoCheckSubtitle": "Busca en segundo plano. Nunca descarga ni instala por su cuenta.",
+    "@systemAutoCheckSubtitle": {
+        "description": "Console System face."
+    },
+    "systemExperimentalTitle": "Canal experimental",
+    "@systemExperimentalTitle": {
+        "description": "Console System face."
+    },
+    "systemExperimentalSubtitle": "Compilaciones previas. Desactívalo para seguir solo las versiones de producción.",
+    "@systemExperimentalSubtitle": {
+        "description": "Console System face."
+    },
+    "systemUpdateIdle": "Busca una versión más nueva ahora.",
+    "@systemUpdateIdle": {
+        "description": "Console System face."
+    },
+    "systemUpdateChecking": "Buscando una versión más nueva…",
+    "@systemUpdateChecking": {
+        "description": "Console System face."
+    },
+    "systemUpdateAvailable": "{version} está disponible.",
+    "@systemUpdateAvailable": {
+        "description": "Console System face.",
+        "placeholders": {
+            "version": {
+                "type": "String"
+            }
+        }
+    },
+    "systemUpdateDownloading": "Preparando {version} en el sistema en espera: {percent}%",
+    "@systemUpdateDownloading": {
+        "description": "Console System face.",
+        "placeholders": {
+            "version": {
+                "type": "String"
+            },
+            "percent": {
+                "type": "int"
+            }
+        }
+    },
+    "systemUpdateStaged": "{version} está instalada y lista. Reinicia cuando no estés en medio de una sesión.",
+    "@systemUpdateStaged": {
+        "description": "Console System face.",
+        "placeholders": {
+            "version": {
+                "type": "String"
+            }
+        }
+    },
+    "systemUpdateUnsupported": "Las actualizaciones dentro de la app no están disponibles en esta plataforma.",
+    "@systemUpdateUnsupported": {
+        "description": "Console System face."
+    },
+    "systemCheckNow": "Buscar ahora",
+    "@systemCheckNow": {
+        "description": "Console System face."
+    },
+    "systemDownloadInstall": "Descargar e instalar",
+    "@systemDownloadInstall": {
+        "description": "Console System face."
+    },
+    "systemRestartNow": "Reiniciar ahora",
+    "@systemRestartNow": {
+        "description": "Console System face."
+    },
+    "systemRefreshRateTitle": "Frecuencia de refresco",
+    "@systemRefreshRateTitle": {
+        "description": "Console System face, Display tab."
+    },
+    "systemRefreshRateSubtitle": "Con qué frecuencia se actualizan las formas de onda y los medidores. Más alto es más fluido pero usa más CPU.",
+    "@systemRefreshRateSubtitle": {
+        "description": "Console System face, Display tab."
+    },
+    "systemUpdateUpToDate": "Todo al día.",
+    "@systemUpdateUpToDate": {
+        "description": "Console System face: the check found nothing newer."
     }
 }

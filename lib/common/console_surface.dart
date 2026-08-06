@@ -795,6 +795,8 @@ class ConsoleBanner extends StatelessWidget {
     this.actionKey,
     this.secondaryLabel,
     this.onSecondary,
+    this.settled = false,
+    this.progress,
     super.key,
   });
 
@@ -811,6 +813,17 @@ class ConsoleBanner extends StatelessWidget {
 
   /// Colours the dot red rather than amber.
   final bool failed;
+
+  /// Colours the dot green: nothing is pending and nothing went wrong.
+  ///
+  /// The update banner is the reason this exists — "look for a newer version"
+  /// and "installed and ready" are both restful states, and an amber dot
+  /// beside them would read as a warning about a rig that is fine.
+  final bool settled;
+
+  /// `0..1` while something is being fetched, drawn as a bar under the
+  /// message. Null when there is no progress to report.
+  final double? progress;
 
   /// Key for the action button.
   final Key? actionKey;
@@ -835,17 +848,41 @@ class ConsoleBanner extends StatelessWidget {
               width: 11,
               height: 11,
               decoration: BoxDecoration(
-                color: failed ? surface.rec : surface.warning,
+                color: failed
+                    ? surface.rec
+                    : (settled ? surface.success : surface.warning),
                 shape: BoxShape.circle,
               ),
             ),
             const SizedBox(width: 14),
             Expanded(
-              child: Text(
-                message,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: surface.textSecondary, fontSize: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    message,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: surface.textSecondary,
+                      fontSize: 16,
+                    ),
+                  ),
+                  if (progress case final double value) ...[
+                    const SizedBox(height: 10),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        key: const Key('console_banner_progress'),
+                        value: value.clamp(0.0, 1.0),
+                        minHeight: 7,
+                        backgroundColor: surface.control,
+                        valueColor: AlwaysStoppedAnimation(surface.accent),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
             if (secondaryLabel != null) ...[
