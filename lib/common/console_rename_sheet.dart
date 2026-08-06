@@ -5,7 +5,7 @@ import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 
-/// Asks for a track's name.
+/// Asks for a name.
 ///
 /// Returns the new name, or null when dismissed.
 ///
@@ -13,9 +13,11 @@ import 'package:segno/theme/theme.dart';
 /// sheet is one: the console has no physical keyboard, and the app-wide
 /// keyboard host is driven by field focus, which would put the keys in a
 /// second panel under a dialog trying to centre itself in what is left. The
-/// stage's own rename is a dialog and stays one — this is the console's.
-Future<String?> showTrackRenameSheet(
+/// stage's own rename is a dialog and stays one — this is the console's, for
+/// tracks, for hardware inputs, and for whatever else it lets you name.
+Future<String?> showConsoleRenameSheet(
   BuildContext context, {
+  required String title,
   required String initial,
 }) => showModalBottomSheet<String>(
   context: context,
@@ -23,19 +25,20 @@ Future<String?> showTrackRenameSheet(
   backgroundColor: Colors.transparent,
   barrierColor: context.surface.scrim,
   constraints: const BoxConstraints(),
-  builder: (sheetContext) => _TrackRenameSheet(initial: initial),
+  builder: (sheetContext) => _RenameSheet(title: title, initial: initial),
 );
 
-class _TrackRenameSheet extends StatefulWidget {
-  const _TrackRenameSheet({required this.initial});
+class _RenameSheet extends StatefulWidget {
+  const _RenameSheet({required this.title, required this.initial});
 
+  final String title;
   final String initial;
 
   @override
-  State<_TrackRenameSheet> createState() => _TrackRenameSheetState();
+  State<_RenameSheet> createState() => _RenameSheetState();
 }
 
-class _TrackRenameSheetState extends State<_TrackRenameSheet> {
+class _RenameSheetState extends State<_RenameSheet> {
   /// The name being typed. Held here rather than in a controller behind a real
   /// `TextField`, which would summon the app-wide keyboard over this sheet's
   /// own keys.
@@ -118,7 +121,7 @@ class _TrackRenameSheetState extends State<_TrackRenameSheet> {
                   children: [
                     Expanded(
                       child: Text(
-                        l10n.trackRenameTitle,
+                        widget.title,
                         style: TextStyle(
                           color: surface.textPrimary,
                           fontSize: 18,
@@ -127,7 +130,7 @@ class _TrackRenameSheetState extends State<_TrackRenameSheet> {
                       ),
                     ),
                     ConsoleSmallButton(
-                      key: const Key('track_rename_cancel'),
+                      key: const Key('console_rename_cancel'),
                       label: l10n.cancel,
                       large: true,
                       onPressed: () => Navigator.of(context).pop(),
@@ -148,7 +151,7 @@ class _TrackRenameSheetState extends State<_TrackRenameSheet> {
                     ),
                     child: Text(
                       _value,
-                      key: const Key('track_rename_field'),
+                      key: const Key('console_rename_field'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(

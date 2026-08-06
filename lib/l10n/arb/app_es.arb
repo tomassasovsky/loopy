@@ -2113,5 +2113,124 @@
     "audioStatusGroup": "ESTADO",
     "@audioStatusGroup": {
         "description": "Console Audio face: audioStatusGroup"
+    },
+    "audioDeviceGroup": "AUDIO",
+    "@audioDeviceGroup": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioRateBufferTitle": "Frecuencia / búfer",
+    "@audioRateBufferTitle": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioRateBufferValue": "{rate} · {frames}",
+    "@audioRateBufferValue": {
+        "description": "Console Audio face, Device tab.",
+        "placeholders": {
+            "rate": {
+                "type": "String"
+            },
+            "frames": {
+                "type": "String"
+            }
+        }
+    },
+    "audioRoundTripSubtitle": "ida y vuelta {latency}",
+    "@audioRoundTripSubtitle": {
+        "description": "Console Audio face, Device tab.",
+        "placeholders": {
+            "latency": {
+                "type": "String"
+            }
+        }
+    },
+    "audioSampleRateGroup": "FRECUENCIA DE MUESTREO",
+    "@audioSampleRateGroup": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioBufferGroup": "BÚFER",
+    "@audioBufferGroup": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioRateHalvesHeadroom": "reduce a la mitad el margen del búfer",
+    "@audioRateHalvesHeadroom": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioInputsTitle": "Entradas",
+    "@audioInputsTitle": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioInputsNamedValue": "{count, plural, =0{sin nombrar} =1{1 con nombre} other{{count} con nombre}}",
+    "@audioInputsNamedValue": {
+        "description": "Console Audio face, Device tab.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "audioInputOrdinal": "entrada {number}",
+    "@audioInputOrdinal": {
+        "description": "Console Audio face, Device tab.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "audioInputRenameTitle": "Nombrar esta entrada",
+    "@audioInputRenameTitle": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioDeviceChannels": "{inputs} ent · {outputs} sal",
+    "@audioDeviceChannels": {
+        "description": "Console Audio face, Device tab.",
+        "placeholders": {
+            "inputs": {
+                "type": "int"
+            },
+            "outputs": {
+                "type": "int"
+            }
+        }
+    },
+    "audioDeviceUnplugged": "desconectado",
+    "@audioDeviceUnplugged": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioNoOutputsWarning": "No hay salidas habilitadas: no se escuchará nada. Vuelve a habilitar una desde la página Signal.",
+    "@audioNoOutputsWarning": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioAsioGroup": "CONTROLADOR ASIO",
+    "@audioAsioGroup": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioAsioChannels": "{inputs} ent / {outputs} sal",
+    "@audioAsioChannels": {
+        "description": "Console Audio face, Device tab.",
+        "placeholders": {
+            "inputs": {
+                "type": "int"
+            },
+            "outputs": {
+                "type": "int"
+            }
+        }
+    },
+    "audioAsioMissing": "No se encontró un controlador ASIO. Loopy usa ASIO en Windows. Instala el controlador ASIO de tu interfaz, o uno genérico.",
+    "@audioAsioMissing": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioAsioLink": "Abrir asio4all.org",
+    "@audioAsioLink": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioDeviceFootnote": "Cambiar el dispositivo o el búfer reabre el motor de audio; el bucle conserva sus tomas.",
+    "@audioDeviceFootnote": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioInputsEmpty": "Este dispositivo no tiene entradas.",
+    "@audioInputsEmpty": {
+        "description": "Console Audio face, Device tab."
     }
 }
