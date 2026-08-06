@@ -2406,5 +2406,108 @@
     "bluetoothEmptyDevices": "No devices found yet. Tap scan to search.",
     "@bluetoothEmptyDevices": {
         "description": "Empty state when a Bluetooth scan returns nothing."
+    },
+    "trayTracksLabel": "Tracks",
+    "@trayTracksLabel": {
+        "description": "Rail label for the console’s Tracks domain."
+    },
+    "tracksNamesTab": "Names",
+    "@tracksNamesTab": {
+        "description": "Tab label: rename the tracks."
+    },
+    "tracksLengthsTab": "Lengths",
+    "@tracksLengthsTab": {
+        "description": "Tab label: per-track loop length."
+    },
+    "tracksRoutingTab": "Routing",
+    "@tracksRoutingTab": {
+        "description": "Tab label: per-track input, outputs and quantize."
+    },
+    "tracksNamesFooter": "Rename tracks. The name is what the stage, the pedal targets and the 7-inch readout all show.",
+    "@tracksNamesFooter": {
+        "description": "Footnote under the Names tab."
+    },
+    "tracksLengthsFooter": "Auto takes its length from the first take; a preset records that many bars.",
+    "@tracksLengthsFooter": {
+        "description": "Footnote under the Lengths tab."
+    },
+    "tracksRoutingFooter": "Each track records one input and is sent to any set of outputs. Quantize follows the global setting unless a track overrides it.",
+    "@tracksRoutingFooter": {
+        "description": "Footnote under the Routing tab."
+    },
+    "tracksRowOrdinal": "track {number}",
+    "@tracksRowOrdinal": {
+        "description": "Right-hand ordinal on a Names row, lowercase as the mockups draw it.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "trackSettingsTitle": "Track {number} settings",
+    "@trackSettingsTitle": {
+        "description": "Title of the per-track routing sheet.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "trackRoutingSubtitle": "{name} routing",
+    "@trackRoutingSubtitle": {
+        "description": "Subtitle of the per-track routing sheet.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "trackRecordedInputGroup": "RECORDED INPUT",
+    "@trackRecordedInputGroup": {
+        "description": "Group heading over the input list."
+    },
+    "trackOutputsGroup": "OUTPUTS",
+    "@trackOutputsGroup": {
+        "description": "Group heading over the output chips."
+    },
+    "trackQuantizeGroup": "QUANTIZE RECORDING",
+    "@trackQuantizeGroup": {
+        "description": "Group heading over the quantize override."
+    },
+    "trackInputLive": "live",
+    "@trackInputLive": {
+        "description": "Marks the input the track is recording right now."
+    },
+    "trackQuantizeFollow": "Follow the global setting",
+    "@trackQuantizeFollow": {
+        "description": "Quantize override: inherit."
+    },
+    "trackQuantizeAlways": "Always quantize",
+    "@trackQuantizeAlways": {
+        "description": "Quantize override: forced on."
+    },
+    "trackQuantizeNever": "Never quantize",
+    "@trackQuantizeNever": {
+        "description": "Quantize override: forced off."
+    },
+    "trackUnroutedWarning": "Nothing routed here — this track will not be heard.",
+    "@trackUnroutedWarning": {
+        "description": "Banner when a track has no output routed."
+    },
+    "trackRoutingSummaryNone": "not routed",
+    "@trackRoutingSummaryNone": {
+        "description": "Right-hand value on a Routing row when no output is set."
+    },
+    "trackQuantizeOn": "quantize on",
+    "@trackQuantizeOn": {
+        "description": "Routing row detail: the track forces quantize on."
+    },
+    "trackQuantizeOff": "quantize off",
+    "@trackQuantizeOff": {
+        "description": "Routing row detail: the track forces quantize off."
+    },
+    "trackRenameTitle": "Rename track",
+    "@trackRenameTitle": {
+        "description": "Title of the console rename sheet."
     }
 }

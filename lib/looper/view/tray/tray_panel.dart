@@ -6,6 +6,7 @@ import 'package:segno/control/view/control_tray_panel.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/view/loop/loop_tray_panel.dart';
+import 'package:segno/looper/view/tracks/tracks_tray_panel.dart';
 import 'package:segno/looper/view/tray/tray_home.dart';
 import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
 import 'package:segno/looper/view/tray/tuner_tray_panel.dart';
@@ -82,6 +83,13 @@ class TrayPanel extends StatelessWidget {
                                   onTabChanged: cubit.showLoopTab,
                                 ),
                               ),
+                              SettingsTrayDestination.tracks =>
+                                _TrayFaceFrame(
+                                  child: TracksTrayPanel(
+                                    tab: state.tracksTab,
+                                    onTabChanged: cubit.showTracksTab,
+                                  ),
+                                ),
                               SettingsTrayDestination.tuner => _TrayFaceFrame(
                                 child: TunerTrayPanel(
                                   onBack: cubit.showHome,
