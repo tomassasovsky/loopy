@@ -80,13 +80,14 @@ class ClickLoopTab extends StatelessWidget {
 
   Future<void> _pickMode(BuildContext context, TempoCubit tempo) async {
     final l10n = context.l10n;
-    final chosen = await showConsolePickerSheet<ClickMode>(
+    final chosen = await showConsoleChipDialog<ClickMode>(
       context,
       title: l10n.loopClickWhenTitle,
+      explanation: l10n.clickModeIntro,
       selected: context.read<LooperBloc>().state.transport.clickMode,
       options: [
         for (final mode in ClickMode.values)
-          ConsolePickerOption(value: mode, label: _modeLabel(l10n, mode)),
+          ConsoleSegment(value: mode, label: _modeLabel(l10n, mode)),
       ],
     );
     if (chosen == null) return;
@@ -95,13 +96,14 @@ class ClickLoopTab extends StatelessWidget {
 
   Future<void> _pickOutput(BuildContext context, TempoCubit tempo) async {
     final l10n = context.l10n;
-    final chosen = await showConsolePickerSheet<int>(
+    final chosen = await showConsoleChipDialog<int>(
       context,
       title: l10n.loopClickOutputTitle,
+      explanation: l10n.loopClickOutputExplain,
       selected: context.read<LooperBloc>().state.transport.clickMask,
       options: [
         for (final mask in const [0, 1, 2, 3])
-          ConsolePickerOption(value: mask, label: _outputLabel(l10n, mask)),
+          ConsoleSegment(value: mask, label: _outputLabel(l10n, mask)),
       ],
     );
     if (chosen == null) return;

@@ -130,13 +130,15 @@ class TempoLoopTab extends StatelessWidget {
 
   Future<void> _pickSignature(BuildContext context, TempoCubit tempo) async {
     final transport = context.read<LooperBloc>().state.transport;
-    final chosen = await showConsolePickerSheet<(int, int)>(
+    final l10n = context.l10n;
+    final chosen = await showConsoleChipDialog<(int, int)>(
       context,
-      title: context.l10n.loopSignatureTitle,
+      title: l10n.loopSignatureTitle,
+      explanation: l10n.loopSignatureExplain,
       selected: (transport.tsNum, transport.tsDen),
       options: [
         for (final (num, den) in _signatures)
-          ConsolePickerOption(value: (num, den), label: '$num/$den'),
+          ConsoleSegment(value: (num, den), label: '$num/$den'),
       ],
     );
     if (chosen == null) return;
@@ -146,13 +148,14 @@ class TempoLoopTab extends StatelessWidget {
   Future<void> _pickQuantise(BuildContext context, TempoCubit tempo) async {
     final l10n = context.l10n;
     final transport = context.read<LooperBloc>().state.transport;
-    final chosen = await showConsolePickerSheet<GridDivision>(
+    final chosen = await showConsoleChipDialog<GridDivision>(
       context,
       title: l10n.loopQuantiseTitle,
+      explanation: l10n.quantizeDivIntro,
       selected: transport.quantizeDiv,
       options: [
         for (final division in GridDivision.values)
-          ConsolePickerOption(
+          ConsoleSegment(
             value: division,
             label: _divisionLabel(l10n, division),
           ),
@@ -165,13 +168,14 @@ class TempoLoopTab extends StatelessWidget {
   Future<void> _pickCountIn(BuildContext context, TempoCubit tempo) async {
     final l10n = context.l10n;
     final transport = context.read<LooperBloc>().state.transport;
-    final chosen = await showConsolePickerSheet<int>(
+    final chosen = await showConsoleChipDialog<int>(
       context,
       title: l10n.loopCountInTitle,
+      explanation: l10n.countInIntro,
       selected: transport.countInBars,
       options: [
         for (final bars in const [0, 1, 2, 4])
-          ConsolePickerOption(value: bars, label: _barsLabel(l10n, bars)),
+          ConsoleSegment(value: bars, label: _barsLabel(l10n, bars)),
       ],
     );
     if (chosen == null) return;
@@ -183,13 +187,14 @@ class TempoLoopTab extends StatelessWidget {
     RecordOptionsCubit record,
   ) async {
     final l10n = context.l10n;
-    final chosen = await showConsolePickerSheet<int>(
+    final chosen = await showConsoleChipDialog<int>(
       context,
       title: l10n.loopLengthTitle,
+      explanation: l10n.loopLengthExplain,
       selected: record.state.defaultMultiple,
       options: [
         for (final multiple in const [0, 1, 2, 3])
-          ConsolePickerOption(
+          ConsoleSegment(
             value: multiple,
             label: _multipleLabel(l10n, multiple),
           ),

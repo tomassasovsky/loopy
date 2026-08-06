@@ -1274,7 +1274,7 @@ def _transition_face(cq):
            * cq.Location(cq.Vector(0,0,0), cq.Vector(0,1,0), TRANS_ANGLE))
     return box.val().moved(loc)
 
-def _platform_printed(cq, ph, v_c):
+def _platform_printed(cq, ph, v_c, fused=False):
     """3D-printed pedal pedestal: solid deck + perimeter wall, hollowed below
     (tall MID parts) with boss columns at the insert stations. M3 heat-set
     inserts press in from BELOW at the base PLAT_SCR pattern; the deck top gets
@@ -1285,7 +1285,15 @@ def _platform_printed(cq, ph, v_c):
     faceplate v, needed to height the skirt). Print BLACK. Origin: pedal
     centre, z=0 at the BASE PLATE TOP; height ph - T puts the deck at the
     pedal standing plane. Assembly frame: X = depth (v), Y = width (u); the
-    pedal mounts TOE-FORWARD (back/cable end at +X)."""
+    pedal mounts TOE-FORWARD (back/cable end at +X).
+
+    fused=True -- the pedestal is UNIONED onto a printed floor (the mini
+    console) instead of bolted onto the sheet-metal base. The whole underside
+    apparatus then has to go: the base inserts are unreachable (the floor
+    covers them) and, worse, the floor caps the hollow into a SEALED void with
+    a flat 109x83 ceiling, which the slicer can only fill with support that
+    can never be removed. Solid below the deck instead -- the slicer's sparse
+    infill does the lightweighting, and it stiffens the pedestal."""
     sw = SKIRT_OUT_W
     sd = SKIRT_OUT_D
     h = ph - T
@@ -1295,18 +1303,19 @@ def _platform_printed(cq, ph, v_c):
     body = cq.Workplane("XY").box(sd, sw, h, centered=(True, True, False))
     cav_h = h - PLAT_DECK
     foot_x = (-(sd/2 - PLATFORM_FOOT/2), sd/2 - PLATFORM_FOOT/2)
-    if cav_h > 2.0:
+    if cav_h > 2.0 and not fused:
         body = body.cut(cq.Workplane("XY").box(
             sd - 2*PLAT_WALL, sw - 2*PLAT_WALL, cav_h, centered=(True, True, False)))
         for dx in foot_x:                      # boss columns for the base inserts
             for dy in platform_foot_u(sw):
                 body = body.union(cq.Workplane("XY").cylinder(
                     cav_h, 6.0, centered=(True, True, False)).translate((dx, dy, 0)))
-    for dx in foot_x:                          # base inserts, from below
-        for dy in platform_foot_u(sw):
-            body = body.cut(cq.Workplane("XY").cylinder(
-                pil, INSERT_PILOT_D/2,
-                centered=(True, True, False)).translate((dx, dy, 0)))
+    if not fused:
+        for dx in foot_x:                      # base inserts, from below
+            for dy in platform_foot_u(sw):
+                body = body.cut(cq.Workplane("XY").cylinder(
+                    pil, INSERT_PILOT_D/2,
+                    centered=(True, True, False)).translate((dx, dy, 0)))
     # bottom-pad locating pocket, from above. The pad is inset from the case
     # back edge, so its centre sits forward (toe-ward, -X) of the pedal centre:
     # pad centre from back = INSET + PAD_D/2; pedal centre from back = PEDAL_D/2.
@@ -1377,7 +1386,9 @@ def build_mini_console():
       row-1 drift incl.), both pedestal TUBS integrated (pocket, boss
       channels, cable notches facing the rear board bay), a Pro Micro POCKET
       boss against the rear wall with a USB cutout through it, and two rear
-      screw BOSSES (M3 heat-set, vertical) the lid closes onto.
+      screw BOSSES (M3 heat-set, vertical) the lid closes onto. It prints ON
+      ITS BOTTOM: that face is dead flat, with four 8mm recessed seats for
+      stick-on rubber feet.
       LID  -- prints FLAT: the faceplate section (2 pedal slots + 2 LED
       pills), four registration tabs, two rear M3 through-holes. Open/close =
       two screws; the tabs + slope keep it located.
@@ -1402,6 +1413,14 @@ def build_mini_console():
     ANCHORS = ((8.5, 139.0), (190.4, 139.0), (101.13, 20.0))
     BOARD_W, BOARD_D = 34.2, 18.8    # Pro Micro pocket (33 x 18 board + clearance)
     BOARD_XC = (PEDS[0] + PEDS[1])/2.0 - U0   # centred between the tubs
+    # stick-on rubber feet (D_FOOT = 8.0, the same ones the big base uses): the
+    # tray prints ON ITS BOTTOM, so the bottom face stays flat and each foot
+    # drops into a shallow seat (see the seat block below).
+    FOOT_SEAT_D = D_FOOT + 0.4       # 8.4 -- slip fit, the feet are adhesive
+    FOOT_SEAT_H = 1.0                # seat depth (feet are ~2mm, so ~1mm proud)
+    FOOT_PAD_D, FOOT_PAD_H = 15.0, 1.6   # inside boss backing the rear seats
+    MINI_FEET = ((15.0, 15.0), (Wt - 15.0, 15.0),
+                 (37.0, D - 9.0), (162.0, D - 9.0))
 
     def slope_cut(sol, z0):
         cutter = (cq.Workplane("XY").box(900.0, 900.0, 300.0, centered=(True, True, False))
@@ -1421,7 +1440,7 @@ def build_mini_console():
     # from BELOW. Anchor pillars stop LID_BOSS_H short of the wall-top plane;
     # the lid carries insert bosses that land on them, and M3 screws come up
     # through the floor along the LID NORMAL (12.5deg from vertical), heads
-    # recessed in angled pockets under the base, hidden by the feet.
+    # recessed in pockets that keep them above the (flat) bottom face.
     LID_BOSS_H = 8.0   # boss deep enough that the insert pilot NEVER enters the
                        # 2mm plate (tilted pilot tip rim stays below it) -- the
                        # top face stays pristine
@@ -1447,14 +1466,21 @@ def build_mini_console():
         # 8.5 head/driver pocket from below, flat seat 3.5 above the floor bottom
         pocket = cq.Workplane("XY").circle(4.25).extrude(40.0).translate((bx, by, 3.5 - 40.0))
         tray = tray.cut(bore).cut(pocket)
-    # feet: four pads so the unit stands clear of the recessed screw heads
-    # (rear pair inboard, clear of the rear anchors' angled exit pockets)
-    for (fx, fy) in ((8.0, 8.0), (Wt - 22.0, 8.0), (30.0, D - 16.0), (155.0, D - 16.0)):
-        tray = tray.union(cq.Workplane("XY").box(14.0, 14.0, 2.0, centered=False)
-                          .translate((fx, fy, -2.0)))
+    # feet: the bottom face is DEAD FLAT (it is the print bed -- printed pads
+    # would have to be supported/lifted), so the four stick-on rubber feet get
+    # RECESSED SEATS instead. The anchor screw heads already sit above the
+    # bottom face (seat z=3.5), so nothing needs standing clear of.
+    # Every seat gets a boss on the INSIDE of the floor -- the tub shelves
+    # float clear above it -- so the 1mm seat still leaves 2.6mm of material.
+    for (fx, fy) in MINI_FEET:
+        tray = tray.union(cq.Workplane("XY").circle(FOOT_PAD_D/2.0)
+                          .extrude(FOOT_PAD_H).translate((fx, fy, T)))
     yc = PEDAL_ROW1_V * cs
     for u in PEDS:
-        ped = (_platform_printed(cq, platform_h(PEDAL_ROW1_V), PEDAL_ROW1_V)
+        # fused=True: solid below the deck, no base inserts -- the tray floor
+        # would otherwise seal the hollow into an unreachable support cavity
+        ped = (_platform_printed(cq, platform_h(PEDAL_ROW1_V), PEDAL_ROW1_V,
+                                 fused=True)
                .rotate((0, 0, 0), (0, 0, 1), 90)
                .translate((u - U0, yc, T)))
         tray = tray.union(ped)
@@ -1469,6 +1495,13 @@ def build_mini_console():
     usb = cq.Workplane("XY").box(12.0, WALL_T + 2.0, 5.0, centered=False)\
         .translate((BOARD_XC - 6.0, D - WALL_T - 1.0, T + 2.6))
     tray = tray.cut(usb)
+    # foot seats LAST so no later union can fill them back in
+    for (fx, fy) in MINI_FEET:
+        assert all(math.hypot(fx - bx, fy - by) > 4.25 + FOOT_SEAT_D/2.0
+                   for (bx, by) in ANCHORS), \
+            f"MINI_FOOT ({fx:.1f},{fy:.1f}) overlaps an anchor exit pocket"
+        tray = tray.cut(cq.Workplane("XY").circle(FOOT_SEAT_D/2.0)
+                        .extrude(FOOT_SEAT_H).translate((fx, fy, 0.0)))
 
     # --- lid (prints FLAT; seats on the wall tops at the real slope) ------
     lid = cq.Workplane("XY").box(Wt, V1S, T, centered=False)

@@ -14,6 +14,7 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/theme/surface_theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -161,6 +162,11 @@ void main() {
         theme: ThemeData(extensions: const [SurfaceTheme.dark]),
         home: MultiBlocProvider(
           providers: [
+            BlocProvider<TracksCubit>(
+              create: (_) => TracksCubit(
+                settings: SettingsRepository(store: FakeKeyValueStore()),
+              ),
+            ),
             BlocProvider.value(value: control),
             BlocProvider<MidiSetupCubit>.value(value: midi),
           ],
@@ -206,7 +212,10 @@ void main() {
 
       expect(find.byKey(const Key('midiLearn_row')), findsOneWidget);
       expect(find.text(l10n.midiLearnCcControl(11, 1)), findsOneWidget);
-      expect(find.text(l10n.midiLearnTargetVolume(0)), findsOneWidget);
+      expect(
+        find.text(l10n.trackVolumeNamedTarget(l10n.defaultTrackName(1))),
+        findsOneWidget,
+      );
       // A continuous mapping shows its travel, not a threshold.
       expect(find.byKey(const Key('midiLearn_lo')), findsOneWidget);
       expect(find.byKey(const Key('midiLearn_hi')), findsOneWidget);
@@ -424,7 +433,24 @@ void main() {
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
 
       await tapVisible(tester, find.byKey(const Key('midiLearn_addSwitch')));
-      await tapVisible(tester, find.text(bindingTargetLabel(l10n, chain)).last);
+      await tapVisible(
+        tester,
+        // Same names the section renders with: the label says what the track
+        // is CALLED, so an expectation built without them names nothing.
+        find
+            .text(
+              bindingTargetLabel(
+                l10n,
+                chain,
+                trackNames: tester
+                    .element(find.byType(MidiLearnSection))
+                    .read<TracksCubit>()
+                    .state
+                    .names,
+              ),
+            )
+            .last,
+      );
       source.cc(21, 127);
       await tester.pumpAndSettle();
 
@@ -473,7 +499,7 @@ void main() {
             RegExp.escape(
               l10n.a11yMidiLearnRow(
                 l10n.midiLearnCcControl(11, 1),
-                l10n.midiLearnTargetVolume(0),
+                l10n.trackVolumeNamedTarget(l10n.defaultTrackName(1)),
               ),
             ),
           ),

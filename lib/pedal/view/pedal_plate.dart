@@ -59,6 +59,7 @@ class PedalPlate extends StatelessWidget {
     required this.waveformScreen,
     required this.onClose,
     this.selected = const {},
+    this.trackNames = const [],
     super.key,
   });
 
@@ -77,6 +78,12 @@ class PedalPlate extends StatelessWidget {
   final InteractionMode mode;
 
   final AppLocalizations l10n;
+
+  /// What the tracks are called, for the track pads' accessible labels — a
+  /// screen reader announcing "Track 3" for a pad the rig calls "rhythm" is
+  /// the same lie the visible surfaces used to tell (#526).
+  final List<String> trackNames;
+
   final Widget mainScreen;
   final Widget waveformScreen;
 
@@ -131,6 +138,7 @@ class PedalPlate extends StatelessWidget {
             label: label,
             onPress: onPress,
             l10n: l10n,
+            trackNames: trackNames,
             mode: mode,
             led: channel == null ? null : frame.trackLeds[channel],
             channel: channel,
@@ -507,11 +515,13 @@ class _Footswitch extends StatefulWidget {
     required this.l10n,
     required this.mode,
     required this.selected,
+    this.trackNames = const [],
     this.led,
     this.channel,
   });
 
   final PedalButton button;
+  final List<String> trackNames;
   final String label;
   final void Function(PedalButton button, {required bool down}) onPress;
   final AppLocalizations l10n;
@@ -586,8 +596,8 @@ class _FootswitchState extends State<_Footswitch> {
   Widget build(BuildContext context) {
     final surface = context.surface;
     final label = switch (widget.channel) {
-      final int channel => widget.l10n.pedalSimTrackSemantics(
-        channel + 1,
+      final int channel => widget.l10n.trackStateNamedSemantics(
+        widget.l10n.trackName(widget.trackNames, channel),
         _ledStateLabel(
           widget.l10n,
           widget.led ?? PedalTrackLed.off,

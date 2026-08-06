@@ -20,13 +20,20 @@ import 'package:segno/control/control_tab.dart';
 import 'package:segno/control/view/control_tray_panel.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/quantize_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/loop_tab.dart';
+import 'package:segno/looper/tracks_tab.dart';
 import 'package:segno/looper/view/loop/loop_tray_panel.dart';
 import 'package:segno/looper/view/settings_tray.dart';
+import 'package:segno/looper/view/tracks/tracks_tray_panel.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno_engine/segno_engine.dart'
+    as snapshot
+    show EngineSnapshot, LaneSnapshot, LatencyState, TrackSnapshot;
 import 'package:settings_repository/settings_repository.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
@@ -520,6 +527,11 @@ void main() {
             providers: [
               BlocProvider<ControlCubit>.value(value: control),
               BlocProvider<MidiSetupCubit>.value(value: midi),
+              BlocProvider<TracksCubit>(
+                create: (_) => TracksCubit(
+                  settings: SettingsRepository(store: FakeKeyValueStore()),
+                ),
+              ),
             ],
             child: Scaffold(
               body: ColoredBox(
@@ -626,7 +638,191 @@ void main() {
       matchesGoldenFile('goldens/control_center_loop_mode.png'),
     );
   }, skip: !hasFonts);
+
+  Future<void> pumpTracks(
+    WidgetTester tester,
+    TracksTab tab, {
+    int tracks = 4,
+  }) async {
+    await size(tester);
+    // A stopped engine reports no tracks at all, and a Tracks face with an
+    // empty list is not the screen worth pinning. The fake's snapshot is the
+    // rig these mockups draw: four tracks, the third recording two inputs
+    // into three outputs, the fourth going nowhere.
+    final fakeEngine = FakeAudioEngine()
+      ..nextSnapshot = snapshot.EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 256,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: snapshot.LatencyState.idle,
+        measuredLatencyMs: -1,
+        devicePresent: true,
+        inputChannels: 4,
+        outputChannels: 4,
+        tracks: [
+          for (var i = 0; i < tracks; i++)
+            snapshot.TrackSnapshot(
+              state: TrackState.empty,
+              volume: 1,
+              muted: false,
+              lengthFrames: 0,
+              undoDepth: 0,
+              rms: 0,
+              peak: 0,
+              lengthPresetBars: i == 0 ? 8 : 0,
+              inputMask: switch (i) {
+                1 => 0x2,
+                3 => 0,
+                _ => 0x1,
+              },
+              outputMask: switch (i) {
+                2 => 0x7,
+                3 => 0,
+                _ => 0x3,
+              },
+              lanes: [
+                for (final input in switch (i) {
+                  // Track 3 is the multi-input case the mockups draw: two
+                  // inputs, two lanes, one loop.
+                  1 => const [1],
+                  2 => const [0, 2],
+                  3 => const <int>[],
+                  _ => const [0],
+                })
+                  snapshot.LaneSnapshot(
+                    inputChannel: input,
+                    outputMask: switch (i) {
+                      2 => 0x7,
+                      _ => 0x3,
+                    },
+                    volume: 1,
+                    muted: false,
+                    lengthFrames: 0,
+                    rms: 0,
+                    peak: 0,
+                  ),
+              ],
+            ),
+        ],
+      );
+    final looper = LooperRepository(
+      engine: fakeEngine,
+      ticker: const Stream<void>.empty(),
+      reconnectTicker: const Stream<void>.empty(),
+    );
+    addTearDown(looper.dispose);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final bloc = LooperBloc(repository: looper);
+    addTearDown(() => unawaited(bloc.close()));
+    final names = TracksCubit(settings: settings);
+    addTearDown(() => unawaited(names.close()));
+    for (final (channel, name) in const [
+      (0, 'drums'),
+      (1, 'bass'),
+      (2, 'rhythm'),
+      (3, 'lead'),
+    ]) {
+      await names.rename(channel, name);
+    }
+    final quantize = QuantizeCubit(repository: looper, settings: settings);
+    addTearDown(() => unawaited(quantize.close()));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: _theme(),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: RepositoryProvider<LooperRepository>.value(
+          value: looper,
+          child: MultiBlocProvider(
+            providers: [
+              BlocProvider<LooperBloc>.value(value: bloc),
+              BlocProvider<TracksCubit>.value(value: names),
+              BlocProvider<QuantizeCubit>.value(value: quantize),
+            ],
+            child: Scaffold(
+              body: ColoredBox(
+                color: SurfaceTheme.dark.background,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(19, 19, 19, 41),
+                  child: TracksTrayPanel(
+                    tab: tab,
+                    onTabChanged: _ignoreTracksTab,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('Tracks face, Names tab', (tester) async {
+    await pumpTracks(tester, TracksTab.names);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_tracks_names.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Tracks face, Lengths tab', (tester) async {
+    await pumpTracks(tester, TracksTab.lengths);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_tracks_lengths.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Tracks face, Routing tab', (tester) async {
+    await pumpTracks(tester, TracksTab.routing);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_tracks_routing.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Tracks face, nothing to show', (tester) async {
+    await pumpTracks(tester, TracksTab.names, tracks: 0);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_tracks_empty.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Loop face, the chip dialog', (tester) async {
+    await pumpLoop(tester, LoopTab.tempo);
+    await tester.tap(find.byKey(const Key('loop_quantise_row')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Dialog),
+      matchesGoldenFile('goldens/control_center_chip_dialog.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets("Tracks face, one track's routing sheet", (tester) async {
+    await pumpTracks(tester, TracksTab.routing);
+    await tester.tap(find.byKey(const Key('track_routing_row_2')));
+    await tester.pumpAndSettle();
+    // Open the first lane, which is what the mockup draws: a lane's outputs
+    // belong to the lane.
+    await tester.tap(find.byKey(const Key('track_input_0')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Dialog),
+      matchesGoldenFile('goldens/control_center_track_routing_sheet.png'),
+    );
+  }, skip: !hasFonts);
 }
+
+/// The golden pumps one tab; switching is covered by the widget tests.
+void _ignoreTracksTab(TracksTab _) {}
 
 /// The golden pumps one tab; switching is covered by the widget tests.
 void _ignoreLoopTab(LoopTab _) {}

@@ -15,6 +15,7 @@ import 'package:segno/control/control.dart';
 import 'package:segno/control/control_tab.dart';
 import 'package:segno/control/view/control_tray_panel.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -120,6 +121,11 @@ void main() {
           value: looper,
           child: MultiBlocProvider(
             providers: [
+              BlocProvider<TracksCubit>(
+                create: (_) => TracksCubit(
+                  settings: SettingsRepository(store: FakeKeyValueStore()),
+                ),
+              ),
               BlocProvider<ControlCubit>.value(value: control),
               BlocProvider<MidiSetupCubit>.value(value: midi),
             ],

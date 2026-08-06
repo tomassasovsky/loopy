@@ -9,6 +9,7 @@ import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The MIDI tab of the console's Control domain, drawn to
@@ -283,7 +284,12 @@ class _MappingList extends StatelessWidget {
     required ControllerBinding binding,
   }) {
     final open = openKey == binding.key;
-    final resolved = _resolve(l10n, looper, binding);
+    final resolved = _resolve(
+      l10n,
+      looper,
+      binding,
+      context.watch<TracksCubit>().state.names,
+    );
     final capture = learn?.replacingKey == binding.key ? learn : null;
 
     return [
@@ -323,16 +329,17 @@ class _MappingList extends StatelessWidget {
     AppLocalizations l10n,
     LooperRepository looper,
     ControllerBinding binding,
+    List<String> names,
   ) {
     switch (binding) {
       case ContinuousBinding():
         final target = ControlValueTarget.tryParse(binding.target);
         if (target == null) return null;
-        return valueTargetLabel(l10n, looper, target);
+        return valueTargetLabel(l10n, looper, target, trackNames: names);
       case DiscreteBinding():
         final target = FxBindingTarget.tryParse(binding.target);
         if (target == null || !looper.bindingResolves(target)) return null;
-        return bindingTargetLabel(l10n, target);
+        return bindingTargetLabel(l10n, target, trackNames: names);
     }
   }
 }
@@ -491,6 +498,7 @@ class _AddRow extends StatelessWidget {
     final l10n = context.l10n;
     final cubit = context.read<ControlCubit>();
     final looper = context.read<LooperRepository>();
+    final names = context.watch<TracksCubit>().state.names;
 
     Future<void> add({required bool continuous}) async {
       final options = continuous
@@ -498,14 +506,19 @@ class _AddRow extends StatelessWidget {
               for (final target in looper.availableValueTargets())
                 ConsolePickerOption(
                   value: target.canonicalString(),
-                  label: valueTargetLabel(l10n, looper, target),
+                  label: valueTargetLabel(
+                    l10n,
+                    looper,
+                    target,
+                    trackNames: names,
+                  ),
                 ),
             ]
           : [
               for (final target in looper.availableBindingTargets())
                 ConsolePickerOption(
                   value: target.canonicalString(),
-                  label: bindingTargetLabel(l10n, target),
+                  label: bindingTargetLabel(l10n, target, trackNames: names),
                 ),
             ];
       final chosen = await showConsolePickerSheet<String>(

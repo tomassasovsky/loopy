@@ -8,6 +8,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/signal_graph/signal_list_view.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -76,6 +77,11 @@ void main() {
           value: repository,
           child: MultiBlocProvider(
             providers: [
+              BlocProvider<TracksCubit>(
+                create: (_) => TracksCubit(
+                  settings: SettingsRepository(store: FakeKeyValueStore()),
+                ),
+              ),
               BlocProvider<LooperBloc>.value(value: bloc),
               BlocProvider<MonitorCubit>.value(value: monitor),
             ],
@@ -236,7 +242,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('fx_dock')), findsOneWidget);
-      expect(find.text('Track 1 bus'), findsOneWidget);
+      expect(find.text('TRACK 1 bus'), findsOneWidget);
     });
 
     testWidgets('the master strip opens the dock on the Master insert', (

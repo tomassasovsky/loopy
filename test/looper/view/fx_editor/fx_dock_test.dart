@@ -6,6 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/fx_editor/fx_dock.dart';
 import 'package:segno/looper/view/fx_editor/fx_scope.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -53,7 +54,10 @@ class _FakeScope extends FxScope {
   int resyncs = 0;
 
   @override
-  String label(AppLocalizations l10n) => 'Lane 1';
+  String label(
+    AppLocalizations l10n, {
+    List<String> trackNames = const [],
+  }) => 'Lane 1';
 
   @override
   String consequence(AppLocalizations l10n) => l10n.fxEditorLaneConsequence;
@@ -145,6 +149,11 @@ void main() {
       await tester.pumpApp(
         MultiBlocProvider(
           providers: [
+            BlocProvider<TracksCubit>(
+              create: (_) => TracksCubit(
+                settings: SettingsRepository(store: FakeKeyValueStore()),
+              ),
+            ),
             BlocProvider<LooperBloc>.value(value: bloc),
             BlocProvider<MonitorCubit>.value(value: monitor),
           ],
