@@ -33,10 +33,20 @@ const double _cardRadius = 12;
 /// cutting across it.
 class ConsoleCard extends StatelessWidget {
   /// Creates a [ConsoleCard].
-  const ConsoleCard({required this.children, this.bordered = false, super.key});
+  const ConsoleCard({
+    required this.children,
+    this.bordered = false,
+    this.color,
+    super.key,
+  });
 
   /// The rows.
   final List<Widget> children;
+
+  /// Overrides the card fill. A card ON a card — the lists inside a sheet —
+  /// takes the page background so it recedes instead of matching the surface
+  /// it sits on, which is how the mockups draw them.
+  final Color? color;
 
   /// Whether to draw the outer border. The mockups border the Bluetooth
   /// visibility card and leave the primary list of a face unbordered.
@@ -47,7 +57,7 @@ class ConsoleCard extends StatelessWidget {
     final surface = context.surface;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: surface.cardHigh,
+        color: color ?? surface.cardHigh,
         borderRadius: BorderRadius.circular(_cardRadius),
         border: bordered ? Border.all(color: surface.line) : null,
       ),
@@ -854,6 +864,7 @@ class ConsoleSmallButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.large = false,
+    this.accent = false,
     super.key,
   });
 
@@ -866,14 +877,21 @@ class ConsoleSmallButton extends StatelessWidget {
   /// The sheet's slightly larger form (40px tall, 15px label).
   final bool large;
 
+  /// The mockups' primary form: accent surface, accent border, accent label.
+  /// For the one button on a panel that ends it — Done — not for a Cancel
+  /// sitting beside something else.
+  final bool accent;
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
     return Material(
-      color: surface.cardHigh,
+      color: accent ? surface.accentSurface : surface.cardHigh,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: surface.borderStrong),
+        side: BorderSide(
+          color: accent ? surface.accent : surface.borderStrong,
+        ),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -886,7 +904,7 @@ class ConsoleSmallButton extends StatelessWidget {
           child: Text(
             label,
             style: TextStyle(
-              color: surface.textPrimary,
+              color: accent ? surface.accent : surface.textPrimary,
               fontSize: large ? 15 : 14,
             ),
           ),
@@ -1466,6 +1484,59 @@ class ConsoleMiniToggle<T> extends StatelessWidget {
                     ),
                   ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A pill that is on or off — the mockups' output chips.
+///
+/// Shaped like a `PillTab` because it does the same job at the same size, but
+/// each chip is its own toggle rather than one choice in a strip: a track is
+/// sent to ANY set of outputs, which a tab strip cannot say.
+class ConsoleToggleChip extends StatelessWidget {
+  /// Creates a [ConsoleToggleChip].
+  const ConsoleToggleChip({
+    required this.label,
+    required this.selected,
+    required this.onPressed,
+    super.key,
+  });
+
+  /// Chip text.
+  final String label;
+
+  /// Whether the chip is on.
+  final bool selected;
+
+  /// Called when it is tapped.
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: Material(
+        color: selected ? surface.accentSurface : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 10),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: selected ? surface.accent : surface.textSecondary,
+                fontSize: 16,
+                height: 1.13,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              ),
             ),
           ),
         ),

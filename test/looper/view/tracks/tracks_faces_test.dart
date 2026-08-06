@@ -1,0 +1,250 @@
+import 'dart:async';
+
+import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/quantize_cubit.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/tracks_tab.dart';
+import 'package:segno/looper/view/tracks/tracks_tray_panel.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:settings_repository/settings_repository.dart';
+
+import '../../../helpers/helpers.dart';
+
+class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
+    implements LooperBloc {}
+
+class _MockLooperRepository extends Mock implements LooperRepository {}
+
+/// A track, by number. Positional because `Track`'s own `channel` defaults to
+/// `0` — writing `channel: 0` out reads as deliberate but lints as redundant,
+/// and leaving it off reads as an oversight.
+Track _track(
+  int channel, {
+  int inputMask = 0x1,
+  int outputMask = 0x3,
+  int lengthPresetBars = 0,
+}) => Track(
+  channel: channel,
+  inputMask: inputMask,
+  outputMask: outputMask,
+  lengthPresetBars: lengthPresetBars,
+);
+
+void main() {
+  late _MockLooperBloc bloc;
+  late _MockLooperRepository repository;
+  late TracksCubit names;
+  late QuantizeCubit quantize;
+  late SettingsRepository settings;
+
+  setUp(() {
+    bloc = _MockLooperBloc();
+    repository = _MockLooperRepository();
+    when(() => repository.trackQuantize(any())).thenReturn(null);
+    settings = SettingsRepository(store: FakeKeyValueStore());
+    names = TracksCubit(settings: settings);
+    quantize = QuantizeCubit(repository: repository, settings: settings);
+  });
+
+  tearDown(() async {
+    await names.close();
+    await quantize.close();
+  });
+
+  /// Four tracks, named, with [tracks] overriding whichever fields a test
+  /// cares about.
+  void seed({List<Track>? tracks, int inputs = 4, int outputs = 2}) {
+    final state = LooperState(
+      tracks: tracks ?? [for (var i = 0; i < 4; i++) _track(i)],
+      status: EngineStatus(inputChannels: inputs, outputChannels: outputs),
+    );
+    when(() => bloc.state).thenReturn(state);
+    whenListen(bloc, const Stream<LooperState>.empty(), initialState: state);
+  }
+
+  Future<void> pump(WidgetTester tester, TracksTab tab) async {
+    // The console face is drawn for 1920x1080; the default 800x600 surface
+    // pushes rows below the fold where a tap lands on nothing.
+    tester.view
+      ..physicalSize = const Size(1920, 1080)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.neon,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: RepositoryProvider<LooperRepository>.value(
+          value: repository,
+          child: MultiBlocProvider(
+            providers: [
+              BlocProvider<LooperBloc>.value(value: bloc),
+              BlocProvider<TracksCubit>.value(value: names),
+              BlocProvider<QuantizeCubit>.value(value: quantize),
+            ],
+            child: Scaffold(
+              body: Padding(
+                padding: const EdgeInsets.all(19),
+                child: TracksTrayPanel(tab: tab, onTabChanged: (_) {}),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+  }
+
+  group('Names tab', () {
+    testWidgets('lists the tracks the rig has, named and numbered', (
+      tester,
+    ) async {
+      seed(tracks: [for (var i = 0; i < 3; i++) _track(i)]);
+      await names.rename(0, 'drums');
+      await pump(tester, TracksTab.names);
+
+      expect(find.text('drums'), findsOneWidget);
+      // The unnamed ones keep their fallback rather than going blank.
+      expect(find.text('TRACK 2'), findsOneWidget);
+      expect(find.text('track 3'), findsOneWidget);
+      expect(find.byKey(const Key('track_name_row_3')), findsNothing);
+    });
+
+    testWidgets('renaming through the sheet reaches the cubit', (tester) async {
+      seed();
+      await pump(tester, TracksTab.names);
+
+      await tester.tap(find.byKey(const Key('track_name_row_1')));
+      await tester.pumpAndSettle();
+      // The sheet opens on the current name, and the first key REPLACES it.
+      expect(find.byKey(const Key('track_rename_field')), findsOneWidget);
+      await tester.tap(find.widgetWithText(InkWell, 'b').first);
+      await tester.tap(find.widgetWithText(InkWell, 'a').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Done').last);
+      await tester.pumpAndSettle();
+
+      expect(names.state.nameOf(1), 'ba');
+    });
+  });
+
+  group('Lengths tab', () {
+    testWidgets('shows Auto or the preset, and picks a new one', (
+      tester,
+    ) async {
+      seed(
+        tracks: [
+          _track(0, lengthPresetBars: 8),
+          // No preset: the default, which is what Auto means.
+          _track(1),
+        ],
+      );
+      await pump(tester, TracksTab.lengths);
+
+      expect(find.text('8 bars'), findsOneWidget);
+      expect(find.text('Auto'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('track_length_row_1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('console_picker_16 bars')));
+      await tester.pumpAndSettle();
+
+      verify(
+        () => bloc.add(const LooperTrackLengthPresetChanged(1, 16)),
+      ).called(1);
+    });
+  });
+
+  group('Routing tab', () {
+    testWidgets('summarises input, outputs and the quantize override', (
+      tester,
+    ) async {
+      when(() => repository.trackQuantize(0)).thenReturn(true);
+      seed(
+        tracks: [
+          // In 2 to the default stereo pair.
+          _track(0, inputMask: 0x2),
+          // Recording nothing, sent nowhere.
+          _track(1, inputMask: 0, outputMask: 0),
+        ],
+      );
+      await pump(tester, TracksTab.routing);
+
+      expect(find.text('In 2 · quantize on'), findsOneWidget);
+      expect(find.text('Out 1 · Out 2'), findsOneWidget);
+      // A track that follows the global setting says nothing about quantize.
+      expect(find.text('None (clean)'), findsOneWidget);
+      expect(find.text('not routed'), findsOneWidget);
+    });
+
+    testWidgets('the sheet applies input, output and quantize as tapped', (
+      tester,
+    ) async {
+      // In 1 to the default stereo pair.
+      seed(tracks: [_track(0)]);
+      await pump(tester, TracksTab.routing);
+
+      await tester.tap(find.byKey(const Key('track_routing_row_0')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('track_input_2')));
+      await tester.tap(find.byKey(const Key('track_output_1')));
+      await tester.tap(find.byKey(const Key('track_quantize_never')));
+      await tester.pumpAndSettle();
+
+      verify(() => bloc.add(const LooperLaneInputChanged(0, 0, 2))).called(1);
+      verify(
+        () => bloc.add(const LooperLaneOutputChanged(0, 0, 0x1)),
+      ).called(1);
+      verify(
+        () => bloc.add(const LooperTrackQuantizeChanged(0, enabled: false)),
+      ).called(1);
+
+      await tester.tap(find.byKey(const Key('track_routing_done')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('track_routing_done')), findsNothing);
+    });
+
+    testWidgets('warns in the sheet when the track goes nowhere', (
+      tester,
+    ) async {
+      seed(tracks: [_track(0, outputMask: 0)]);
+      await pump(tester, TracksTab.routing);
+
+      await tester.tap(find.byKey(const Key('track_routing_row_0')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('track_unrouted_banner')), findsOneWidget);
+      expect(
+        find.text('Nothing routed here — this track will not be heard.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the quantize list marks which of the three is current', (
+      tester,
+    ) async {
+      when(() => repository.trackQuantize(0)).thenReturn(false);
+      seed(tracks: [_track(0, outputMask: 0x1)]);
+      await pump(tester, TracksTab.routing);
+
+      await tester.tap(find.byKey(const Key('track_routing_row_0')));
+      await tester.pumpAndSettle();
+
+      Finder check(String key) => find.descendant(
+        of: find.byKey(Key(key)),
+        matching: find.byIcon(Icons.check),
+      );
+      expect(check('track_quantize_never'), findsOneWidget);
+      expect(check('track_quantize_follow'), findsNothing);
+      expect(check('track_quantize_always'), findsNothing);
+    });
+  });
+}
