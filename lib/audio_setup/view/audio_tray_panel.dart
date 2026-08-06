@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:segno/audio_setup/audio_tab.dart';
+import 'package:segno/audio_setup/view/device_audio_tab.dart';
 import 'package:segno/audio_setup/view/status_audio_tab.dart';
 import 'package:segno/common/pill_tabs.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -60,9 +61,8 @@ class AudioTrayPanel extends StatelessWidget {
           const SizedBox(height: 14),
           Expanded(
             child: switch (tab) {
-              // Device and Recording land in their own commits; Status needs
-              // nothing the app does not already report.
-              AudioTab.device => const StatusAudioTab(),
+              AudioTab.device => const DeviceAudioTab(),
+              // Recording lands in its own commit.
               AudioTab.recording => const StatusAudioTab(),
               AudioTab.status => const StatusAudioTab(),
             },

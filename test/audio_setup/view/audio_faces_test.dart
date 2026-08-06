@@ -7,9 +7,12 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/audio_setup/audio_tab.dart';
+import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/view/audio_tray_panel.dart';
+import 'package:segno/audio_setup/view/device_audio_tab.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
 
@@ -24,6 +27,8 @@ void main() {
   late SettingsRepository settings;
   late StreamController<LooperState> states;
   late AudioSetupCubit cubit;
+  late InputsCubit inputs;
+  late LooperBloc looper;
 
   setUp(() {
     repository = _MockLooperRepository();
@@ -39,15 +44,22 @@ void main() {
     when(() => repository.setRecordOffset(any())).thenReturn(EngineResult.ok);
     when(repository.devices).thenReturn(const []);
     when(repository.asioDrivers).thenReturn(const []);
+    when(() => repository.allMonitors()).thenReturn(const {});
+    when(() => repository.allLaneChains()).thenReturn(const {});
+    when(() => repository.allTrackChains()).thenReturn(const {});
     cubit = AudioSetupCubit(
       repository: repository,
       settings: settings,
       deviceRefreshInterval: const Duration(days: 1),
     );
+    inputs = InputsCubit(settings: settings);
+    looper = LooperBloc(repository: repository);
   });
 
   tearDown(() async {
     await cubit.close();
+    await inputs.close();
+    await looper.close();
     await states.close();
   });
 
@@ -67,8 +79,12 @@ void main() {
         theme: AppTheme.neon,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
-        home: BlocProvider<AudioSetupCubit>.value(
-          value: cubit,
+        home: MultiBlocProvider(
+          providers: [
+            BlocProvider<AudioSetupCubit>.value(value: cubit),
+            BlocProvider<InputsCubit>.value(value: inputs),
+            BlocProvider<LooperBloc>.value(value: looper),
+          ],
           child: Scaffold(
             body: Padding(
               padding: const EdgeInsets.all(19),
@@ -142,6 +158,135 @@ void main() {
       await tester.pump();
 
       verify(repository.measureLatency).called(greaterThanOrEqualTo(1));
+    });
+  });
+
+  group('Device tab', () {
+    testWidgets('opens the device list, one row at a time', (tester) async {
+      when(repository.devices).thenReturn(const [
+        AudioDevice(
+          id: 'scarlett',
+          name: 'Scarlett 18i20',
+          isDefault: true,
+          isInput: false,
+          inputChannels: 18,
+          outputChannels: 20,
+        ),
+        AudioDevice(
+          id: 'builtin',
+          name: 'Built-in audio',
+          isDefault: false,
+          isInput: false,
+          inputChannels: 2,
+          outputChannels: 2,
+        ),
+      ]);
+      cubit.refreshDevices();
+      engineReports(const EngineStatus(deviceName: 'Scarlett 18i20'));
+      await pump(tester, AudioTab.device);
+      await tester.pump();
+
+      // Closed: the list is not in the tree yet.
+      expect(find.text('18 in · 20 out'), findsNothing);
+      await tester.tap(find.byKey(const Key('audio_device_row')));
+      await tester.pumpAndSettle();
+      expect(find.text('18 in · 20 out'), findsOneWidget);
+      expect(find.text('2 in · 2 out'), findsOneWidget);
+
+      // Opening the rate row closes the device list.
+      await tester.tap(find.byKey(const Key('audio_rate_row')));
+      await tester.pumpAndSettle();
+      expect(find.text('18 in · 20 out'), findsNothing);
+      expect(find.byKey(const Key('audio_buffer_128')), findsOneWidget);
+    });
+
+    testWidgets('every buffer carries what it costs, not just the chosen one', (
+      tester,
+    ) async {
+      engineReports(const EngineStatus(sampleRate: 48000, bufferFrames: 128));
+      await pump(tester, AudioTab.device);
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('audio_rate_row')));
+      await tester.pumpAndSettle();
+
+      // Two buffer periods at 48k: 64 -> 2.7 ms, 128 -> 5.3 ms.
+      final row = tester.widget<ConsoleRow>(
+        find.byKey(const Key('audio_buffer_64')),
+      );
+      expect(row.value, '2.7 ms');
+      expect(estimatedRoundTripMs(128, 48000), closeTo(5.33, 0.01));
+    });
+
+    testWidgets('picking a rate and a buffer reaches the engine', (
+      tester,
+    ) async {
+      engineReports(const EngineStatus(sampleRate: 48000, bufferFrames: 128));
+      await pump(tester, AudioTab.device);
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('audio_rate_row')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('audio_buffer_256')));
+      await tester.pump();
+
+      expect(cubit.state.bufferFrames, 256);
+    });
+
+    testWidgets('inputs are listed by the name they were given', (
+      tester,
+    ) async {
+      await inputs.rename(1, 'mic');
+      engineReports(const EngineStatus(inputChannels: 2));
+      await pump(tester, AudioTab.device);
+      await tester.pump();
+
+      // The row summarises how many are named.
+      expect(find.text('1 named'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('audio_inputs_row')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('mic'), findsOneWidget);
+      expect(find.text('input 2'), findsOneWidget);
+      // The unnamed one keeps its ordinal as its name.
+      expect(find.text('In 1'), findsOneWidget);
+    });
+
+    testWidgets('renaming an input through the sheet persists it', (
+      tester,
+    ) async {
+      engineReports(const EngineStatus(inputChannels: 2));
+      await pump(tester, AudioTab.device);
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('audio_inputs_row')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('audio_input_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(InkWell, 'd').first);
+      await tester.tap(find.widgetWithText(InkWell, 'i').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Done').last);
+      await tester.pumpAndSettle();
+
+      expect(inputs.state.nameOf(0), 'di');
+    });
+
+    testWidgets('silence with every output off is called out', (tester) async {
+      const silent = LooperState(
+        outputEnabledMask: 0,
+        status: EngineStatus(outputChannels: 2),
+      );
+      when(() => repository.state).thenReturn(silent);
+      states.add(silent);
+      // Let the bloc's own subscription turn the stream event into state
+      // before anything is pumped.
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await pump(tester, AudioTab.device);
+      // The bloc turns the stream event into an event of its own, so the
+      // widget sees it a frame later.
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('audio_no_outputs')), findsOneWidget);
     });
   });
 }

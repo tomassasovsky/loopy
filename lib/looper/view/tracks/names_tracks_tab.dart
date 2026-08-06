@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
-import 'package:segno/looper/view/tracks/track_rename_sheet.dart';
 import 'package:segno/looper/view/tracks/tracks_tray_panel.dart';
 
 /// The Names tab of the console's Tracks domain, drawn to `TRACKS / tracks`:
@@ -70,8 +70,13 @@ class NamesTracksTab extends StatelessWidget {
     int channel,
     String current,
   ) async {
+    final l10n = context.l10n;
     final cubit = context.read<TracksCubit>();
-    final name = await showTrackRenameSheet(context, initial: current);
+    final name = await showConsoleRenameSheet(
+      context,
+      title: l10n.trackRenameTitle,
+      initial: current,
+    );
     if (name == null) return;
     await cubit.rename(channel, name);
   }

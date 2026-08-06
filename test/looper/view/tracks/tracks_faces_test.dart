@@ -136,7 +136,7 @@ void main() {
       await tester.tap(find.byKey(const Key('track_name_row_1')));
       await tester.pumpAndSettle();
       // The sheet opens on the current name, and the first key REPLACES it.
-      expect(find.byKey(const Key('track_rename_field')), findsOneWidget);
+      expect(find.byKey(const Key('console_rename_field')), findsOneWidget);
       await tester.tap(find.widgetWithText(InkWell, 'b').first);
       await tester.tap(find.widgetWithText(InkWell, 'a').first);
       await tester.pumpAndSettle();
