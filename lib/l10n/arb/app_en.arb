@@ -2703,10 +2703,6 @@
     "@audioAsioLink": {
         "description": "Console Audio face, Device tab."
     },
-    "audioDeviceFootnote": "Changing the device or buffer reopens the audio engine; the loop keeps its takes.",
-    "@audioDeviceFootnote": {
-        "description": "Console Audio face, Device tab."
-    },
     "audioInputsEmpty": "This device has no inputs.",
     "@audioInputsEmpty": {
         "description": "Console Audio face, Device tab."

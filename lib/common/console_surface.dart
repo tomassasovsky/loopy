@@ -36,6 +36,7 @@ class ConsoleCard extends StatelessWidget {
   const ConsoleCard({
     required this.children,
     this.bordered = false,
+    this.borderRadius = _cardRadius,
     this.color,
     super.key,
   });
@@ -98,6 +99,7 @@ class ConsoleRow extends StatelessWidget {
     this.centred = false,
     this.leading,
     this.valueColor,
+    this.titleColor,
     super.key,
   });
 
@@ -140,6 +142,11 @@ class ConsoleRow extends StatelessWidget {
   /// Optional glyph before the title — a state dot, in the mockups.
   final Widget? leading;
 
+  /// Overrides the TITLE's colour. The mockups grey the whole row of a device
+  /// that is no longer there, title included — a name in the ordinary tone
+  /// beside "unplugged" reads as something you could still pick.
+  final Color? titleColor;
+
   /// Overrides the value's colour. A missing target takes the warning tone:
   /// in the muted grey of an empty slot it reads as "nothing set here", which
   /// is a different (and wrong) fact.
@@ -171,9 +178,9 @@ class ConsoleRow extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: centred
-                        ? surface.textSecondary
-                        : surface.textPrimary,
+                    color:
+                        titleColor ??
+                        (centred ? surface.textSecondary : surface.textPrimary),
                     fontSize: 17,
                     // Tight leading, from the mockups: title + subtitle have
                     // to clear 41px between the row's 14/15 padding, which
