@@ -2571,5 +2571,25 @@
     "tracksEmptyMessage": "No tracks — the engine is not running.",
     "@tracksEmptyMessage": {
         "description": "Shown on the Tracks face when the engine reports no tracks."
+    },
+    "trayAudioLabel": "Audio",
+    "@trayAudioLabel": {
+        "description": "Console Audio face: trayAudioLabel"
+    },
+    "audioDeviceTab": "Device",
+    "@audioDeviceTab": {
+        "description": "Console Audio face: audioDeviceTab"
+    },
+    "audioRecordingTab": "Recording",
+    "@audioRecordingTab": {
+        "description": "Console Audio face: audioRecordingTab"
+    },
+    "audioStatusTab": "Status",
+    "@audioStatusTab": {
+        "description": "Console Audio face: audioStatusTab"
+    },
+    "audioStatusGroup": "STATUS",
+    "@audioStatusGroup": {
+        "description": "Console Audio face: audioStatusGroup"
     }
 }
