@@ -834,22 +834,35 @@ void main() {
     await size(tester);
     final engine = FakeAudioEngine()
       ..runningDeviceName = 'Scarlett 18i20'
+      // Both directions of both interfaces, as a host reports them.
       ..devices = const [
         engine_device.AudioDevice(
-          id: 'scarlett',
+          id: 'scarlett-out',
           name: 'Scarlett 18i20',
           isDefault: true,
           isInput: false,
-          inputChannels: 18,
           outputChannels: 20,
         ),
         engine_device.AudioDevice(
-          id: 'builtin',
+          id: 'scarlett-in',
+          name: 'Scarlett 18i20',
+          isDefault: true,
+          isInput: true,
+          inputChannels: 18,
+        ),
+        engine_device.AudioDevice(
+          id: 'builtin-out',
           name: 'Built-in audio',
           isDefault: false,
           isInput: false,
-          inputChannels: 2,
           outputChannels: 2,
+        ),
+        engine_device.AudioDevice(
+          id: 'builtin-in',
+          name: 'Built-in audio',
+          isDefault: false,
+          isInput: true,
+          inputChannels: 2,
         ),
       ]
       ..nextSnapshot = const snapshot.EngineSnapshot(
@@ -928,9 +941,9 @@ void main() {
 
   testWidgets('Audio face, Device tab', (tester) async {
     await pumpAudio(tester, AudioTab.device);
-    // Open the rate row: the sub-lists are the part worth pinning, and the
-    // mockups draw this face open.
-    await tester.tap(find.byKey(const Key('audio_rate_row')));
+    // Open the device row: the sub-list is the part worth pinning, and it is
+    // where the channel counts show.
+    await tester.tap(find.byKey(const Key('audio_device_row')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(Scaffold),
