@@ -2232,5 +2232,29 @@
     "audioInputsEmpty": "Este dispositivo no tiene entradas.",
     "@audioInputsEmpty": {
         "description": "Console Audio face, Device tab."
+    },
+    "audioRecordingGroup": "GRABACIÓN",
+    "@audioRecordingGroup": {
+        "description": "Console Audio face, Recording tab."
+    },
+    "audioMaxLoopTitle": "Duración máxima del bucle",
+    "@audioMaxLoopTitle": {
+        "description": "Console Audio face, Recording tab."
+    },
+    "audioMaxLoopSubtitle": "Un tope más alto reserva más memoria por pista. Cambiarlo reabre el dispositivo.",
+    "@audioMaxLoopSubtitle": {
+        "description": "Console Audio face, Recording tab."
+    },
+    "audioQuantizeSubtitle": "Ajusta el inicio y el final de la grabación a la grilla del bucle. Es el valor por defecto de todas las pistas; se puede anular por pista desde su panel de ruteo.",
+    "@audioQuantizeSubtitle": {
+        "description": "Console Audio face, Recording tab."
+    },
+    "audioDefaultLengthTitle": "Duración por defecto del bucle",
+    "@audioDefaultLengthTitle": {
+        "description": "Console Audio face, Recording tab."
+    },
+    "audioDefaultLengthSubtitle": "Auto redondea a bucles base completos; un múltiplo fijo graba esa cantidad.",
+    "@audioDefaultLengthSubtitle": {
+        "description": "Console Audio face, Recording tab."
     }
 }

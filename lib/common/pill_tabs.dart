@@ -116,7 +116,7 @@ class _Pill extends StatelessWidget {
             style: TextStyle(
               color: selected ? surface.accent : surface.textSecondary,
               fontSize: 16,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ),

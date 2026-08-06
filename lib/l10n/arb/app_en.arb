@@ -2710,5 +2710,29 @@
     "audioInputsEmpty": "This device has no inputs.",
     "@audioInputsEmpty": {
         "description": "Console Audio face, Device tab."
+    },
+    "audioRecordingGroup": "RECORDING",
+    "@audioRecordingGroup": {
+        "description": "Console Audio face, Recording tab."
+    },
+    "audioMaxLoopTitle": "Maximum loop length",
+    "@audioMaxLoopTitle": {
+        "description": "Console Audio face, Recording tab."
+    },
+    "audioMaxLoopSubtitle": "A higher cap reserves more memory per track. Changing it reopens the device.",
+    "@audioMaxLoopSubtitle": {
+        "description": "Console Audio face, Recording tab."
+    },
+    "audioQuantizeSubtitle": "Snap record start/stop to the loop grid. The default for all tracks; override per track from its routing panel.",
+    "@audioQuantizeSubtitle": {
+        "description": "Console Audio face, Recording tab."
+    },
+    "audioDefaultLengthTitle": "Default loop length",
+    "@audioDefaultLengthTitle": {
+        "description": "Console Audio face, Recording tab."
+    },
+    "audioDefaultLengthSubtitle": "Auto rounds up to whole base loops; a fixed multiple records that many.",
+    "@audioDefaultLengthSubtitle": {
+        "description": "Console Audio face, Recording tab."
     }
 }

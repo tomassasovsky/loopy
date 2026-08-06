@@ -13,6 +13,8 @@ import 'package:segno/audio_setup/view/device_audio_tab.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/quantize_cubit.dart';
+import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
 
@@ -29,6 +31,8 @@ void main() {
   late AudioSetupCubit cubit;
   late InputsCubit inputs;
   late LooperBloc looper;
+  late QuantizeCubit quantize;
+  late RecordOptionsCubit record;
 
   setUp(() {
     repository = _MockLooperRepository();
@@ -54,12 +58,28 @@ void main() {
     );
     inputs = InputsCubit(settings: settings);
     looper = LooperBloc(repository: repository);
+    when(
+      () => repository.setQuantize(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setRecDub(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setAutoRecord(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setDefaultMultiple(multiple: any(named: 'multiple')),
+    ).thenReturn(EngineResult.ok);
+    quantize = QuantizeCubit(repository: repository, settings: settings);
+    record = RecordOptionsCubit(repository: repository, settings: settings);
   });
 
   tearDown(() async {
     await cubit.close();
     await inputs.close();
     await looper.close();
+    await quantize.close();
+    await record.close();
     await states.close();
   });
 
@@ -84,6 +104,8 @@ void main() {
             BlocProvider<AudioSetupCubit>.value(value: cubit),
             BlocProvider<InputsCubit>.value(value: inputs),
             BlocProvider<LooperBloc>.value(value: looper),
+            BlocProvider<QuantizeCubit>.value(value: quantize),
+            BlocProvider<RecordOptionsCubit>.value(value: record),
           ],
           child: Scaffold(
             body: Padding(
@@ -287,6 +309,50 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('audio_no_outputs')), findsOneWidget);
+    });
+  });
+
+  group('Recording tab', () {
+    testWidgets('the max-loop cap opens in place and applies', (tester) async {
+      await pump(tester, AudioTab.recording);
+      await tester.pump();
+
+      expect(find.byKey(const Key('audio_maxloop_2')), findsNothing);
+      await tester.tap(find.byKey(const Key('audio_maxloop_row')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('audio_maxloop_2')));
+      await tester.pump();
+
+      expect(cubit.state.maxLoopMinutes, 2);
+    });
+
+    testWidgets('the three switches drive their own settings', (tester) async {
+      await pump(tester, AudioTab.recording);
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('audio_quantize_switch')));
+      await tester.tap(find.byKey(const Key('audio_recdub_switch')));
+      await tester.tap(find.byKey(const Key('audio_autorecord_switch')));
+      await tester.pumpAndSettle();
+
+      expect(quantize.state, isTrue);
+      expect(record.state.recDub, isTrue);
+      expect(record.state.autoRecord, isTrue);
+    });
+
+    testWidgets('the default length picks through the chip dialog', (
+      tester,
+    ) async {
+      await pump(tester, AudioTab.recording);
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('audio_defaultlength_row')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('console_chip_×2')));
+      await tester.pumpAndSettle();
+
+      expect(record.state.defaultMultiple, 2);
     });
   });
 }
