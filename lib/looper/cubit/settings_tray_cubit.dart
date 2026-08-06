@@ -3,6 +3,7 @@ import 'package:brightness_client/brightness_client.dart';
 import 'package:equatable/equatable.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/software_brightness.dart';
+import 'package:segno/network/network_tab.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'settings_tray_state.dart';
@@ -81,7 +82,9 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// `closeTray` rather than `close` — the latter is `Cubit.close()`, which
   /// disposes the bloc's stream; overriding it here would be a hard
   /// invalid-override error, not a UI action. Always returns to the home
-  /// face so the next open isn't stuck in WiFi/Bluetooth.
+  /// face so the next open isn't stuck in a config domain — but leaves
+  /// [SettingsTrayState.networkTab] alone, so returning to Network lands
+  /// where it was left.
   void closeTray() => emit(
     state.copyWith(
       dragProgress: 0,
@@ -99,21 +102,29 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
     }
   }
 
-  /// Expands the in-tray WiFi panel (tray stays open).
-  void openWifi() => emit(
+  /// Expands the Network domain at its WiFi tab (tray stays open).
+  void openWifi() => _openNetwork(NetworkTab.wifi);
+
+  /// Expands the Network domain at its Bluetooth tab (tray stays open).
+  void openBluetooth() => _openNetwork(NetworkTab.bluetooth);
+
+  /// The one way in from a shortcut: the tray home tiles still land on a
+  /// *specific* radio, which after the merge means opening the domain **at** a
+  /// tab rather than at a destination of its own.
+  void _openNetwork(NetworkTab tab) => emit(
     state.copyWith(
       dragProgress: 1,
-      destination: SettingsTrayDestination.wifi,
+      destination: SettingsTrayDestination.network,
+      networkTab: tab,
     ),
   );
 
-  /// Expands the in-tray Bluetooth panel (tray stays open).
-  void openBluetooth() => emit(
-    state.copyWith(
-      dragProgress: 1,
-      destination: SettingsTrayDestination.bluetooth,
-    ),
-  );
+  /// Moves the Network domain's tab.
+  ///
+  /// Deliberately does NOT touch `destination`: the strip is only reachable
+  /// while Network is already showing, so writing a destination here would
+  /// give a tab a say in which domain is up.
+  void showNetworkTab(NetworkTab tab) => emit(state.copyWith(networkTab: tab));
 
   /// Returns from an expanded panel to the tile grid.
   void showHome() =>

@@ -1858,5 +1858,204 @@
     "bluetoothEmptyDevices": "No devices found yet. Tap scan to search.",
     "@bluetoothEmptyDevices": {
         "description": "Empty state when a Bluetooth scan returns nothing."
+    },
+    "trayNetworkLabel": "Network",
+    "@trayNetworkLabel": {
+        "description": "Navigation rail entry for the Network domain — WiFi and Bluetooth as two tabs of one destination. One word, like every rail entry."
+    },
+    "networkStateConnected": "connected",
+    "@networkStateConnected": {
+        "description": "State word at the trailing edge of a Network row: a live association or link. Lower case — it is a machine readout about the row, not a sentence."
+    },
+    "networkStateSaved": "saved",
+    "@networkStateSaved": {
+        "description": "State word for a WiFi network whose credentials this console already holds."
+    },
+    "networkStateOpen": "open",
+    "@networkStateOpen": {
+        "description": "State word for a WiFi network that needs no passphrase."
+    },
+    "networkStatePaired": "paired",
+    "@networkStatePaired": {
+        "description": "State word for a Bluetooth device this console holds a pairing for."
+    },
+    "networkTryAgain": "Try again",
+    "@networkTryAgain": {
+        "description": "Action on a Network failure banner: retries the join or pairing that failed."
+    },
+    "networkKeepIt": "Keep it",
+    "@networkKeepIt": {
+        "description": "Dismissive action on a Network forget confirmation — leaves the credential or pairing alone."
+    },
+    "wifiNotInRange": "not in range",
+    "@wifiNotInRange": {
+        "description": "Row subtitle for a saved network the last scan did not see."
+    },
+    "wifiSecurityWpa2": "WPA2",
+    "@wifiSecurityWpa2": {
+        "description": "Security label for a secured network, shown in the row subtitle and beside the join sheet's title."
+    },
+    "wifiSignalDbm": "{signal} dBm",
+    "@wifiSignalDbm": {
+        "description": "Signal strength in a WiFi row subtitle.",
+        "placeholders": {
+            "signal": {
+                "type": "int"
+            }
+        }
+    },
+    "wifiJoiningShort": "joining {ssid}",
+    "@wifiJoiningShort": {
+        "description": "Live-state line beside the WiFi face's title while a join is in flight. Lower case — it continues the title rather than starting a sentence.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiJoinFailedShort": "could not join {ssid}",
+    "@wifiJoinFailedShort": {
+        "description": "Live-state line beside the WiFi face's title after a join failed.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiJoiningBanner": "Joining {ssid}…",
+    "@wifiJoiningBanner": {
+        "description": "In-flight banner at the top of the WiFi list while a join is running.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiJoinSheetTitle": "Join {ssid}",
+    "@wifiJoinSheetTitle": {
+        "description": "Title of the passphrase sheet.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiPassphraseTooShort": "A WPA2 passphrase is at least {count} characters.",
+    "@wifiPassphraseTooShort": {
+        "description": "Shown in the join sheet when the typed passphrase is below WPA2's floor. Checked here, where it can be corrected, rather than handed to the supplicant.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "wifiForgetTitleNamed": "Forget “{ssid}”?",
+    "@wifiForgetTitleNamed": {
+        "description": "Title of the forget-network confirmation.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiForgetBody": "The passphrase is deleted from this console. Joining again needs it typed in.",
+    "@wifiForgetBody": {
+        "description": "Body of the forget-network confirmation — says what is actually destroyed."
+    },
+    "wifiForgetConfirmAction": "Forget network",
+    "@wifiForgetConfirmAction": {
+        "description": "Destructive action on the forget-network confirmation."
+    },
+    "bluetoothNotInRange": "not in range",
+    "@bluetoothNotInRange": {
+        "description": "Row subtitle for a paired device the last discovery did not see."
+    },
+    "bluetoothDiscoverableState": "discoverable",
+    "@bluetoothDiscoverableState": {
+        "description": "Row subtitle for a device the scan can see but bluez reports no kind for."
+    },
+    "bluetoothKindHeadphones": "headphones",
+    "@bluetoothKindHeadphones": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothKindSpeaker": "speaker",
+    "@bluetoothKindSpeaker": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothKindPhone": "phone",
+    "@bluetoothKindPhone": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothKindComputer": "computer",
+    "@bluetoothKindComputer": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothKindKeyboard": "keyboard",
+    "@bluetoothKindKeyboard": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothKindMouse": "mouse",
+    "@bluetoothKindMouse": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothKindGamepad": "controller",
+    "@bluetoothKindGamepad": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothConnectAction": "Connect",
+    "@bluetoothConnectAction": {
+        "description": "Action inside an opened Bluetooth row: links an already-paired device."
+    },
+    "bluetoothDisconnectAction": "Disconnect",
+    "@bluetoothDisconnectAction": {
+        "description": "Action inside an opened Bluetooth row: drops the link but keeps the pairing."
+    },
+    "bluetoothForgetAction": "Forget",
+    "@bluetoothForgetAction": {
+        "description": "Destructive action inside an opened Bluetooth row."
+    },
+    "bluetoothPairingShort": "pairing with {name}",
+    "@bluetoothPairingShort": {
+        "description": "Live-state line beside the Bluetooth face's title while a pairing is in flight.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "bluetoothPairFailedShort": "could not pair with {name}",
+    "@bluetoothPairFailedShort": {
+        "description": "Live-state line beside the Bluetooth face's title after a pairing failed.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "bluetoothPairingBanner": "Pairing with {name}… confirm on the device.",
+    "@bluetoothPairingBanner": {
+        "description": "In-flight banner while a pairing waits on a human at the far device.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "bluetoothForgetTitleNamed": "Forget “{name}”?",
+    "@bluetoothForgetTitleNamed": {
+        "description": "Title of the forget-device confirmation.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "bluetoothForgetBody": "The pairing is removed from this console. The device has to be put back in pairing mode to reconnect.",
+    "@bluetoothForgetBody": {
+        "description": "Body of the forget-device confirmation — says what is actually destroyed."
+    },
+    "bluetoothForgetConfirmAction": "Forget device",
+    "@bluetoothForgetConfirmAction": {
+        "description": "Destructive action on the forget-device confirmation."
     }
 }

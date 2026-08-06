@@ -16,6 +16,7 @@ import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
+import 'package:segno/network/network_tab.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:wifi_repository/wifi_repository.dart';
@@ -90,6 +91,18 @@ class _ToggleBluetoothClient implements BluetoothClient {
 
   @override
   Future<void> setAdvertising({required bool enabled}) async {}
+
+  @override
+  Future<void> pair(String address) async {}
+
+  @override
+  Future<void> connect(String address) async {}
+
+  @override
+  Future<void> disconnect(String address) async {}
+
+  @override
+  Future<void> forget(String address) async {}
 }
 
 void main() {
@@ -276,8 +289,8 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(wifiClient.enabled, isTrue);
-        expect(cubit.state.destination, SettingsTrayDestination.wifi);
-        expect(find.byKey(const Key('wifi_tray_panel')), findsOneWidget);
+        expect(cubit.state.destination, SettingsTrayDestination.network);
+        expect(find.byKey(const Key('wifi_tray_body')), findsOneWidget);
       },
     );
 
@@ -292,11 +305,14 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(cubit.state.dragProgress, 1);
-        expect(cubit.state.destination, SettingsTrayDestination.wifi);
-        expect(find.byKey(const Key('wifi_tray_panel')), findsOneWidget);
+        expect(cubit.state.destination, SettingsTrayDestination.network);
+        // The shortcut opens the domain AT the WiFi tab.
+        expect(cubit.state.networkTab, NetworkTab.wifi);
+        expect(find.byKey(const Key('wifi_tray_body')), findsOneWidget);
         expect(find.byKey(const Key('settingsTray_wifi')), findsNothing);
 
-        await tester.tap(find.byKey(const Key('wifi_back')));
+        // No back chevron on a domain face — the rail is the way back.
+        await tester.tap(find.byKey(const Key('settingsTrayRail_home')));
         await tester.pumpAndSettle();
         expect(cubit.state.destination, SettingsTrayDestination.home);
         expect(find.byKey(const Key('settingsTray_wifi')), findsOneWidget);
@@ -331,8 +347,8 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(bluetoothClient.powered, isTrue);
-        expect(cubit.state.destination, SettingsTrayDestination.bluetooth);
-        expect(find.byKey(const Key('bluetooth_tray_panel')), findsOneWidget);
+        expect(cubit.state.destination, SettingsTrayDestination.network);
+        expect(find.byKey(const Key('bluetooth_tray_body')), findsOneWidget);
       },
     );
 
@@ -351,13 +367,16 @@ void main() {
         expect(cubit.state.dragProgress, 1);
         expect(
           cubit.state.destination,
-          SettingsTrayDestination.bluetooth,
+          SettingsTrayDestination.network,
         );
-        expect(find.byKey(const Key('bluetooth_tray_panel')), findsOneWidget);
+        expect(cubit.state.networkTab, NetworkTab.bluetooth);
+        expect(find.byKey(const Key('bluetooth_tray_body')), findsOneWidget);
 
-        await tester.tap(find.byKey(const Key('bluetooth_back')));
+        await tester.tap(find.byKey(const Key('settingsTrayRail_home')));
         await tester.pumpAndSettle();
         expect(cubit.state.destination, SettingsTrayDestination.home);
+        // The tab survives leaving the domain.
+        expect(cubit.state.networkTab, NetworkTab.bluetooth);
       },
     );
 
@@ -462,11 +481,14 @@ void main() {
       await pump(tester);
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('settingsTrayRail_bluetooth')));
+      await tester.tap(find.byKey(const Key('settingsTrayRail_network')));
       await tester.pumpAndSettle();
 
-      expect(cubit.state.destination, SettingsTrayDestination.bluetooth);
-      expect(find.byKey(const Key('bluetooth_tray_panel')), findsOneWidget);
+      expect(cubit.state.destination, SettingsTrayDestination.network);
+      // The rail lands on the domain at whichever tab it was left on, which
+      // for a fresh cubit is WiFi.
+      expect(find.byKey(const Key('network_tray_panel')), findsOneWidget);
+      expect(find.byKey(const Key('wifi_tray_body')), findsOneWidget);
       expect(cubit.state.dragProgress, 1);
 
       await tester.tap(find.byKey(const Key('settingsTrayRail_home')));
@@ -493,7 +515,7 @@ void main() {
       // completely different (correct) reason.
       final rail = tester.getRect(find.byType(TrayNavigationRail));
       final lastItem = tester.getRect(
-        find.byKey(const Key('settingsTrayRail_bluetooth')),
+        find.byKey(const Key('settingsTrayRail_network')),
       );
       final tapPoint = Offset(rail.center.dx, lastItem.bottom + 40);
       // Assert the point really is rail background before tapping, so a

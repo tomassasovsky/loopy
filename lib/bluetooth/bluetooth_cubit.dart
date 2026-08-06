@@ -90,4 +90,107 @@ class BluetoothCubit extends Cubit<BluetoothState> {
       emit(state.copyWith(busy: false, errorMessage: '$e'));
     }
   }
+
+  /// Pairs with [address] — discover, pair, trust, connect.
+  ///
+  /// Marks [BluetoothState.pairingAddress] rather than [BluetoothState.busy]:
+  /// pairing waits on a human at the other device, and the rest of the list
+  /// stays usable behind the banner.
+  Future<void> pair(String address) async {
+    if (!state.supported) return;
+    emit(
+      state.copyWith(pairingAddress: address, clearError: true),
+    );
+    try {
+      await _repository.pair(address);
+      await _refreshDevices(clearPairing: true);
+    } on Object catch (e) {
+      emit(
+        state.copyWith(
+          clearPairing: true,
+          errorMessage: '$e',
+          failedAddress: address,
+        ),
+      );
+    }
+  }
+
+  /// Abandons an in-flight pairing.
+  ///
+  /// Drops the marker only. The helper call itself cannot be recalled once
+  /// issued, so claiming anything more about the far device would be a lie —
+  /// the next scan reports what actually happened.
+  void cancelPairing() {
+    if (state.pairingAddress == null) return;
+    emit(state.copyWith(clearPairing: true, clearError: true));
+  }
+
+  /// Connects an already-paired [address].
+  Future<void> connect(String address) => _deviceAction(
+    address,
+    () => _repository.connect(address),
+  );
+
+  /// Drops the link to [address], leaving the pairing in place.
+  Future<void> disconnect(String address) => _deviceAction(
+    address,
+    () => _repository.disconnect(address),
+  );
+
+  /// Removes the pairing for [address] entirely.
+  Future<void> forget(String address) => _deviceAction(
+    address,
+    () => _repository.forget(address),
+  );
+
+  Future<void> _deviceAction(
+    String address,
+    Future<void> Function() action,
+  ) async {
+    if (!state.supported) return;
+    emit(state.copyWith(busy: true, clearError: true));
+    try {
+      await action();
+      await _refreshDevices();
+    } on Object catch (e) {
+      emit(
+        state.copyWith(
+          busy: false,
+          errorMessage: '$e',
+          failedAddress: address,
+        ),
+      );
+    }
+  }
+
+  /// Re-reads scan + status after a device verb.
+  ///
+  /// The verbs report only success or failure, so the list is re-derived from
+  /// the adapter rather than patched from what the verb claims it did: bluez
+  /// accepts a command and leaves the device as it was often enough that the
+  /// exit code is not evidence of state.
+  Future<void> _refreshDevices({bool clearPairing = false}) async {
+    try {
+      final devices = await _repository.scan();
+      final status = await _repository.status();
+      if (isClosed) return;
+      emit(
+        state.copyWith(
+          devices: devices,
+          status: status,
+          busy: false,
+          clearPairing: clearPairing,
+        ),
+      );
+    } on Object catch (e) {
+      if (isClosed) return;
+      emit(
+        state.copyWith(
+          busy: false,
+          clearPairing: clearPairing,
+          errorMessage: '$e',
+        ),
+      );
+    }
+  }
 }

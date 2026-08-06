@@ -12,6 +12,7 @@ class WifiState extends Equatable {
     this.connectingSsid,
     this.disconnecting = false,
     this.errorMessage,
+    this.failedSsid,
   });
 
   /// Whether the appliance WiFi helper is available.
@@ -38,6 +39,13 @@ class WifiState extends Equatable {
   /// Last error message, if any.
   final String? errorMessage;
 
+  /// The SSID [errorMessage] is about.
+  ///
+  /// Tied to the error rather than kept beside it, so a stale SSID can never
+  /// outlive the message that named it — the failure banner says which network
+  /// refused, and a banner naming the wrong one is worse than no banner.
+  final String? failedSsid;
+
   /// Returns a copy with the given fields replaced.
   WifiState copyWith({
     bool? supported,
@@ -48,6 +56,7 @@ class WifiState extends Equatable {
     String? connectingSsid,
     bool? disconnecting,
     String? errorMessage,
+    String? failedSsid,
     bool clearError = false,
     bool clearConnectingSsid = false,
   }) => WifiState(
@@ -61,6 +70,7 @@ class WifiState extends Equatable {
         : (connectingSsid ?? this.connectingSsid),
     disconnecting: disconnecting ?? this.disconnecting,
     errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+    failedSsid: clearError ? null : (failedSsid ?? this.failedSsid),
   );
 
   @override
@@ -73,5 +83,6 @@ class WifiState extends Equatable {
     connectingSsid,
     disconnecting,
     errorMessage,
+    failedSsid,
   ];
 }

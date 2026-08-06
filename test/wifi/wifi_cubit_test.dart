@@ -8,6 +8,7 @@ import 'package:wifi_repository/wifi_repository.dart';
 class _FakeWifiClient implements WifiClient {
   _FakeWifiClient({
     this.supported = true,
+    this.connectFails = false,
     WifiStatus? status,
     List<WifiNetwork>? networks,
   }) : statusValue =
@@ -20,6 +21,9 @@ class _FakeWifiClient implements WifiClient {
        networks = List.of(networks ?? const []);
 
   bool supported;
+
+  /// When true, every [connect] refuses the way the supplicant does.
+  bool connectFails;
   WifiStatus statusValue;
   List<WifiNetwork> networks;
   final connects = <(String, String?)>[];
@@ -41,6 +45,7 @@ class _FakeWifiClient implements WifiClient {
     connects.add((ssid, psk));
     final gate = connectGate;
     if (gate != null) await gate.future;
+    if (connectFails) throw StateError('authentication failed');
     statusValue = WifiStatus(
       supported: true,
       enabled: true,
@@ -199,6 +204,69 @@ void main() {
       },
       verify: (cubit) {
         expect(cubit.state.status.enabled, isFalse);
+      },
+    );
+  });
+
+  group('the failure is tied to the network it was about', () {
+    blocTest<WifiCubit, WifiState>(
+      'a refused join records the SSID alongside the message, so a stale '
+      'name can never outlive the banner that used it',
+      build: () => WifiCubit(
+        repository: _repo(_FakeWifiClient(connectFails: true)),
+      ),
+      act: (cubit) async {
+        await cubit.load();
+        await cubit.connect('Studio 5G', psk: 'nope');
+      },
+      verify: (cubit) {
+        expect(cubit.state.failedSsid, 'Studio 5G');
+        expect(cubit.state.errorMessage, isNotNull);
+      },
+    );
+
+    blocTest<WifiCubit, WifiState>(
+      'the next attempt clears both together',
+      build: () {
+        final client = _FakeWifiClient(connectFails: true);
+        return WifiCubit(repository: _repo(client));
+      },
+      act: (cubit) async {
+        await cubit.load();
+        await cubit.connect('Studio 5G', psk: 'nope');
+        await cubit.scan();
+      },
+      verify: (cubit) {
+        expect(cubit.state.failedSsid, isNull);
+        expect(cubit.state.errorMessage, isNull);
+      },
+    );
+
+    blocTest<WifiCubit, WifiState>(
+      'cancelConnect drops the in-flight marker and disconnects — the only '
+      'thing still true once the helper call has been issued',
+      build: () => WifiCubit(repository: _repo(_FakeWifiClient())),
+      act: (cubit) async {
+        await cubit.load();
+        final joining = cubit.connect('Studio 5G');
+        expect(cubit.state.connectingSsid, 'Studio 5G');
+        await joining;
+        await cubit.connect('Studio 5G');
+        await cubit.cancelConnect();
+      },
+      verify: (cubit) {
+        expect(cubit.state.connectingSsid, isNull);
+      },
+    );
+
+    blocTest<WifiCubit, WifiState>(
+      'cancelConnect with nothing in flight emits nothing',
+      build: () => WifiCubit(repository: _repo(_FakeWifiClient())),
+      act: (cubit) async {
+        await cubit.load();
+        final before = cubit.state;
+        await cubit.cancelConnect();
+        expect(cubit.state, before);
       },
     );
   });

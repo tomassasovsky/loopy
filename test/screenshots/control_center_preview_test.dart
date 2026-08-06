@@ -65,24 +65,43 @@ class _PreviewWifiHomeClient implements WifiClient {
   Future<void> setEnabled({required bool enabled}) async {}
 }
 
+/// Drawn to `NETWORK / wifi`: an associated saved network, a saved one out of
+/// range, a secured one to join and an open one — the four row states the
+/// mockups put in the card.
 class _PreviewWifiClient implements WifiClient {
+  _PreviewWifiClient({this.enabled = true});
+
+  bool enabled;
+
   @override
   bool get isSupported => true;
 
   @override
-  Future<WifiStatus> status() async => const WifiStatus(
+  Future<WifiStatus> status() async => WifiStatus(
     supported: true,
-    enabled: true,
-    connected: true,
-    ssid: 'Studio-5G',
-    ip: '192.168.1.42',
-    signal: -48,
+    enabled: enabled,
+    connected: enabled,
+    ssid: enabled ? 'MyHouseWTF_es' : '',
+    ip: enabled ? '192.168.50.212' : '',
+    signal: -42,
   );
 
   @override
   Future<List<WifiNetwork>> scan() async => const [
-    WifiNetwork(ssid: 'Studio-5G', signal: -48, secured: true),
-    WifiNetwork(ssid: 'Studio-Guest', signal: -62, secured: true),
+    WifiNetwork(
+      ssid: 'MyHouseWTF_es',
+      signal: -42,
+      secured: true,
+      saved: true,
+    ),
+    WifiNetwork(
+      ssid: 'MyHouseWTF_es_2.4G',
+      signal: -80,
+      secured: true,
+      saved: true,
+      inRange: false,
+    ),
+    WifiNetwork(ssid: 'Studio 5G', signal: -48, secured: true),
     WifiNetwork(ssid: 'Cafe Free', signal: -71, secured: false),
   ];
 
@@ -124,6 +143,18 @@ class _PreviewBluetoothHomeClient implements BluetoothClient {
 
   @override
   Future<void> setAdvertising({required bool enabled}) async {}
+
+  @override
+  Future<void> pair(String address) async {}
+
+  @override
+  Future<void> connect(String address) async {}
+
+  @override
+  Future<void> disconnect(String address) async {}
+
+  @override
+  Future<void> forget(String address) async {}
 }
 
 class _PreviewBluetoothClient implements BluetoothClient {
@@ -139,10 +170,25 @@ class _PreviewBluetoothClient implements BluetoothClient {
     alias: 'Segno',
   );
 
+  /// Drawn to `NETWORK / bluetooth`: a connected device, a paired one out of
+  /// range, and a fresh one.
   @override
   Future<List<BluetoothDevice>> scan() async => const [
-    BluetoothDevice(name: 'Tomas’s iPhone', address: 'AA:BB:CC:11:22:33'),
-    BluetoothDevice(name: 'AirPods Pro', address: 'DD:EE:FF:44:55:66'),
+    BluetoothDevice(
+      name: 'WH-1000XM4',
+      address: 'AA:AA:AA:AA:AA:AA',
+      paired: true,
+      connected: true,
+      kind: BluetoothDeviceKind.headphones,
+    ),
+    BluetoothDevice(
+      name: 'Page turner',
+      address: 'BB:BB:BB:BB:BB:BB',
+      paired: true,
+      inRange: false,
+      kind: BluetoothDeviceKind.keyboard,
+    ),
+    BluetoothDevice(name: 'AirTurn BT-200', address: 'CC:CC:CC:CC:CC:CC'),
   ];
 
   @override
@@ -153,6 +199,18 @@ class _PreviewBluetoothClient implements BluetoothClient {
 
   @override
   Future<void> setAdvertising({required bool enabled}) async {}
+
+  @override
+  Future<void> pair(String address) async {}
+
+  @override
+  Future<void> connect(String address) async {}
+
+  @override
+  Future<void> disconnect(String address) async {}
+
+  @override
+  Future<void> forget(String address) async {}
 }
 
 void main() {
@@ -169,6 +227,13 @@ void main() {
     ]);
     await _loadFont('MaterialIcons', [
       '$fontDir/MaterialIcons-Regular.otf',
+    ]);
+    // The console's own faces set state words and disclosure markers in the
+    // bundled mono face. Without it they render as tofu and the golden is
+    // useless for the eyeballing it exists to support.
+    await _loadFont(SurfaceTheme.monoFont, [
+      'assets/fonts/JetBrainsMono-Regular.ttf',
+      'assets/fonts/JetBrainsMono-Medium.ttf',
     ]);
   });
 
@@ -244,7 +309,7 @@ void main() {
     );
   }, skip: !hasFonts);
 
-  testWidgets('wifi expands in tray', (tester) async {
+  testWidgets('network domain, wifi tab', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
     final cubit = SettingsTrayCubit(settings: settings)..openWifi();
@@ -258,11 +323,97 @@ void main() {
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_wifi.png'),
+      matchesGoldenFile('goldens/control_center_network_wifi.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('bluetooth expands in tray', (tester) async {
+  testWidgets('network domain, wifi off', (tester) async {
+    await size(tester);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final cubit = SettingsTrayCubit(settings: settings)..openWifi();
+    addTearDown(cubit.close);
+
+    await pumpTray(
+      tester,
+      cubit: cubit,
+      wifi: WifiRepository(client: _PreviewWifiClient(enabled: false)),
+    );
+    await tester.pumpAndSettle();
+    // The face is one switch and nothing else — there is nothing truthful to
+    // list about a radio that is down.
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_network_wifi_off.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('network domain, wifi row open', (tester) async {
+    await size(tester);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final cubit = SettingsTrayCubit(settings: settings)..openWifi();
+    addTearDown(cubit.close);
+
+    await pumpTray(
+      tester,
+      cubit: cubit,
+      wifi: WifiRepository(client: _PreviewWifiClient()),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('wifi_network_MyHouseWTF_es')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_network_wifi_expanded.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('network domain, forget confirm', (tester) async {
+    await size(tester);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final cubit = SettingsTrayCubit(settings: settings)..openWifi();
+    addTearDown(cubit.close);
+
+    await pumpTray(
+      tester,
+      cubit: cubit,
+      wifi: WifiRepository(client: _PreviewWifiClient()),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('wifi_network_MyHouseWTF_es')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('wifi_forget')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('network_forget_confirm')), findsOneWidget);
+    // The confirm rides in the route overlay, above the Scaffold.
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/control_center_network_wifi_forget.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('network domain, join sheet', (tester) async {
+    await size(tester);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final cubit = SettingsTrayCubit(settings: settings)..openWifi();
+    addTearDown(cubit.close);
+
+    await pumpTray(
+      tester,
+      cubit: cubit,
+      wifi: WifiRepository(client: _PreviewWifiClient()),
+    );
+    await tester.pumpAndSettle();
+    // A secured network the console has no credential for opens the sheet.
+    await tester.tap(find.byKey(const Key('wifi_network_Studio 5G')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('wifi_join_sheet')), findsOneWidget);
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/control_center_network_wifi_join.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('network domain, bluetooth tab', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
     final cubit = SettingsTrayCubit(settings: settings)..openBluetooth();
@@ -276,7 +427,29 @@ void main() {
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_bluetooth.png'),
+      matchesGoldenFile('goldens/control_center_network_bluetooth.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('network domain, bluetooth row open', (tester) async {
+    await size(tester);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final cubit = SettingsTrayCubit(settings: settings)..openBluetooth();
+    addTearDown(cubit.close);
+
+    await pumpTray(
+      tester,
+      cubit: cubit,
+      bluetooth: BluetoothRepository(client: _PreviewBluetoothClient()),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('bluetooth_device_AA:AA:AA:AA:AA:AA')),
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_network_bt_expanded.png'),
     );
   }, skip: !hasFonts);
 }

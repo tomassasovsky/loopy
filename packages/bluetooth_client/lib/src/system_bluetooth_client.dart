@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:bluetooth_client/src/bluetooth_client.dart';
 import 'package:bluetooth_client/src/bluetooth_models.dart';
+import 'package:bluetooth_client/src/fake_bluetooth_client.dart';
 import 'package:bluetooth_client/src/unsupported_bluetooth_client.dart';
 
 /// Production [BluetoothClient]: shells out to `/usr/bin/segno-bt-ctl`.
@@ -55,6 +56,18 @@ class SystemBluetoothClient implements BluetoothClient {
     return _run(args);
   }
 
+  @override
+  Future<void> pair(String address) => _run(['pair', address]);
+
+  @override
+  Future<void> connect(String address) => _run(['connect', address]);
+
+  @override
+  Future<void> disconnect(String address) => _run(['disconnect', address]);
+
+  @override
+  Future<void> forget(String address) => _run(['forget', address]);
+
   Future<Object?> _runJson(List<String> args) async {
     final result = await _run(args);
     final text = result.stdout.toString().trim();
@@ -78,8 +91,15 @@ class SystemBluetoothClient implements BluetoothClient {
   }
 }
 
-/// Factory: real helper on Linux when present, else unsupported.
+/// Factory: fake stack under `--dart-define=SEGNO_FAKE_RADIOS=true`, else the
+/// real helper on Linux when present, else unsupported.
+///
+/// The define is read *before* the platform test, so the fake is reachable on
+/// the desktop — see `kFakeRadios` in `wifi_client` for why that matters.
 BluetoothClient createBluetoothClient() {
+  if (const bool.fromEnvironment('SEGNO_FAKE_RADIOS')) {
+    return FakeBluetoothClient();
+  }
   if (!Platform.isLinux) return const UnsupportedBluetoothClient();
   const system = SystemBluetoothClient();
   if (!File(system.helperPath).existsSync()) {

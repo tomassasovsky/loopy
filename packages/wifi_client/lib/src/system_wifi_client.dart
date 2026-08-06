@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:wifi_client/src/fake_wifi_client.dart';
 import 'package:wifi_client/src/unsupported_wifi_client.dart';
 import 'package:wifi_client/src/wifi_client.dart';
 import 'package:wifi_client/src/wifi_models.dart';
@@ -78,8 +79,21 @@ class SystemWifiClient implements WifiClient {
   }
 }
 
-/// Factory: real helper on Linux when present, else unsupported.
+/// Whether `--dart-define=SEGNO_FAKE_RADIOS=true` swapped the radios for
+/// in-memory stacks.
+///
+/// Read here rather than at a call site so **every** entry point picks it up
+/// with no app wiring change, and read *before* the platform test so the fake
+/// is reachable on the desktop — which is the whole point, since both radios
+/// are Linux-only appliance helpers and the domain with the richest
+/// interaction is otherwise the one surface that cannot be exercised while
+/// building it.
+const kFakeRadios = bool.fromEnvironment('SEGNO_FAKE_RADIOS');
+
+/// Factory: fake stack when [kFakeRadios], else the real helper on Linux when
+/// present, else unsupported.
 WifiClient createWifiClient() {
+  if (kFakeRadios) return FakeWifiClient();
   if (!Platform.isLinux) return const UnsupportedWifiClient();
   const system = SystemWifiClient();
   if (!File(system.helperPath).existsSync()) {

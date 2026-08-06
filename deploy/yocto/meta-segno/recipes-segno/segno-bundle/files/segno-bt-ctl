@@ -4,13 +4,19 @@
 # Verbs (stdout = compact JSON; detail on stderr):
 #   status                         {supported,powered,discoverable,advertising,alias,
 #                                   connected,device}
-#   scan                           [{name,address}, ...]  (timed discovery)
+#   scan                           [{name,address,paired,connected,inRange,icon}, ...]
 #   power on|off                   {}  (Control Center tap toggle)
 #   discoverable on|off            {}
 #   advertise on|off               {}  (power + LE advertise / discoverable)
+#   pair ADDRESS                   {}  (discover, pair, trust, connect)
+#   connect ADDRESS                {}
+#   disconnect ADDRESS             {}  (link down, pairing kept)
+#   forget ADDRESS                 {}  (disconnect, untrust, remove)
 #
-# Discovery and broadcasting only — no pair/connect. Status still reports the
-# first Connected peer (if any) so Control Center can show its name.
+# Every device verb reports only success or failure. The caller re-reads `scan`
+# and `status` afterwards rather than trusting the verb's account of what it
+# changed, because bluez accepts a command and then leaves the device as it
+# was often enough that the verb's exit code is not evidence of state.
 set -eu
 
 ALIAS="${SEGNO_BT_ALIAS:-Segno}"
@@ -67,6 +73,26 @@ first_connected_device() {
     return 0
 }
 
+# Emits one scan-list object for ADDRESS. Per-device detail comes out of
+# `bluetoothctl info`; `Icon:` is passed through raw and mapped to a readable
+# kind app-side, so an icon name bluez adds later reads as "unknown" rather
+# than crashing the parse.
+device_json() {
+    address=$1
+    name=$2
+    in_range=$3
+    info=$(bt info "$address" 2>/dev/null || true)
+    paired=false
+    connected=false
+    icon=""
+    printf '%s\n' "$info" | grep -q 'Paired: yes' && paired=true
+    printf '%s\n' "$info" | grep -q 'Connected: yes' && connected=true
+    icon=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*Icon: //p' | head -n1)
+    printf '{"name":"%s","address":"%s","paired":%s,"connected":%s,"inRange":%s,"icon":"%s"}\n' \
+        "$(json_escape "$name")" "$(json_escape "$address")" \
+        "$paired" "$connected" "$in_range" "$(json_escape "$icon")"
+}
+
 do_status() {
     if ! have_bt; then
         echo "$STATUS_UNSUPPORTED"
@@ -109,6 +135,11 @@ do_scan() {
     # Clear prior discoveries for a clean list, then timed scan.
     bt --timeout "$SCAN_SECONDS" scan on >/dev/null 2>&1 || true
     devices=$(bt devices 2>/dev/null || true)
+    # Everything the last discovery actually saw. A paired device absent from
+    # this list is still listed below, marked out of range: a pairing you
+    # cannot see is still a pairing you may want to drop.
+    seen=$(printf '%s\n' "$devices" | awk '/^Device /{print $2}')
+    paired=$(bt devices Paired 2>/dev/null | awk '/^Device /{print $2}' || true)
     tmp=$(mktemp)
     printf '%s\n' "$devices" | while IFS= read -r line; do
         # "Device AA:BB:CC:DD:EE:FF Name here"
@@ -120,9 +151,16 @@ do_scan() {
         name=$(printf '%s\n' "$line" | cut -d' ' -f3-)
         [ -n "$address" ] || continue
         [ -n "$name" ] || name="$address"
-        printf '{"name":"%s","address":"%s"}\n' \
-            "$(json_escape "$name")" "$(json_escape "$address")"
+        device_json "$address" "$name" true
     done >"$tmp"
+    # Paired-but-unseen devices, appended so the list is pairings ∪ sightings.
+    for address in $paired; do
+        printf '%s\n' "$seen" | grep -qx "$address" && continue
+        info=$(bt info "$address" 2>/dev/null || true)
+        name=$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*Name: //p' | head -n1)
+        [ -n "$name" ] || name="$address"
+        device_json "$address" "$name" false >>"$tmp"
+    done
     first=1
     printf '['
     while IFS= read -r obj; do
@@ -177,8 +215,47 @@ do_advertise() {
     echo '{}'
 }
 
+do_pair() {
+    address=$1
+    ensure_powered
+    # Discovery FIRST: bluez cannot pair with a device it has not seen in this
+    # session, and an "unknown device" failure seconds later reads to the
+    # operator as the device refusing rather than as the console never looking.
+    bt --timeout "$SCAN_SECONDS" scan on >/dev/null 2>&1 || true
+    bt pair "$address" >/dev/null
+    # Trust BEFORE connecting, so the device may reconnect on its own after a
+    # reboot. A paired-but-untrusted device has to be re-authorised by hand
+    # every time, which is not what "paired" means to anyone standing on it.
+    bt trust "$address" >/dev/null 2>&1 || true
+    bt connect "$address" >/dev/null 2>&1 || true
+    echo '{}'
+}
+
+do_connect() {
+    address=$1
+    ensure_powered
+    bt connect "$address" >/dev/null
+    echo '{}'
+}
+
+do_disconnect() {
+    address=$1
+    bt disconnect "$address" >/dev/null
+    echo '{}'
+}
+
+do_forget() {
+    address=$1
+    # Drop the link and the trust before removing: `remove` on a connected,
+    # trusted device leaves bluez re-adding it from the still-live link.
+    bt disconnect "$address" >/dev/null 2>&1 || true
+    bt untrust "$address" >/dev/null 2>&1 || true
+    bt remove "$address" >/dev/null
+    echo '{}'
+}
+
 usage() {
-    log "usage: $0 status|scan|power on|off|discoverable on|off|advertise on|off"
+    log "usage: $0 status|scan|power on|off|discoverable on|off|advertise on|off|pair ADDR|connect ADDR|disconnect ADDR|forget ADDR"
     exit 2
 }
 
@@ -200,6 +277,26 @@ case "$verb" in
     advertise)
         [ $# -ge 1 ] || usage
         do_advertise "$1"
+        ;;
+    pair)
+        [ $# -ge 1 ] || usage
+        have_bt || { log "no bluetoothctl"; exit 1; }
+        do_pair "$1"
+        ;;
+    connect)
+        [ $# -ge 1 ] || usage
+        have_bt || { log "no bluetoothctl"; exit 1; }
+        do_connect "$1"
+        ;;
+    disconnect)
+        [ $# -ge 1 ] || usage
+        have_bt || { log "no bluetoothctl"; exit 1; }
+        do_disconnect "$1"
+        ;;
+    forget)
+        [ $# -ge 1 ] || usage
+        have_bt || { log "no bluetoothctl"; exit 1; }
+        do_forget "$1"
         ;;
     *) usage ;;
 esac

@@ -3,11 +3,13 @@ library;
 
 export 'package:wifi_client/wifi_client.dart'
     show
+        FakeWifiClient,
         SystemWifiClient,
         UnsupportedWifiClient,
         WifiClient,
         WifiNetwork,
         WifiStatus,
-        createWifiClient;
+        createWifiClient,
+        kFakeRadios;
 
 export 'src/wifi_repository.dart' show WifiRepository;

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:segno/theme/theme.dart';
 
 /// Which key layout the on-screen keyboard offers.
 enum OnScreenKeyboardLayout {
@@ -38,6 +39,8 @@ class OnScreenKeyboard extends StatefulWidget {
     required this.onKey,
     required this.onBackspace,
     required this.onDone,
+    this.doneLabel,
+    this.showNumberRow = false,
     super.key,
   });
 
@@ -52,6 +55,18 @@ class OnScreenKeyboard extends StatefulWidget {
 
   /// Called when the user is finished with the field.
   final VoidCallback onDone;
+
+  /// Caption for the action key. Defaults to a generic "done".
+  ///
+  /// A key that says what it *does* — "Join" over a WiFi passphrase — is worth
+  /// more than a generic one on a surface with no other affordance to read.
+  final String? doneLabel;
+
+  /// Whether to draw a digit row above the letters.
+  ///
+  /// Off by default; on for fields that are full of digits. A passphrase is,
+  /// and a layer switch per digit is unusable standing over a console.
+  final bool showNumberRow;
 
   /// Key height, sized for a foot-console: pressed while standing, often with
   /// one hand. Public so the host sizes its panel from the keys rather than
@@ -72,6 +87,8 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
   static const _symRow1 = '1234567890';
   static const _symRow2 = r'-/:;()$&@"';
   static const _symRow3 = ".,?!'";
+  static const _symRow3Wide = ".,?!'+=_";
+  static const _symRow4 = r'#%*[]{}\|';
 
   void _tap(String key) {
     unawaited(HapticFeedback.selectionClick());
@@ -84,11 +101,22 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
   @override
   Widget build(BuildContext context) {
     if (widget.layout == OnScreenKeyboardLayout.numeric) return _numericPad();
+    // With the digit row drawn above the letters, the symbols layer no longer
+    // has to spend its first row on digits, and gains the punctuation row the
+    // mockups draw instead.
+    final upper = _symbols
+        ? (widget.showNumberRow
+              ? [_symRow2, _symRow3Wide]
+              : [_symRow1, _symRow2])
+        : [_row1, _row2];
+    final third = _symbols
+        ? (widget.showNumberRow ? _symRow4 : _symRow3)
+        : _row3;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _keyRow((_symbols ? _symRow1 : _row1).split('')),
-        _keyRow((_symbols ? _symRow2 : _row2).split('')),
+        if (widget.showNumberRow) _keyRow(_symRow1.split('')),
+        for (final row in upper) _keyRow(row.split('')),
         Row(
           children: [
             if (!_symbols)
@@ -100,9 +128,7 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
                 onPressed: () => setState(() => _shifted = !_shifted),
                 semanticLabel: 'Shift',
               ),
-            ...(_symbols ? _symRow3 : _row3)
-                .split('')
-                .map((k) => Expanded(child: _key(k))),
+            ...third.split('').map((k) => Expanded(child: _key(k))),
             _special(
               icon: Icons.backspace_outlined,
               onPressed: widget.onBackspace,
@@ -120,7 +146,11 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
               }),
             ),
             Expanded(flex: 4, child: _key(' ', label: 'space')),
-            _special(label: 'done', onPressed: widget.onDone, primary: true),
+            _special(
+              label: widget.doneLabel ?? 'done',
+              onPressed: widget.onDone,
+              primary: true,
+            ),
           ],
         ),
       ],
@@ -152,7 +182,7 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
           children: [
             Expanded(
               child: _special(
-                label: 'done',
+                label: widget.doneLabel ?? 'done',
                 onPressed: widget.onDone,
                 primary: true,
               ),
@@ -170,13 +200,9 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
     final display = label ?? (_shifted ? value.toUpperCase() : value);
     return Padding(
       padding: const EdgeInsets.all(3),
-      child: SizedBox(
-        height: OnScreenKeyboard.keyHeight,
-        child: FilledButton.tonal(
-          onPressed: () => _tap(value),
-          style: _keyStyle(context),
-          child: Text(display, style: const TextStyle(fontSize: 18)),
-        ),
+      child: _KeyCap(
+        label: display,
+        onPressed: () => _tap(value),
       ),
     );
   }
@@ -189,43 +215,100 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
     bool selected = false,
     String? semanticLabel,
   }) {
-    final child = icon != null
-        ? Icon(icon, size: 20, semanticLabel: semanticLabel)
-        : Text(label ?? '', style: const TextStyle(fontSize: 15));
-    final button = SizedBox(
-      height: OnScreenKeyboard.keyHeight,
-      child: primary
-          ? FilledButton(
-              onPressed: onPressed,
-              style: _keyStyle(context),
-              child: child,
-            )
-          : FilledButton.tonal(
-              onPressed: onPressed,
-              style: _keyStyle(context, selected: selected),
-              child: child,
-            ),
+    final cap = _KeyCap(
+      label: label,
+      icon: icon,
+      primary: primary,
+      selected: selected,
+      semanticLabel: semanticLabel,
+      onPressed: onPressed,
     );
     return Padding(
       padding: const EdgeInsets.all(3),
       child: label != null && !primary
-          ? SizedBox(width: 92, child: button)
+          ? SizedBox(width: 92, child: cap)
           : primary
-          ? SizedBox(width: 108, child: button)
-          : SizedBox(width: 72, child: button),
+          ? SizedBox(width: 108, child: cap)
+          : SizedBox(width: 72, child: cap),
     );
   }
+}
 
-  ButtonStyle _keyStyle(BuildContext context, {bool selected = false}) {
-    final scheme = Theme.of(context).colorScheme;
-    return ButtonStyle(
-      padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+/// One key.
+///
+/// Drawn from the surface tokens rather than from `FilledButton.tonal`, which
+/// was the reason this keyboard never looked like the console it lives on: the
+/// Material button brings its own container colour, elevation overlay and 40px
+/// minimum geometry, none of which the mockups have and all of which fight the
+/// hand-drawn surfaces beside it.
+class _KeyCap extends StatelessWidget {
+  const _KeyCap({
+    required this.onPressed,
+    this.label,
+    this.icon,
+    this.primary = false,
+    this.selected = false,
+    this.semanticLabel,
+  });
+
+  final VoidCallback onPressed;
+  final String? label;
+  final IconData? icon;
+  final bool primary;
+  final bool selected;
+  final String? semanticLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final fill = primary
+        ? surface.accent
+        : selected
+        ? surface.accentSurface
+        : surface.cardHigh;
+    final tint = primary
+        ? surface.onAccent
+        : selected
+        ? surface.accent
+        // A modifier is a lower tier than a character: what you type should
+        // read louder than how you type it.
+        : icon != null || (label != null && label!.length > 1)
+        ? surface.textSecondary
+        : surface.textPrimary;
+    return SizedBox(
+      height: OnScreenKeyboard.keyHeight,
+      child: Material(
+        color: fill,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: primary ? surface.accent : surface.line,
+              ),
+            ),
+            child: icon != null
+                ? Icon(
+                    icon,
+                    size: 20,
+                    color: tint,
+                    semanticLabel: semanticLabel,
+                  )
+                : Text(
+                    label ?? '',
+                    style: TextStyle(
+                      color: tint,
+                      fontSize: 17,
+                      fontWeight: primary ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+          ),
+        ),
       ),
-      backgroundColor: selected
-          ? WidgetStatePropertyAll(scheme.primaryContainer)
-          : null,
     );
   }
 }

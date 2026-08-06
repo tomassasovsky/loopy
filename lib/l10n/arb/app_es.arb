@@ -1384,5 +1384,204 @@
     "bluetoothEmptyDevices": "Aún no hay dispositivos. Toca buscar para explorar.",
     "@bluetoothEmptyDevices": {
         "description": "Empty state when a Bluetooth scan returns nothing."
+    },
+    "trayNetworkLabel": "Red",
+    "@trayNetworkLabel": {
+        "description": "Navigation rail entry for the Network domain — WiFi and Bluetooth as two tabs of one destination. One word, like every rail entry."
+    },
+    "networkStateConnected": "conectado",
+    "@networkStateConnected": {
+        "description": "State word at the trailing edge of a Network row: a live association or link. Lower case — it is a machine readout about the row, not a sentence."
+    },
+    "networkStateSaved": "guardada",
+    "@networkStateSaved": {
+        "description": "State word for a WiFi network whose credentials this console already holds."
+    },
+    "networkStateOpen": "abierta",
+    "@networkStateOpen": {
+        "description": "State word for a WiFi network that needs no passphrase."
+    },
+    "networkStatePaired": "emparejado",
+    "@networkStatePaired": {
+        "description": "State word for a Bluetooth device this console holds a pairing for."
+    },
+    "networkTryAgain": "Reintentar",
+    "@networkTryAgain": {
+        "description": "Action on a Network failure banner: retries the join or pairing that failed."
+    },
+    "networkKeepIt": "Conservar",
+    "@networkKeepIt": {
+        "description": "Dismissive action on a Network forget confirmation — leaves the credential or pairing alone."
+    },
+    "wifiNotInRange": "fuera de alcance",
+    "@wifiNotInRange": {
+        "description": "Row subtitle for a saved network the last scan did not see."
+    },
+    "wifiSecurityWpa2": "WPA2",
+    "@wifiSecurityWpa2": {
+        "description": "Security label for a secured network, shown in the row subtitle and beside the join sheet's title."
+    },
+    "wifiSignalDbm": "{signal} dBm",
+    "@wifiSignalDbm": {
+        "description": "Signal strength in a WiFi row subtitle.",
+        "placeholders": {
+            "signal": {
+                "type": "int"
+            }
+        }
+    },
+    "wifiJoiningShort": "conectando a {ssid}",
+    "@wifiJoiningShort": {
+        "description": "Live-state line beside the WiFi face's title while a join is in flight. Lower case — it continues the title rather than starting a sentence.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiJoinFailedShort": "no se pudo conectar a {ssid}",
+    "@wifiJoinFailedShort": {
+        "description": "Live-state line beside the WiFi face's title after a join failed.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiJoiningBanner": "Conectando a {ssid}…",
+    "@wifiJoiningBanner": {
+        "description": "In-flight banner at the top of the WiFi list while a join is running.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiJoinSheetTitle": "Conectar a {ssid}",
+    "@wifiJoinSheetTitle": {
+        "description": "Title of the passphrase sheet.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiPassphraseTooShort": "Una contraseña WPA2 tiene al menos {count} caracteres.",
+    "@wifiPassphraseTooShort": {
+        "description": "Shown in the join sheet when the typed passphrase is below WPA2's floor. Checked here, where it can be corrected, rather than handed to the supplicant.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "wifiForgetTitleNamed": "¿Olvidar “{ssid}”?",
+    "@wifiForgetTitleNamed": {
+        "description": "Title of the forget-network confirmation.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiForgetBody": "La contraseña se elimina de esta consola. Volver a conectarse exige escribirla de nuevo.",
+    "@wifiForgetBody": {
+        "description": "Body of the forget-network confirmation — says what is actually destroyed."
+    },
+    "wifiForgetConfirmAction": "Olvidar red",
+    "@wifiForgetConfirmAction": {
+        "description": "Destructive action on the forget-network confirmation."
+    },
+    "bluetoothNotInRange": "fuera de alcance",
+    "@bluetoothNotInRange": {
+        "description": "Row subtitle for a paired device the last discovery did not see."
+    },
+    "bluetoothDiscoverableState": "detectable",
+    "@bluetoothDiscoverableState": {
+        "description": "Row subtitle for a device the scan can see but bluez reports no kind for."
+    },
+    "bluetoothKindHeadphones": "auriculares",
+    "@bluetoothKindHeadphones": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothKindSpeaker": "altavoz",
+    "@bluetoothKindSpeaker": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothKindPhone": "teléfono",
+    "@bluetoothKindPhone": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothKindComputer": "ordenador",
+    "@bluetoothKindComputer": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothKindKeyboard": "teclado",
+    "@bluetoothKindKeyboard": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothKindMouse": "ratón",
+    "@bluetoothKindMouse": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothKindGamepad": "mando",
+    "@bluetoothKindGamepad": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothConnectAction": "Conectar",
+    "@bluetoothConnectAction": {
+        "description": "Action inside an opened Bluetooth row: links an already-paired device."
+    },
+    "bluetoothDisconnectAction": "Desconectar",
+    "@bluetoothDisconnectAction": {
+        "description": "Action inside an opened Bluetooth row: drops the link but keeps the pairing."
+    },
+    "bluetoothForgetAction": "Olvidar",
+    "@bluetoothForgetAction": {
+        "description": "Destructive action inside an opened Bluetooth row."
+    },
+    "bluetoothPairingShort": "emparejando con {name}",
+    "@bluetoothPairingShort": {
+        "description": "Live-state line beside the Bluetooth face's title while a pairing is in flight.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "bluetoothPairFailedShort": "no se pudo emparejar con {name}",
+    "@bluetoothPairFailedShort": {
+        "description": "Live-state line beside the Bluetooth face's title after a pairing failed.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "bluetoothPairingBanner": "Emparejando con {name}… confírmalo en el dispositivo.",
+    "@bluetoothPairingBanner": {
+        "description": "In-flight banner while a pairing waits on a human at the far device.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "bluetoothForgetTitleNamed": "¿Olvidar “{name}”?",
+    "@bluetoothForgetTitleNamed": {
+        "description": "Title of the forget-device confirmation.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "bluetoothForgetBody": "El emparejamiento se elimina de esta consola. El dispositivo tendrá que volver a ponerse en modo de emparejamiento.",
+    "@bluetoothForgetBody": {
+        "description": "Body of the forget-device confirmation — says what is actually destroyed."
+    },
+    "bluetoothForgetConfirmAction": "Olvidar dispositivo",
+    "@bluetoothForgetConfirmAction": {
+        "description": "Destructive action on the forget-device confirmation."
     }
 }

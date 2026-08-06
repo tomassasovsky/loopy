@@ -28,4 +28,16 @@ class BluetoothRepository {
   /// LE advertise + discoverable on/off.
   Future<void> setAdvertising({required bool enabled}) =>
       _client.setAdvertising(enabled: enabled);
+
+  /// Pairs with [address] (discover, pair, trust, connect).
+  Future<void> pair(String address) => _client.pair(address);
+
+  /// Connects an already-paired [address].
+  Future<void> connect(String address) => _client.connect(address);
+
+  /// Drops the link to [address], keeping the pairing.
+  Future<void> disconnect(String address) => _client.disconnect(address);
+
+  /// Removes the pairing for [address].
+  Future<void> forget(String address) => _client.forget(address);
 }

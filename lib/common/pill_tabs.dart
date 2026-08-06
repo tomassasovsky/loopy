@@ -52,8 +52,8 @@ class PillTabs<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     return Wrap(
-      spacing: 6,
-      runSpacing: 6,
+      spacing: 5,
+      runSpacing: 5,
       children: [
         for (final tab in tabs)
           _Pill(
@@ -86,7 +86,13 @@ class _Pill extends StatelessWidget {
   final VoidCallback onTap;
   final SurfaceTheme surface;
 
-  static const double _radius = 7;
+  /// Metrics from the design system's `Tab` component, which this widget
+  /// claims to be. It was drawn before the strip had a design — 7px radius,
+  /// 14/7 padding, a 13px label and a translucent accent tint — and none of
+  /// those matched. The tint in particular could not: an alpha fill reads as a
+  /// different colour on each of the several backgrounds a strip sits on, so
+  /// the selected state is the flat `accentSurface` token.
+  static const double _radius = 8;
 
   @override
   Widget build(BuildContext context) {
@@ -100,19 +106,18 @@ class _Pill extends StatelessWidget {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
           curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(_radius),
-            color: selected
-                ? surface.accent.withValues(alpha: 0.18)
-                : Colors.transparent,
+            color: selected ? surface.accentSurface : Colors.transparent,
           ),
           child: Text(
             label,
             style: TextStyle(
               color: selected ? surface.accent : surface.textSecondary,
-              fontSize: 13,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              fontSize: 16,
+              height: 1.13,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
             ),
           ),
         ),

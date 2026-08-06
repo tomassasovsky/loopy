@@ -3,6 +3,7 @@ import 'package:brightness_client/brightness_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
+import 'package:segno/network/network_tab.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -161,16 +162,19 @@ void main() {
       expect: () => [
         const SettingsTrayState(
           dragProgress: 1,
-          destination: SettingsTrayDestination.wifi,
+          destination: SettingsTrayDestination.network,
         ),
         const SettingsTrayState(
           dragProgress: 1,
         ),
         const SettingsTrayState(
           dragProgress: 1,
-          destination: SettingsTrayDestination.bluetooth,
+          destination: SettingsTrayDestination.network,
+          networkTab: NetworkTab.bluetooth,
         ),
-        const SettingsTrayState(),
+        // Closing resets the destination and NOT the tab: returning to
+        // Network lands where it was left.
+        const SettingsTrayState(networkTab: NetworkTab.bluetooth),
       ],
     );
 
@@ -194,10 +198,43 @@ void main() {
     blocTest<SettingsTrayCubit, SettingsTrayState>(
       'showDestination on a closed tray leaves it closed',
       build: buildCubit,
-      act: (cubit) => cubit.showDestination(SettingsTrayDestination.wifi),
+      act: (cubit) => cubit.showDestination(SettingsTrayDestination.network),
       expect: () => [
         const SettingsTrayState(
-          destination: SettingsTrayDestination.wifi,
+          destination: SettingsTrayDestination.network,
+        ),
+      ],
+    );
+
+    blocTest<SettingsTrayCubit, SettingsTrayState>(
+      'the tray home shortcuts open the domain AT a tab',
+      build: buildCubit,
+      act: (cubit) => cubit
+        ..openBluetooth()
+        ..openWifi(),
+      expect: () => [
+        const SettingsTrayState(
+          dragProgress: 1,
+          destination: SettingsTrayDestination.network,
+          networkTab: NetworkTab.bluetooth,
+        ),
+        const SettingsTrayState(
+          dragProgress: 1,
+          destination: SettingsTrayDestination.network,
+        ),
+      ],
+    );
+
+    blocTest<SettingsTrayCubit, SettingsTrayState>(
+      'showNetworkTab moves the tab and does NOT touch the destination — the '
+      'strip is only reachable while Network is already showing',
+      build: buildCubit,
+      seed: () => const SettingsTrayState(dragProgress: 1),
+      act: (cubit) => cubit.showNetworkTab(NetworkTab.bluetooth),
+      expect: () => [
+        const SettingsTrayState(
+          dragProgress: 1,
+          networkTab: NetworkTab.bluetooth,
         ),
       ],
     );

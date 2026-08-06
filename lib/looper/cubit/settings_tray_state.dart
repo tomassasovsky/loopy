@@ -24,11 +24,12 @@ enum SettingsTrayDestination {
   /// implemented, and this face says so.
   tuner,
 
-  /// In-tray WiFi panel.
-  wifi,
-
-  /// In-tray Bluetooth panel.
-  bluetooth,
+  /// In-tray Network domain — WiFi and Bluetooth as tabs of one entry.
+  ///
+  /// One destination, not two: two rail slots for two radios was the same
+  /// waste as one Settings bucket for twelve groups (#498). Which radio is
+  /// showing is [SettingsTrayState.networkTab], not a destination of its own.
+  network,
 }
 
 /// State for [SettingsTrayCubit]: tray open/drag is ephemeral; brightness is
@@ -40,6 +41,7 @@ class SettingsTrayState extends Equatable {
     this.isNavigating = false,
     this.brightness = 0.8,
     this.destination = SettingsTrayDestination.home,
+    this.networkTab = NetworkTab.wifi,
   });
 
   /// Live drag/settle progress in `0..1` — `0` fully closed, `1` fully open.
@@ -60,8 +62,15 @@ class SettingsTrayState extends Equatable {
   /// applied through BrightnessClient when DDC/CI is available.
   final double brightness;
 
-  /// In-tray face: home tiles or a WiFi/Bluetooth expand panel.
+  /// In-tray face: home tiles or one of the rail's domain panels.
   final SettingsTrayDestination destination;
+
+  /// Which tab the Network domain shows.
+  ///
+  /// Survives leaving and returning to the domain — closing the tray resets
+  /// [destination] and deliberately not this, so Network lands where it was
+  /// left.
+  final NetworkTab networkTab;
 
   /// Returns a copy with the given fields replaced.
   SettingsTrayState copyWith({
@@ -69,11 +78,13 @@ class SettingsTrayState extends Equatable {
     bool? isNavigating,
     double? brightness,
     SettingsTrayDestination? destination,
+    NetworkTab? networkTab,
   }) => SettingsTrayState(
     dragProgress: dragProgress ?? this.dragProgress,
     isNavigating: isNavigating ?? this.isNavigating,
     brightness: brightness ?? this.brightness,
     destination: destination ?? this.destination,
+    networkTab: networkTab ?? this.networkTab,
   );
 
   @override
@@ -82,5 +93,6 @@ class SettingsTrayState extends Equatable {
     isNavigating,
     brightness,
     destination,
+    networkTab,
   ];
 }

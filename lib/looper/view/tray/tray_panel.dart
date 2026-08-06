@@ -2,15 +2,14 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:segno/bluetooth/bluetooth_tray_panel.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/view/tray/pedal_tray_panel.dart';
 import 'package:segno/looper/view/tray/tray_home.dart';
 import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
 import 'package:segno/looper/view/tray/tuner_tray_panel.dart';
+import 'package:segno/network/network_tray_panel.dart';
 import 'package:segno/theme/theme.dart';
-import 'package:segno/wifi/wifi_tray_panel.dart';
 
 /// The tray's contents once open — near-fullscreen frosted sheet, split into
 /// a persistent [TrayNavigationRail] and the face it selects.
@@ -113,16 +112,9 @@ class TrayPanel extends StatelessWidget {
                                     onBack: cubit.showHome,
                                   ),
                                 ),
-                                SettingsTrayDestination.wifi => _TrayFaceFrame(
-                                  child: WifiTrayPanel(
-                                    onBack: cubit.showHome,
-                                  ),
-                                ),
-                                SettingsTrayDestination.bluetooth =>
-                                  _TrayFaceFrame(
-                                    child: BluetoothTrayPanel(
-                                      onBack: cubit.showHome,
-                                    ),
+                                SettingsTrayDestination.network =>
+                                  const _TrayFaceFrame(
+                                    child: NetworkTrayPanel(),
                                   ),
                               },
                             ),
