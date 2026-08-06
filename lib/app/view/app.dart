@@ -17,6 +17,7 @@ import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
 import 'package:segno/common/pedal_device.dart';
 import 'package:segno/control/control.dart';
@@ -230,6 +231,18 @@ class App extends StatelessWidget {
           BlocProvider(
             create: (context) {
               final cubit = TracksCubit(
+                settings: context.read<SettingsRepository>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
+          // Beside the track names, and hoisted for the same reason: an input
+          // is called what the player calls it on every surface that shows
+          // one, not just the Audio face.
+          BlocProvider(
+            create: (context) {
+              final cubit = InputsCubit(
                 settings: context.read<SettingsRepository>(),
               );
               unawaited(cubit.load());

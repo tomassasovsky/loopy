@@ -14,6 +14,7 @@ import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/control_tab.dart';
@@ -731,6 +732,8 @@ void main() {
     }
     final quantize = QuantizeCubit(repository: looper, settings: settings);
     addTearDown(() => unawaited(quantize.close()));
+    final inputs = InputsCubit(settings: settings);
+    addTearDown(() => unawaited(inputs.close()));
 
     await tester.pumpWidget(
       MaterialApp(
@@ -744,6 +747,7 @@ void main() {
               BlocProvider<LooperBloc>.value(value: bloc),
               BlocProvider<TracksCubit>.value(value: names),
               BlocProvider<QuantizeCubit>.value(value: quantize),
+              BlocProvider<InputsCubit>.value(value: inputs),
             ],
             child: Scaffold(
               body: ColoredBox(
