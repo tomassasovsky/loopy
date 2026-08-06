@@ -248,13 +248,16 @@ class ConsoleRow extends StatelessWidget {
             )
           else ...[
             if (status != null)
-              Padding(
-                padding: const EdgeInsets.only(left: 14),
-                child: Text(
-                  status,
-                  style: TextStyle(
-                    color: valueColor ?? surface.textSecondary,
-                    fontSize: 14,
+              Transform.translate(
+                offset: const Offset(0, 1),
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 14),
+                  child: Text(
+                    status,
+                    style: TextStyle(
+                      color: valueColor ?? surface.textSecondary,
+                      fontSize: 14,
+                    ),
                   ),
                 ),
               ),
@@ -1385,9 +1388,10 @@ class ConsoleSegmented<T> extends StatelessWidget {
                           ? surface.onAccent
                           : surface.textSecondary,
                       fontSize: 16,
-                      fontWeight: option.value == selected
-                          ? FontWeight.w600
-                          : FontWeight.w400,
+                      // Constant: these segments are sized by their own text,
+                      // so weighting the selected one reflows the strip as
+                      // you tap along it.
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
@@ -1625,12 +1629,13 @@ class ConsoleToggleChip extends StatelessWidget {
             child: Transform.translate(
               offset: const Offset(0, 1),
               child: Text(
-              label,
-              style: TextStyle(
-                color: selected ? surface.accent : surface.textSecondary,
-                fontSize: 16,
-                height: 1.13,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                label,
+                style: TextStyle(
+                  color: selected ? surface.accent : surface.textSecondary,
+                  fontSize: 16,
+                  height: 1.13,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
           ),
@@ -1765,13 +1770,14 @@ class _ChipGrid<T> extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
+                          // `LOOP / loop-quantise`: every label at normal
+                          // weight in the primary tone, the current one told
+                          // apart by its accent colour and filled cell. The
+                          // cells are a fixed width, so nothing shifts.
                           color: option.value == selected
                               ? surface.accent
-                              : surface.textSecondary,
+                              : surface.textPrimary,
                           fontSize: 16,
-                          fontWeight: option.value == selected
-                              ? FontWeight.w600
-                              : FontWeight.w400,
                         ),
                       ),
                     ),
