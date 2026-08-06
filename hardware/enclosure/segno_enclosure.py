@@ -1274,7 +1274,7 @@ def _transition_face(cq):
            * cq.Location(cq.Vector(0,0,0), cq.Vector(0,1,0), TRANS_ANGLE))
     return box.val().moved(loc)
 
-def _platform_printed(cq, ph, v_c):
+def _platform_printed(cq, ph, v_c, fused=False):
     """3D-printed pedal pedestal: solid deck + perimeter wall, hollowed below
     (tall MID parts) with boss columns at the insert stations. M3 heat-set
     inserts press in from BELOW at the base PLAT_SCR pattern; the deck top gets
@@ -1285,7 +1285,15 @@ def _platform_printed(cq, ph, v_c):
     faceplate v, needed to height the skirt). Print BLACK. Origin: pedal
     centre, z=0 at the BASE PLATE TOP; height ph - T puts the deck at the
     pedal standing plane. Assembly frame: X = depth (v), Y = width (u); the
-    pedal mounts TOE-FORWARD (back/cable end at +X)."""
+    pedal mounts TOE-FORWARD (back/cable end at +X).
+
+    fused=True -- the pedestal is UNIONED onto a printed floor (the mini
+    console) instead of bolted onto the sheet-metal base. The whole underside
+    apparatus then has to go: the base inserts are unreachable (the floor
+    covers them) and, worse, the floor caps the hollow into a SEALED void with
+    a flat 109x83 ceiling, which the slicer can only fill with support that
+    can never be removed. Solid below the deck instead -- the slicer's sparse
+    infill does the lightweighting, and it stiffens the pedestal."""
     sw = SKIRT_OUT_W
     sd = SKIRT_OUT_D
     h = ph - T
@@ -1295,18 +1303,19 @@ def _platform_printed(cq, ph, v_c):
     body = cq.Workplane("XY").box(sd, sw, h, centered=(True, True, False))
     cav_h = h - PLAT_DECK
     foot_x = (-(sd/2 - PLATFORM_FOOT/2), sd/2 - PLATFORM_FOOT/2)
-    if cav_h > 2.0:
+    if cav_h > 2.0 and not fused:
         body = body.cut(cq.Workplane("XY").box(
             sd - 2*PLAT_WALL, sw - 2*PLAT_WALL, cav_h, centered=(True, True, False)))
         for dx in foot_x:                      # boss columns for the base inserts
             for dy in platform_foot_u(sw):
                 body = body.union(cq.Workplane("XY").cylinder(
                     cav_h, 6.0, centered=(True, True, False)).translate((dx, dy, 0)))
-    for dx in foot_x:                          # base inserts, from below
-        for dy in platform_foot_u(sw):
-            body = body.cut(cq.Workplane("XY").cylinder(
-                pil, INSERT_PILOT_D/2,
-                centered=(True, True, False)).translate((dx, dy, 0)))
+    if not fused:
+        for dx in foot_x:                      # base inserts, from below
+            for dy in platform_foot_u(sw):
+                body = body.cut(cq.Workplane("XY").cylinder(
+                    pil, INSERT_PILOT_D/2,
+                    centered=(True, True, False)).translate((dx, dy, 0)))
     # bottom-pad locating pocket, from above. The pad is inset from the case
     # back edge, so its centre sits forward (toe-ward, -X) of the pedal centre:
     # pad centre from back = INSET + PAD_D/2; pedal centre from back = PEDAL_D/2.
@@ -1468,7 +1477,10 @@ def build_mini_console():
                           .extrude(FOOT_PAD_H).translate((fx, fy, T)))
     yc = PEDAL_ROW1_V * cs
     for u in PEDS:
-        ped = (_platform_printed(cq, platform_h(PEDAL_ROW1_V), PEDAL_ROW1_V)
+        # fused=True: solid below the deck, no base inserts -- the tray floor
+        # would otherwise seal the hollow into an unreachable support cavity
+        ped = (_platform_printed(cq, platform_h(PEDAL_ROW1_V), PEDAL_ROW1_V,
+                                 fused=True)
                .rotate((0, 0, 0), (0, 0, 1), 90)
                .translate((u - U0, yc, T)))
         tray = tray.union(ped)

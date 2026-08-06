@@ -68,6 +68,10 @@ class _TrackRoutingSheetState extends State<_TrackRoutingSheet> {
   /// snapshot.
   bool? _quantize;
 
+  /// The open lane row, by lane index — one at a time, like every other
+  /// console list that opens in place.
+  int? _openLane;
+
   @override
   void initState() {
     super.initState();
@@ -119,6 +123,25 @@ class _TrackRoutingSheetState extends State<_TrackRoutingSheet> {
     bloc
       ..add(LooperLaneCountChanged(widget.channel, next + 1))
       ..add(LooperLaneInputChanged(widget.channel, next, input));
+  }
+
+  /// Which lane records [input], or null when none does.
+  int? _laneOf(Track track, int input) {
+    final index = track.lanes.indexWhere((lane) => lane.inputChannel == input);
+    if (index >= 0) return index;
+    // A stopped engine reports no lanes; the lane-0 mirror still says what it
+    // would be recording.
+    if (track.lanes.isEmpty && maskToInputChannel(track.inputMask) == input) {
+      return 0;
+    }
+    return null;
+  }
+
+  /// Where lane [lane] is sent — the lane-0 mirror when there are no lanes.
+  int _outputsOf(Track track, int? lane) {
+    if (lane == null) return 0;
+    if (lane < track.lanes.length) return track.lanes[lane].outputMask;
+    return track.outputMask;
   }
 
   /// Clean: every lane keeps its audio and records nothing.
@@ -196,7 +219,7 @@ class _TrackRoutingSheetState extends State<_TrackRoutingSheet> {
                     ),
                   ),
                   const SizedBox(height: 19),
-                  ConsoleGroupLabel(l10n.trackRecordedInputGroup),
+                  ConsoleGroupLabel(l10n.trackLanesGroup),
                   const SizedBox(height: 10),
                   ConsoleCard(
                     color: surface.background,
@@ -206,18 +229,27 @@ class _TrackRoutingSheetState extends State<_TrackRoutingSheet> {
                       // the input list is which one is being recorded RIGHT
                       // NOW.
                       // Multi-select: every checked input is a lane of its
-                      // own. The chosen rows also say `live`, as the mockups
-                      // mark them — a check says "this is selected", and the
-                      // point of the list is what is being recorded RIGHT NOW.
+                      // own, and a checked row opens onto that lane's
+                      // outputs. An unchecked one is just an input to add.
                       for (var i = 0; i < inputCount; i++)
-                        _PickRow(
+                        _LaneRow(
                           key: Key('track_input_$i'),
                           label: l10n.inputChannelLabel(i + 1),
-                          value: inputs.contains(i)
-                              ? l10n.trackInputLive
-                              : null,
-                          selected: inputs.contains(i),
-                          onTap: () => _toggleInput(track, i),
+                          lane: _laneOf(track, i),
+                          outputCount: outputCount,
+                          outputMask: _outputsOf(track, _laneOf(track, i)),
+                          expanded: _openLane != null &&
+                              _openLane == _laneOf(track, i),
+                          onToggle: () => _toggleInput(track, i),
+                          onOpen: () => setState(() {
+                            final lane = _laneOf(track, i);
+                            _openLane = _openLane == lane ? null : lane;
+                          }),
+                          onToggleOutput: (output) => _toggleOutput(
+                            _laneOf(track, i)!,
+                            _outputsOf(track, _laneOf(track, i)),
+                            output,
+                          ),
                         ),
                       _PickRow(
                         key: const Key('track_input_none'),
@@ -229,27 +261,6 @@ class _TrackRoutingSheetState extends State<_TrackRoutingSheet> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 19),
-                  ConsoleGroupLabel(l10n.trackOutputsGroup),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      for (var i = 0; i < outputCount; i++) ...[
-                        if (i > 0) const SizedBox(width: 10),
-                        ConsoleToggleChip(
-                          key: Key('track_output_$i'),
-                          label: l10n.outputChannelLabel(i + 1),
-                          selected: track.outputMask & (1 << i) != 0,
-                          onPressed: () =>
-                              _toggleOutput(track, track.outputMask, i),
-                        ),
-                      ],
-                    ],
-                  ),
-                  if (track.outputMask == 0) ...[
-                    const SizedBox(height: 10),
-                    _UnroutedBanner(text: l10n.trackUnroutedWarning),
-                  ],
                   const SizedBox(height: 19),
                   ConsoleGroupLabel(l10n.trackQuantizeGroup),
                   const SizedBox(height: 10),
@@ -301,18 +312,12 @@ class _TrackRoutingSheetState extends State<_TrackRoutingSheet> {
     );
   }
 
-  /// Outputs are per lane in the engine, but this panel offers one set for
-  /// the whole track, as the mockups draw it: the lanes of a track are one
-  /// instrument's capture, and sending half of it somewhere else is a Signal
-  /// page job, not a routing summary.
-  void _toggleOutput(Track track, int mask, int output) {
-    final bloc = context.read<LooperBloc>();
-    final next = mask ^ (1 << output);
-    final lanes = track.lanes.isEmpty ? 1 : track.lanes.length;
-    for (var lane = 0; lane < lanes; lane++) {
-      bloc.add(LooperLaneOutputChanged(widget.channel, lane, next));
-    }
-  }
+  /// Outputs belong to the LANE, which is what the engine has always modelled
+  /// and what a two-input track needs: a guitar lane going to the mains while
+  /// its DI lane goes to the desk is one track, two destinations.
+  void _toggleOutput(int lane, int mask, int output) => context
+      .read<LooperBloc>()
+      .add(LooperLaneOutputChanged(widget.channel, lane, mask ^ (1 << output)));
 }
 
 /// One choice in the sheet's lists: a check in the gutter when it is current,
@@ -356,44 +361,192 @@ class _PickRow extends StatelessWidget {
   }
 }
 
-/// The mockups' unrouted warning: a red dot and a sentence, on the same
-/// recessed fill as the lists it sits between.
-class _UnroutedBanner extends StatelessWidget {
-  const _UnroutedBanner({required this.text});
+/// One input in the lane list.
+///
+/// Unchecked it is just an input to add. Checked it IS a lane, so it carries
+/// that lane's outputs — as a summary on the right, and as chips when the row
+/// is opened. A lane recording something and routed nowhere says so here,
+/// where the outputs are, rather than as a note about the whole track: with
+/// one lane per input, "this track is silent" is no longer the same statement
+/// as "this lane is".
+class _LaneRow extends StatelessWidget {
+  const _LaneRow({
+    required this.label,
+    required this.lane,
+    required this.outputCount,
+    required this.outputMask,
+    required this.expanded,
+    required this.onToggle,
+    required this.onOpen,
+    required this.onToggleOutput,
+    super.key,
+  });
+
+  final String label;
+
+  /// The lane this input records into, or null when it records nothing.
+  final int? lane;
+
+  final int outputCount;
+  final int outputMask;
+  final bool expanded;
+
+  /// Checks or unchecks the input — adds or frees its lane.
+  final VoidCallback onToggle;
+
+  /// Opens the lane's outputs.
+  final VoidCallback onOpen;
+
+  final ValueChanged<int> onToggleOutput;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final recording = lane != null;
+    final routed = outputMask != 0;
+
+    final row = ConsoleRow(
+      title: label,
+      value: recording
+          ? (routed ? _outputs(l10n, outputMask) : l10n.trackRoutingSummaryNone)
+          : null,
+      valueColor: recording && !routed ? surface.warning : null,
+      showDisclosure: recording,
+      expanded: expanded,
+      // Checking is the tap target while the row is closed; once it is a lane,
+      // the row opens and the check itself un-checks it.
+      onTap: recording ? onOpen : onToggle,
+      leading: _CheckGutter(
+        selected: recording,
+        onTap: recording ? onToggle : null,
+      ),
+    );
+
+    if (!recording) return row;
+    // Not ConsoleExpandedRow: its action strip is a right-aligned row of
+    // chips, and a lane opens onto a captioned block — chips, and the warning
+    // when they are all off. Same expansion primitive, same motion.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        row,
+        ConsoleExpansion(
+          expanded: expanded,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+            // The strip spans the row it belongs to; without this the block
+            // shrinks to its chips and floats mid-card.
+            child: Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: surface.control,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ConsoleGroupLabel(l10n.laneOutputsGroup),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        for (var i = 0; i < outputCount; i++)
+                          ConsoleToggleChip(
+                            key: Key('track_output_${lane}_$i'),
+                            label: l10n.outputChannelLabel(i + 1),
+                            selected: outputMask & (1 << i) != 0,
+                            onPressed: () => onToggleOutput(i),
+                          ),
+                      ],
+                    ),
+                    if (!routed) ...[
+                      const SizedBox(height: 12),
+                      _UnroutedNote(
+                        key: const Key('track_unrouted_banner'),
+                        text: l10n.laneUnroutedWarning,
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    Text(
+                      l10n.laneEffectsNote,
+                      style: TextStyle(color: surface.textMuted, fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  static String _outputs(AppLocalizations l10n, int mask) => [
+    for (var i = 0; i < 32; i++)
+      if (mask & (1 << i) != 0) l10n.outputChannelLabel(i + 1),
+  ].join(' · ');
+}
+
+/// The check gutter, at the mockups' 40px inset. Tappable on a lane row, so
+/// the check both SHOWS and UNDOES the choice.
+class _CheckGutter extends StatelessWidget {
+  const _CheckGutter({required this.selected, this.onTap});
+
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final glyph = SizedBox(
+      width: 33,
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: selected
+            ? Icon(Icons.check, size: 18, color: surface.accent)
+            : const SizedBox.shrink(),
+      ),
+    );
+    if (onTap == null) return glyph;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: glyph,
+    );
+  }
+}
+
+/// A lane that records but goes nowhere, said inside the lane's own strip.
+class _UnroutedNote extends StatelessWidget {
+  const _UnroutedNote({required this.text, super.key});
 
   final String text;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: surface.background,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(40, 14, 20, 14),
-        child: Row(
-          key: const Key('track_unrouted_banner'),
-          children: [
-            Container(
-              width: 11,
-              height: 11,
-              decoration: BoxDecoration(
-                color: surface.rec,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Text(
-                text,
-                style: TextStyle(color: surface.textSecondary, fontSize: 16),
-              ),
-            ),
-          ],
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 11,
+          height: 11,
+          decoration: BoxDecoration(color: surface.rec, shape: BoxShape.circle),
         ),
-      ),
+        const SizedBox(width: 14),
+        Flexible(
+          child: Text(
+            text,
+            style: TextStyle(color: surface.textSecondary, fontSize: 16),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -1958,14 +1958,6 @@
             }
         }
     },
-    "trackRecordedInputGroup": "ENTRADA GRABADA",
-    "@trackRecordedInputGroup": {
-        "description": "Group heading over the input list."
-    },
-    "trackOutputsGroup": "SALIDAS",
-    "@trackOutputsGroup": {
-        "description": "Group heading over the output chips."
-    },
     "trackQuantizeGroup": "CUANTIZAR GRABACIÓN",
     "@trackQuantizeGroup": {
         "description": "Group heading over the quantize override."
@@ -1985,10 +1977,6 @@
     "trackQuantizeNever": "No cuantizar nunca",
     "@trackQuantizeNever": {
         "description": "Quantize override: forced off."
-    },
-    "trackUnroutedWarning": "Nada ruteado aquí: esta pista no se escuchará.",
-    "@trackUnroutedWarning": {
-        "description": "Banner when a track has no output routed."
     },
     "trackRoutingSummaryNone": "sin ruteo",
     "@trackRoutingSummaryNone": {
@@ -2065,5 +2053,21 @@
                 "type": "String"
             }
         }
+    },
+    "trackLanesGroup": "CAPAS",
+    "@trackLanesGroup": {
+        "description": "Group heading over the routing panel's lane list."
+    },
+    "laneUnroutedWarning": "Nada ruteado aquí: esta capa no se escuchará.",
+    "@laneUnroutedWarning": {
+        "description": "Shown inside a lane that records but has no output."
+    },
+    "laneOutputsGroup": "SALIDAS DE ESTA CAPA",
+    "@laneOutputsGroup": {
+        "description": "Caption over one lane's output chips."
+    },
+    "laneEffectsNote": "Los efectos de esta capa viven en la página Signal.",
+    "@laneEffectsNote": {
+        "description": "Says where a lane's FX chain is edited."
     }
 }
