@@ -1345,6 +1345,14 @@ class ConsolePickerOption<T> {
 /// Not `PopupMenuButton`: a Material menu opens a small floating card wherever
 /// the tap landed, sized for a mouse. Every list in this tray is the same
 /// 70px row on a card, and a target picker is a list like any other.
+/// Picks one of a LIST of options, drawn to `LOOP / loop-mode-pick`: a bottom
+/// sheet of rows, each able to carry the line of explanation that makes it
+/// choosable.
+///
+/// For a handful of short, self-explaining options use
+/// [showConsoleChipDialog] instead — that is the console's ordinary pick-one
+/// control, and this one is for the lists it cannot hold: annotated options
+/// (the looper modes) and long target lists (MIDI).
 Future<T?> showConsolePickerSheet<T>(
   BuildContext context, {
   required String title,
@@ -1541,6 +1549,152 @@ class ConsoleToggleChip extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Picks one of a few short options, drawn to `LOOP / loop-quantise`: a
+/// centred dialog with the choices as equal-width chips.
+///
+/// This is the console's pick-one control. Use it whenever the options are
+/// few and their names say what they are; when an option needs a line of
+/// explanation to be choosable, or the list is long, use
+/// [showConsolePickerSheet] instead (`LOOP / loop-mode-pick`).
+///
+/// A chip applies and closes — Cancel is the only button, because a dialog
+/// with OK would imply the choice was not already made.
+Future<T?> showConsoleChipDialog<T>(
+  BuildContext context, {
+  required String title,
+  required String explanation,
+  required List<ConsoleSegment<T>> options,
+  T? selected,
+}) {
+  final surface = context.surface;
+  return showDialog<T>(
+    context: context,
+    barrierColor: surface.scrim,
+    builder: (dialogContext) => Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 744),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: surface.card,
+            borderRadius: BorderRadius.circular(17),
+            border: Border.all(color: surface.borderStrong),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(25),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: surface.textPrimary,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  explanation,
+                  style: TextStyle(color: surface.textSecondary, fontSize: 16),
+                ),
+                const SizedBox(height: 19),
+                // Equal widths, wrapping when the set outgrows one line: the
+                // mockups draw four across a 744px dialog, and eight presets
+                // would otherwise squeeze to unreadable slivers.
+                _ChipGrid<T>(
+                  options: options,
+                  selected: selected,
+                  onPicked: (value) => Navigator.of(dialogContext).pop(value),
+                ),
+                const SizedBox(height: 19),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: ConsoleSmallButton(
+                    key: const Key('console_chip_cancel'),
+                    label: context.l10n.cancel,
+                    large: true,
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _ChipGrid<T> extends StatelessWidget {
+  const _ChipGrid({
+    required this.options,
+    required this.selected,
+    required this.onPicked,
+  });
+
+  final List<ConsoleSegment<T>> options;
+  final T? selected;
+  final ValueChanged<T> onPicked;
+
+  /// The mockups' chip: 166 wide on a 744 dialog, four to a row.
+  static const int _perRow = 4;
+  static const double _height = 48;
+  static const double _gap = 10;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = options.length < _perRow ? options.length : _perRow;
+        final width =
+            (constraints.maxWidth - _gap * (columns - 1)) / columns;
+        return Wrap(
+          spacing: _gap,
+          runSpacing: _gap,
+          children: [
+            for (final option in options)
+              SizedBox(
+                width: width,
+                height: _height,
+                child: Material(
+                  color: option.value == selected
+                      ? surface.accentSurface
+                      : surface.cardHigh,
+                  borderRadius: BorderRadius.circular(11),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    key: Key('console_chip_${option.label}'),
+                    onTap: () => onPicked(option.value),
+                    child: Center(
+                      child: Text(
+                        option.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: option.value == selected
+                              ? surface.accent
+                              : surface.textSecondary,
+                          fontSize: 16,
+                          fontWeight: option.value == selected
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

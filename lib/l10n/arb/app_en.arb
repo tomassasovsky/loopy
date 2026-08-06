@@ -2547,5 +2547,29 @@
     "laneEffectsNote": "Effects for this lane live on the Signal page.",
     "@laneEffectsNote": {
         "description": "Says where a lane's FX chain is edited."
+    },
+    "loopSignatureExplain": "How many beats a bar has, and what counts as a beat.",
+    "@loopSignatureExplain": {
+        "description": "Explanation line in the time-signature chip dialog."
+    },
+    "loopLengthExplain": "How long a new loop runs: the first take sets it, or fix it to a multiple.",
+    "@loopLengthExplain": {
+        "description": "Explanation line in the loop-length chip dialog."
+    },
+    "loopClickOutputExplain": "Where the click is heard — usually the phones, not the mains.",
+    "@loopClickOutputExplain": {
+        "description": "Explanation line in the click-output chip dialog."
+    },
+    "defaultModeExplain": "What the pedal starts in when the rig comes up.",
+    "@defaultModeExplain": {
+        "description": "Explanation line in the default-mode chip dialog."
+    },
+    "trackLengthExplain": "Auto takes its length from the first take; a preset records that many bars.",
+    "@trackLengthExplain": {
+        "description": "Explanation line in a track's length chip dialog."
+    },
+    "tracksEmptyMessage": "No tracks — the engine is not running.",
+    "@tracksEmptyMessage": {
+        "description": "Shown on the Tracks face when the engine reports no tracks."
     }
 }

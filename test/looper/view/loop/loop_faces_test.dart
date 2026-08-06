@@ -248,6 +248,28 @@ void main() {
     });
   });
 
+  group('Chip dialog', () {
+    testWidgets('picks a quantise division from the chips', (tester) async {
+      seed(const TransportState());
+      await pump(tester, LoopTab.tempo);
+
+      await tester.tap(find.byKey(const Key('loop_quantise_row')));
+      await tester.pumpAndSettle();
+
+      // The designed pick-one control: an explanation and a row of chips,
+      // where a tap applies and closes. Cancel is the only button.
+      expect(find.text('Off'), findsWidgets);
+      expect(find.byKey(const Key('console_chip_cancel')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('console_chip_1/4')));
+      await tester.pumpAndSettle();
+
+      verify(
+        () => repository.setQuantizeDiv(GridDivision.quarter),
+      ).called(1);
+      expect(find.byKey(const Key('console_chip_cancel')), findsNothing);
+    });
+  });
+
   group('Tempo sheet', () {
     testWidgets('a tap shows what the engine made of it', (tester) async {
       seed(
