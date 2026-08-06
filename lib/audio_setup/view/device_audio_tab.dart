@@ -10,6 +10,7 @@ import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// The Device tab of the console's Audio domain, drawn to `AUDIO / audio`,
 /// `settings-device`, `settings-rate`, `settings-inputs`, `no-outputs`,
@@ -123,8 +124,26 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
               const SizedBox(height: 14),
               ConsoleGroupLabel(l10n.audioAsioGroup),
               const SizedBox(height: 10),
-              if (state.asioDrivers.isEmpty)
-                ConsoleEmptyCard(message: l10n.audioAsioMissing)
+              if (state.asioDrivers.isEmpty) ...[
+                ConsoleEmptyCard(message: l10n.audioAsioMissing),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: ConsoleSmallButton(
+                    key: const Key('audio_asio4all_link'),
+                    label: l10n.audioAsioLink,
+                    large: true,
+                    // The generic driver, linked and never bundled — its
+                    // licence forbids redistribution.
+                    onPressed: () => unawaited(
+                      launchUrl(
+                        Uri.parse('https://asio4all.org'),
+                        mode: LaunchMode.externalApplication,
+                      ),
+                    ),
+                  ),
+                ),
+              ]
               else
                 ConsoleCard(
                   children: [
