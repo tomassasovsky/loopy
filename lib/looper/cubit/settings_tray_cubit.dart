@@ -3,6 +3,7 @@ import 'package:brightness_client/brightness_client.dart';
 import 'package:equatable/equatable.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/software_brightness.dart';
+import 'package:segno/audio_setup/audio_tab.dart';
 import 'package:segno/control/control_tab.dart';
 import 'package:segno/looper/loop_tab.dart';
 import 'package:segno/looper/tracks_tab.dart';
@@ -129,6 +130,9 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
 
   /// Switches the Tracks face's tab.
   void showTracksTab(TracksTab tab) => emit(state.copyWith(tracksTab: tab));
+
+  /// Switches the Audio face's tab.
+  void showAudioTab(AudioTab tab) => emit(state.copyWith(audioTab: tab));
 
   /// Switches the Network face's tab. Does not touch
   /// [SettingsTrayState.destination]:

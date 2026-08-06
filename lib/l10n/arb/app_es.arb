@@ -2093,5 +2093,25 @@
     "tracksEmptyMessage": "Sin pistas: el motor no está en marcha.",
     "@tracksEmptyMessage": {
         "description": "Shown on the Tracks face when the engine reports no tracks."
+    },
+    "trayAudioLabel": "Audio",
+    "@trayAudioLabel": {
+        "description": "Console Audio face: trayAudioLabel"
+    },
+    "audioDeviceTab": "Dispositivo",
+    "@audioDeviceTab": {
+        "description": "Console Audio face: audioDeviceTab"
+    },
+    "audioRecordingTab": "Grabación",
+    "@audioRecordingTab": {
+        "description": "Console Audio face: audioRecordingTab"
+    },
+    "audioStatusTab": "Estado",
+    "@audioStatusTab": {
+        "description": "Console Audio face: audioStatusTab"
+    },
+    "audioStatusGroup": "ESTADO",
+    "@audioStatusGroup": {
+        "description": "Console Audio face: audioStatusGroup"
     }
 }
