@@ -226,7 +226,10 @@ class _TrackRoutingSheetState extends State<_TrackRoutingSheet> {
                   ConsoleGroupLabel(l10n.trackLanesGroup),
                   const SizedBox(height: 10),
                   ConsoleCard(
+                    // Rounded and unbordered on the page fill: a list inside a
+                    // dialog, not one opened from the row above it.
                     color: surface.background,
+                    bordered: false,
                     children: [
                       // The chosen row also says `live`, as the mockups mark
                       // it: a check says "this is selected", and the point of
@@ -271,6 +274,7 @@ class _TrackRoutingSheetState extends State<_TrackRoutingSheet> {
                   const SizedBox(height: 10),
                   ConsoleCard(
                     color: surface.background,
+                    bordered: false,
                     children: [
                       _PickRow(
                         key: const Key('track_quantize_follow'),

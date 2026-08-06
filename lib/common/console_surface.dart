@@ -35,9 +35,10 @@ class ConsoleCard extends StatelessWidget {
   /// Creates a [ConsoleCard].
   const ConsoleCard({
     required this.children,
-    this.bordered = false,
+    this.bordered = true,
     this.borderRadius = _cardRadius,
     this.color,
+    this.recessed = false,
     super.key,
   });
 
@@ -49,9 +50,18 @@ class ConsoleCard extends StatelessWidget {
   /// it sits on, which is how the mockups draw them.
   final Color? color;
 
-  /// Whether to draw the outer border. The mockups border the Bluetooth
-  /// visibility card and leave the primary list of a face unbordered.
+  /// Whether to draw the outer border.
+  ///
+  /// On by default: every card in the mockups carries a 1px line, and the
+  /// faces read as floating text without it. Off for a card that is already
+  /// inside something bordered.
   final bool bordered;
+
+  /// The recessed form: the page background, square corners, and a single
+  /// line along the TOP — the seam between a row and the list it opened, as
+  /// `AUDIO / settings-device` draws it. Not a box: the list runs into the
+  /// card's own edges, so a full border would double them.
+  final bool recessed;
 
   /// Overrides the card border radius.
   final double borderRadius;
@@ -59,18 +69,24 @@ class ConsoleCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
+    final radius = recessed ? 0.0 : borderRadius;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: color ?? surface.cardHigh,
-        borderRadius: BorderRadius.circular(borderRadius),
-        border: bordered ? Border.all(color: surface.line) : null,
+        color: recessed ? surface.background : (color ?? surface.cardHigh),
+        borderRadius: BorderRadius.circular(radius),
+        border: recessed
+            ? Border(top: BorderSide(color: surface.line))
+            : (bordered ? Border.all(color: surface.line) : null),
       ),
       child: Padding(
-        padding: bordered ? const EdgeInsets.all(1) : EdgeInsets.zero,
+        padding: bordered && !recessed
+            ? const EdgeInsets.all(1)
+            : EdgeInsets.zero,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(borderRadius - 1),
+          borderRadius: BorderRadius.circular(radius > 0 ? radius - 1 : 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: children,
           ),
@@ -103,6 +119,7 @@ class ConsoleRow extends StatelessWidget {
     this.leading,
     this.valueColor,
     this.titleColor,
+    this.dividerWhileExpanded = false,
     super.key,
   });
 
@@ -129,6 +146,15 @@ class ConsoleRow extends StatelessWidget {
 
   /// Whether to paint the bottom hairline. False on a group's last row.
   final bool divider;
+
+  /// Whether the hairline survives the row being opened.
+  ///
+  /// The two faces genuinely differ. A Network row opens into ONE rounded,
+  /// bordered block carrying row and actions together, so its own hairline
+  /// would cut through the middle of that block. An Audio row stays a flat
+  /// row and the list appears beneath it, seamed by a line of its own — and
+  /// the mockups draw the row's hairline there too.
+  final bool dividerWhileExpanded;
 
   /// Whether this row is the current choice in a pick list — tinted, the way
   /// the mockups mark the target a switch already drives.
@@ -176,31 +202,39 @@ class ConsoleRow extends StatelessWidget {
                   : CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color:
-                        titleColor ??
-                        (centred ? surface.textSecondary : surface.textPrimary),
-                    fontSize: 17,
-                    // Tight leading, from the mockups: title + subtitle have
-                    // to clear 41px between the row's 14/15 padding, which
-                    // Roboto's default 1.4 line height does not.
-                    height: 1.2,
+                Transform.translate(
+                  offset: const Offset(0, 2),
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color:
+                          titleColor ??
+                          (centred
+                              ? surface.textSecondary
+                              : surface.textPrimary),
+                      fontSize: 17,
+                      // Tight leading, from the mockups: title + subtitle have
+                      // to clear 41px between the row's 14/15 padding, which
+                      // Roboto's default 1.4 line height does not.
+                      height: 1.2,
+                    ),
                   ),
                 ),
                 if (line != null) ...[
                   const SizedBox(height: 2),
-                  Text(
-                    line,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: surface.textMuted,
-                      fontSize: 14,
-                      height: 1.2,
+                  Transform.translate(
+                    offset: const Offset(0, 2),
+                    child: Text(
+                      line,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: surface.textMuted,
+                        fontSize: 14,
+                        height: 1.2,
+                      ),
                     ),
                   ),
                 ],
@@ -248,7 +282,7 @@ class ConsoleRow extends StatelessWidget {
     );
 
     // One animated box for BOTH the selection tint and the hairline, and the
-    // hairline goes while the row is open.
+    // hairline goes while the row is open unless the face keeps it.
     //
     // Both used to be hard switches: the line under a row vanished on the
     // frame the row was tapped and came back the frame it shut, flashing
@@ -267,7 +301,7 @@ class ConsoleRow extends StatelessWidget {
       foregroundDecoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(
-            color: divider && !expanded
+            color: divider && (dividerWhileExpanded || !expanded)
                 ? surface.borderHairline
                 : Colors.transparent,
           ),
@@ -1588,7 +1622,9 @@ class ConsoleToggleChip extends StatelessWidget {
           onTap: onPressed,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 10),
-            child: Text(
+            child: Transform.translate(
+              offset: const Offset(0, 1),
+              child: Text(
               label,
               style: TextStyle(
                 color: selected ? surface.accent : surface.textSecondary,
