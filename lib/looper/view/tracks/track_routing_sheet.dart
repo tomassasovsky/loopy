@@ -12,6 +12,12 @@ import 'package:segno/theme/theme.dart';
 /// Opens one track's routing: what it records, where it goes, and whether it
 /// quantizes. Drawn to `TRACKS / track-routing` and `track-unrouted`.
 ///
+/// A track records ANY set of inputs — one dry lane each, sharing the track's
+/// transport and loop. That is the model the multi-lane engine was rewritten
+/// for ("both inputs recorded into track 1 as separate dry lanes", NOT one
+/// input per track with grouping), so the input list here is multi-select and
+/// each check is a lane.
+///
 /// A centred dialog rather than a bottom sheet, as the mockups draw it: this
 /// one is a panel of three lists, and a sheet tall enough to hold them would
 /// be the whole screen anyway.
@@ -68,6 +74,62 @@ class _TrackRoutingSheetState extends State<_TrackRoutingSheet> {
     _quantize = context.read<LooperRepository>().trackQuantize(widget.channel);
   }
 
+  /// The inputs this track records, in lane order.
+  ///
+  /// From the lanes themselves, falling back to the lane-0 mirror for a
+  /// stopped engine, which reports no lanes at all.
+  List<int> _inputsOf(Track track) {
+    if (track.lanes.isEmpty) {
+      final single = maskToInputChannel(track.inputMask);
+      return single < 0 ? const [] : [single];
+    }
+    return [
+      for (final lane in track.lanes)
+        if (lane.inputChannel >= 0) lane.inputChannel,
+    ];
+  }
+
+  /// Adds or drops one input WITHOUT renumbering the others.
+  ///
+  /// Lane index is identity: lane 2 holds lane 2's recorded audio. Rebuilding
+  /// the list as "sorted inputs, lane per index" would silently move a take
+  /// from one source to another whenever an input was added in the middle.
+  /// So dropping an input sets its own lane to record nothing (`-1`) and
+  /// leaves the lane where it is, and adding one reuses such a spare lane
+  /// before growing the track.
+  void _toggleInput(Track track, int input) {
+    final bloc = context.read<LooperBloc>();
+    final lanes = track.lanes;
+    final existing = lanes.indexWhere((lane) => lane.inputChannel == input);
+    if (existing >= 0) {
+      bloc.add(LooperLaneInputChanged(widget.channel, existing, -1));
+      return;
+    }
+    if (lanes.isEmpty && maskToInputChannel(track.inputMask) < 0) {
+      bloc.add(LooperLaneInputChanged(widget.channel, 0, input));
+      return;
+    }
+    final spare = lanes.indexWhere((lane) => lane.inputChannel < 0);
+    if (spare >= 0) {
+      bloc.add(LooperLaneInputChanged(widget.channel, spare, input));
+      return;
+    }
+    // Grow first, so the engine has allocated the lane before it is routed.
+    final next = lanes.isEmpty ? 1 : lanes.length;
+    bloc
+      ..add(LooperLaneCountChanged(widget.channel, next + 1))
+      ..add(LooperLaneInputChanged(widget.channel, next, input));
+  }
+
+  /// Clean: every lane keeps its audio and records nothing.
+  void _recordNothing(Track track) {
+    final bloc = context.read<LooperBloc>();
+    final lanes = track.lanes.length;
+    for (var lane = 0; lane < (lanes == 0 ? 1 : lanes); lane++) {
+      bloc.add(LooperLaneInputChanged(widget.channel, lane, -1));
+    }
+  }
+
   void _setQuantize(bool? enabled) {
     setState(() => _quantize = enabled);
     context.read<LooperBloc>().add(
@@ -92,7 +154,7 @@ class _TrackRoutingSheetState extends State<_TrackRoutingSheet> {
     final outputCount = state.status.outputChannels > 0
         ? state.status.outputChannels
         : kFallbackOutputCount;
-    final input = maskToInputChannel(track.inputMask);
+    final inputs = _inputsOf(track);
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -138,21 +200,27 @@ class _TrackRoutingSheetState extends State<_TrackRoutingSheet> {
                       // it: a check says "this is selected", and the point of
                       // the input list is which one is being recorded RIGHT
                       // NOW.
+                      // Multi-select: every checked input is a lane of its
+                      // own. The chosen rows also say `live`, as the mockups
+                      // mark them — a check says "this is selected", and the
+                      // point of the list is what is being recorded RIGHT NOW.
                       for (var i = 0; i < inputCount; i++)
                         _PickRow(
                           key: Key('track_input_$i'),
                           label: l10n.inputChannelLabel(i + 1),
-                          value: input == i ? l10n.trackInputLive : null,
-                          selected: input == i,
-                          onTap: () => _setInput(i),
+                          value: inputs.contains(i)
+                              ? l10n.trackInputLive
+                              : null,
+                          selected: inputs.contains(i),
+                          onTap: () => _toggleInput(track, i),
                         ),
                       _PickRow(
                         key: const Key('track_input_none'),
                         label: l10n.signalInputNone,
-                        value: input < 0 ? l10n.trackInputLive : null,
-                        selected: input < 0,
+                        value: inputs.isEmpty ? l10n.trackInputLive : null,
+                        selected: inputs.isEmpty,
                         divider: false,
-                        onTap: () => _setInput(-1),
+                        onTap: () => _recordNothing(track),
                       ),
                     ],
                   ),
@@ -167,7 +235,8 @@ class _TrackRoutingSheetState extends State<_TrackRoutingSheet> {
                           key: Key('track_output_$i'),
                           label: l10n.outputChannelLabel(i + 1),
                           selected: track.outputMask & (1 << i) != 0,
-                          onPressed: () => _toggleOutput(track.outputMask, i),
+                          onPressed: () =>
+                              _toggleOutput(track, track.outputMask, i),
                         ),
                       ],
                     ],
@@ -227,17 +296,18 @@ class _TrackRoutingSheetState extends State<_TrackRoutingSheet> {
     );
   }
 
-  /// Lane 0, not the track's input mask: a lane records ONE input, and the
-  /// mask setter picks the lowest set bit, which quietly loses the choice on
-  /// any track with more than one lane. Multi-lane tracks keep the Signal
-  /// page for the rest of their lanes.
-  void _setInput(int inputChannel) => context.read<LooperBloc>().add(
-    LooperLaneInputChanged(widget.channel, 0, inputChannel),
-  );
-
-  void _toggleOutput(int mask, int output) => context.read<LooperBloc>().add(
-    LooperLaneOutputChanged(widget.channel, 0, mask ^ (1 << output)),
-  );
+  /// Outputs are per lane in the engine, but this panel offers one set for
+  /// the whole track, as the mockups draw it: the lanes of a track are one
+  /// instrument's capture, and sending half of it somewhere else is a Signal
+  /// page job, not a routing summary.
+  void _toggleOutput(Track track, int mask, int output) {
+    final bloc = context.read<LooperBloc>();
+    final next = mask ^ (1 << output);
+    final lanes = track.lanes.isEmpty ? 1 : track.lanes.length;
+    for (var lane = 0; lane < lanes; lane++) {
+      bloc.add(LooperLaneOutputChanged(widget.channel, lane, next));
+    }
+  }
 }
 
 /// One choice in the sheet's lists: a check in the gutter when it is current,

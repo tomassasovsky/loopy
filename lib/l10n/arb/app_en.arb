@@ -2431,7 +2431,7 @@
     "@tracksLengthsFooter": {
         "description": "Footnote under the Lengths tab."
     },
-    "tracksRoutingFooter": "Each track records one input and is sent to any set of outputs. Quantize follows the global setting unless a track overrides it.",
+    "tracksRoutingFooter": "A track records any set of inputs — one dry lane each, sharing the loop — and is sent to any set of outputs. Quantize follows the global setting unless a track overrides it.",
     "@tracksRoutingFooter": {
         "description": "Footnote under the Routing tab."
     },
