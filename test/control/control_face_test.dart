@@ -290,8 +290,10 @@ void main() {
       await tester.tap(find.byKey(const Key('pedal_switch_track2')));
       await tester.pumpAndSettle();
 
+      // Bank B's caps drive tracks 5-8 — that is what Bank is FOR — so the
+      // second cap is Track 6 here, not a second Track 2.
       expect(
-        find.text(l10nOf(tester).controlAssignGroup('TRACK 2', 'B')),
+        find.text(l10nOf(tester).controlAssignGroup('TRACK 6', 'B')),
         findsOneWidget,
       );
 
@@ -303,6 +305,29 @@ void main() {
         control.state.globalBindings.bindings.single.key,
         const PedalBindingKey(button: PedalButton.track2, bank: 1),
       );
+    });
+
+    testWidgets('the track rows name the channel their bank drives', (
+      tester,
+    ) async {
+      await pump(tester);
+      final l10n = l10nOf(tester);
+      for (var n = 1; n <= 4; n++) {
+        expect(find.text(l10n.controlTrackSwitchName(n)), findsOneWidget);
+      }
+      expect(find.text(l10n.controlTrackSwitchName(5)), findsNothing);
+
+      await tester.tap(find.text('B'));
+      await tester.pumpAndSettle();
+
+      for (var n = 5; n <= 8; n++) {
+        expect(
+          find.text(l10n.controlTrackSwitchName(n)),
+          findsOneWidget,
+          reason: 'bank B drives tracks 5-8, not a second copy of 1-4',
+        );
+      }
+      expect(find.text(l10n.controlTrackSwitchName(1)), findsNothing);
     });
 
     testWidgets('a track switch holds a binding per bank', (tester) async {

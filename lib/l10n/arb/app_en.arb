@@ -2234,5 +2234,23 @@
     "midiDeviceUnplugged": "unplugged",
     "@midiDeviceUnplugged": {
         "description": "Trailing readout on a MIDI device the enumeration has lost — it is still listed, because the selection is what survives the cable being found again."
+    },
+    "controlTrackSwitchName": "Track {number}",
+    "@controlTrackSwitchName": {
+        "description": "What a Control-face row calls a track footswitch: the CHANNEL that cap drives in the bank being shown \u2014 tracks 1-4 in bank A and 5-8 in bank B, which is what Bank is for.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "controlTrackSwitchLegend": "TRACK {number}",
+    "@controlTrackSwitchLegend": {
+        "description": "The upper-case form of controlTrackSwitchName, for the assign caption, which sits among other upper-case captions.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
     }
 }

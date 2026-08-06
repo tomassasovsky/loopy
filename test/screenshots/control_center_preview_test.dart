@@ -566,6 +566,14 @@ void main() {
       find.byType(Scaffold),
       matchesGoldenFile('goldens/control_center_control_pedal.png'),
     );
+
+    // And again on bank B, where the same four caps drive tracks 5-8.
+    await tester.tap(find.text('B'));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_control_pedal_bank_b.png'),
+    );
   }, skip: !hasFonts);
 
   testWidgets('control domain, midi tab on a live link', (tester) async {

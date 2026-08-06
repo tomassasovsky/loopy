@@ -201,7 +201,7 @@ class _PedalTrayBodyState extends State<PedalTrayBody> {
 
     return ConsoleRow(
       key: Key('pedal_switch_${button.name}'),
-      title: pedalButtonRowLabel(button),
+      title: pedalSwitchLabel(l10n, button, bank),
       value: switch ((binding, resolves)) {
         (null, _) => l10n.controlUnassigned,
         (_, false) => l10n.controlTargetMissing,
@@ -234,7 +234,7 @@ class _PedalTrayBodyState extends State<PedalTrayBody> {
     final looper = context.read<LooperRepository>();
     final state = cubit.state;
     final key = _keyFor(button, state);
-    final legend = pedalButtonLegend(button);
+    final legend = pedalSwitchLegend(l10n, button, bank);
 
     // Edit the set IN FORCE, not the globals: a loaded session's remap
     // overrides the globals wholesale (A12), so editing globals while one is
@@ -381,6 +381,8 @@ class _SwitchCard extends StatelessWidget {
     final looper = context.read<LooperRepository>();
     final target = binding?.decodeTarget();
     final resolves = target != null && looper.bindingResolves(target);
+    // Transport switches only — a track switch is a row, and its name depends
+    // on the bank a card has no business knowing about.
     final legend = pedalButtonLegend(button);
     final label = switch ((binding, resolves)) {
       (null, _) => l10n.controlUnassigned,
