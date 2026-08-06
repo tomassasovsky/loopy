@@ -638,7 +638,11 @@ void main() {
     );
   }, skip: !hasFonts);
 
-  Future<void> pumpTracks(WidgetTester tester, TracksTab tab) async {
+  Future<void> pumpTracks(
+    WidgetTester tester,
+    TracksTab tab, {
+    int tracks = 4,
+  }) async {
     await size(tester);
     // A stopped engine reports no tracks at all, and a Tracks face with an
     // empty list is not the screen worth pinning. The fake's snapshot is the
@@ -660,7 +664,7 @@ void main() {
         inputChannels: 4,
         outputChannels: 4,
         tracks: [
-          for (var i = 0; i < 4; i++)
+          for (var i = 0; i < tracks; i++)
             snapshot.TrackSnapshot(
               state: TrackState.empty,
               volume: 1,
@@ -769,6 +773,24 @@ void main() {
     await expectLater(
       find.byType(Scaffold),
       matchesGoldenFile('goldens/control_center_tracks_routing.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Tracks face, nothing to show', (tester) async {
+    await pumpTracks(tester, TracksTab.names, tracks: 0);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_tracks_empty.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Loop face, the chip dialog', (tester) async {
+    await pumpLoop(tester, LoopTab.tempo);
+    await tester.tap(find.byKey(const Key('loop_quantise_row')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Dialog),
+      matchesGoldenFile('goldens/control_center_chip_dialog.png'),
     );
   }, skip: !hasFonts);
 

@@ -33,7 +33,12 @@ class NamesTracksTab extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ConsoleCard(
+            // A stopped engine has no tracks to name, time or route, and an
+            // empty card is a 2px sliver — say so instead.
+            if (tracks.isEmpty)
+              ConsoleEmptyCard(message: l10n.tracksEmptyMessage)
+            else
+              ConsoleCard(
               children: [
                 for (final track in tracks)
                   ConsoleRow(

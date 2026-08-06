@@ -33,7 +33,12 @@ class LengthsTracksTab extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ConsoleCard(
+            // A stopped engine has no tracks to name, time or route, and an
+            // empty card is a 2px sliver — say so instead.
+            if (tracks.isEmpty)
+              ConsoleEmptyCard(message: l10n.tracksEmptyMessage)
+            else
+              ConsoleCard(
               children: [
                 for (final track in tracks)
                   ConsoleRow(
@@ -57,13 +62,14 @@ class LengthsTracksTab extends StatelessWidget {
   Future<void> _pick(BuildContext context, int channel, int current) async {
     final l10n = context.l10n;
     final bloc = context.read<LooperBloc>();
-    final chosen = await showConsolePickerSheet<int>(
+    final chosen = await showConsoleChipDialog<int>(
       context,
       title: l10n.loopLength,
+      explanation: l10n.trackLengthExplain,
       selected: current,
       options: [
         for (final bars in SetupTrackLengthPresetRow.presets)
-          ConsolePickerOption(value: bars, label: _label(l10n, bars)),
+          ConsoleSegment(value: bars, label: _label(l10n, bars)),
       ],
     );
     if (chosen == null || chosen == current) return;

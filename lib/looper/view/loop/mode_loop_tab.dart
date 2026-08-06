@@ -119,19 +119,17 @@ class ModeLoopTab extends StatelessWidget {
     ControlCubit control,
   ) async {
     final l10n = context.l10n;
-    final chosen = await showConsolePickerSheet<InteractionMode>(
+    final chosen = await showConsoleChipDialog<InteractionMode>(
       context,
       title: l10n.defaultModeTitle,
+      explanation: l10n.defaultModeExplain,
       selected: control.state.defaultMode,
       options: [
         // Record and Mute only: FX mode is entered from the pedal, never a
         // state the console boots into (the Settings page offers the same
         // two).
         for (final mode in const [InteractionMode.record, InteractionMode.mute])
-          ConsolePickerOption(
-            value: mode,
-            label: _defaultModeLabel(l10n, mode),
-          ),
+          ConsoleSegment(value: mode, label: _defaultModeLabel(l10n, mode)),
       ],
     );
     if (chosen == null) return;

@@ -2069,5 +2069,29 @@
     "laneEffectsNote": "Los efectos de esta capa viven en la página Signal.",
     "@laneEffectsNote": {
         "description": "Says where a lane's FX chain is edited."
+    },
+    "loopSignatureExplain": "Cuántos pulsos tiene un compás, y qué cuenta como pulso.",
+    "@loopSignatureExplain": {
+        "description": "Explanation line in the time-signature chip dialog."
+    },
+    "loopLengthExplain": "Cuánto dura un bucle nuevo: lo define la primera toma, o se fija a un múltiplo.",
+    "@loopLengthExplain": {
+        "description": "Explanation line in the loop-length chip dialog."
+    },
+    "loopClickOutputExplain": "Dónde se escucha el clic: normalmente los auriculares, no la salida principal.",
+    "@loopClickOutputExplain": {
+        "description": "Explanation line in the click-output chip dialog."
+    },
+    "defaultModeExplain": "En qué modo arranca el pedal al encender el equipo.",
+    "@defaultModeExplain": {
+        "description": "Explanation line in the default-mode chip dialog."
+    },
+    "trackLengthExplain": "Auto toma su duración de la primera toma; un valor fijo graba esa cantidad de compases.",
+    "@trackLengthExplain": {
+        "description": "Explanation line in a track's length chip dialog."
+    },
+    "tracksEmptyMessage": "Sin pistas: el motor no está en marcha.",
+    "@tracksEmptyMessage": {
+        "description": "Shown on the Tracks face when the engine reports no tracks."
     }
 }

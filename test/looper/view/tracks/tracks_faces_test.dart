@@ -160,12 +160,26 @@ void main() {
 
       await tester.tap(find.byKey(const Key('track_length_row_1')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('console_picker_16 bars')));
+      await tester.tap(find.byKey(const Key('console_chip_16 bars')));
       await tester.pumpAndSettle();
 
       verify(
         () => bloc.add(const LooperTrackLengthPresetChanged(1, 16)),
       ).called(1);
+    });
+  });
+
+  group('Empty rig', () {
+    testWidgets('says why there is nothing to show', (tester) async {
+      // A stopped engine reports no tracks at all.
+      seed(tracks: const []);
+      await pump(tester, TracksTab.names);
+
+      expect(
+        find.text('No tracks — the engine is not running.'),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('track_name_row_0')), findsNothing);
     });
   });
 
