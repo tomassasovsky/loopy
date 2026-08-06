@@ -2655,7 +2655,7 @@
             }
         }
     },
-    "audioInputRenameTitle": "Name this input",
+    "audioInputRenameTitle": "Rename input",
     "@audioInputRenameTitle": {
         "description": "Console Audio face, Device tab."
     },

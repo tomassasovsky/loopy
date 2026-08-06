@@ -53,27 +53,27 @@ class _RecordingAudioTabState extends State<RecordingAudioTab> {
                 ),
                 ConsoleExpansion(
                   expanded: _maxLoopOpen,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
-                    child: ConsoleCard(
-                      color: context.surface.background,
-                      children: [
-                        for (final minutes
-                            in AudioSetupState.maxLoopMinuteOptions)
-                          ConsoleRow(
-                            key: Key('audio_maxloop_$minutes'),
-                            divider:
-                                minutes !=
-                                AudioSetupState.maxLoopMinuteOptions.last,
-                            title: _maxLoopLabel(l10n, minutes),
-                            showDisclosure: false,
-                            leading: _Check(
-                              selected: minutes == audio.state.maxLoopMinutes,
-                            ),
-                            onTap: () => audio.setMaxLoopMinutes(minutes),
+                  // Flush and square, like every other opened list on this
+                  // face: the mockups run them edge to edge inside the card.
+                  child: ConsoleCard(
+                    borderRadius: 0,
+                    color: context.surface.background,
+                    children: [
+                      for (final minutes
+                          in AudioSetupState.maxLoopMinuteOptions)
+                        ConsoleRow(
+                          key: Key('audio_maxloop_$minutes'),
+                          divider:
+                              minutes !=
+                              AudioSetupState.maxLoopMinuteOptions.last,
+                          title: _maxLoopLabel(l10n, minutes),
+                          showDisclosure: false,
+                          leading: _Check(
+                            selected: minutes == audio.state.maxLoopMinutes,
                           ),
-                      ],
-                    ),
+                          onTap: () => audio.setMaxLoopMinutes(minutes),
+                        ),
+                    ],
                   ),
                 ),
                 ConsoleRow(
@@ -96,8 +96,7 @@ class _RecordingAudioTabState extends State<RecordingAudioTab> {
                     key: const Key('audio_recdub_switch'),
                     value: record.state.recDub,
                     semanticLabel: l10n.overdubOnSecondPressTitle,
-                    onChanged: (on) =>
-                        unawaited(record.setRecDub(value: on)),
+                    onChanged: (on) => unawaited(record.setRecDub(value: on)),
                   ),
                 ),
                 ConsoleRow(

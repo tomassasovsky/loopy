@@ -928,6 +928,10 @@ void main() {
 
   testWidgets('Audio face, Device tab', (tester) async {
     await pumpAudio(tester, AudioTab.device);
+    // Open the rate row: the sub-lists are the part worth pinning, and the
+    // mockups draw this face open.
+    await tester.tap(find.byKey(const Key('audio_rate_row')));
+    await tester.pumpAndSettle();
     await expectLater(
       find.byType(Scaffold),
       matchesGoldenFile('goldens/control_center_audio_device.png'),

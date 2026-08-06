@@ -287,10 +287,35 @@ void main() {
       await tester.tap(find.widgetWithText(InkWell, 'd').first);
       await tester.tap(find.widgetWithText(InkWell, 'i').first);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Done').last);
+      await tester.tap(find.text('Save').last);
       await tester.pumpAndSettle();
 
       expect(inputs.state.nameOf(0), 'di');
+    });
+
+    testWidgets('clearing the name hands the socket back its ordinal', (
+      tester,
+    ) async {
+      await inputs.rename(0, 'guitar');
+      engineReports(const EngineStatus(inputChannels: 2));
+      await pump(tester, AudioTab.device);
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('audio_inputs_row')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('audio_input_0')));
+      await tester.pumpAndSettle();
+      // The sheet has no Clear button — it has a backspace, and Save takes an
+      // empty field for an input.
+      for (var i = 0; i < 'guitar'.length; i++) {
+        await tester.tap(find.byIcon(Icons.backspace_outlined).first);
+      }
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save').last);
+      await tester.pumpAndSettle();
+
+      expect(inputs.state.nameOf(0), isEmpty);
+      expect(find.text('In 1'), findsOneWidget);
     });
 
     testWidgets('silence with every output off is called out', (tester) async {
