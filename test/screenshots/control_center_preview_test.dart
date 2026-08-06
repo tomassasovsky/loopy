@@ -24,8 +24,10 @@ import 'package:segno/control/control_tab.dart';
 import 'package:segno/control/view/control_tray_panel.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/high_contrast_cubit.dart';
 import 'package:segno/looper/cubit/quantize_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
+import 'package:segno/looper/cubit/refresh_rate_cubit.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
@@ -34,7 +36,13 @@ import 'package:segno/looper/tracks_tab.dart';
 import 'package:segno/looper/view/loop/loop_tray_panel.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/tracks/tracks_tray_panel.dart';
+import 'package:segno/system/client/console_facts.dart';
+import 'package:segno/system/cubit/console_facts_cubit.dart';
+import 'package:segno/system/system_tab.dart';
+import 'package:segno/system/view/system_tray_panel.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/update/cubit/update_cubit.dart';
+import 'package:segno/visualizer/cubit/waveform_window_cubit.dart';
 import 'package:segno_engine/segno_engine.dart'
     as engine_device
     show AudioDevice;
@@ -42,6 +50,7 @@ import 'package:segno_engine/segno_engine.dart'
     as snapshot
     show EngineSnapshot, LaneSnapshot, LatencyState, TrackSnapshot;
 import 'package:settings_repository/settings_repository.dart';
+import 'package:update_repository/update_repository.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -966,7 +975,101 @@ void main() {
       matchesGoldenFile('goldens/control_center_audio_status.png'),
     );
   }, skip: !hasFonts);
+
+  Future<void> pumpSystem(WidgetTester tester, SystemTab tab) async {
+    await size(tester);
+    final looper = LooperRepository(
+      engine: FakeAudioEngine(),
+      ticker: const Stream<void>.empty(),
+      reconnectTicker: const Stream<void>.empty(),
+    );
+    addTearDown(looper.dispose);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final facts = ConsoleFactsCubit(
+      client: FakeConsoleFactsClient(latency: Duration.zero),
+    );
+    addTearDown(() => unawaited(facts.close()));
+    await facts.load();
+    final waveform = WaveformWindowCubit(settings: settings);
+    addTearDown(() => unawaited(waveform.close()));
+    final contrast = HighContrastCubit(settings: settings);
+    addTearDown(() => unawaited(contrast.close()));
+    final tracks = TracksCubit(settings: settings);
+    addTearDown(() => unawaited(tracks.close()));
+    final refresh = RefreshRateCubit(repository: looper, settings: settings);
+    addTearDown(() => unawaited(refresh.close()));
+    final audio = AudioSetupCubit(
+      repository: looper,
+      settings: settings,
+      deviceRefreshInterval: const Duration(days: 1),
+    );
+    final update = UpdateCubit(
+      updates: const UpdateRepository(backend: UnsupportedPlatformBackend()),
+      settings: settings,
+    );
+    addTearDown(() => unawaited(update.close()));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: _theme(),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: MultiBlocProvider(
+          providers: [
+            BlocProvider<ConsoleFactsCubit>.value(value: facts),
+            BlocProvider<WaveformWindowCubit>.value(value: waveform),
+            BlocProvider<HighContrastCubit>.value(value: contrast),
+            BlocProvider<TracksCubit>.value(value: tracks),
+            BlocProvider<RefreshRateCubit>.value(value: refresh),
+            BlocProvider<AudioSetupCubit>.value(value: audio),
+            BlocProvider<UpdateCubit>.value(value: update),
+          ],
+          child: Scaffold(
+            body: ColoredBox(
+              color: SurfaceTheme.dark.background,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(19, 19, 19, 41),
+                child: SystemTrayPanel(
+                  tab: tab,
+                  onTabChanged: _ignoreSystemTab,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await audio.close();
+  }
+
+  testWidgets('System face, Display tab', (tester) async {
+    await pumpSystem(tester, SystemTab.display);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_system_display.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('System face, Storage tab', (tester) async {
+    await pumpSystem(tester, SystemTab.storage);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_system_storage.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('System face, About tab', (tester) async {
+    await pumpSystem(tester, SystemTab.about);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_system_about.png'),
+    );
+  }, skip: !hasFonts);
 }
+
+/// The golden pumps one tab; switching is covered by the widget tests.
+void _ignoreSystemTab(SystemTab _) {}
 
 /// The golden pumps one tab; switching is covered by the widget tests.
 void _ignoreAudioTab(AudioTab _) {}

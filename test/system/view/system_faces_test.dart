@@ -3,11 +3,14 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/high_contrast_cubit.dart';
 import 'package:segno/looper/cubit/refresh_rate_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/system/client/console_facts.dart';
+import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/system/system_tab.dart';
 import 'package:segno/system/view/system_tray_panel.dart';
 import 'package:segno/theme/theme.dart';
@@ -34,6 +37,7 @@ void main() {
   setUpAll(() {
     registerFallbackValue(_v2);
     registerFallbackValue(Duration.zero);
+    registerFallbackValue(const EngineConfig());
   });
 
   late SettingsRepository settings;
@@ -44,6 +48,8 @@ void main() {
   late HighContrastCubit contrast;
   late TracksCubit tracks;
   late RefreshRateCubit refresh;
+  late ConsoleFactsCubit facts;
+  late AudioSetupCubit audio;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
@@ -60,6 +66,21 @@ void main() {
     contrast = HighContrastCubit(settings: settings);
     tracks = TracksCubit(settings: settings);
     refresh = RefreshRateCubit(repository: looper, settings: settings);
+    when(() => looper.looperState).thenAnswer((_) => const Stream.empty());
+    when(() => looper.state).thenReturn(const LooperState());
+    when(() => looper.lastEngineConfig).thenReturn(null);
+    when(() => looper.startEngine(any())).thenReturn(EngineResult.ok);
+    when(looper.detectLoopback).thenReturn(const LoopbackInfo.none());
+    when(looper.devices).thenReturn(const []);
+    when(looper.asioDrivers).thenReturn(const []);
+    facts = ConsoleFactsCubit(
+      client: FakeConsoleFactsClient(latency: Duration.zero),
+    );
+    audio = AudioSetupCubit(
+      repository: looper,
+      settings: settings,
+      deviceRefreshInterval: const Duration(days: 1),
+    );
   });
 
   tearDown(() async {
@@ -68,6 +89,8 @@ void main() {
     await contrast.close();
     await tracks.close();
     await refresh.close();
+    await facts.close();
+    await audio.close();
   });
 
   Future<void> pump(WidgetTester tester, SystemTab tab) async {
@@ -87,6 +110,8 @@ void main() {
             BlocProvider<HighContrastCubit>.value(value: contrast),
             BlocProvider<TracksCubit>.value(value: tracks),
             BlocProvider<RefreshRateCubit>.value(value: refresh),
+            BlocProvider<ConsoleFactsCubit>.value(value: facts),
+            BlocProvider<AudioSetupCubit>.value(value: audio),
           ],
           child: Scaffold(
             body: Padding(
@@ -204,6 +229,78 @@ void main() {
         find.byKey(const Key('system_update_banner')),
       );
       expect(banner.actionLabel, isNull);
+    });
+  });
+
+  group('Storage tab', () {
+    testWidgets('reports what the disk holds, and confirms a delete', (
+      tester,
+    ) async {
+      await facts.load();
+      await pump(tester, SystemTab.storage);
+      await tester.pump();
+
+      expect(find.text('41.6 GB'), findsOneWidget);
+      expect(find.text('103 installed'), findsOneWidget);
+
+      // Deleting recordings asks first.
+      await tester.tap(find.byKey(const Key('storage_delete_old')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('storage_delete_confirm')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('storage_delete_confirm')));
+      await tester.pumpAndSettle();
+      // The delete re-reads rather than guessing at what is left.
+      await tester.pumpAndSettle();
+
+      // Half the captures were older than a month in this rig.
+      expect(facts.state.usage.captures, lessThan(4 * 1024 * 1024 * 1024));
+      expect(find.text('3.1 GB'), findsOneWidget);
+    });
+
+    testWidgets('a build that cannot read the disk says so', (tester) async {
+      final unknown = ConsoleFactsCubit(
+        client: const UnsupportedConsoleFactsClient(),
+      );
+      addTearDown(unknown.close);
+      await unknown.load();
+      facts = unknown;
+      await pump(tester, SystemTab.storage);
+      await tester.pump();
+
+      expect(find.text('This build cannot read the disk.'), findsOneWidget);
+      expect(find.byKey(const Key('storage_sessions')), findsNothing);
+    });
+  });
+
+  group('About tab', () {
+    testWidgets('names the console and what it runs', (tester) async {
+      await facts.load();
+      await update.load();
+      await pump(tester, SystemTab.about);
+      await tester.pump();
+
+      expect(find.text('VAMP 16'), findsOneWidget);
+      expect(find.text('VMP-16-0042'), findsOneWidget);
+      expect(find.text('v0.1.0'), findsOneWidget);
+      expect(find.text('GPLv3'), findsOneWidget);
+    });
+
+    testWidgets('a build that is not a console omits those rows', (
+      tester,
+    ) async {
+      final unknown = ConsoleFactsCubit(
+        client: const UnsupportedConsoleFactsClient(),
+      );
+      addTearDown(unknown.close);
+      await unknown.load();
+      facts = unknown;
+      await update.load();
+      await pump(tester, SystemTab.about);
+      await tester.pump();
+
+      // Left out, not drawn as a dash: an absent serial is not a blank one.
+      expect(find.byKey(const Key('about_serial')), findsNothing);
+      expect(find.byKey(const Key('about_app')), findsOneWidget);
     });
   });
 }

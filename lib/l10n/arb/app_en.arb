@@ -2848,5 +2848,165 @@
     "systemUpdateUpToDate": "Up to date.",
     "@systemUpdateUpToDate": {
         "description": "Console System face: the check found nothing newer."
+    },
+    "systemStorageTab": "Storage",
+    "@systemStorageTab": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutTab": "About",
+    "@systemAboutTab": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemThisConsoleGroup": "THIS CONSOLE",
+    "@systemThisConsoleGroup": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemHousekeepingGroup": "HOUSEKEEPING",
+    "@systemHousekeepingGroup": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemHardwareGroup": "HARDWARE",
+    "@systemHardwareGroup": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemLegalGroup": "LEGAL",
+    "@systemLegalGroup": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStorageSessions": "Sessions and takes",
+    "@systemStorageSessions": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStorageCaptures": "Captures",
+    "@systemStorageCaptures": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStorageCapturesSub": "exports and stems",
+    "@systemStorageCapturesSub": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStoragePlugins": "Plugins",
+    "@systemStoragePlugins": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStoragePluginsSub": "{count} installed",
+    "@systemStoragePluginsSub": {
+        "description": "Console System face: Storage and About.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "systemStorageSystem": "System and updates",
+    "@systemStorageSystem": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStorageSystemSub": "includes the standby system",
+    "@systemStorageSystemSub": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStorageFree": "Free",
+    "@systemStorageFree": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStorageUnknown": "This build cannot read the disk.",
+    "@systemStorageUnknown": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemDeleteOldCaptures": "Delete old captures",
+    "@systemDeleteOldCaptures": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemDeleteOldCapturesSub": "Captures older than {days} days",
+    "@systemDeleteOldCapturesSub": {
+        "description": "Console System face: Storage and About.",
+        "placeholders": {
+            "days": {
+                "type": "int"
+            }
+        }
+    },
+    "systemExportUsb": "Export everything to USB",
+    "@systemExportUsb": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemExportUsbNoTarget": "no USB volume",
+    "@systemExportUsbNoTarget": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemGigabytes": "{value} GB",
+    "@systemGigabytes": {
+        "description": "Console System face: Storage and About.",
+        "placeholders": {
+            "value": {
+                "type": "String"
+            }
+        }
+    },
+    "systemAboutName": "Name",
+    "@systemAboutName": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutSerial": "Serial",
+    "@systemAboutSerial": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutApp": "Loopy",
+    "@systemAboutApp": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutEngine": "Audio engine",
+    "@systemAboutEngine": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutImage": "System image",
+    "@systemAboutImage": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutPedal": "Pedal firmware",
+    "@systemAboutPedal": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutInterface": "Audio interface",
+    "@systemAboutInterface": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutPanel": "Panel",
+    "@systemAboutPanel": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutLicence": "Licence",
+    "@systemAboutLicence": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutNotices": "Open-source notices",
+    "@systemAboutNotices": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutNoticesValue": "{count} components",
+    "@systemAboutNoticesValue": {
+        "description": "Console System face: Storage and About.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "systemAboutUnknown": "This build is not a console.",
+    "@systemAboutUnknown": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemPedalSwitches": "{switches} switches · {banks} banks",
+    "@systemPedalSwitches": {
+        "description": "Console System face: Storage and About.",
+        "placeholders": {
+            "switches": {
+                "type": "int"
+            },
+            "banks": {
+                "type": "int"
+            }
+        }
     }
 }

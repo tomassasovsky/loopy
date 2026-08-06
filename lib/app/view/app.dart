@@ -26,6 +26,8 @@ import 'package:segno/looper/looper.dart';
 import 'package:segno/pedal/flashed_firmware.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
+import 'package:segno/system/client/console_facts.dart';
+import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/update/cubit/pedal_firmware_cubit.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
@@ -240,6 +242,15 @@ class App extends StatelessWidget {
           // Beside the track names, and hoisted for the same reason: an input
           // is called what the player calls it on every surface that shows
           // one, not just the Audio face.
+          BlocProvider(
+            create: (context) {
+              final cubit = ConsoleFactsCubit(
+                client: createConsoleFactsClient(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
           BlocProvider(
             create: (context) {
               final cubit = InputsCubit(

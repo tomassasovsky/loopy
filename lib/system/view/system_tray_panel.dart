@@ -5,7 +5,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:segno/common/pill_tabs.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/system/system_tab.dart';
+import 'package:segno/system/view/about_system_tab.dart';
 import 'package:segno/system/view/display_system_tab.dart';
+import 'package:segno/system/view/storage_system_tab.dart';
 import 'package:segno/system/view/updates_system_tab.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/cubit/waveform_window_cubit.dart';
@@ -72,6 +74,8 @@ class _SystemTrayPanelState extends State<SystemTrayPanel> {
               tabs: [
                 PillTab(value: SystemTab.display, label: l10n.systemDisplayTab),
                 PillTab(value: SystemTab.updates, label: l10n.systemUpdatesTab),
+                PillTab(value: SystemTab.storage, label: l10n.systemStorageTab),
+                PillTab(value: SystemTab.about, label: l10n.systemAboutTab),
               ],
             ),
           ),
@@ -83,6 +87,8 @@ class _SystemTrayPanelState extends State<SystemTrayPanel> {
                 onRetryWaveform: () => unawaited(_retryWaveform()),
               ),
               SystemTab.updates => const UpdatesSystemTab(),
+              SystemTab.storage => const StorageSystemTab(),
+              SystemTab.about => const AboutSystemTab(),
             },
           ),
         ],

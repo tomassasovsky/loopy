@@ -2370,5 +2370,165 @@
     "systemUpdateUpToDate": "Todo al día.",
     "@systemUpdateUpToDate": {
         "description": "Console System face: the check found nothing newer."
+    },
+    "systemStorageTab": "Almacenamiento",
+    "@systemStorageTab": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutTab": "Acerca de",
+    "@systemAboutTab": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemThisConsoleGroup": "ESTA CONSOLA",
+    "@systemThisConsoleGroup": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemHousekeepingGroup": "MANTENIMIENTO",
+    "@systemHousekeepingGroup": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemHardwareGroup": "HARDWARE",
+    "@systemHardwareGroup": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemLegalGroup": "LEGAL",
+    "@systemLegalGroup": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStorageSessions": "Sesiones y tomas",
+    "@systemStorageSessions": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStorageCaptures": "Capturas",
+    "@systemStorageCaptures": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStorageCapturesSub": "exportaciones y stems",
+    "@systemStorageCapturesSub": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStoragePlugins": "Plugins",
+    "@systemStoragePlugins": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStoragePluginsSub": "{count} instalados",
+    "@systemStoragePluginsSub": {
+        "description": "Console System face: Storage and About.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "systemStorageSystem": "Sistema y actualizaciones",
+    "@systemStorageSystem": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStorageSystemSub": "incluye el sistema en espera",
+    "@systemStorageSystemSub": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStorageFree": "Libre",
+    "@systemStorageFree": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStorageUnknown": "Esta compilación no puede leer el disco.",
+    "@systemStorageUnknown": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemDeleteOldCaptures": "Borrar capturas antiguas",
+    "@systemDeleteOldCaptures": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemDeleteOldCapturesSub": "Capturas de más de {days} días",
+    "@systemDeleteOldCapturesSub": {
+        "description": "Console System face: Storage and About.",
+        "placeholders": {
+            "days": {
+                "type": "int"
+            }
+        }
+    },
+    "systemExportUsb": "Exportar todo a USB",
+    "@systemExportUsb": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemExportUsbNoTarget": "sin unidad USB",
+    "@systemExportUsbNoTarget": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemGigabytes": "{value} GB",
+    "@systemGigabytes": {
+        "description": "Console System face: Storage and About.",
+        "placeholders": {
+            "value": {
+                "type": "String"
+            }
+        }
+    },
+    "systemAboutName": "Nombre",
+    "@systemAboutName": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutSerial": "Serie",
+    "@systemAboutSerial": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutApp": "Loopy",
+    "@systemAboutApp": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutEngine": "Motor de audio",
+    "@systemAboutEngine": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutImage": "Imagen del sistema",
+    "@systemAboutImage": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutPedal": "Firmware del pedal",
+    "@systemAboutPedal": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutInterface": "Interfaz de audio",
+    "@systemAboutInterface": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutPanel": "Pantalla",
+    "@systemAboutPanel": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutLicence": "Licencia",
+    "@systemAboutLicence": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutNotices": "Avisos de código abierto",
+    "@systemAboutNotices": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutNoticesValue": "{count} componentes",
+    "@systemAboutNoticesValue": {
+        "description": "Console System face: Storage and About.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "systemAboutUnknown": "Esta compilación no es una consola.",
+    "@systemAboutUnknown": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemPedalSwitches": "{switches} interruptores · {banks} bancos",
+    "@systemPedalSwitches": {
+        "description": "Console System face: Storage and About.",
+        "placeholders": {
+            "switches": {
+                "type": "int"
+            },
+            "banks": {
+                "type": "int"
+            }
+        }
     }
 }
