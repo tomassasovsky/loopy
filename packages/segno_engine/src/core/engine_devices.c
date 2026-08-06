@@ -143,14 +143,40 @@ static void device_id_to_str(const ma_device_id* id, char* out, size_t cap) {
 
 static void device_info_copy(le_device_info* dst, const ma_device_info* src) {
   /* Zero everything first so the miniaudio path never surfaces stack garbage for
-   * fields it does not fill (channel counts, the ASIO-only buffer/rate sets). */
+   * fields it does not fill (the ASIO-only buffer/rate sets). */
   memset(dst, 0, sizeof(*dst));
   device_id_to_str(&src->id, dst->id, sizeof(dst->id));
   strncpy(dst->name, src->name, sizeof(dst->name) - 1);
   dst->name[sizeof(dst->name) - 1] = '\0';
   dst->is_default = src->isDefault ? 1 : 0;
-  /* miniaudio enumeration reports no per-device channel count / ASIO option sets
-   * here; they stay 0 (unknown), filled only by the ASIO driver probe. */
+  /* Channel counts are filled by device_info_fill_channels below: the ENUMERATED
+   * info carries only id/name/default, which is why they used to stay 0. */
+}
+
+/* Widest channel count the device advertises, or 0 when the query fails.
+ *
+ * `ma_context_get_devices` returns the cheap list — id, name, default flag and
+ * nothing else. The counts live behind `ma_context_get_device_info`, one query
+ * per device, which is why they read 0 for every miniaudio device until asked
+ * for. A UI that lists devices has to say what they offer, so the enumerator
+ * asks; a device that cannot answer keeps 0, still meaning UNKNOWN.
+ *
+ * The widest native format wins rather than the first: a device advertising
+ * 2ch stereo and 18ch multitrack is an 18-in interface, and taking the first
+ * entry would call it a stereo one. */
+static int32_t device_channels(ma_context* ctx, const ma_device_id* id,
+                               int capture) {
+  ma_device_info info;
+  const ma_device_type type =
+      capture ? ma_device_type_capture : ma_device_type_playback;
+  if (ma_context_get_device_info(ctx, type, id, &info) != MA_SUCCESS) return 0;
+  ma_uint32 widest = 0;
+  for (ma_uint32 i = 0; i < info.nativeDataFormatCount; ++i) {
+    if (info.nativeDataFormats[i].channels > widest) {
+      widest = info.nativeDataFormats[i].channels;
+    }
+  }
+  return (int32_t)widest;
 }
 
 /* Fills `out` (room for `max`) with the host's playback or capture devices and
@@ -183,7 +209,14 @@ int32_t enumerate_devices(le_device_info* out, int32_t max, int32_t* count,
   ma_uint32 n = capture ? cap_count : playback_count;
   int32_t written = 0;
   for (ma_uint32 i = 0; i < n && written < max; ++i) {
-    device_info_copy(&out[written++], &list[i]);
+    le_device_info* dst = &out[written++];
+    device_info_copy(dst, &list[i]);
+    const int32_t channels = device_channels(&ctx, &list[i].id, capture);
+    if (capture) {
+      dst->input_channels = channels;
+    } else {
+      dst->output_channels = channels;
+    }
   }
   *count = written;
   ma_context_uninit(&ctx);

@@ -14,7 +14,11 @@ import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/audio_setup/audio_tab.dart';
+import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
+import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
+import 'package:segno/audio_setup/view/audio_tray_panel.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/control_tab.dart';
 import 'package:segno/control/view/control_tray_panel.dart';
@@ -31,6 +35,9 @@ import 'package:segno/looper/view/loop/loop_tray_panel.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/tracks/tracks_tray_panel.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno_engine/segno_engine.dart'
+    as engine_device
+    show AudioDevice;
 import 'package:segno_engine/segno_engine.dart'
     as snapshot
     show EngineSnapshot, LaneSnapshot, LatencyState, TrackSnapshot;
@@ -731,6 +738,8 @@ void main() {
     }
     final quantize = QuantizeCubit(repository: looper, settings: settings);
     addTearDown(() => unawaited(quantize.close()));
+    final inputs = InputsCubit(settings: settings);
+    addTearDown(() => unawaited(inputs.close()));
 
     await tester.pumpWidget(
       MaterialApp(
@@ -744,6 +753,7 @@ void main() {
               BlocProvider<LooperBloc>.value(value: bloc),
               BlocProvider<TracksCubit>.value(value: names),
               BlocProvider<QuantizeCubit>.value(value: quantize),
+              BlocProvider<InputsCubit>.value(value: inputs),
             ],
             child: Scaffold(
               body: ColoredBox(
@@ -819,7 +829,147 @@ void main() {
       matchesGoldenFile('goldens/control_center_track_routing_sheet.png'),
     );
   }, skip: !hasFonts);
+
+  Future<void> pumpAudio(WidgetTester tester, AudioTab tab) async {
+    await size(tester);
+    final engine = FakeAudioEngine()
+      ..runningDeviceName = 'Scarlett 18i20'
+      // Both directions of both interfaces, as a host reports them.
+      ..devices = const [
+        engine_device.AudioDevice(
+          id: 'scarlett-out',
+          name: 'Scarlett 18i20',
+          isDefault: true,
+          isInput: false,
+          outputChannels: 20,
+        ),
+        engine_device.AudioDevice(
+          id: 'scarlett-in',
+          name: 'Scarlett 18i20',
+          isDefault: true,
+          isInput: true,
+          inputChannels: 18,
+        ),
+        engine_device.AudioDevice(
+          id: 'builtin-out',
+          name: 'Built-in audio',
+          isDefault: false,
+          isInput: false,
+          outputChannels: 2,
+        ),
+        engine_device.AudioDevice(
+          id: 'builtin-in',
+          name: 'Built-in audio',
+          isDefault: false,
+          isInput: true,
+          inputChannels: 2,
+        ),
+      ]
+      ..nextSnapshot = const snapshot.EngineSnapshot(
+        isRunning: true,
+        devicePresent: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        inputChannels: 2,
+        outputChannels: 2,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: snapshot.LatencyState.done,
+        measuredLatencyMs: 6.8,
+      );
+    final looper = LooperRepository(
+      engine: engine,
+      ticker: const Stream<void>.empty(),
+      reconnectTicker: const Stream<void>.empty(),
+    );
+    addTearDown(looper.dispose);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final audio = AudioSetupCubit(
+      repository: looper,
+      settings: settings,
+      deviceRefreshInterval: const Duration(days: 1),
+    );
+    addTearDown(() => unawaited(audio.close()));
+    // The cubit enumerates on its own schedule; the golden asks once so the
+    // face has the rig the mockups draw.
+    audio.refreshDevices();
+    final inputs = InputsCubit(settings: settings);
+    addTearDown(() => unawaited(inputs.close()));
+    await inputs.rename(0, 'guitar');
+    await inputs.rename(1, 'mic');
+    final bloc = LooperBloc(repository: looper);
+    addTearDown(() => unawaited(bloc.close()));
+    final quantize = QuantizeCubit(repository: looper, settings: settings);
+    addTearDown(() => unawaited(quantize.close()));
+    final record = RecordOptionsCubit(repository: looper, settings: settings);
+    addTearDown(() => unawaited(record.close()));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: _theme(),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: MultiBlocProvider(
+          providers: [
+            BlocProvider<AudioSetupCubit>.value(value: audio),
+            BlocProvider<InputsCubit>.value(value: inputs),
+            BlocProvider<LooperBloc>.value(value: bloc),
+            BlocProvider<QuantizeCubit>.value(value: quantize),
+            BlocProvider<RecordOptionsCubit>.value(value: record),
+          ],
+          child: Scaffold(
+            body: ColoredBox(
+              color: SurfaceTheme.dark.background,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(19, 19, 19, 41),
+                child: AudioTrayPanel(tab: tab, onTabChanged: _ignoreAudioTab),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // Closed once the frame is painted: the cubit owns a periodic
+    // device-refresh timer, and the binding fails a test that still has one
+    // pending. The tree keeps rendering the state it already read.
+    await audio.close();
+  }
+
+  testWidgets('Audio face, Device tab', (tester) async {
+    await pumpAudio(tester, AudioTab.device);
+    // Open the device row: the sub-list is the part worth pinning, and it is
+    // where the channel counts show.
+    await tester.tap(find.byKey(const Key('audio_device_row')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_audio_device.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Audio face, Recording tab', (tester) async {
+    await pumpAudio(tester, AudioTab.recording);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_audio_recording.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Audio face, Status tab', (tester) async {
+    await pumpAudio(tester, AudioTab.status);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_audio_status.png'),
+    );
+  }, skip: !hasFonts);
 }
+
+/// The golden pumps one tab; switching is covered by the widget tests.
+void _ignoreAudioTab(AudioTab _) {}
 
 /// The golden pumps one tab; switching is covered by the widget tests.
 void _ignoreTracksTab(TracksTab _) {}

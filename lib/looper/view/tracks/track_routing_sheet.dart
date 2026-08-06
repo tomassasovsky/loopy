@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -34,6 +35,7 @@ Future<void> showTrackRoutingSheet(
   final looper = context.read<LooperBloc>();
   final tracks = context.read<TracksCubit>();
   final quantize = context.read<QuantizeCubit>();
+  final inputs = context.read<InputsCubit>();
   final repository = context.read<LooperRepository>();
   return showDialog<void>(
     context: context,
@@ -43,6 +45,7 @@ Future<void> showTrackRoutingSheet(
         BlocProvider<LooperBloc>.value(value: looper),
         BlocProvider<TracksCubit>.value(value: tracks),
         BlocProvider<QuantizeCubit>.value(value: quantize),
+        BlocProvider<InputsCubit>.value(value: inputs),
       ],
       child: RepositoryProvider<LooperRepository>.value(
         value: repository,
@@ -167,6 +170,7 @@ class _TrackRoutingSheetState extends State<_TrackRoutingSheet> {
     final state = context.watch<LooperBloc>().state;
     final globalQuantize = context.watch<QuantizeCubit>().state;
     final names = context.watch<TracksCubit>().state;
+    final inputNames = context.watch<InputsCubit>().state.names;
     final track = state.tracks.firstWhere(
       (t) => t.channel == widget.channel,
       orElse: () => Track(channel: widget.channel),
@@ -234,7 +238,7 @@ class _TrackRoutingSheetState extends State<_TrackRoutingSheet> {
                       for (var i = 0; i < inputCount; i++)
                         _LaneRow(
                           key: Key('track_input_$i'),
-                          label: l10n.inputChannelLabel(i + 1),
+                          label: l10n.inputName(inputNames, i),
                           lane: _laneOf(track, i),
                           outputCount: outputCount,
                           outputMask: _outputsOf(track, _laneOf(track, i)),

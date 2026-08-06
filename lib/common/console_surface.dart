@@ -36,6 +36,7 @@ class ConsoleCard extends StatelessWidget {
   const ConsoleCard({
     required this.children,
     this.bordered = false,
+    this.borderRadius = _cardRadius,
     this.color,
     super.key,
   });
@@ -52,19 +53,22 @@ class ConsoleCard extends StatelessWidget {
   /// visibility card and leave the primary list of a face unbordered.
   final bool bordered;
 
+  /// Overrides the card border radius.
+  final double borderRadius;
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: color ?? surface.cardHigh,
-        borderRadius: BorderRadius.circular(_cardRadius),
+        borderRadius: BorderRadius.circular(borderRadius),
         border: bordered ? Border.all(color: surface.line) : null,
       ),
       child: Padding(
-        padding: const EdgeInsets.all(1),
+        padding: bordered ? const EdgeInsets.all(1) : EdgeInsets.zero,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(_cardRadius - 1),
+          borderRadius: BorderRadius.circular(borderRadius - 1),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
@@ -98,6 +102,7 @@ class ConsoleRow extends StatelessWidget {
     this.centred = false,
     this.leading,
     this.valueColor,
+    this.titleColor,
     super.key,
   });
 
@@ -140,6 +145,11 @@ class ConsoleRow extends StatelessWidget {
   /// Optional glyph before the title — a state dot, in the mockups.
   final Widget? leading;
 
+  /// Overrides the TITLE's colour. The mockups grey the whole row of a device
+  /// that is no longer there, title included — a name in the ordinary tone
+  /// beside "unplugged" reads as something you could still pick.
+  final Color? titleColor;
+
   /// Overrides the value's colour. A missing target takes the warning tone:
   /// in the muted grey of an empty slot it reads as "nothing set here", which
   /// is a different (and wrong) fact.
@@ -171,9 +181,9 @@ class ConsoleRow extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: centred
-                        ? surface.textSecondary
-                        : surface.textPrimary,
+                    color:
+                        titleColor ??
+                        (centred ? surface.textSecondary : surface.textPrimary),
                     fontSize: 17,
                     // Tight leading, from the mockups: title + subtitle have
                     // to clear 41px between the row's 14/15 padding, which
@@ -248,7 +258,11 @@ class ConsoleRow extends StatelessWidget {
       duration: consoleMotion(context),
       curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
-        color: selected ? surface.accentSurface : Colors.transparent,
+        // An OPEN row is shaded, as the mockups shade it: the strip below it
+        // belongs to this row, and the tint is what says so.
+        color: selected
+            ? surface.accentSurface
+            : (expanded ? surface.control : Colors.transparent),
       ),
       foregroundDecoration: BoxDecoration(
         border: Border(

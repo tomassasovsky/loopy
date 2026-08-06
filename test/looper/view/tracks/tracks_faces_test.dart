@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/quantize_cubit.dart';
@@ -49,6 +50,7 @@ void main() {
   late _MockLooperRepository repository;
   late TracksCubit names;
   late QuantizeCubit quantize;
+  late InputsCubit inputs;
   late SettingsRepository settings;
 
   setUp(() {
@@ -58,11 +60,13 @@ void main() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     names = TracksCubit(settings: settings);
     quantize = QuantizeCubit(repository: repository, settings: settings);
+    inputs = InputsCubit(settings: settings);
   });
 
   tearDown(() async {
     await names.close();
     await quantize.close();
+    await inputs.close();
   });
 
   /// Four tracks, named, with [tracks] overriding whichever fields a test
@@ -95,6 +99,7 @@ void main() {
               BlocProvider<LooperBloc>.value(value: bloc),
               BlocProvider<TracksCubit>.value(value: names),
               BlocProvider<QuantizeCubit>.value(value: quantize),
+              BlocProvider<InputsCubit>.value(value: inputs),
             ],
             child: Scaffold(
               body: Padding(
@@ -131,11 +136,11 @@ void main() {
       await tester.tap(find.byKey(const Key('track_name_row_1')));
       await tester.pumpAndSettle();
       // The sheet opens on the current name, and the first key REPLACES it.
-      expect(find.byKey(const Key('track_rename_field')), findsOneWidget);
+      expect(find.byKey(const Key('console_rename_field')), findsOneWidget);
       await tester.tap(find.widgetWithText(InkWell, 'b').first);
       await tester.tap(find.widgetWithText(InkWell, 'a').first);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Done').last);
+      await tester.tap(find.text('Save').last);
       await tester.pumpAndSettle();
 
       expect(names.state.nameOf(1), 'ba');
@@ -207,6 +212,20 @@ void main() {
       // A track that follows the global setting says nothing about quantize.
       expect(find.text('None (clean)'), findsOneWidget);
       expect(find.text('not routed'), findsOneWidget);
+    });
+
+    testWidgets('an input is called what the player calls it', (tester) async {
+      await inputs.rename(1, 'mic');
+      seed(tracks: [_track(0, inputMask: 0x2)]);
+      await pump(tester, TracksTab.routing);
+
+      // The summary line and the lane list both use the given name; the
+      // unnamed sockets keep their ordinal.
+      expect(find.text('mic'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('track_routing_row_0')));
+      await tester.pumpAndSettle();
+      expect(find.text('mic'), findsWidgets);
+      expect(find.text('In 1'), findsOneWidget);
     });
 
     testWidgets('the sheet applies input, output and quantize as tapped', (

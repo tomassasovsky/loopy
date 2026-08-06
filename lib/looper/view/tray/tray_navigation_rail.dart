@@ -53,6 +53,8 @@ class TrayNavigationRail extends StatelessWidget {
         SettingsTrayDestination.loop => Icons.repeat,
         // The mockups' Tracks glyph: three faders side by side.
         SettingsTrayDestination.tracks => Icons.view_week_outlined,
+        // The mockups' Audio glyph: a speaker.
+        SettingsTrayDestination.audio => Icons.volume_up_outlined,
         SettingsTrayDestination.tuner => Icons.graphic_eq,
         // An antenna, not a WiFi fan or a Bluetooth rune: the entry is both
         // radios, and either radio's own glyph would read as only that one.
@@ -69,6 +71,7 @@ class TrayNavigationRail extends StatelessWidget {
     SettingsTrayDestination.control => l10n.trayControlLabel,
     SettingsTrayDestination.loop => l10n.trayLoopLabel,
     SettingsTrayDestination.tracks => l10n.trayTracksLabel,
+    SettingsTrayDestination.audio => l10n.trayAudioLabel,
     SettingsTrayDestination.tuner => l10n.trayTunerLabel,
     SettingsTrayDestination.network => l10n.trayNetworkLabel,
   };
@@ -199,15 +202,18 @@ class _RailItem extends StatelessWidget {
             Icon(icon, color: tint, size: 22),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: tint,
-                  fontSize: 17,
-                  height: 1.1,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              child: Transform.translate(
+                offset: const Offset(0, 1),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: tint,
+                    fontSize: 17,
+                    height: 1.1,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             ),

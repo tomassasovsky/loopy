@@ -2571,5 +2571,164 @@
     "tracksEmptyMessage": "No tracks — the engine is not running.",
     "@tracksEmptyMessage": {
         "description": "Shown on the Tracks face when the engine reports no tracks."
+    },
+    "trayAudioLabel": "Audio",
+    "@trayAudioLabel": {
+        "description": "Console Audio face: trayAudioLabel"
+    },
+    "audioDeviceTab": "Device",
+    "@audioDeviceTab": {
+        "description": "Console Audio face: audioDeviceTab"
+    },
+    "audioRecordingTab": "Recording",
+    "@audioRecordingTab": {
+        "description": "Console Audio face: audioRecordingTab"
+    },
+    "audioStatusTab": "Status",
+    "@audioStatusTab": {
+        "description": "Console Audio face: audioStatusTab"
+    },
+    "audioStatusGroup": "STATUS",
+    "@audioStatusGroup": {
+        "description": "Console Audio face: audioStatusGroup"
+    },
+    "audioDeviceGroup": "AUDIO",
+    "@audioDeviceGroup": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioRateBufferTitle": "Sample rate / buffer",
+    "@audioRateBufferTitle": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioRateBufferValue": "{rate} · {frames}",
+    "@audioRateBufferValue": {
+        "description": "Console Audio face, Device tab.",
+        "placeholders": {
+            "rate": {
+                "type": "String"
+            },
+            "frames": {
+                "type": "String"
+            }
+        }
+    },
+    "audioRoundTripSubtitle": "round-trip {latency}",
+    "@audioRoundTripSubtitle": {
+        "description": "Console Audio face, Device tab.",
+        "placeholders": {
+            "latency": {
+                "type": "String"
+            }
+        }
+    },
+    "audioSampleRateGroup": "SAMPLE RATE",
+    "@audioSampleRateGroup": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioBufferGroup": "BUFFER",
+    "@audioBufferGroup": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioRateHalvesHeadroom": "halves the buffer headroom",
+    "@audioRateHalvesHeadroom": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioInputsTitle": "Inputs",
+    "@audioInputsTitle": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioInputsNamedValue": "{count, plural, =0{none named} =1{1 named} other{{count} named}}",
+    "@audioInputsNamedValue": {
+        "description": "Console Audio face, Device tab.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "audioInputOrdinal": "input {number}",
+    "@audioInputOrdinal": {
+        "description": "Console Audio face, Device tab.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "audioInputRenameTitle": "Rename input",
+    "@audioInputRenameTitle": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioDeviceChannels": "{inputs} in · {outputs} out",
+    "@audioDeviceChannels": {
+        "description": "Console Audio face, Device tab.",
+        "placeholders": {
+            "inputs": {
+                "type": "int"
+            },
+            "outputs": {
+                "type": "int"
+            }
+        }
+    },
+    "audioDeviceUnplugged": "unplugged",
+    "@audioDeviceUnplugged": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioNoOutputsWarning": "No outputs are enabled — nothing will be heard. Turn one back on from the Signal page.",
+    "@audioNoOutputsWarning": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioAsioGroup": "ASIO DRIVER",
+    "@audioAsioGroup": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioAsioChannels": "{inputs} in / {outputs} out",
+    "@audioAsioChannels": {
+        "description": "Console Audio face, Device tab.",
+        "placeholders": {
+            "inputs": {
+                "type": "int"
+            },
+            "outputs": {
+                "type": "int"
+            }
+        }
+    },
+    "audioAsioMissing": "No ASIO driver found. Loopy uses ASIO on Windows. Install your interface’s ASIO driver, or a generic one.",
+    "@audioAsioMissing": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioAsioLink": "Open asio4all.org",
+    "@audioAsioLink": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioInputsEmpty": "This device has no inputs.",
+    "@audioInputsEmpty": {
+        "description": "Console Audio face, Device tab."
+    },
+    "audioRecordingGroup": "RECORDING",
+    "@audioRecordingGroup": {
+        "description": "Console Audio face, Recording tab."
+    },
+    "audioMaxLoopTitle": "Maximum loop length",
+    "@audioMaxLoopTitle": {
+        "description": "Console Audio face, Recording tab."
+    },
+    "audioMaxLoopSubtitle": "A higher cap reserves more memory per track. Changing it reopens the device.",
+    "@audioMaxLoopSubtitle": {
+        "description": "Console Audio face, Recording tab."
+    },
+    "audioQuantizeSubtitle": "Snap record start/stop to the loop grid. The default for all tracks; override per track from its routing panel.",
+    "@audioQuantizeSubtitle": {
+        "description": "Console Audio face, Recording tab."
+    },
+    "audioDefaultLengthTitle": "Default loop length",
+    "@audioDefaultLengthTitle": {
+        "description": "Console Audio face, Recording tab."
+    },
+    "audioDefaultLengthSubtitle": "Auto rounds up to whole base loops; a fixed multiple records that many.",
+    "@audioDefaultLengthSubtitle": {
+        "description": "Console Audio face, Recording tab."
     }
 }

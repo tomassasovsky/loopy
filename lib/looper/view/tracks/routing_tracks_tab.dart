@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -32,6 +33,7 @@ class RoutingTracksTab extends StatelessWidget {
     final surface = context.surface;
     final state = context.watch<LooperBloc>().state;
     final names = context.watch<TracksCubit>().state;
+    final inputs = context.watch<InputsCubit>().state;
     final repository = context.read<LooperRepository>();
     final tracks = state.tracks;
 
@@ -57,6 +59,7 @@ class RoutingTracksTab extends StatelessWidget {
                         l10n,
                         track,
                         repository.trackQuantize(track.channel),
+                        inputs.names,
                       ),
                       value: _outputLine(l10n, _outputsOf(track)),
                       // An unrouted track is silent, which the muted tone of an
@@ -86,6 +89,7 @@ class RoutingTracksTab extends StatelessWidget {
     AppLocalizations l10n,
     Track track,
     bool? quantize,
+    List<String> inputNames,
   ) {
     // The lanes, falling back to the lane-0 mirror for a stopped engine.
     final inputs = track.lanes.isEmpty
@@ -99,7 +103,7 @@ class RoutingTracksTab extends StatelessWidget {
           ];
     final source = inputs.isEmpty
         ? l10n.signalInputNone
-        : inputs.map((i) => l10n.inputChannelLabel(i + 1)).join(' · ');
+        : inputs.map((i) => l10n.inputName(inputNames, i)).join(' · ');
     return switch (quantize) {
       null => source,
       true => '$source · ${l10n.trackQuantizeOn}',

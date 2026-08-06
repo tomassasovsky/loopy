@@ -4899,19 +4899,20 @@ static void test_enumerate_devices_runs(void) {
     CHECK(strlen(devices[i].id) < sizeof(devices[i].id));     /* NUL-terminated */
     CHECK(strlen(devices[i].name) < sizeof(devices[i].name)); /* NUL-terminated */
     CHECK(devices[i].is_default == 0 || devices[i].is_default == 1);
-    /* miniaudio enumeration reports no per-device channel count, so
-     * device_info_copy must zero these — never leak stack garbage as a count.
-     * An ASIO probe fills them in (0 = unknown). */
+    /* A playback device reports what it can PLAY, queried per device, and
+     * never the other direction. `0` still means unknown — a CI box with no
+     * audio device answers nothing — but it must never be negative or leak
+     * stack garbage, and it must never claim capture channels. */
+    CHECK(devices[i].output_channels >= 0);
     CHECK(devices[i].input_channels == 0);
-    CHECK(devices[i].output_channels == 0);
   }
 
   count = -1;
   CHECK(le_enumerate_capture_devices(devices, MAXD, &count) == LE_OK);
   CHECK(count >= 0 && count <= MAXD);
   for (int32_t i = 0; i < count; ++i) {
-    /* device_info_copy zero-inits the channel counts on the capture path too. */
-    CHECK(devices[i].input_channels == 0);
+    /* And a capture device reports only what it can CAPTURE. */
+    CHECK(devices[i].input_channels >= 0);
     CHECK(devices[i].output_channels == 0);
   }
 
