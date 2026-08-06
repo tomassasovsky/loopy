@@ -198,6 +198,7 @@ class _RailItem extends StatelessWidget {
                     color: tint,
                     fontSize: 14,
                     height: 1.1,
+                    leadingDistribution: TextLeadingDistribution.even,
                     fontWeight: FontWeight.w500,
                   ),
                 ),

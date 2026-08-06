@@ -251,10 +251,14 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
             },
     );
 
-    if (!opens || !open) return row;
+    // A row that never opens stays a bare row; one that can open keeps its
+    // container in the tree either way, so opening animates instead of
+    // swapping one widget for another.
+    if (!opens) return row;
 
     return NetworkExpandedRow(
       row: row,
+      expanded: open,
       actions: [
         if (connected)
           NetworkActionChip(

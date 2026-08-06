@@ -266,10 +266,12 @@ class _BluetoothTrayBodyState extends State<BluetoothTrayBody> {
             },
     );
 
-    if (!opens || !open) return row;
+    // See the WiFi face: the container stays in the tree so opening animates.
+    if (!opens) return row;
 
     return NetworkExpandedRow(
       row: row,
+      expanded: open,
       actions: [
         if (device.connected)
           NetworkActionChip(

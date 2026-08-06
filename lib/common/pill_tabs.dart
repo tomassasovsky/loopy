@@ -113,11 +113,18 @@ class _Pill extends StatelessWidget {
           ),
           child: Text(
             label,
+            textAlign: TextAlign.center,
             style: TextStyle(
               color: selected ? surface.accent : surface.textSecondary,
               fontSize: 16,
               height: 1.13,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              leadingDistribution: TextLeadingDistribution.even,
+              // One weight for both states. Selection is carried by the fill
+              // and the accent colour; changing weight as well re-measures the
+              // label, so the text shifts inside its pill and the pills either
+              // side of it move — the strip twitches every time a tab is
+              // picked. Colour costs no layout.
+              fontWeight: FontWeight.w500,
             ),
           ),
         ),

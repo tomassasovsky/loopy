@@ -35,6 +35,132 @@ const double kNetworkDisclosureWidth = 11;
 /// The gap between a row's content and its trailing marks.
 const double kNetworkRowGap = 14;
 
+/// How long a row takes to open or shut.
+///
+/// One duration for every transition on this surface — the row growing, its
+/// tint arriving, the marker turning — so a single tap reads as one movement
+/// instead of three that happen to start together.
+const Duration kNetworkMotion = Duration(milliseconds: 180);
+
+/// [kNetworkMotion], or nothing where the platform asks for no motion.
+Duration networkMotion(BuildContext context) =>
+    MediaQuery.disableAnimationsOf(context) ? Duration.zero : kNetworkMotion;
+
+/// Grows [child] in from nothing and shrinks it away again.
+///
+/// Height only: the width is the row's, and animating that too would drag the
+/// card's edge around. The content is clipped while it moves, so the action
+/// strip slides out from under the row it belongs to rather than overflowing
+/// it.
+///
+/// Stateful rather than an [AnimatedSize] over a swapped child, because
+/// closing has to animate too: a caller that stops building its actions the
+/// moment a row shuts would leave this shrinking an empty box, which reads as
+/// the chips vanishing and the gap collapsing afterwards. The last child is
+/// held for exactly as long as the close takes, then dropped — so a shut row
+/// has nothing of its own in the tree, and nothing tappable.
+class NetworkExpansion extends StatefulWidget {
+  /// Creates a [NetworkExpansion].
+  const NetworkExpansion({
+    required this.expanded,
+    required this.child,
+    super.key,
+  });
+
+  /// Whether [child] is showing.
+  final bool expanded;
+
+  /// The block that grows and shrinks.
+  final Widget child;
+
+  @override
+  State<NetworkExpansion> createState() => _NetworkExpansionState();
+}
+
+class _NetworkExpansionState extends State<NetworkExpansion>
+    with SingleTickerProviderStateMixin {
+  /// Built in [initState], not as a `late final` initialiser: a lazy field is
+  /// created on first TOUCH, and a row that closes without ever having opened
+  /// touches it first in [dispose] — where creating a ticker looks up
+  /// `TickerMode` on an element that is already going away.
+  late final AnimationController _controller;
+
+  /// Opens fast and settles; closes without the overshooting ease-out, which
+  /// on the way back looks like the strip hesitating before it goes.
+  late final CurvedAnimation _size;
+
+  /// The content fades over the back half of the growth and the front half of
+  /// the shrink, so it is never fully lit while the box is still short.
+  late final CurvedAnimation _fade;
+
+  /// The child to keep drawing while closing. Null once the close finishes.
+  Widget? _closing;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: kNetworkMotion,
+      value: widget.expanded ? 1 : 0,
+    );
+    _size = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    _fade = CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0.35, 1),
+      reverseCurve: const Interval(0.45, 1),
+    );
+  }
+
+  @override
+  void didUpdateWidget(NetworkExpansion old) {
+    super.didUpdateWidget(old);
+    if (widget.expanded == old.expanded) return;
+    if (widget.expanded) {
+      _closing = null;
+      unawaited(_controller.forward());
+    } else {
+      // Hold what was showing so the close has something to shrink.
+      _closing = old.child;
+      unawaited(
+        _controller.reverse().whenComplete(() {
+          if (mounted) setState(() => _closing = null);
+        }),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _size.dispose();
+    _fade.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.value = widget.expanded ? 1 : 0;
+    }
+    final child = widget.expanded ? widget.child : _closing;
+    if (child == null) return const SizedBox(width: double.infinity);
+    return ClipRect(
+      child: SizeTransition(
+        sizeFactor: _size,
+        // Anchored to the top: the strip slides out from under its row rather
+        // than growing from the middle.
+        alignment: Alignment.topCenter,
+        child: FadeTransition(opacity: _fade, child: child),
+      ),
+    );
+  }
+}
+
 /// A group of rows: one rounded, bordered card with hairlines between rows.
 ///
 /// The 1px inset is load-bearing rather than decorative. Rows paint their
@@ -106,6 +232,7 @@ class NetworkDisclosure extends StatelessWidget {
                 fontFamily: SurfaceTheme.monoFont,
                 fontSize: 13,
                 height: 1.15,
+                leadingDistribution: TextLeadingDistribution.even,
               ),
             ),
     );
@@ -191,6 +318,7 @@ class NetworkRow extends StatelessWidget {
                     color: surface.textPrimary,
                     fontSize: 17,
                     height: 1.18,
+                    leadingDistribution: TextLeadingDistribution.even,
                   ),
                 ),
                 if (subtitle case final sub?) ...[
@@ -203,6 +331,7 @@ class NetworkRow extends StatelessWidget {
                       color: surface.textMuted,
                       fontSize: 14,
                       height: 1.21,
+                      leadingDistribution: TextLeadingDistribution.even,
                     ),
                   ),
                 ],
@@ -223,6 +352,7 @@ class NetworkRow extends StatelessWidget {
                   fontFamily: SurfaceTheme.monoFont,
                   fontSize: 14,
                   height: 1.14,
+                  leadingDistribution: TextLeadingDistribution.even,
                 ),
               ),
             ],
@@ -244,53 +374,72 @@ class NetworkRow extends StatelessWidget {
   }
 }
 
-/// An opened row: the row itself over a tinted, bordered card of its actions.
+/// A row that can open in place: the row itself over a tinted, bordered card
+/// of its actions.
 ///
 /// Rows open **in place**, one at a time. A tap that pushes a sheet loses the
 /// list it came from, and on a console the list is the context for the action.
+///
+/// Always in the tree, open or shut, so opening is a transition rather than a
+/// swap. Building the shut state as a bare row and the open state as this
+/// widget makes the tint, the border and the whole action strip appear between
+/// two frames, which on a 70px row reads as the list jolting.
 class NetworkExpandedRow extends StatelessWidget {
   /// Creates a [NetworkExpandedRow].
   const NetworkExpandedRow({
     required this.row,
     required this.actions,
+    this.expanded = true,
     super.key,
   });
 
-  /// The row, drawn with `expanded: true`.
+  /// The row, drawn with `expanded: true` when this is open.
   final Widget row;
 
   /// The action chips, laid out at the trailing edge.
   final List<Widget> actions;
 
+  /// Whether the actions are showing.
+  final bool expanded;
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    return DecoratedBox(
+    return AnimatedContainer(
+      duration: networkMotion(context),
+      curve: Curves.easeOut,
       decoration: BoxDecoration(
-        color: surface.control,
+        // Transparent rather than absent while shut: a null decoration would
+        // rebuild the box on every open and lose the colour lerp.
+        color: expanded ? surface.control : surface.control.withAlpha(0),
         borderRadius: BorderRadius.circular(NetworkCard.radius),
-        border: Border.all(color: surface.borderSubtle),
+        border: Border.all(
+          color: expanded ? surface.borderSubtle : Colors.transparent,
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           row,
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              kNetworkRowInset,
-              0,
-              kNetworkRowInset,
-              14,
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                for (final (index, action) in actions.indexed) ...[
-                  if (index > 0) const SizedBox(width: 10),
-                  action,
+          NetworkExpansion(
+            expanded: expanded,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                kNetworkRowInset,
+                0,
+                kNetworkRowInset,
+                14,
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  for (final (index, action) in actions.indexed) ...[
+                    if (index > 0) const SizedBox(width: 10),
+                    action,
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ],
@@ -353,7 +502,12 @@ class NetworkActionChip extends StatelessWidget {
                 const SizedBox(width: 10),
                 Text(
                   label,
-                  style: TextStyle(color: tint, fontSize: 14, height: 1.21),
+                  style: TextStyle(
+                    color: tint,
+                    fontSize: 14,
+                    height: 1.21,
+                    leadingDistribution: TextLeadingDistribution.even,
+                  ),
                 ),
               ],
             ),
@@ -409,6 +563,7 @@ class NetworkFaceHeader extends StatelessWidget {
               color: surface.textPrimary,
               fontSize: 20,
               height: 1.15,
+              leadingDistribution: TextLeadingDistribution.even,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -424,6 +579,7 @@ class NetworkFaceHeader extends StatelessWidget {
                       color: surface.textMuted,
                       fontSize: 14,
                       height: 1.21,
+                      leadingDistribution: TextLeadingDistribution.even,
                     ),
                   ),
           ),
@@ -693,6 +849,7 @@ class NetworkBanner extends StatelessWidget {
                 color: surface.textSecondary,
                 fontSize: 16,
                 height: 1.13,
+                leadingDistribution: TextLeadingDistribution.even,
               ),
             ),
           ),
@@ -748,6 +905,7 @@ class NetworkSmallButton extends StatelessWidget {
                 color: surface.textPrimary,
                 fontSize: 14,
                 height: 1.21,
+                leadingDistribution: TextLeadingDistribution.even,
               ),
             ),
           ),
@@ -785,7 +943,12 @@ class NetworkEmptyCard extends StatelessWidget {
         textAlign: TextAlign.center,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: surface.textMuted, fontSize: 16, height: 1.13),
+        style: TextStyle(
+          color: surface.textMuted,
+          fontSize: 16,
+          height: 1.13,
+          leadingDistribution: TextLeadingDistribution.even,
+        ),
       ),
     );
   }
@@ -839,6 +1002,7 @@ Future<bool> showNetworkForgetDialog(
                   color: surface.textSecondary,
                   fontSize: 16,
                   height: 1.4,
+                  leadingDistribution: TextLeadingDistribution.even,
                 ),
               ),
               const SizedBox(height: 19),

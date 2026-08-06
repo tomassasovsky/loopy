@@ -135,6 +135,7 @@ class _WifiJoinSheetState extends State<_WifiJoinSheet> {
                       color: surface.textMuted,
                       fontSize: 14,
                       height: 1.21,
+                      leadingDistribution: TextLeadingDistribution.even,
                     ),
                   ),
                 ),

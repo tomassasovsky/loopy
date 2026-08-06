@@ -271,11 +271,34 @@ void main() {
 
       await tester.tap(find.byKey(const Key('wifi_network_HomeNet')));
       await tester.pumpAndSettle();
-      expect(find.byType(NetworkExpandedRow), findsOneWidget);
+      expect(find.byKey(const Key('wifi_forget')), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('wifi_network_HomeNet')));
       await tester.pumpAndSettle();
-      expect(find.byType(NetworkExpandedRow), findsNothing);
+      // The row's container stays in the tree so opening and shutting can
+      // animate; what goes is its actions. A shut row holds nothing tappable,
+      // which is the property worth pinning — testing for the container
+      // instead would pass while leaving invisible chips live.
+      expect(find.byKey(const Key('wifi_forget')), findsNothing);
+    });
+
+    testWidgets('a row that is shut holds no action, mid-close included', (
+      tester,
+    ) async {
+      await pumpFace(tester);
+
+      await tester.tap(find.byKey(const Key('wifi_network_HomeNet')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('wifi_network_HomeNet')));
+
+      // Half way through the close the chips are still drawn — clipped and
+      // fading — and must not be reachable by a stray tap.
+      await tester.pump(kNetworkMotion ~/ 2);
+      final chip = find.byKey(const Key('wifi_forget'));
+      expect(tester.getSize(chip).height, greaterThan(0));
+
+      await tester.pumpAndSettle();
+      expect(chip, findsNothing);
     });
 
     testWidgets('disconnect is reversible, so it asks nothing', (
