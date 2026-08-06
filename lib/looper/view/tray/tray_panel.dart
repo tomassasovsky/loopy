@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:segno/audio_setup/view/audio_tray_panel.dart';
@@ -9,9 +7,11 @@ import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/view/loop/loop_tray_panel.dart';
 import 'package:segno/looper/view/tracks/tracks_tray_panel.dart';
 import 'package:segno/looper/view/tray/tray_home.dart';
+import 'package:segno/looper/view/tray/tray_metrics.dart';
 import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
 import 'package:segno/looper/view/tray/tuner_tray_panel.dart';
 import 'package:segno/network/network_tray_panel.dart';
+import 'package:segno/system/view/system_tray_panel.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The tray's contents once open — near-fullscreen frosted sheet, split into
@@ -31,16 +31,34 @@ class TrayPanel extends StatelessWidget {
     final state = context.watch<SettingsTrayCubit>().state;
     final cubit = context.read<SettingsTrayCubit>();
 
+    // Chrome measured off the mockups' tray layer, not approximated: the
+    // sheet is the CARD tone and opaque — a frosted translucent panel let the
+    // stage's waveforms move behind the settings you were reading — with a
+    // 17px bottom radius, a hairline bottom edge, and the drop shadow that
+    // lifts it off the stage.
     return Material(
       color: Colors.transparent,
-      child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: surface.background.withValues(alpha: 0.78),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: surface.card,
+          borderRadius: const BorderRadius.vertical(
+            bottom: Radius.circular(kTrayRadius),
+          ),
+          border: Border(bottom: BorderSide(color: surface.borderStrong)),
+          boxShadow: [
+            BoxShadow(
+              color: surface.dropShadow,
+              offset: const Offset(0, 19),
+              blurRadius: 48,
             ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: const BorderRadius.vertical(
+            bottom: Radius.circular(kTrayRadius),
+          ),
+          child: DecoratedBox(
+            decoration: BoxDecoration(color: surface.card),
             child: Stack(
               children: [
                 Positioned.fill(
@@ -94,6 +112,12 @@ class TrayPanel extends StatelessWidget {
                                 child: AudioTrayPanel(
                                   tab: state.audioTab,
                                   onTabChanged: cubit.showAudioTab,
+                                ),
+                              ),
+                              SettingsTrayDestination.system => _TrayFaceFrame(
+                                child: SystemTrayPanel(
+                                  tab: state.systemTab,
+                                  onTabChanged: cubit.showSystemTab,
                                 ),
                               ),
                               SettingsTrayDestination.tuner => _TrayFaceFrame(

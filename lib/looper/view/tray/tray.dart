@@ -8,5 +8,6 @@
 /// not widen this barrel.
 library;
 
-export 'tray_metrics.dart' show kTrayHandleHeight;
+export 'tray_metrics.dart'
+    show kTrayHandleHeight, kTrayHandlePillHeight, kTrayHandlePillWidth;
 export 'tray_panel.dart' show TrayPanel;

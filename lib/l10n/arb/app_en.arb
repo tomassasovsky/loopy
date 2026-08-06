@@ -2730,5 +2730,283 @@
     "audioDefaultLengthSubtitle": "Auto rounds up to whole base loops; a fixed multiple records that many.",
     "@audioDefaultLengthSubtitle": {
         "description": "Console Audio face, Recording tab."
+    },
+    "traySystemLabel": "System",
+    "@traySystemLabel": {
+        "description": "Console System face."
+    },
+    "systemDisplayTab": "Display",
+    "@systemDisplayTab": {
+        "description": "Console System face."
+    },
+    "systemUpdatesTab": "Updates",
+    "@systemUpdatesTab": {
+        "description": "Console System face."
+    },
+    "systemViewGroup": "VIEW",
+    "@systemViewGroup": {
+        "description": "Console System face."
+    },
+    "systemPerformanceGroup": "PERFORMANCE",
+    "@systemPerformanceGroup": {
+        "description": "Console System face."
+    },
+    "systemHelpGroup": "HELP",
+    "@systemHelpGroup": {
+        "description": "Console System face."
+    },
+    "systemAutomaticGroup": "AUTOMATIC",
+    "@systemAutomaticGroup": {
+        "description": "Console System face."
+    },
+    "systemInstalledVersion": "Installed version",
+    "@systemInstalledVersion": {
+        "description": "Console System face."
+    },
+    "systemChannel": "Channel",
+    "@systemChannel": {
+        "description": "Console System face."
+    },
+    "systemAutoCheckTitle": "Check for updates automatically",
+    "@systemAutoCheckTitle": {
+        "description": "Console System face."
+    },
+    "systemAutoCheckSubtitle": "Looks in the background. Never downloads or installs on its own.",
+    "@systemAutoCheckSubtitle": {
+        "description": "Console System face."
+    },
+    "systemExperimentalTitle": "Experimental channel",
+    "@systemExperimentalTitle": {
+        "description": "Console System face."
+    },
+    "systemExperimentalSubtitle": "Pre-release builds. Turn off to follow production releases only.",
+    "@systemExperimentalSubtitle": {
+        "description": "Console System face."
+    },
+    "systemUpdateIdle": "Look for a newer version right now.",
+    "@systemUpdateIdle": {
+        "description": "Console System face."
+    },
+    "systemUpdateChecking": "Looking for a newer version…",
+    "@systemUpdateChecking": {
+        "description": "Console System face."
+    },
+    "systemUpdateAvailable": "{version} is available.",
+    "@systemUpdateAvailable": {
+        "description": "Console System face.",
+        "placeholders": {
+            "version": {
+                "type": "String"
+            }
+        }
+    },
+    "systemUpdateDownloading": "Staging {version} to the standby system — {percent}%",
+    "@systemUpdateDownloading": {
+        "description": "Console System face.",
+        "placeholders": {
+            "version": {
+                "type": "String"
+            },
+            "percent": {
+                "type": "int"
+            }
+        }
+    },
+    "systemUpdateStaged": "{version} is installed and ready. Restart when you're not mid-session.",
+    "@systemUpdateStaged": {
+        "description": "Console System face.",
+        "placeholders": {
+            "version": {
+                "type": "String"
+            }
+        }
+    },
+    "systemUpdateUnsupported": "In-app updates are not offered on this platform.",
+    "@systemUpdateUnsupported": {
+        "description": "Console System face."
+    },
+    "systemCheckNow": "Check now",
+    "@systemCheckNow": {
+        "description": "Console System face."
+    },
+    "systemDownloadInstall": "Download & install",
+    "@systemDownloadInstall": {
+        "description": "Console System face."
+    },
+    "systemRestartNow": "Restart now",
+    "@systemRestartNow": {
+        "description": "Console System face."
+    },
+    "systemRefreshRateTitle": "UI refresh rate",
+    "@systemRefreshRateTitle": {
+        "description": "Console System face, Display tab."
+    },
+    "systemRefreshRateSubtitle": "How often waveforms and meters update. Higher is smoother but uses more CPU.",
+    "@systemRefreshRateSubtitle": {
+        "description": "Console System face, Display tab."
+    },
+    "systemUpdateUpToDate": "Up to date.",
+    "@systemUpdateUpToDate": {
+        "description": "Console System face: the check found nothing newer."
+    },
+    "systemStorageTab": "Storage",
+    "@systemStorageTab": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutTab": "About",
+    "@systemAboutTab": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemThisConsoleGroup": "THIS CONSOLE",
+    "@systemThisConsoleGroup": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemHousekeepingGroup": "HOUSEKEEPING",
+    "@systemHousekeepingGroup": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemHardwareGroup": "HARDWARE",
+    "@systemHardwareGroup": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemLegalGroup": "LEGAL",
+    "@systemLegalGroup": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStorageSessions": "Sessions and takes",
+    "@systemStorageSessions": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStorageCaptures": "Captures",
+    "@systemStorageCaptures": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStorageCapturesSub": "exports and stems",
+    "@systemStorageCapturesSub": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStoragePlugins": "Plugins",
+    "@systemStoragePlugins": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStoragePluginsSub": "{count} installed",
+    "@systemStoragePluginsSub": {
+        "description": "Console System face: Storage and About.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "systemStorageSystem": "System and updates",
+    "@systemStorageSystem": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStorageSystemSub": "includes the standby system",
+    "@systemStorageSystemSub": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStorageFree": "Free",
+    "@systemStorageFree": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemStorageUnknown": "This build cannot read the disk.",
+    "@systemStorageUnknown": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemDeleteOldCaptures": "Delete old captures",
+    "@systemDeleteOldCaptures": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemDeleteOldCapturesSub": "Captures older than {days} days",
+    "@systemDeleteOldCapturesSub": {
+        "description": "Console System face: Storage and About.",
+        "placeholders": {
+            "days": {
+                "type": "int"
+            }
+        }
+    },
+    "systemExportUsb": "Export everything to USB",
+    "@systemExportUsb": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemExportUsbNoTarget": "no USB volume",
+    "@systemExportUsbNoTarget": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemGigabytes": "{value} GB",
+    "@systemGigabytes": {
+        "description": "Console System face: Storage and About.",
+        "placeholders": {
+            "value": {
+                "type": "String"
+            }
+        }
+    },
+    "systemAboutName": "Name",
+    "@systemAboutName": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutSerial": "Serial",
+    "@systemAboutSerial": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutApp": "Loopy",
+    "@systemAboutApp": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutEngine": "Audio engine",
+    "@systemAboutEngine": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutImage": "System image",
+    "@systemAboutImage": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutPedal": "Pedal firmware",
+    "@systemAboutPedal": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutInterface": "Audio interface",
+    "@systemAboutInterface": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutPanel": "Panel",
+    "@systemAboutPanel": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutLicence": "Licence",
+    "@systemAboutLicence": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutNotices": "Open-source notices",
+    "@systemAboutNotices": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemAboutNoticesValue": "{count} components",
+    "@systemAboutNoticesValue": {
+        "description": "Console System face: Storage and About.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "systemAboutUnknown": "This build is not a console.",
+    "@systemAboutUnknown": {
+        "description": "Console System face: Storage and About."
+    },
+    "systemPedalSwitches": "{switches} switches · {banks} banks",
+    "@systemPedalSwitches": {
+        "description": "Console System face: Storage and About.",
+        "placeholders": {
+            "switches": {
+                "type": "int"
+            },
+            "banks": {
+                "type": "int"
+            }
+        }
     }
 }

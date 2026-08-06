@@ -48,6 +48,7 @@ class _RecordingAudioTabState extends State<RecordingAudioTab> {
                   title: l10n.audioMaxLoopTitle,
                   subtitle: l10n.audioMaxLoopSubtitle,
                   value: _maxLoopLabel(l10n, audio.state.maxLoopMinutes),
+                  dividerWhileExpanded: true,
                   expanded: _maxLoopOpen,
                   onTap: () => setState(() => _maxLoopOpen = !_maxLoopOpen),
                 ),
@@ -56,8 +57,7 @@ class _RecordingAudioTabState extends State<RecordingAudioTab> {
                   // Flush and square, like every other opened list on this
                   // face: the mockups run them edge to edge inside the card.
                   child: ConsoleCard(
-                    borderRadius: 0,
-                    color: context.surface.background,
+                    recessed: true,
                     children: [
                       for (final minutes
                           in AudioSetupState.maxLoopMinuteOptions)

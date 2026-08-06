@@ -261,6 +261,9 @@ class _OpenableRow extends StatelessWidget {
         subtitle: subtitle,
         value: value,
         divider: divider,
+        // The mockups keep the line under an opened row on this face; the
+        // list below adds its own along the top.
+        dividerWhileExpanded: true,
         expanded: expanded,
         onTap: onTap,
       ),
@@ -341,8 +344,7 @@ class _DeviceList extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return ConsoleCard(
-      borderRadius: 0,
-      color: context.surface.background,
+      recessed: true,
       children: [
         for (final device in devices)
           ConsoleRow(
@@ -392,10 +394,9 @@ class _RateAndBuffer extends StatelessWidget {
     final rates = state.sampleRateChoices;
     final buffers = state.bufferChoices;
     return ConsoleCard(
-      // Flush and square inside the row's own card, as the mockups draw every
+      // Flush, square and seamed to the row above, as the mockups draw every
       // opened list: an inset rounded card would read as a second surface.
-      borderRadius: 0,
-      color: context.surface.background,
+      recessed: true,
       children: [
         _Caption(l10n.audioSampleRateGroup),
         for (final rate in rates)
@@ -445,8 +446,7 @@ class _InputList extends StatelessWidget {
       return ConsoleEmptyCard(message: l10n.audioInputsEmpty);
     }
     return ConsoleCard(
-      borderRadius: 0,
-      color: context.surface.background,
+      recessed: true,
       children: [
         for (var i = 0; i < inputs; i++)
           ConsoleRow(
