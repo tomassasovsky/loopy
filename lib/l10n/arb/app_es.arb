@@ -1953,7 +1953,7 @@
     "@tracksLengthsFooter": {
         "description": "Footnote under the Lengths tab."
     },
-    "tracksRoutingFooter": "Cada pista graba una entrada y se envía a cualquier conjunto de salidas. La cuantización sigue el ajuste global salvo que la pista lo anule.",
+    "tracksRoutingFooter": "Una pista graba cualquier conjunto de entradas —una capa seca por cada una, compartiendo el bucle— y se envía a cualquier conjunto de salidas. La cuantización sigue el ajuste global salvo que la pista lo anule.",
     "@tracksRoutingFooter": {
         "description": "Footnote under the Routing tab."
     },

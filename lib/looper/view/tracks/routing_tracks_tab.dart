@@ -71,18 +71,28 @@ class RoutingTracksTab extends StatelessWidget {
   Future<void> _open(BuildContext context, int channel) =>
       showTrackRoutingSheet(context, channel: channel);
 
-  /// `In 2 · quantize on` — the input the track records, plus its quantize
-  /// override when it has one. A track following the global setting says
-  /// nothing about quantize: the line is for what makes this track different.
+  /// `In 1 · In 2 · quantize on` — every input the track records (one lane
+  /// each), plus its quantize override when it has one. A track following the
+  /// global setting says nothing about quantize: the line is for what makes
+  /// this track different.
   static String _sourceLine(
     AppLocalizations l10n,
     Track track,
     bool? quantize,
   ) {
-    final input = maskToInputChannel(track.inputMask);
-    final source = input < 0
+    // The lanes, falling back to the lane-0 mirror for a stopped engine.
+    final inputs = track.lanes.isEmpty
+        ? [
+            if (maskToInputChannel(track.inputMask) >= 0)
+              maskToInputChannel(track.inputMask),
+          ]
+        : [
+            for (final lane in track.lanes)
+              if (lane.inputChannel >= 0) lane.inputChannel,
+          ];
+    final source = inputs.isEmpty
         ? l10n.signalInputNone
-        : l10n.inputChannelLabel(input + 1);
+        : inputs.map((i) => l10n.inputChannelLabel(i + 1)).join(' · ');
     return switch (quantize) {
       null => source,
       true => '$source · ${l10n.trackQuantizeOn}',
