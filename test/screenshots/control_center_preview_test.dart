@@ -776,6 +776,10 @@ void main() {
     await pumpTracks(tester, TracksTab.routing);
     await tester.tap(find.byKey(const Key('track_routing_row_2')));
     await tester.pumpAndSettle();
+    // Open the first lane, which is what the mockup draws: a lane's outputs
+    // belong to the lane.
+    await tester.tap(find.byKey(const Key('track_input_0')));
+    await tester.pumpAndSettle();
     await expectLater(
       find.byType(Dialog),
       matchesGoldenFile('goldens/control_center_track_routing_sheet.png'),

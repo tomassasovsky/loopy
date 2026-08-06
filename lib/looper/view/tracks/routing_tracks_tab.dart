@@ -53,10 +53,10 @@ class RoutingTracksTab extends StatelessWidget {
                       track,
                       repository.trackQuantize(track.channel),
                     ),
-                    value: _outputLine(l10n, track.outputMask),
+                    value: _outputLine(l10n, _outputsOf(track)),
                     // An unrouted track is silent, which the muted tone of an
                     // ordinary value would not say.
-                    valueColor: track.outputMask == 0 ? surface.warning : null,
+                    valueColor: _outputsOf(track) == 0 ? surface.warning : null,
                     onTap: () => unawaited(_open(context, track.channel)),
                   ),
               ],
@@ -98,6 +98,14 @@ class RoutingTracksTab extends StatelessWidget {
       true => '$source · ${l10n.trackQuantizeOn}',
       false => '$source · ${l10n.trackQuantizeOff}',
     };
+  }
+
+  /// Everywhere the track can be heard: the union of its lanes' outputs, so
+  /// a track whose second lane goes to the desk does not read as if only the
+  /// first lane's routing existed.
+  static int _outputsOf(Track track) {
+    if (track.lanes.isEmpty) return track.outputMask;
+    return track.lanes.fold(0, (mask, lane) => mask | lane.outputMask);
   }
 
   /// `Out 1 · Out 2`, or the warning word when the track goes nowhere.

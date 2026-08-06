@@ -206,8 +206,12 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('track_input_2')));
-      await tester.tap(find.byKey(const Key('track_output_1')));
       await tester.tap(find.byKey(const Key('track_quantize_never')));
+      await tester.pumpAndSettle();
+      // Lane 0's outputs live inside lane 0's own row.
+      await tester.tap(find.byKey(const Key('track_input_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('track_output_0_1')));
       await tester.pumpAndSettle();
 
       // Checking a second input grows the track by a lane and routes the new
@@ -235,9 +239,13 @@ void main() {
       await tester.tap(find.byKey(const Key('track_routing_row_0')));
       await tester.pumpAndSettle();
 
+      // The warning belongs to the LANE, so it shows when the lane is open.
+      await tester.tap(find.byKey(const Key('track_input_0')));
+      await tester.pumpAndSettle();
+
       expect(find.byKey(const Key('track_unrouted_banner')), findsOneWidget);
       expect(
-        find.text('Nothing routed here — this track will not be heard.'),
+        find.text('Nothing routed here — this lane will not be heard.'),
         findsOneWidget,
       );
     });
@@ -270,7 +278,13 @@ void main() {
       await tester.tap(find.byKey(const Key('track_routing_row_0')));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('track_input_0')));
+      // The check itself un-checks a lane; the row body opens it.
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const Key('track_input_0')),
+          matching: find.byIcon(Icons.check),
+        ),
+      );
       await tester.pumpAndSettle();
 
       // Lane 0 stops recording; lane 1 keeps ITS input, because a lane index
@@ -308,21 +322,39 @@ void main() {
       verify(() => bloc.add(const LooperLaneInputChanged(0, 1, -1))).called(1);
     });
 
-    testWidgets('an output chip moves every lane of the track', (tester) async {
+    testWidgets('an output chip moves ONLY its own lane', (tester) async {
       seed(tracks: [_track(0, inputs: const [0, 2])]);
       await pump(tester, TracksTab.routing);
       await tester.tap(find.byKey(const Key('track_routing_row_0')));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('track_output_1')));
+      // Open lane 1 (In 3) and take it off Out 2. A guitar lane to the mains
+      // and its DI lane to the desk is one track, two destinations.
+      await tester.tap(find.byKey(const Key('track_input_2')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('track_output_1_1')));
       await tester.pumpAndSettle();
 
       verify(
-        () => bloc.add(const LooperLaneOutputChanged(0, 0, 0x1)),
-      ).called(1);
-      verify(
         () => bloc.add(const LooperLaneOutputChanged(0, 1, 0x1)),
       ).called(1);
+      verifyNever(() => bloc.add(const LooperLaneOutputChanged(0, 0, 0x1)));
+    });
+
+    testWidgets('only one lane is open at a time', (tester) async {
+      seed(tracks: [_track(0, inputs: const [0, 2])]);
+      await pump(tester, TracksTab.routing);
+      await tester.tap(find.byKey(const Key('track_routing_row_0')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('track_input_0')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('track_output_0_0')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('track_input_2')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('track_output_1_0')), findsOneWidget);
+      expect(find.byKey(const Key('track_output_0_0')), findsNothing);
     });
   });
 }
