@@ -43,6 +43,12 @@ class TrayPanel extends StatelessWidget {
         //
         // The shadow lifts the sheet off the tracks grid, and the hairline
         // along the bottom edge is the seam the drag handle rides on.
+        //
+        // The shadow FADES IN with the drag, and that is not decoration. A
+        // closed tray is parked with its bottom edge exactly on the top of the
+        // screen, so a shadow at full strength there would cast its 19px
+        // offset and 48px blur straight down over the stage — a dark band
+        // under the pull tab that never goes away.
         decoration: BoxDecoration(
           color: surface.card,
           borderRadius: const BorderRadius.vertical(
@@ -51,7 +57,10 @@ class TrayPanel extends StatelessWidget {
           border: Border(bottom: BorderSide(color: surface.borderStrong)),
           boxShadow: [
             BoxShadow(
-              color: surface.dropShadow,
+              color: surface.dropShadow.withValues(
+                alpha:
+                    surface.dropShadow.a * state.dragProgress.clamp(0.0, 1.0),
+              ),
               offset: const Offset(0, 19),
               blurRadius: 48,
             ),

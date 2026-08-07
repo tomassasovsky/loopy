@@ -15,6 +15,7 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/settings_tray.dart';
+import 'package:segno/looper/view/tray/tray.dart';
 import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
 import 'package:segno/network/network_tab.dart';
 import 'package:segno/theme/theme.dart';
@@ -457,6 +458,65 @@ void main() {
         expect(cubit.state.destination, SettingsTrayDestination.home);
       },
     );
+  });
+
+  group('the sheet', () {
+    /// The sheet's own [BoxDecoration] — the shadow is the only thing on this
+    /// surface with no text or geometry to assert on, so it is read directly.
+    BoxShadow shadowOf(WidgetTester tester) {
+      final box = tester.widget<DecoratedBox>(
+        find
+            .descendant(
+              of: find.byType(TrayPanel),
+              matching: find.byType(DecoratedBox),
+            )
+            .first,
+      );
+      return (box.decoration as BoxDecoration).boxShadow!.single;
+    }
+
+    testWidgets('casts no shadow while closed — its bottom edge is parked on '
+        'the top of the screen, and a shadow there is a dark band over the '
+        'stage that never goes away', (tester) async {
+      await pump(tester);
+      await tester.pumpAndSettle();
+
+      expect(cubit.state.dragProgress, 0);
+      expect(shadowOf(tester).color.a, 0);
+    });
+
+    testWidgets('the shadow arrives WITH the slide, not at the end of it', (
+      tester,
+    ) async {
+      await pump(tester);
+      cubit.dragTo(0.5);
+      await tester.pump();
+
+      final midway = shadowOf(tester).color.a;
+      expect(midway, greaterThan(0));
+
+      cubit.open();
+      await tester.pumpAndSettle();
+      expect(shadowOf(tester).color.a, greaterThan(midway));
+    });
+
+    testWidgets('is opaque: the stage never shows through the settings being '
+        'read', (tester) async {
+      await pump(tester);
+      cubit.open();
+      await tester.pumpAndSettle();
+
+      final box = tester.widget<DecoratedBox>(
+        find
+            .descendant(
+              of: find.byType(TrayPanel),
+              matching: find.byType(DecoratedBox),
+            )
+            .first,
+      );
+      expect((box.decoration as BoxDecoration).color!.a, 1);
+      expect(find.byType(BackdropFilter), findsNothing);
+    });
   });
 
   group('navigation rail', () {
