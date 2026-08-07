@@ -271,6 +271,17 @@ void main() {
     await tester.tap(find.byKey(const Key('settings_trackName_0')));
     await tester.pumpAndSettle();
 
+    // The dialog says WHAT it is about to rename, not just which ordinal
+    // (#526) — before this it read "Rename track 1" beside a stage that
+    // already called the track by name.
+    final l10n = AppLocalizations.of(
+      tester.element(find.byKey(const Key('renameTrack_field'))),
+    );
+    expect(
+      find.text(l10n.renameTrackTitle(l10n.defaultTrackName(1))),
+      findsOneWidget,
+    );
+
     await tester.enterText(
       find.byKey(const Key('renameTrack_field')),
       'DRUMS',

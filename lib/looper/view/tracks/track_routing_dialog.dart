@@ -77,18 +77,13 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
   /// other console list.
   int? _openLane;
 
-  /// The quantize override, read once and then owned here.
-  ///
-  /// It is not on `Track` and not in the engine snapshot — the engine takes
-  /// the value and never reports it back — so unlike everything else on this
-  /// panel it cannot be re-read from the bloc on every build.
-  late bool? _quantize = context.read<LooperRepository>().trackQuantize(
-    widget.channel,
-  );
-
   /// The panel's own width cap. Wider than this and the two lists become a
   /// pair of very long rows with their readouts a hand-span from their names.
   static const double _width = 744;
+
+  /// How far the panel stays off the screen edge — the mockup's own scrim
+  /// inset, and what gives the panel a height to fit inside.
+  static const double _scrimInset = 29;
 
   /// Recording [input], or freeing the lane that already does.
   ///
@@ -127,12 +122,9 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
     setState(() => _openLane = null);
   }
 
-  void _setQuantize(bool? enabled) {
-    setState(() => _quantize = enabled);
-    context.read<LooperBloc>().add(
-      LooperTrackQuantizeChanged(widget.channel, enabled: enabled),
-    );
-  }
+  void _setQuantize(bool? enabled) => context.read<LooperBloc>().add(
+    LooperTrackQuantizeChanged(widget.channel, enabled: enabled),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -141,80 +133,114 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
     final names = context.watch<TracksCubit>().state.names;
 
     return Center(
-      child: Material(
-        color: Colors.transparent,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: _width),
-          child: Container(
-            key: Key('track_routing_dialog_${widget.channel}'),
-            padding: const EdgeInsets.all(25),
-            decoration: BoxDecoration(
-              color: surface.card,
-              borderRadius: BorderRadius.circular(17),
-              border: Border.all(color: surface.borderStrong),
-            ),
-            child: BlocBuilder<LooperBloc, LooperState>(
-              buildWhen: (previous, current) =>
-                  !sameRouting(previous.tracks, current.tracks) ||
-                  previous.status.inputChannels !=
-                      current.status.inputChannels ||
-                  previous.status.outputChannels !=
-                      current.status.outputChannels,
-              builder: (context, state) {
-                final track = widget.channel < state.tracks.length
-                    ? state.tracks[widget.channel]
-                    : const Track();
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      l10n.trackSettingsDialogTitle(
-                        l10n.trackName(names, widget.channel),
-                      ),
-                      style: TextStyle(
-                        color: surface.textPrimary,
-                        fontSize: 19,
-                        height: 1.16,
-                        leadingDistribution: TextLeadingDistribution.even,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: kConsoleLabelGap),
-                    // The ordinal stays under the name, where it still says
-                    // which pad on the pedal this track is.
-                    Text(
-                      l10n.tracksOrdinal(widget.channel + 1),
-                      style: TextStyle(
-                        color: surface.textSecondary,
-                        fontSize: 16,
-                        height: 1.55,
-                        leadingDistribution: TextLeadingDistribution.even,
-                      ),
-                    ),
-                    const SizedBox(height: kConsoleGroupGap),
-                    ConsoleGroupLabel(l10n.trackLanesGroup),
-                    const SizedBox(height: kConsoleLabelGap),
-                    _lanes(context, state, track),
-                    const SizedBox(height: kConsoleGroupGap),
-                    ConsoleGroupLabel(l10n.trackQuantizeGroup),
-                    const SizedBox(height: kConsoleLabelGap),
-                    _quantizeGroup(context),
-                    const SizedBox(height: kConsoleGroupGap),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        ConsoleDialogButton(
-                          key: const Key('track_routing_done'),
-                          label: l10n.done,
-                          tone: ConsoleDialogTone.accent,
-                          onPressed: () => Navigator.of(context).pop(),
+      // Inset from the screen edge, as the mockup's scrim is, and the reason
+      // the panel has a height at all: an eight-input rig with a lane open is
+      // taller than 1080, and a Column that tall overflows rather than
+      // scrolling.
+      child: Padding(
+        padding: const EdgeInsets.all(_scrimInset),
+        child: Material(
+          color: Colors.transparent,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _width),
+            child: Container(
+              key: Key('track_routing_dialog_${widget.channel}'),
+              padding: const EdgeInsets.all(25),
+              decoration: BoxDecoration(
+                color: surface.card,
+                borderRadius: BorderRadius.circular(17),
+                border: Border.all(color: surface.borderStrong),
+              ),
+              child: BlocBuilder<LooperBloc, LooperState>(
+                buildWhen: (previous, current) =>
+                    !sameRouting(previous.tracks, current.tracks) ||
+                    !sameQuantize(previous.tracks, current.tracks) ||
+                    previous.status.inputChannels !=
+                        current.status.inputChannels ||
+                    previous.status.outputChannels !=
+                        current.status.outputChannels,
+                builder: (context, state) {
+                  final track = widget.channel < state.tracks.length
+                      ? state.tracks[widget.channel]
+                      : const Track();
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        l10n.trackSettingsDialogTitle(
+                          l10n.trackName(names, widget.channel),
                         ),
-                      ],
-                    ),
-                  ],
-                );
-              },
+                        style: TextStyle(
+                          color: surface.textPrimary,
+                          fontSize: 19,
+                          height: 1.16,
+                          leadingDistribution: TextLeadingDistribution.even,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: kConsoleLabelGap),
+                      // The ordinal stays under the name, where it still says
+                      // which pad on the pedal this track is.
+                      Text(
+                        l10n.tracksOrdinal(widget.channel + 1),
+                        style: TextStyle(
+                          color: surface.textSecondary,
+                          fontSize: 16,
+                          height: 1.55,
+                          leadingDistribution: TextLeadingDistribution.even,
+                        ),
+                      ),
+                      const SizedBox(height: kConsoleGroupGap),
+                      // The GROUPS scroll, not the whole panel: the title says
+                      // which track this is and Done is how you leave, so both
+                      // have to stay reachable however many inputs the rig has.
+                      //
+                      // Slivers, and both captions PINNED: a caption belongs to
+                      // what is under it, and a lane list long enough to scroll
+                      // is exactly the case where "which group am I in?" stops
+                      // being obvious. Scrolled far enough, LANES is still
+                      // overhead and QUANTIZE RECORDING has already arrived at
+                      // the bottom — so the panel always says what both halves
+                      // of it are.
+                      //
+                      // Flexible, not Expanded — a short panel still shrinks to
+                      // its content the way the mockup draws it.
+                      Flexible(
+                        child: CustomScrollView(
+                          shrinkWrap: true,
+                          
+                          slivers: [
+                            _PinnedGroupLabel(l10n.trackLanesGroup),
+                            SliverToBoxAdapter(
+                              child: _lanes(context, state, track),
+                            ),
+                            const SliverToBoxAdapter(
+                              child: SizedBox(height: kConsoleGroupGap),
+                            ),
+                            _PinnedGroupLabel(l10n.trackQuantizeGroup),
+                            SliverToBoxAdapter(
+                              child: _quantizeGroup(context, track),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: kConsoleGroupGap),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          ConsoleDialogButton(
+                            key: const Key('track_routing_done'),
+                            label: l10n.done,
+                            tone: ConsoleDialogTone.accent,
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
         ),
@@ -383,9 +409,10 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
   /// The three sit flat rather than behind a row that opens: this panel is
   /// already the editor, and hiding three alternatives inside a fourth row
   /// would put a chooser inside a chooser.
-  Widget _quantizeGroup(BuildContext context) {
+  Widget _quantizeGroup(BuildContext context, Track track) {
     final l10n = context.l10n;
     final global = context.watch<QuantizeCubit>().state;
+    final override = track.quantizeOverride;
     return ConsoleCard(
       fill: context.surface.background,
       children: [
@@ -395,19 +422,19 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
           state: global
               ? l10n.trackQuantizeGlobalOn
               : l10n.trackQuantizeGlobalOff,
-          selected: _quantize == null,
+          selected: override == null,
           onTap: () => _setQuantize(null),
         ),
         ConsolePickRow(
           key: const Key('track_routing_quantize_always'),
           title: l10n.trackQuantizeAlways,
-          selected: _quantize ?? false,
+          selected: override ?? false,
           onTap: () => _setQuantize(true),
         ),
         ConsolePickRow(
           key: const Key('track_routing_quantize_never'),
           title: l10n.trackQuantizeNever,
-          selected: _quantize == false,
+          selected: override == false,
           showDivider: false,
           onTap: () => _setQuantize(false),
         ),
@@ -452,4 +479,61 @@ class _LaneCheck extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A group caption that stays overhead while its own list scrolls under it.
+///
+/// Pinned rather than scrolling away, because on this panel the caption is the
+/// only thing that says which of the two questions a row answers. It carries
+/// the panel's own fill so the rows pass *behind* it rather than through it,
+/// and it reserves [kConsoleLabelGap] under itself — a caption belongs to what
+/// is beneath it, so that gap travels with the caption rather than staying
+/// behind with the list.
+class _PinnedGroupLabel extends StatelessWidget {
+  const _PinnedGroupLabel(this.label);
+
+  final String label;
+
+  /// The caption's own line, at [ConsoleGroupLabel]'s 13px × 1.23.
+  static const double _lineHeight = 16;
+
+  @override
+  Widget build(BuildContext context) => SliverPersistentHeader(
+    pinned: true,
+    delegate: _PinnedGroupLabelDelegate(
+      label: label,
+      fill: context.surface.card,
+    ),
+  );
+}
+
+class _PinnedGroupLabelDelegate extends SliverPersistentHeaderDelegate {
+  const _PinnedGroupLabelDelegate({required this.label, required this.fill});
+
+  final String label;
+  final Color fill;
+
+  static const double _extent =
+      _PinnedGroupLabel._lineHeight + kConsoleLabelGap;
+
+  @override
+  double get minExtent => _extent;
+
+  @override
+  double get maxExtent => _extent;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) => Container(
+    color: fill,
+    alignment: Alignment.topLeft,
+    child: ConsoleGroupLabel(label),
+  );
+
+  @override
+  bool shouldRebuild(_PinnedGroupLabelDelegate oldDelegate) =>
+      oldDelegate.label != label || oldDelegate.fill != fill;
 }

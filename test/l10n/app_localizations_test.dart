@@ -47,4 +47,35 @@ void main() {
       expect(l10n.startEngine, 'Iniciar motor');
     });
   });
+
+  group('trackName', () {
+    late AppLocalizations l10n;
+
+    setUpAll(() async {
+      l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    });
+
+    test('is the name the rig gave the track', () {
+      expect(l10n.trackName(const ['drums', 'bass'], 1), 'bass');
+    });
+
+    test('localizes the untouched default rather than echoing it', () {
+      // A track nobody has renamed still holds the seeded `TRACK 2`, which is
+      // storage, not a display string — it goes back through the localized
+      // default so a Spanish rig reads PISTA 2.
+      expect(l10n.trackName(const ['drums', 'TRACK 2'], 1), 'TRACK 2');
+      expect(
+        l10n.trackName(const ['drums', 'TRACK 2'], 1),
+        l10n.defaultTrackName(2),
+      );
+    });
+
+    test('falls back rather than throwing on an absent channel', () {
+      // A stale binding names a track the rig no longer has; a row that still
+      // says what it used to drive beats a crash.
+      expect(l10n.trackName(const ['drums'], 7), l10n.defaultTrackName(8));
+      expect(l10n.trackName(const [], 0), l10n.defaultTrackName(1));
+      expect(l10n.trackName(const ['drums'], -1), l10n.defaultTrackName(0));
+    });
+  });
 }

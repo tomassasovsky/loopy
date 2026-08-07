@@ -392,7 +392,7 @@ class StageFxScope extends FxScope {
   StageFxScope({
     required this.looper,
     required this.address,
-    this.trackNames = const [],
+    required this.trackNames,
   }) {
     if (address.stage != FxStage.track && address.stage != FxStage.master) {
       throw ArgumentError.value(
@@ -407,8 +407,11 @@ class StageFxScope extends FxScope {
   final LooperBloc looper;
 
   /// The rig's track names, so a track's bus is titled by what the track is
-  /// called rather than by its ordinal (#526). Empty falls back to the
-  /// ordinal, which is what a caller with no `TracksCubit` in reach gets.
+  /// called rather than by its ordinal (#526).
+  ///
+  /// Required rather than defaulted: an empty list still RENDERS — as the
+  /// ordinal this was added to stop showing — so a default would let a caller
+  /// silently regress the very thing the parameter exists for.
   final List<String> trackNames;
 
   @override

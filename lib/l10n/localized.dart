@@ -73,13 +73,10 @@ extension EngineLocalizations on AppLocalizations {
         LatencyState.idle => notMeasured,
       };
 
-  String displayTrackName(String name, int channel) {
-    final defaultName = 'TRACK ${channel + 1}';
-    if (name == defaultName) {
-      return defaultTrackName(channel + 1);
-    }
-    return name;
-  }
+  String displayTrackName(String name, int channel) =>
+      name == storedDefaultTrackName(channel)
+      ? defaultTrackName(channel + 1)
+      : name;
 
   /// What to CALL track [channel], given the rig's [names] — the one resolver
   /// every surface that names a track goes through (#526).
@@ -97,7 +94,7 @@ extension EngineLocalizations on AppLocalizations {
   String trackName(List<String> names, int channel) => displayTrackName(
     channel >= 0 && channel < names.length
         ? names[channel]
-        : 'TRACK ${channel + 1}',
+        : storedDefaultTrackName(channel),
     channel,
   );
 
@@ -142,3 +139,12 @@ extension EngineLocalizations on AppLocalizations {
     );
   }
 }
+
+/// What `TracksCubit` STORES for a track nobody has renamed.
+///
+/// Storage, not a display string: it is what a fresh rig persists, and what
+/// [EngineLocalizations.displayTrackName] recognises in order to hand back the
+/// localized default instead. One definition, because three copies of the same
+/// literal can silently disagree — the cubit's seed, the resolver's fallback
+/// and the recogniser are all this.
+String storedDefaultTrackName(int channel) => 'TRACK ${channel + 1}';

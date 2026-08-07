@@ -31,7 +31,7 @@ class TracksState extends Equatable {
   /// The display name for [channel], or a fallback.
   String nameOf(int channel) => channel >= 0 && channel < names.length
       ? names[channel]
-      : 'TRACK ${channel + 1}';
+      : storedDefaultTrackName(channel);
 
   /// Returns a copy with the given overrides.
   TracksState copyWith({

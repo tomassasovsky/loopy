@@ -25,7 +25,10 @@ String fxStageLabel(
   List<String> trackNames,
   FxAddress address,
 ) => switch (address.stage) {
-  FxStage.input => l10n.pedalAssignStageInput(address.index),
+  // 1-based, like every other name the rig gives a jack. This arm printed
+  // the RAW index, so the first input read "Input 0" while the Tracks face
+  // called the same jack In 1 — the same off-by-one the track arms had.
+  FxStage.input => l10n.pedalAssignStageInput(address.index + 1),
   FxStage.loop => l10n.pedalAssignStageLoop(
     l10n.trackName(trackNames, address.index),
     address.lane ?? 0,

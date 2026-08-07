@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -53,14 +54,19 @@ void main() {
   late QuantizeCubit quantize;
   late SettingsTrayCubit tray;
 
+  /// The live state stream, when a test needs the face to REACT rather than
+  /// only to render. Null by default: most tests seed one state and assert on
+  /// it, and a live controller there would only add a teardown.
+  StreamController<LooperState>? states;
+
   setUpAll(() {
     registerFallbackValue(const LooperRecordPressed(0));
   });
 
   setUp(() {
+    states = null;
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
-    when(() => repository.trackQuantize(any())).thenReturn(null);
     when(
       () => repository.setQuantize(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
@@ -70,9 +76,17 @@ void main() {
     when(() => bloc.state).thenReturn(state);
     whenListen(
       bloc,
-      const Stream<LooperState>.empty(),
+      states?.stream ?? const Stream<LooperState>.empty(),
       initialState: state,
     );
+  }
+
+  /// Pushes [next] as the bloc's new state, the way the repository's poll
+  /// does — so the face's `buildWhen` is asked about it.
+  Future<void> emit(WidgetTester tester, LooperState next) async {
+    when(() => bloc.state).thenReturn(next);
+    states!.add(next);
+    await tester.pumpAndSettle();
   }
 
   /// Mounts the Tracks face with the providers the real tray inherits.
@@ -206,6 +220,65 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tracks.state.names[1], 'bass');
+    });
+
+    testWidgets('Cancel leaves the name alone', (tester) async {
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('tracks_names_row_1')));
+      await tester.pumpAndSettle();
+      for (final key in ['x', 'y']) {
+        await tester.tap(find.text(key));
+      }
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('track_rename_cancel')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('track_rename_sheet')), findsNothing);
+      expect(tracks.state.names[1], 'TRACK 2');
+    });
+
+    testWidgets('a physical keyboard drives the sheet too', (tester) async {
+      // The on-screen keys are the console's only GUARANTEED input, not its
+      // only possible one: desktop builds and a console with a USB keyboard
+      // attached both type into this sheet directly.
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('tracks_names_row_1')));
+      await tester.pumpAndSettle();
+
+      for (var i = 0; i < 'TRACK 2'.length; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+      }
+      await tester.pump();
+      expect(
+        tester.widget<Text>(find.byKey(const Key('track_rename_field'))).data,
+        isEmpty,
+      );
+      // Backspace on an empty field is a no-op rather than an error.
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyI);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(tracks.state.names[1], 'di');
+    });
+
+    testWidgets('Escape closes the sheet without renaming', (tester) async {
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('tracks_names_row_1')));
+      await tester.pumpAndSettle();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('track_rename_sheet')), findsNothing);
+      expect(tracks.state.names[1], 'TRACK 2');
     });
 
     testWidgets('an empty name does not close the sheet, and renames nothing', (
@@ -369,8 +442,20 @@ void main() {
     testWidgets('a quantize override shows on the summary line', (
       tester,
     ) async {
-      when(() => repository.trackQuantize(1)).thenReturn(true);
-      await pump(tester, tab: TracksTab.routing);
+      await pump(
+        tester,
+        tab: TracksTab.routing,
+        state: const LooperState(
+          tracks: [
+            Track(
+              channel: 1,
+              lanes: [Lane(inputChannel: 1)],
+              quantizeOverride: true,
+            ),
+          ],
+          status: EngineStatus(inputChannels: 4, outputChannels: 4),
+        ),
+      );
       final l10n = l10nOf(tester);
 
       expect(
@@ -388,6 +473,68 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('track_routing_dialog_0')), findsOneWidget);
+    });
+
+    testWidgets('a routing change from the engine reaches the summary', (
+      tester,
+    ) async {
+      // The one test that drives a real emission: everything else seeds a
+      // state and stops, so without this the `buildWhen` that keeps this face
+      // off the meter-rate rebuild path would never execute at all.
+      states = StreamController<LooperState>.broadcast();
+      addTearDown(() => unawaited(states!.close()));
+      await pump(tester, tab: TracksTab.routing);
+      final l10n = l10nOf(tester);
+      expect(find.text(l10n.tracksNotRouted), findsOneWidget);
+
+      await emit(
+        tester,
+        const LooperState(
+          tracks: [
+            Track(lanes: [Lane(inputChannel: 0), Lane(inputChannel: 1)]),
+            Track(channel: 1, lanes: [Lane(inputChannel: 1)]),
+            Track(channel: 2, lanes: [Lane(inputChannel: 0, outputMask: 0x7)]),
+            // The track that reached nothing now reaches Out 1 · Out 2.
+            Track(channel: 3, lanes: [Lane(inputChannel: 3)]),
+          ],
+          status: EngineStatus(inputChannels: 4, outputChannels: 4),
+        ),
+      );
+
+      expect(find.text(l10n.tracksNotRouted), findsNothing);
+      expect(find.text(l10n.inputChannelLabel(4)), findsOneWidget);
+    });
+
+    testWidgets('a quantize override written elsewhere reaches the summary', (
+      tester,
+    ) async {
+      // A session load writes these with no gesture on this face at all.
+      states = StreamController<LooperState>.broadcast();
+      addTearDown(() => unawaited(states!.close()));
+      await pump(
+        tester,
+        tab: TracksTab.routing,
+        state: const LooperState(
+          tracks: [
+            Track(lanes: [Lane(inputChannel: 0)]),
+          ],
+          status: EngineStatus(inputChannels: 4, outputChannels: 4),
+        ),
+      );
+      final l10n = l10nOf(tester);
+      expect(find.textContaining(l10n.tracksQuantizeOn), findsNothing);
+
+      await emit(
+        tester,
+        const LooperState(
+          tracks: [
+            Track(lanes: [Lane(inputChannel: 0)], quantizeOverride: true),
+          ],
+          status: EngineStatus(inputChannels: 4, outputChannels: 4),
+        ),
+      );
+
+      expect(find.textContaining(l10n.tracksQuantizeOn), findsOneWidget);
     });
   });
 
@@ -509,6 +656,59 @@ void main() {
       );
     });
 
+    testWidgets('the lane chooser GROWS open rather than appearing', (
+      tester,
+    ) async {
+      await openPanel(tester);
+
+      await tester.tap(find.byKey(const Key('track_routing_input_0')));
+      await tester.pump();
+      await tester.pump(kConsoleMotion ~/ 2);
+      final midway = tester.getSize(
+        find.byKey(const Key('track_routing_outputs_0')),
+      );
+      await tester.pumpAndSettle();
+      final settled = tester.getSize(
+        find.byKey(const Key('track_routing_outputs_0')),
+      );
+
+      expect(midway.height, lessThan(settled.height));
+      expect(midway.height, greaterThan(0));
+    });
+
+    testWidgets('both group captions stay put while the lists scroll', (
+      tester,
+    ) async {
+      // Pinned headers: scrolled far enough into a long lane list, LANES is
+      // still overhead and QUANTIZE RECORDING has already arrived — so the
+      // panel never stops saying which of its two questions a row answers.
+      await pump(
+        tester,
+        tab: TracksTab.routing,
+        state: const LooperState(
+          tracks: [
+            Track(lanes: [Lane(inputChannel: 0)]),
+          ],
+          status: EngineStatus(inputChannels: 8, outputChannels: 8),
+        ),
+      );
+      await tester.tap(find.byKey(const Key('tracks_routing_row_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      expect(find.text(l10n.trackLanesGroup), findsOneWidget);
+      expect(find.text(l10n.trackQuantizeGroup), findsOneWidget);
+
+      await tester.drag(
+        find.byKey(const Key('track_routing_input_3')),
+        const Offset(0, -400),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.trackLanesGroup), findsOneWidget);
+      expect(find.text(l10n.trackQuantizeGroup), findsOneWidget);
+    });
+
     testWidgets('the output grid stays open — no single tap answers it', (
       tester,
     ) async {
@@ -576,8 +776,18 @@ void main() {
     testWidgets('the quantize override renders its current value', (
       tester,
     ) async {
-      when(() => repository.trackQuantize(0)).thenReturn(false);
-      await openPanel(tester);
+      await pump(
+        tester,
+        tab: TracksTab.routing,
+        state: const LooperState(
+          tracks: [
+            Track(lanes: [Lane(inputChannel: 0)], quantizeOverride: false),
+          ],
+          status: EngineStatus(inputChannels: 4, outputChannels: 4),
+        ),
+      );
+      await tester.tap(find.byKey(const Key('tracks_routing_row_0')));
+      await tester.pumpAndSettle();
 
       final never = tester.widget<ConsolePickRow>(
         find.byKey(const Key('track_routing_quantize_never')),
@@ -613,6 +823,45 @@ void main() {
       verify(
         () => bloc.add(const LooperTrackQuantizeChanged(0, enabled: true)),
       ).called(1);
+    });
+
+    testWidgets('a rig taller than the screen scrolls instead of overflowing', (
+      tester,
+    ) async {
+      // Eight inputs with a lane open is taller than the panel can be. The
+      // groups scroll; the title and Done stay put, because one says which
+      // track this is and the other is how you leave.
+      await pump(
+        tester,
+        tab: TracksTab.routing,
+        state: const LooperState(
+          tracks: [
+            Track(lanes: [Lane(inputChannel: 0)]),
+          ],
+          status: EngineStatus(inputChannels: 8, outputChannels: 8),
+        ),
+      );
+      await tester.tap(find.byKey(const Key('tracks_routing_row_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('track_routing_input_0')));
+      await tester.pumpAndSettle();
+
+      // A RenderFlex overflow is reported as an exception, not a failed
+      // finder — this is the assertion that the cap works at all.
+      expect(tester.takeException(), isNull);
+      final panel = tester.getSize(
+        find.byKey(const Key('track_routing_dialog_0')),
+      );
+      expect(panel.height, lessThanOrEqualTo(1080));
+      expect(find.byKey(const Key('track_routing_done')), findsOneWidget);
+
+      // The last input is off-screen until the groups are scrolled to it.
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('track_routing_input_7')),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.byKey(const Key('track_routing_input_7')), findsOneWidget);
     });
 
     testWidgets('Done dismisses; it does not commit', (tester) async {

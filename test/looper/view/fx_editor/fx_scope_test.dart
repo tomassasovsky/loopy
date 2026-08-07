@@ -237,6 +237,7 @@ void main() {
 
     StageFxScope masterScope() => StageFxScope(
       looper: bloc,
+      trackNames: const [],
       address: const FxAddress(stage: FxStage.master),
     );
 
@@ -313,6 +314,7 @@ void main() {
       expect(
         () => StageFxScope(
           looper: bloc,
+          trackNames: const [],
           address: const FxAddress(stage: FxStage.input),
         ),
         throwsArgumentError,
@@ -320,6 +322,7 @@ void main() {
       expect(
         () => StageFxScope(
           looper: bloc,
+          trackNames: const [],
           address: const FxAddress(stage: FxStage.loop, lane: 0),
         ),
         throwsArgumentError,

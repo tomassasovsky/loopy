@@ -400,6 +400,7 @@ class _SignalListViewState extends State<SignalListView> {
     setState(() {
       _editedScope = StageFxScope(
         looper: _bloc,
+        trackNames: widget.trackNames,
         address: const FxAddress(stage: FxStage.master),
       );
     });

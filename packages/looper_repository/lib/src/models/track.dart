@@ -29,6 +29,7 @@ class Track extends Equatable {
     this.layerInFlight = false,
     this.pending = false,
     this.lengthPresetBars = 0,
+    this.quantizeOverride,
     this.oneShot = false,
     this.lanes = const [],
     this.effects = const [],
@@ -86,6 +87,18 @@ class Track extends Equatable {
   /// fixed N bars. Inert on a track that already has content; applies to the
   /// next defining recording only. See `LooperRepository.setTrackLengthPreset`.
   final int lengthPresetBars;
+
+  /// This track's override on the global quantize-recording setting: `null`
+  /// inherits it, `false` forces it off, `true` forces it on.
+  ///
+  /// Projected from the repository's own re-apply cache rather than from the
+  /// engine snapshot, like `primaryTrack` and the FX chains: the engine TAKES
+  /// the value and never reports it back, so the repository is the only thing
+  /// that knows it. Carried here rather than read through a getter so a
+  /// surface that shows the override is refreshed by the same stream as
+  /// everything else it draws — including on a session load, which sets the
+  /// overrides with no user gesture to hang a re-read off.
+  final bool? quantizeOverride;
 
   /// One Shot (song-mode-spec.md §2, B5c): `true` = this track plays once and
   /// then stops instead of looping. Settable in any looper mode, but only
@@ -150,6 +163,7 @@ class Track extends Equatable {
     layerInFlight,
     pending,
     lengthPresetBars,
+    quantizeOverride,
     oneShot,
     lanes,
     effects,

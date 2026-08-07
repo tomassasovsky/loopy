@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -17,33 +19,31 @@ import 'package:segno/theme/theme.dart';
 /// transport and loop — so the subtitle lists what all its lanes record and
 /// the trailing readout is the **union** of what they reach. A track whose
 /// second lane goes somewhere else must not read as if only the first existed.
-class RoutingTracksTab extends StatefulWidget {
+class RoutingTracksTab extends StatelessWidget {
   /// Creates a [RoutingTracksTab].
   const RoutingTracksTab({super.key});
 
   @override
-  State<RoutingTracksTab> createState() => _RoutingTracksTabState();
-}
-
-class _RoutingTracksTabState extends State<RoutingTracksTab> {
-  @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final names = context.watch<TracksCubit>().state.names;
-    final repository = context.read<LooperRepository>();
 
     return KeyedSubtree(
       key: const Key('tracks_routing_tab'),
       child: BlocBuilder<LooperBloc, LooperState>(
+        // The override is on the summary line, so it has to open the gate as
+        // much as the lanes do — a session load writes these with no gesture
+        // on this face at all.
         buildWhen: (previous, current) =>
-            !sameRouting(previous.tracks, current.tracks),
+            !sameRouting(previous.tracks, current.tracks) ||
+            !sameQuantize(previous.tracks, current.tracks),
         builder: (context, state) {
           final tracks = state.tracks;
           return TracksFace(
             footnote: l10n.tracksRoutingFootnote,
             rows: [
               for (final (channel, track) in tracks.indexed)
-                _row(context, l10n, names, repository, channel, track, tracks),
+                _row(context, l10n, names, channel, track, tracks.length),
             ],
           );
         },
@@ -55,10 +55,9 @@ class _RoutingTracksTabState extends State<RoutingTracksTab> {
     BuildContext context,
     AppLocalizations l10n,
     List<String> names,
-    LooperRepository repository,
     int channel,
     Track track,
-    List<Track> tracks,
+    int count,
   ) {
     final surface = context.surface;
     final outputs = trackOutputMask(track);
@@ -66,7 +65,7 @@ class _RoutingTracksTabState extends State<RoutingTracksTab> {
     return ConsoleRow(
       key: Key('tracks_routing_row_$channel'),
       title: l10n.trackName(names, channel),
-      subtitle: _subtitle(l10n, repository, channel, track),
+      subtitle: _subtitle(l10n, track),
       state: routed
           ? outputMaskLabel(l10n, outputs)
           // A track no lane of which reaches an output records and is never
@@ -75,27 +74,18 @@ class _RoutingTracksTabState extends State<RoutingTracksTab> {
           : l10n.tracksNotRouted,
       valueColor: routed ? null : surface.warning,
       expanded: false,
-      showDivider: channel < tracks.length - 1,
-      onTap: () async {
-        await showTrackRoutingDialog(context, channel: channel);
-        // The quantize override is not in the engine snapshot, so no bloc
-        // state change announces it — the summary has to be asked again once
-        // the panel that could have changed it is gone.
-        if (mounted) setState(() {});
-      },
+      showDivider: channel < count - 1,
+      onTap: () => unawaited(
+        showTrackRoutingDialog(context, channel: channel),
+      ),
     );
   }
 
   /// `In 1 · In 2 · quantize on` — what the track records, then its override
   /// on the global quantize setting when it has one.
-  String _subtitle(
-    AppLocalizations l10n,
-    LooperRepository repository,
-    int channel,
-    Track track,
-  ) {
+  String _subtitle(AppLocalizations l10n, Track track) {
     final inputs = recordedInputs(track);
-    final override = repository.trackQuantize(channel);
+    final override = track.quantizeOverride;
     return [
       if (inputs.isEmpty)
         l10n.tracksNoInputs

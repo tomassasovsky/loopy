@@ -101,7 +101,6 @@
     "sessionErrorUnsupportedVersion": "No se pudo cargar la sesión: se guardó con una versión más reciente de Segno. Actualiza la aplicación e inténtalo de nuevo.",
     "sessionErrorGeneric": "La acción de sesión falló: {details}",
     "engineStoppedBanner": "Motor de audio detenido — abre la configuración para iniciar.",
-    "trackNumberLabel": "Pista {trackNumber}",
     "loopMultipleLabel": "×{multiple}",
     "trackStateEmpty": "vacío",
     "trackStateRecording": "grabando",
@@ -509,13 +508,6 @@
         "placeholders": {
             "deviceName": {
                 "type": "String"
-            }
-        }
-    },
-    "@trackNumberLabel": {
-        "placeholders": {
-            "trackNumber": {
-                "type": "int"
             }
         }
     },

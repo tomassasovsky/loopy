@@ -75,7 +75,7 @@ void main() {
           names,
           const FxAddress(stage: FxStage.input, index: 2),
         ),
-        l10n.pedalAssignStageInput(2),
+        l10n.pedalAssignStageInput(3),
       );
       expect(
         fxStageLabel(

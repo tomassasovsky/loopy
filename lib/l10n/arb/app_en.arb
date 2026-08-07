@@ -203,14 +203,6 @@
         }
     },
     "engineStoppedBanner": "Audio engine stopped — open setup to start.",
-    "trackNumberLabel": "Track {trackNumber}",
-    "@trackNumberLabel": {
-        "placeholders": {
-            "trackNumber": {
-                "type": "int"
-            }
-        }
-    },
     "loopMultipleLabel": "×{multiple}",
     "@loopMultipleLabel": {
         "placeholders": {

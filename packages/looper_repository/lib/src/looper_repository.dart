@@ -554,6 +554,7 @@ class LooperRepository {
           layerInFlight: s.tracks[i].layerInFlight,
           pending: s.tracks[i].pending,
           lengthPresetBars: s.tracks[i].lengthPresetBars,
+          quantizeOverride: _trackQuantize[i],
           oneShot: s.tracks[i].oneShot,
           multiple: s.tracks[i].multiple,
           inputMask: s.tracks[i].inputMask,
@@ -1936,18 +1937,15 @@ class LooperRepository {
     return _engine.setRecordOffset(_recordOffset);
   }
 
-  /// Track [channel]'s quantize override: `null` when it inherits the global
-  /// default, otherwise the forced value.
-  ///
-  /// The override was write-only until the console's Tracks face had to render
-  /// it. It is not on [Track] or in the engine snapshot — the engine takes the
-  /// value but never reports it back — so this reads the map the repository
-  /// already keeps in order to re-apply the overrides on every (re)start.
-  bool? trackQuantize(int channel) => _trackQuantize[channel];
-
   /// Overrides quantize for track [channel]: `null` inherits the global
   /// default, `false` forces it off, `true` forces it on. Remembered and
   /// re-applied on every (re)start.
+  ///
+  /// Re-projects, because the override is in no engine snapshot: it lives only
+  /// in the map below, so nothing else would tell a surface that it had
+  /// changed. That matters beyond the tap that sets it — a session load writes
+  /// these with no user gesture to hang a re-read off, and the console's Tracks
+  /// face would otherwise go on showing the outgoing session's overrides.
   EngineResult setTrackQuantize({
     required int channel,
     required bool? enabled,
@@ -1957,6 +1955,7 @@ class LooperRepository {
     } else {
       _trackQuantize[channel] = enabled;
     }
+    _reproject();
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setTrackQuantize(channel: channel, enabled: enabled);
   }
