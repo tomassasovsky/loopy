@@ -1771,7 +1771,7 @@
     },
     "controlTrackSwitchName": "Pista {number}",
     "@controlTrackSwitchName": {
-        "description": "What a Control-face row calls a track footswitch: the CHANNEL that cap drives in the bank being shown \u2014 tracks 1-4 in bank A and 5-8 in bank B, which is what Bank is for.",
+        "description": "What a Control-face row calls a track footswitch: the CHANNEL that cap drives in the bank being shown — tracks 1-4 in bank A and 5-8 in bank B, which is what Bank is for.",
         "placeholders": {
             "number": {
                 "type": "int"
@@ -1821,7 +1821,6 @@
     "trayAudioLabel": "Audio",
     "audioDeviceTab": "Dispositivo",
     "audioRecordingTab": "Grabación",
-    "audioStatusTab": "Estado",
     "audioGroupLabel": "AUDIO",
     "audioRateBufferRow": "Frecuencia / búfer",
     "audioRoundTripEstimate": "ida y vuelta {milliseconds} ms",
@@ -1847,5 +1846,9 @@
     "audioRenameInputTitle": "Renombrar entrada",
     "inputOrdinal": "entrada {number}",
     "a11yInputRenameField": "Nombre de la entrada",
-    "a11yAudioMeasureLatency": "Medir la latencia de ida y vuelta. No hace nada mientras ya hay una medición en curso."
+    "a11yAudioMeasureLatency": "Medir la latencia de ida y vuelta. No hace nada mientras ya hay una medición en curso.",
+    "audioMeasure": "Medir",
+    "audioRecordOffsetSub": "desfase de grabación {frames} frames",
+    "audioReopening": "Reabriendo el dispositivo a {config}…",
+    "audioRefusedConfig": "El dispositivo no pudo abrirse a {asked}. Funcionando a {actual}."
 }

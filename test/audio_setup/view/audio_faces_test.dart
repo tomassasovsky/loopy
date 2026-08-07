@@ -12,6 +12,7 @@ import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/view/console/audio_tray_panel.dart';
 import 'package:segno/common/console_surface.dart';
+import 'package:segno/common/pill_tabs.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
@@ -90,6 +91,10 @@ void main() {
   late RecordOptionsCubit options;
   late SettingsTrayCubit tray;
 
+  /// The engine's own state stream, so a test can push a tick and watch the
+  /// face react — the negotiation cases need it.
+  late StreamController<LooperState> engine;
+
   setUpAll(() {
     registerFallbackValue(const EngineConfig());
     registerFallbackValue(const LooperRecordPressed(0));
@@ -98,9 +103,9 @@ void main() {
   setUp(() {
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
-    when(
-      () => repository.looperState,
-    ).thenAnswer((_) => const Stream<LooperState>.empty());
+    engine = StreamController<LooperState>.broadcast();
+    addTearDown(engine.close);
+    when(() => repository.looperState).thenAnswer((_) => engine.stream);
     when(() => repository.state).thenReturn(const LooperState(status: _open));
     when(() => repository.lastEngineConfig).thenReturn(
       const EngineConfig(
@@ -166,7 +171,7 @@ void main() {
       // body fails the binding's invariant check before any tearDown runs.
       deviceRefreshInterval: Duration.zero,
     );
-    inputs = InputsCubit(settings: settings);
+    inputs = InputsCubit(settings: settings, repository: repository);
     quantize = QuantizeCubit(repository: repository, settings: settings);
     options = RecordOptionsCubit(repository: repository, settings: settings);
     tray = SettingsTrayCubit(settings: settings)
@@ -321,49 +326,6 @@ void main() {
       verify(() => repository.startEngine(any())).called(1);
     });
 
-    testWidgets('EVERY buffer option carries its own cost', (tester) async {
-      await pump(tester);
-      final l10n = l10nOf(tester);
-      await tester.tap(find.byKey(const Key('audio_rate_row')));
-      await tester.pumpAndSettle();
-
-      for (final (frames, ms) in const [
-        (64, '2.7'),
-        (128, '5.3'),
-        (256, '10.7'),
-        (512, '21.3'),
-      ]) {
-        final row = tester.widget<ConsolePickRow>(
-          find.byKey(Key('audio_buffer_$frames')),
-        );
-        expect(row.state, l10n.latencyMs(ms));
-      }
-    });
-
-    testWidgets('only the rate that costs something says so', (tester) async {
-      await pump(tester);
-      final l10n = l10nOf(tester);
-      await tester.tap(find.byKey(const Key('audio_rate_row')));
-      await tester.pumpAndSettle();
-
-      expect(
-        tester
-            .widget<ConsolePickRow>(
-              find.byKey(const Key('audio_sample_rate_48000')),
-            )
-            .state,
-        isNull,
-      );
-      expect(
-        tester
-            .widget<ConsolePickRow>(
-              find.byKey(const Key('audio_sample_rate_96000')),
-            )
-            .state,
-        l10n.audioSampleRateCost96,
-      );
-    });
-
     testWidgets('a rate and a buffer reach the engine', (tester) async {
       await pump(tester);
       await tester.tap(find.byKey(const Key('audio_rate_row')));
@@ -378,9 +340,7 @@ void main() {
       expect(audio.state.bufferFrames, 256);
     });
 
-    testWidgets('inputs are listed by the name they were given', (
-      tester,
-    ) async {
+    testWidgets('a chip carries the name AND the socket', (tester) async {
       await pump(tester);
       final l10n = l10nOf(tester);
       await inputs.rename(0, 'guitar');
@@ -392,11 +352,34 @@ void main() {
 
       await tester.tap(find.byKey(const Key('audio_inputs_row')));
       await tester.pumpAndSettle();
+      // The name on top, the socket under it — the ordinal rides EVERY chip,
+      // because the number is what the cable is plugged into.
       expect(find.text('guitar'), findsOneWidget);
-      // The socket rides beside the name, never replacing it.
       expect(find.text(l10n.inputOrdinal(1)), findsOneWidget);
-      // An unnamed socket falls back to its ordinal.
-      expect(find.text(l10n.inputChannelLabel(3)), findsOneWidget);
+      // An unnamed socket is the bare ordinal, alone in its chip.
+      expect(find.text(l10n.inputOrdinal(3)), findsOneWidget);
+      expect(find.text(l10n.inputChannelLabel(3)), findsNothing);
+    });
+
+    testWidgets('an unnamed rig is not a grid of grey chips', (tester) async {
+      // The tone moves so a first-run rig does not read as disabled: the
+      // ordinal is PRIMARY when it is the chip's only content.
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('audio_inputs_row')));
+      await tester.pumpAndSettle();
+      const surface = SurfaceTheme.dark;
+
+      final bare = tester.widget<Text>(
+        find.text(l10nOf(tester).inputOrdinal(1)),
+      );
+      expect(bare.style?.color, surface.textPrimary);
+
+      await inputs.rename(0, 'guitar');
+      await tester.pumpAndSettle();
+      final under = tester.widget<Text>(
+        find.text(l10nOf(tester).inputOrdinal(1)),
+      );
+      expect(under.style?.color, surface.textMuted);
     });
 
     testWidgets('renaming an input goes through the console sheet', (
@@ -439,8 +422,9 @@ void main() {
       await tester.tap(find.text(l10nOf(tester).save));
       await tester.pumpAndSettle();
 
-      expect(inputs.state.names[0], isEmpty);
-      expect(find.text(l10nOf(tester).inputChannelLabel(1)), findsOneWidget);
+      expect(inputs.state.isNamed(0), isFalse);
+      expect(find.text('mic'), findsNothing);
+      expect(find.text(l10nOf(tester).inputOrdinal(1)), findsOneWidget);
     });
 
     testWidgets('a device with no inputs says so instead of listing two', (
@@ -518,21 +502,19 @@ void main() {
       expect(find.byKey(const Key('audio_no_outputs_banner')), findsNothing);
     });
 
-    testWidgets('the inputs list stops at the engine ceiling', (tester) async {
-      // The rig reports eighteen; the engine lanes and monitors eight, and a
-      // name for a socket past that is one the rig could never use.
+    testWidgets('the list follows the DEVICE, past the engine lane cap', (
+      tester,
+    ) async {
+      // The rig reports eighteen and gets eighteen. Naming used to stop at
+      // LE_MAX_INPUTS on the reading that a socket past it was unusable — that
+      // constant caps lanes per TRACK and which inputs can be MONITORED, and a
+      // higher-numbered channel is still recordable (#558).
       await pump(tester);
       await tester.tap(find.byKey(const Key('audio_inputs_row')));
       await tester.pumpAndSettle();
 
-      expect(
-        find.byKey(const Key('audio_input_${InputsState.maxInputs - 1}')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const Key('audio_input_${InputsState.maxInputs}')),
-        findsNothing,
-      );
+      expect(find.byKey(const Key('audio_input_17')), findsOneWidget);
+      expect(find.byKey(const Key('audio_input_18')), findsNothing);
     });
 
     testWidgets('the count says what the LIST shows, not what disk holds', (
@@ -622,7 +604,7 @@ void main() {
         initialAsioDrivers: drivers,
         deviceRefreshInterval: Duration.zero,
       );
-      inputs = InputsCubit(settings: settings);
+      inputs = InputsCubit(settings: settings, repository: repository);
       quantize = QuantizeCubit(repository: repository, settings: settings);
       options = RecordOptionsCubit(repository: repository, settings: settings);
       tray = SettingsTrayCubit(settings: settings)
@@ -815,40 +797,46 @@ void main() {
     });
   });
 
-  // ------------------------------------------------------------------ status
+  // ----------------------------------------------------------- the latency
 
-  group('Audio — Status', () {
-    testWidgets('every row is a readout — no tap, no marker', (tester) async {
-      await pump(tester, tab: AudioTab.status);
-      for (final key in const [
-        'audio_status_device',
-        'audio_status_rate',
-        'audio_status_buffer',
-        'audio_status_latency',
-        'audio_status_offset',
-      ]) {
-        final row = tester.widget<ConsoleRow>(find.byKey(Key(key)));
-        expect(row.onTap, isNull, reason: '$key must not be editable');
-        expect(row.showDisclosure, isFalse);
-      }
-    });
-
-    testWidgets('it reports what the engine reports', (tester) async {
-      await pump(tester, tab: AudioTab.status);
+  group('Audio — the measurement', () {
+    testWidgets('lives on Device and keeps an explicit button', (tester) async {
+      await pump(tester);
       final l10n = l10nOf(tester);
-      expect(find.text('Scarlett 18i20'), findsOneWidget);
-      expect(find.text(l10n.sampleRateHz(48000)), findsOneWidget);
-      expect(find.text(l10n.bufferFrames(128)), findsOneWidget);
+      // One row for the figure, the offset and the action — but the action is
+      // a BUTTON, because a bare tappable row says nothing about being one.
+      final row = rowOf(tester, const Key('audio_latency_row'));
+      expect(row.title, l10n.roundTripLatencyLabel);
+      expect(row.subtitle, l10n.audioRecordOffsetSub(64));
+      expect(find.byKey(const Key('audio_measure_button')), findsOneWidget);
       expect(find.text(l10n.latencyMs('7.42')), findsOneWidget);
-      expect(find.text(l10n.bufferFrames(64)), findsOneWidget);
     });
 
-    testWidgets('a stopped engine says what it does not know', (tester) async {
-      when(() => repository.state).thenReturn(const LooperState());
-      await pump(tester, looper: const LooperState(), tab: AudioTab.status);
-      final l10n = l10nOf(tester);
-      expect(find.text(l10n.emDash), findsNWidgets(3));
-      expect(find.text(l10n.notMeasured), findsOneWidget);
+    testWidgets('measuring is what the button does', (tester) async {
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('audio_measure_button')));
+      await tester.pumpAndSettle();
+      verify(repository.measureLatency).called(1);
+    });
+
+    testWidgets('it refuses to restart itself', (tester) async {
+      const measuring = EngineStatus(
+        isConnected: true,
+        deviceName: 'Scarlett 18i20',
+        sampleRate: 48000,
+        bufferFrames: 128,
+        latencyState: LatencyState.measuring,
+      );
+      when(
+        () => repository.state,
+      ).thenReturn(const LooperState(status: measuring));
+      await pump(tester, looper: const LooperState(status: measuring));
+
+      final button = tester.widget<ConsoleSmallButton>(
+        find.byKey(const Key('audio_measure_button')),
+      );
+      expect(button.onPressed, isNull);
+      expect(find.text(l10nOf(tester).measuringEllipsis), findsOneWidget);
     });
 
     testWidgets('a timed-out measurement says so', (tester) async {
@@ -862,43 +850,88 @@ void main() {
       when(
         () => repository.state,
       ).thenReturn(const LooperState(status: timedOut));
-      await pump(
-        tester,
-        looper: const LooperState(status: timedOut),
-        tab: AudioTab.status,
-      );
+      await pump(tester, looper: const LooperState(status: timedOut));
       expect(find.text(l10nOf(tester).noSignalDetected), findsOneWidget);
     });
 
-    testWidgets('the measurement refuses to restart itself', (tester) async {
-      const measuring = EngineStatus(
-        isConnected: true,
-        deviceName: 'Scarlett 18i20',
-        sampleRate: 48000,
-        bufferFrames: 128,
-        latencyState: LatencyState.measuring,
-      );
-      when(
-        () => repository.state,
-      ).thenReturn(const LooperState(status: measuring));
-      await pump(
-        tester,
-        looper: const LooperState(status: measuring),
-        tab: AudioTab.status,
-      );
+    testWidgets('a stopped engine says what it does not know', (tester) async {
+      when(() => repository.state).thenReturn(const LooperState());
+      await pump(tester, looper: const LooperState());
+      expect(find.text(l10nOf(tester).notMeasured), findsOneWidget);
+    });
+  });
 
-      final row = tester.widget<ConsoleRow>(
-        find.byKey(const Key('audio_measure_row')),
+  // ------------------------------------------------------------ negotiation
+
+  group('Audio — negotiation', () {
+    testWidgets('a config in flight is a banner naming what was asked', (
+      tester,
+    ) async {
+      await pump(tester);
+      expect(find.byKey(const Key('audio_opening_banner')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('audio_rate_row')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('audio_sample_rate_96000')));
+      await tester.pumpAndSettle();
+
+      expect(audio.state.phase, ConfigPhase.opening);
+      expect(find.byKey(const Key('audio_opening_banner')), findsOneWidget);
+      expect(
+        find.text(
+          l10nOf(tester).audioReopening(
+            l10nOf(tester).audioRateBufferValue(
+              l10nOf(tester).sampleRateKhzLabel(96000),
+              128,
+            ),
+          ),
+        ),
+        findsOneWidget,
       );
-      expect(row.onTap, isNull);
-      expect(row.title, l10nOf(tester).measuringEllipsis);
     });
 
-    testWidgets('measuring is the one action', (tester) async {
-      await pump(tester, tab: AudioTab.status);
-      await tester.tap(find.byKey(const Key('audio_measure_row')));
+    testWidgets('a refused config snaps the selection back', (tester) async {
+      when(() => repository.startEngine(any())).thenReturn(EngineResult.device);
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('audio_rate_row')));
       await tester.pumpAndSettle();
-      verify(repository.measureLatency).called(1);
+      await tester.tap(find.byKey(const Key('audio_sample_rate_96000')));
+      await tester.pumpAndSettle();
+
+      // The rig never reports a setting it is not running.
+      expect(audio.state.phase, ConfigPhase.refused);
+      expect(audio.state.sampleRate, 48000);
+      expect(find.byKey(const Key('audio_refused_banner')), findsOneWidget);
+      // And the banner is the only place the request is still named.
+      expect(audio.state.requestedRate, 96000);
+    });
+
+    testWidgets('a device that negotiates something else also reports', (
+      tester,
+    ) async {
+      // The open SUCCEEDS, and the device runs 44.1 anyway. Without this the
+      // rows would go on claiming 96 kHz — the lie the old Status tab existed
+      // to correct.
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('audio_rate_row')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('audio_sample_rate_96000')));
+      await tester.pumpAndSettle();
+
+      engine.add(
+        const LooperState(
+          status: EngineStatus(
+            isConnected: true,
+            deviceName: 'Scarlett 18i20',
+            sampleRate: 44100,
+            bufferFrames: 128,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(audio.state.sampleRate, 44100);
+      expect(audio.state.phase, ConfigPhase.refused);
     });
   });
 
@@ -922,18 +955,25 @@ void main() {
       await pump(tester);
       final l10n = l10nOf(tester);
 
-      await tester.tap(find.text(l10n.audioStatusTab));
+      // Two tabs, not three — Status was dissolved into Device.
+      expect(find.byType(PillTabs<AudioTab>), findsOneWidget);
+      expect(
+        tester.widget<PillTabs<AudioTab>>(find.byType(PillTabs<AudioTab>)).tabs,
+        hasLength(2),
+      );
+
+      await tester.tap(find.text(l10n.audioRecordingTab));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('audio_status_tab')), findsOneWidget);
+      expect(find.byKey(const Key('audio_recording_tab')), findsOneWidget);
       expect(find.byKey(const Key('audio_device_tab')), findsNothing);
-      expect(tray.state.audioTab, AudioTab.status);
+      expect(tray.state.audioTab, AudioTab.recording);
 
       // Leaving the domain and coming back lands where it was left.
       tray
         ..showDestination(SettingsTrayDestination.home)
         ..showDestination(SettingsTrayDestination.audio);
       await tester.pumpAndSettle();
-      expect(tray.state.audioTab, AudioTab.status);
+      expect(tray.state.audioTab, AudioTab.recording);
     });
   });
 }

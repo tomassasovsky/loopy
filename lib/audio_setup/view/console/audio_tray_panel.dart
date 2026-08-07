@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:segno/audio_setup/audio_tab.dart';
 import 'package:segno/audio_setup/view/console/device_audio_tab.dart';
 import 'package:segno/audio_setup/view/console/recording_audio_tab.dart';
-import 'package:segno/audio_setup/view/console/status_audio_tab.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/common/pill_tabs.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -17,9 +16,10 @@ import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 /// without importing a view, and the selected tab kept across navigation in
 /// `SettingsTrayState`.
 ///
-/// What differs is [AudioTab.status]: it is the console's one **read-only**
-/// tab. The settings that decide those figures live on Device, and a figure
-/// editable in two places is a figure that disagrees with itself.
+/// What differs is that it is TWO tabs where the design first drew three. The
+/// Status tab was dissolved into [AudioTab.device]: a figure shown both beside
+/// the setting that decides it and on a page of its own is a figure that can
+/// disagree with itself.
 class AudioTrayPanel extends StatelessWidget {
   /// Creates an [AudioTrayPanel].
   const AudioTrayPanel({super.key});
@@ -40,12 +40,10 @@ class AudioTrayPanel extends StatelessWidget {
         tabs: [
           PillTab(value: AudioTab.device, label: l10n.audioDeviceTab),
           PillTab(value: AudioTab.recording, label: l10n.audioRecordingTab),
-          PillTab(value: AudioTab.status, label: l10n.audioStatusTab),
         ],
         body: switch (tab) {
           AudioTab.device => const DeviceAudioTab(),
           AudioTab.recording => const RecordingAudioTab(),
-          AudioTab.status => const StatusAudioTab(),
         },
       ),
     );

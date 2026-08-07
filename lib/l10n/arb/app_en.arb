@@ -109,7 +109,11 @@
     "pedalFirmwareGateBody": "Updating your pedal to {version}. Its footswitches and lights are off until this finishes — don't unplug it.",
     "@pedalFirmwareGateBody": {
         "description": "Body of the pedal firmware gate. {version} is a semantic version.",
-        "placeholders": { "version": { "type": "String" } }
+        "placeholders": {
+            "version": {
+                "type": "String"
+            }
+        }
     },
     "pedalFirmwareGateFailedTitle": "Pedal update didn't finish",
     "@pedalFirmwareGateFailedTitle": {
@@ -2295,7 +2299,7 @@
     },
     "controlTrackSwitchName": "Track {number}",
     "@controlTrackSwitchName": {
-        "description": "What a Control-face row calls a track footswitch: the CHANNEL that cap drives in the bank being shown \u2014 tracks 1-4 in bank A and 5-8 in bank B, which is what Bank is for.",
+        "description": "What a Control-face row calls a track footswitch: the CHANNEL that cap drives in the bank being shown — tracks 1-4 in bank A and 5-8 in bank B, which is what Bank is for.",
         "placeholders": {
             "number": {
                 "type": "int"
@@ -2388,7 +2392,6 @@
     "trayAudioLabel": "Audio",
     "audioDeviceTab": "Device",
     "audioRecordingTab": "Recording",
-    "audioStatusTab": "Status",
     "audioGroupLabel": "AUDIO",
     "audioRateBufferRow": "Sample rate / buffer",
     "audioRoundTripEstimate": "round-trip {milliseconds} ms",
@@ -2479,5 +2482,36 @@
         }
     },
     "a11yInputRenameField": "Input name",
-    "a11yAudioMeasureLatency": "Measure round-trip latency. Refuses while a measurement is already running."
+    "a11yAudioMeasureLatency": "Measure round-trip latency. Refuses while a measurement is already running.",
+    "audioMeasure": "Measure",
+    "audioRecordOffsetSub": "record offset {frames} frames",
+    "@audioRecordOffsetSub": {
+        "description": "Subtitle of the round-trip latency row. The offset is a CONSEQUENCE of the measurement, not a setting, so it rides the row that measures it rather than taking one of its own.",
+        "placeholders": {
+            "frames": {
+                "type": "int"
+            }
+        }
+    },
+    "audioReopening": "Reopening the device at {config}…",
+    "@audioReopening": {
+        "description": "Pending banner while a requested config is being opened. Names what was ASKED for.",
+        "placeholders": {
+            "config": {
+                "type": "String"
+            }
+        }
+    },
+    "audioRefusedConfig": "The device could not open at {asked}. Running at {actual}.",
+    "@audioRefusedConfig": {
+        "description": "Failure banner when the device would not run the requested config. The selection has already snapped to what it did give, so the banner is the only place the request is still named.",
+        "placeholders": {
+            "asked": {
+                "type": "String"
+            },
+            "actual": {
+                "type": "String"
+            }
+        }
+    }
 }

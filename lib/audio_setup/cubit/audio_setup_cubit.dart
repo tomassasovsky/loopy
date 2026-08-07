@@ -143,7 +143,14 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// already running, reopens the device so the change takes effect now.
   void setSampleRate(int sampleRate) {
     if (sampleRate == state.sampleRate) return;
-    emit(state.copyWith(sampleRate: sampleRate));
+    emit(
+      state.copyWith(
+        sampleRate: sampleRate,
+        phase: ConfigPhase.opening,
+        requestedRate: sampleRate,
+        requestedBuffer: state.bufferFrames,
+      ),
+    );
     _persistAndApply();
   }
 
@@ -152,7 +159,14 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// Linux/JACK this maps to the PipeWire quantum, i.e. live latency).
   void setBufferFrames(int bufferFrames) {
     if (bufferFrames == state.bufferFrames) return;
-    emit(state.copyWith(bufferFrames: bufferFrames));
+    emit(
+      state.copyWith(
+        bufferFrames: bufferFrames,
+        phase: ConfigPhase.opening,
+        requestedRate: state.sampleRate,
+        requestedBuffer: bufferFrames,
+      ),
+    );
     _persistAndApply();
   }
 
@@ -281,13 +295,24 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     final result = _repository.startEngine(_engineConfig());
     if (result.isOk) {
       // Clear any prior error: a successful (re)start recovers from a failed
-      // open, so a stale banner must not linger.
+      // open, so a stale banner must not linger. The phase stays OPENING — the
+      // request has been accepted, not yet negotiated, and [_snapToNegotiated]
+      // settles it on the tick that reports what the device gave.
       emit(state.copyWith(status: AudioSetupStatus.running, clearError: true));
       _autoMeasureIfLoopback();
     } else {
+      // The device refused outright. Hand the selection back what the engine
+      // is still running, so the rows never report a setting the rig has not
+      // got — [ConfigPhase.refused] is what says the request was dropped.
+      final live = _repository.state.status;
       emit(
         state.copyWith(
           status: AudioSetupStatus.error,
+          phase: ConfigPhase.refused,
+          sampleRate: live.sampleRate > 0 ? live.sampleRate : state.sampleRate,
+          bufferFrames: live.bufferFrames > 0
+              ? live.bufferFrames
+              : state.bufferFrames,
           error: AudioSetupError.openDeviceFailed,
           errorDetail: result.name,
         ),
@@ -389,7 +414,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   }
 
   void _onLooperState(LooperState looper) {
-    emit(_projectFromRepository(looper, current: state));
+    emit(_snapToNegotiated(_projectFromRepository(looper, current: state)));
     _detectConnectivity(looper.status);
     unawaited(_syncLatencyPersistence(looper.status));
   }
@@ -456,6 +481,44 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
         ),
       );
     }
+  }
+
+  /// Moves the rate/buffer selection onto what the device actually NEGOTIATED,
+  /// once a requested config has been opened.
+  ///
+  /// A device may accept an open and run something else — ask a two-channel
+  /// interface for 96 kHz and it may hand back 48. The selection follows,
+  /// deliberately: the rows are the one place the rig states its clock, and a
+  /// row that keeps saying 96 while the engine runs 48 is a lie the old Status
+  /// tab existed to correct.
+  ///
+  /// The price, taken knowingly: what was ASKED for stops being recoverable,
+  /// and since the selection persists, the next boot asks for what the device
+  /// gave rather than re-asking for the original. That is the point — a config
+  /// the rig could not open is not one worth restoring.
+  ///
+  /// Only while a request is in flight. Left running always, it would drag the
+  /// selection around on every engine tick and poison the saved config with
+  /// whatever a transient reopen happened to report.
+  AudioSetupState _snapToNegotiated(AudioSetupState next) {
+    if (next.phase != ConfigPhase.opening) return next;
+    final live = next.engineStatus;
+    if (!live.isConnected || live.sampleRate <= 0 || live.bufferFrames <= 0) {
+      return next;
+    }
+    final settled = next.copyWith(
+      sampleRate: live.sampleRate,
+      bufferFrames: live.bufferFrames,
+      phase: ConfigPhase.settled,
+    );
+    // The device gave what was asked for, so there is nothing to report.
+    if (live.sampleRate == next.requestedRate &&
+        live.bufferFrames == next.requestedBuffer) {
+      return settled;
+    }
+    // It gave something else. The banner says so, and stays until the next
+    // request replaces it.
+    return settled.copyWith(phase: ConfigPhase.refused);
   }
 
   AudioSetupState _projectFromRepository(

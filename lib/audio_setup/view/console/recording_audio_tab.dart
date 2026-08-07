@@ -24,11 +24,9 @@ enum _OpenRow {
 
 /// The Recording tab: what pressing record does.
 ///
-/// Two rows that open in place and three switches between them. The loop cap
-/// opens onto its options the way Device's rows do, because its choices are a
-/// memory decision the line above them explains; the default length opens onto
-/// a chip grid instead, because `Auto` and `×2` are bare tokens with nothing to
-/// put in a row's width.
+/// Two rows that open in place and three switches between them. Both open onto
+/// **chip grids** — `Default (30 s)`, `2 min`, `Auto`, `×2` are all bare
+/// tokens, and a token has nothing to put in a row's width.
 class RecordingAudioTab extends StatefulWidget {
   /// Creates a [RecordingAudioTab].
   const RecordingAudioTab({super.key});
@@ -74,22 +72,28 @@ class _RecordingAudioTabState extends State<RecordingAudioTab> {
                     fill: _open == _OpenRow.maxLoop ? surface.control : null,
                     onTap: () => _toggle(_OpenRow.maxLoop),
                   ),
-                  ConsoleChooser(
+                  ConsoleChooser.grid(
                     key: const Key('audio_max_loop_chooser'),
                     open: _open == _OpenRow.maxLoop,
-                    children: [
-                      for (final (index, minutes)
-                          in AudioSetupState.maxLoopMinuteOptions.indexed)
-                        ConsolePickRow(
-                          key: Key('audio_max_loop_$minutes'),
-                          title: _capLabel(l10n, minutes),
-                          selected: minutes == cap,
-                          showDivider:
-                              index <
-                              AudioSetupState.maxLoopMinuteOptions.length - 1,
-                          onTap: () => audio.setMaxLoopMinutes(minutes),
-                        ),
-                    ],
+                    // A grid, not a row list: every option is a bare token, and
+                    // a token has nothing to put in a row's width.
+                    grid: ConsoleChipGrid<int>(
+                      selected: {cap},
+                      options: [
+                        for (final minutes
+                            in AudioSetupState.maxLoopMinuteOptions)
+                          ConsoleSegment(
+                            value: minutes,
+                            label: _capLabel(l10n, minutes),
+                            optionKey: Key('audio_max_loop_$minutes'),
+                          ),
+                      ],
+                      onTap: (minutes) {
+                        audio.setMaxLoopMinutes(minutes);
+                        // A pick-one: the question is answered, so it shuts.
+                        setState(() => _open = _OpenRow.none);
+                      },
+                    ),
                   ),
                   ConsoleRow(
                     key: const Key('audio_quantize_row'),

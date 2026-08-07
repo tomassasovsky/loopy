@@ -297,6 +297,7 @@ class _PreviewBluetoothClient implements BluetoothClient {
 }
 
 void main() {
+  setUpAll(() => registerFallbackValue(const EngineConfig()));
   const fontDir =
       '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
   final hasFonts = File('$fontDir/Roboto-Regular.ttf').existsSync();
@@ -378,6 +379,9 @@ void main() {
     );
     // The saved config the cubit hydrates from — this is how the Scarlett is
     // the PINNED device without the preview having to open one.
+    when(looper.stopEngine).thenReturn(EngineResult.ok);
+    when(() => looper.startEngine(any())).thenReturn(EngineResult.ok);
+    when(looper.measureLatency).thenReturn(EngineResult.ok);
     when(() => looper.lastEngineConfig).thenReturn(
       const EngineConfig(
         sampleRate: 48000,
@@ -423,7 +427,7 @@ void main() {
     final tempo = TempoCubit(repository: looper, settings: settings);
     final options = RecordOptionsCubit(repository: looper, settings: settings);
     final tracks = TracksCubit(settings: settings);
-    final inputs = InputsCubit(settings: settings);
+    final inputs = InputsCubit(settings: settings, repository: looper);
     final quantize = QuantizeCubit(repository: looper, settings: settings);
     final audio = AudioSetupCubit(
       repository: looper,
@@ -1153,7 +1157,7 @@ void main() {
     );
   }, skip: !hasFonts);
 
-  testWidgets('audio domain, every buffer option carrying its own cost', (
+  testWidgets('audio domain, the rate and buffer grids', (
     tester,
   ) async {
     await pumpAudio(tester, AudioTab.device);
@@ -1190,11 +1194,21 @@ void main() {
     );
   }, skip: !hasFonts);
 
-  testWidgets('audio domain, status tab', (tester) async {
-    await pumpAudio(tester, AudioTab.status);
+  testWidgets('audio domain, a config the device refused', (tester) async {
+    // The selection has snapped back to what the device gave; the banner is
+    // the only place the request is still named.
+    final providers = await pumpAudio(tester, AudioTab.device);
+    when(() => providers.looper.startEngine(any())).thenReturn(
+      EngineResult.device,
+    );
+    await tester.tap(find.byKey(const Key('audio_rate_row')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('audio_sample_rate_96000')));
+    await tester.pumpAndSettle();
+
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_audio_status.png'),
+      matchesGoldenFile('goldens/control_center_audio_refused.png'),
     );
   }, skip: !hasFonts);
 }

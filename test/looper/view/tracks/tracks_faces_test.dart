@@ -73,6 +73,12 @@ void main() {
     when(
       () => repository.setQuantize(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
+    // The input names follow the OPEN DEVICE, so the cubit reads the
+    // repository's stream the moment it is built.
+    when(
+      () => repository.looperState,
+    ).thenAnswer((_) => const Stream<LooperState>.empty());
+    when(() => repository.state).thenReturn(const LooperState());
   });
 
   void seed(LooperState state) {
@@ -111,7 +117,7 @@ void main() {
     seed(state);
     settings = SettingsRepository(store: FakeKeyValueStore());
     tracks = TracksCubit(settings: settings);
-    inputs = InputsCubit(settings: settings);
+    inputs = InputsCubit(settings: settings, repository: repository);
     quantize = QuantizeCubit(repository: repository, settings: settings);
     tray = SettingsTrayCubit(settings: settings)..showTracksTab(tab);
     // unawaited: awaiting a cubit close inside a testWidgets body deadlocks on
@@ -449,7 +455,17 @@ void main() {
       // The Audio face gives an input its name; every surface that shows one
       // reads it through the same resolver, so the routing summary and the
       // per-track panel must not go on saying `In 1`.
+      // The names key off the OPEN DEVICE, so the rig has to name one before
+      // a socket can be named at all.
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          status: EngineStatus(isConnected: true, deviceName: 'Scarlett'),
+        ),
+      );
       await pump(tester, tab: TracksTab.routing);
+      // Lets the cubit's own device read land — `Future.delayed` here would
+      // wait on the real clock, since testWidgets runs a fake one.
+      await tester.pump();
       await inputs.rename(0, 'guitar');
       await tester.pumpAndSettle();
       final l10n = l10nOf(tester);

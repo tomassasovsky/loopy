@@ -68,7 +68,7 @@ class RoutingTracksTab extends StatelessWidget {
     BuildContext context,
     AppLocalizations l10n,
     List<String> names,
-    List<String> inputs,
+    Map<int, String> inputs,
     int channel,
     Track track,
     int count,
@@ -97,7 +97,11 @@ class RoutingTracksTab extends StatelessWidget {
 
   /// `guitar · In 2 · quantize on` — what the track records, then its override
   /// on the global quantize setting when it has one.
-  String _subtitle(AppLocalizations l10n, List<String> names, Track track) {
+  String _subtitle(
+    AppLocalizations l10n,
+    Map<int, String> names,
+    Track track,
+  ) {
     final inputs = recordedInputs(track);
     final override = track.quantizeOverride;
     return [

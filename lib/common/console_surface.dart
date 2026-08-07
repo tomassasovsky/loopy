@@ -1548,6 +1548,7 @@ class ConsoleSegment<T> {
   const ConsoleSegment({
     required this.value,
     required this.label,
+    this.sublabel,
     this.optionKey,
   });
 
@@ -1555,7 +1556,24 @@ class ConsoleSegment<T> {
   final T value;
 
   /// The visible caption.
+  ///
+  /// May be **empty**, which promotes [sublabel] to the primary tone — see
+  /// there for the one case that needs it.
   final String label;
+
+  /// A second line under [label], in the mono face: the thing's own machine
+  /// fact, where [label] is what a person calls it. `guitar` over `input 1`.
+  ///
+  /// Ignored by [ConsoleSegmented] and [ConsoleMiniToggle], which are single
+  /// short words by construction.
+  ///
+  /// **An empty [label] promotes this line to the primary tone.** The Audio
+  /// face's input chips are why: a named socket reads `guitar` over a grey
+  /// `input 1`, and an unnamed one is the bare ordinal — which must not stay
+  /// grey, because a rig where nothing is named would be a grid of entirely
+  /// grey chips, reading as disabled rather than as nothing having been said
+  /// about them yet.
+  final String? sublabel;
 
   /// The cell's own key, for a grid whose cells are otherwise identified only
   /// by a two-character label.
@@ -2025,8 +2043,12 @@ class ConsoleChipGrid<T> extends StatelessWidget {
   /// Gap between cells, both ways.
   static const double gutter = 10;
 
-  /// Cell height.
+  /// Cell height, for a grid of single-line cells.
   static const double cellHeight = 48;
+
+  /// Cell height once any option carries a [ConsoleSegment.sublabel]. Uniform
+  /// across the grid — cells of two heights in one run read as two controls.
+  static const double twoLineCellHeight = 56;
 
   /// How many cells to put across, given the room and how many there are.
   ///
@@ -2063,6 +2085,7 @@ class ConsoleChipGrid<T> extends StatelessWidget {
       final width = constraints.maxWidth;
       final columns = columnsFor(width, options.length);
       final cell = (width - gutter * (columns - 1)) / columns;
+      final twoLine = options.any((option) => option.sublabel != null);
       return Wrap(
         spacing: gutter,
         runSpacing: gutter,
@@ -2073,6 +2096,8 @@ class ConsoleChipGrid<T> extends StatelessWidget {
               child: _ConsoleChip(
                 key: option.optionKey,
                 label: option.label,
+                sublabel: option.sublabel,
+                height: twoLine ? twoLineCellHeight : cellHeight,
                 selected: selected.contains(option.value),
                 onTap: () => onTap(option.value),
               ),
@@ -2088,10 +2113,14 @@ class _ConsoleChip extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.sublabel,
+    this.height = ConsoleChipGrid.cellHeight,
     super.key,
   });
 
   final String label;
+  final String? sublabel;
+  final double height;
   final bool selected;
   final VoidCallback onTap;
 
@@ -2102,18 +2131,25 @@ class _ConsoleChip extends StatelessWidget {
     // button/selected/label node, and wrapping a second one round it gives a
     // screen reader two nested labelled buttons for one chip. ConsolePickRow
     // makes the same call.
+    final sub = sublabel;
+    // An empty label leaves the second line as the chip's only content, so it
+    // takes the primary ink; under a label it is the muted secondary fact.
+    final subTint = label.isEmpty ? surface.textPrimary : surface.textMuted;
     return FocusableTapTarget(
       onTap: onTap,
       selected: selected,
       borderRadius: 11,
-      semanticLabel: label,
+      semanticLabel: [
+        label,
+        ?sub,
+      ].where((text) => text.isNotEmpty).join(', '),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(11),
         child: AnimatedContainer(
           duration: consoleMotion(context),
           curve: Curves.easeOut,
-          height: ConsoleChipGrid.cellHeight,
+          height: height,
           alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(horizontal: 10),
           decoration: BoxDecoration(
@@ -2123,18 +2159,40 @@ class _ConsoleChip extends StatelessWidget {
               color: selected ? surface.accent : surface.line,
             ),
           ),
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: selected ? surface.accent : surface.textPrimary,
-              fontSize: 16,
-              height: 1.13,
-              leadingDistribution: TextLeadingDistribution.even,
-              // One weight for both states, as everywhere on this surface.
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (label.isNotEmpty)
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: selected ? surface.accent : surface.textPrimary,
+                    fontSize: 16,
+                    height: 1.13,
+                    leadingDistribution: TextLeadingDistribution.even,
+                    // One weight for both states, as everywhere here.
+                  ),
+                ),
+              if (sub != null) ...[
+                if (label.isNotEmpty) const SizedBox(height: 2),
+                Text(
+                  sub,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: selected ? surface.accent : subTint,
+                    fontFamily: SurfaceTheme.monoFont,
+                    fontSize: 14,
+                    height: 1.14,
+                    leadingDistribution: TextLeadingDistribution.even,
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ),

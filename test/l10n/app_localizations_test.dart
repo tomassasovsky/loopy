@@ -87,24 +87,27 @@ void main() {
     });
 
     test('is the name the player gave the socket', () {
-      expect(l10n.inputName(const ['guitar', 'mic'], 1), 'mic');
+      expect(l10n.inputName(const {0: 'guitar', 1: 'mic'}, 1), 'mic');
     });
 
     test('an unnamed socket falls back to its ordinal', () {
-      // Empty rather than a pre-filled ordinal is how the cubit stores "no
-      // name", so the resolver is the one place that turns it into words.
-      expect(
-        l10n.inputName(const ['guitar', ''], 1),
-        l10n.inputChannelLabel(2),
-      );
-      expect(l10n.inputName(const [], 0), l10n.inputChannelLabel(1));
+      // A socket with no name is ABSENT from the map rather than empty, so
+      // the resolver is the one place that turns "nothing stored" into words.
+      expect(l10n.inputName(const {0: 'guitar'}, 1), l10n.inputChannelLabel(2));
+      expect(l10n.inputName(const {}, 0), l10n.inputChannelLabel(1));
+      // A stored empty string reads the same way, so a half-written value can
+      // never render as a blank name.
+      expect(l10n.inputName(const {1: ''}, 1), l10n.inputChannelLabel(2));
     });
 
     test('falls back rather than throwing on an absent socket', () {
       // A session saved on an eight-in rig still routes In 6 when it is
       // reopened on a two-in one, and that lane's row has to say something.
-      expect(l10n.inputName(const ['guitar'], 5), l10n.inputChannelLabel(6));
-      expect(l10n.inputName(const ['guitar'], -1), l10n.inputChannelLabel(0));
+      expect(l10n.inputName(const {0: 'guitar'}, 5), l10n.inputChannelLabel(6));
+      expect(
+        l10n.inputName(const {0: 'guitar'}, -1),
+        l10n.inputChannelLabel(0),
+      );
     });
   });
 }

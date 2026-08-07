@@ -2,7 +2,10 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:looper_repository/looper_repository.dart'
+    show EngineStatus, LatencyState;
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/view/console/audio_face.dart';
@@ -13,11 +16,11 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// Which of the tab's three rows is open, if any.
+/// Which of the tab's three openable rows is showing its list, if any.
 ///
 /// One enum with a [none] member rather than three booleans, because opening
-/// one row must close the others: two lists open at once is a scroll, and a
-/// buffer choice is only meaningful next to the rate it divides.
+/// one must close the others: two lists open at once is a scroll, and a buffer
+/// choice is only meaningful next to the rate it divides.
 enum _OpenRow {
   /// Nothing is open.
   none,
@@ -25,7 +28,7 @@ enum _OpenRow {
   /// The device list.
   device,
 
-  /// The sample rate and buffer groups.
+  /// The sample rate and buffer grids.
   rate,
 
   /// The hardware inputs.
@@ -62,13 +65,18 @@ class _Interface {
   final bool absent;
 }
 
-/// The Device tab: what the rig plays through, how fast it runs, and what its
-/// inputs are called.
+/// The Device tab: what the rig plays through, how fast it runs, what its
+/// inputs are called, and what the round trip actually measures.
 ///
-/// Three rows, each opening **in place** onto its own list rather than pushing
-/// a route. The mockups make the reason plain: a buffer choice is only
-/// meaningful beside the rate it divides, and a route would hide the other two
-/// settings while you changed one.
+/// **Four rows, because there is no Status tab.** Everything a status page
+/// would report is either already the value of one of these rows or belongs
+/// beside the setting that decides it — and a figure shown in two places is one
+/// that can disagree with itself. What a status page cannot show is a config in
+/// flight, so that is a banner here instead.
+///
+/// Three rows open **in place**. The mockups make the reason plain: a buffer
+/// choice is only meaningful beside the rate it divides, and a route would hide
+/// the other two settings while you changed one.
 class DeviceAudioTab extends StatefulWidget {
   /// Creates a [DeviceAudioTab].
   const DeviceAudioTab({super.key});
@@ -84,6 +92,18 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
   /// their own. Linked, never bundled: its licence forbids redistribution.
   static final Uri _asio4all = Uri.parse('https://asio4all.org');
 
+  /// The install banner's card: a 61px banner (the sentence plus the button
+  /// that is taller than it) inside a card that insets 1px top and bottom.
+  static const double _bannerCardExtent = 63;
+
+  /// What a chip grid inside this card's drawers is inset by.
+  static const EdgeInsets _gridInset = EdgeInsets.fromLTRB(
+    ConsoleRow.indentedInset,
+    0,
+    kConsoleRowInset,
+    kConsoleBlockGap,
+  );
+
   void _toggle(_OpenRow row) =>
       setState(() => _open = _open == row ? _OpenRow.none : row);
 
@@ -91,16 +111,10 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final state = context.watch<AudioSetupCubit>().state;
-    // The silence banner is read from the LOOPER's own gate, not from device
-    // state: outputs are switched per channel on the Signal page, and every one
-    // of them off is silence with no other symptom — the meters move, the loop
-    // plays, nothing comes out.
-    //
-    // Over the outputs the RIG HAS, never over the raw mask. The mask is
-    // default-on across all 32 bits and the app only ever gates the sockets the
-    // device reports, so `mask == 0` is a value the rig cannot produce: gating
-    // both outputs of a stereo interface leaves 0xFFFFFFFC. Same predicate the
-    // Signal page's own no-output notice uses.
+    // Read from the LOOPER's own gate over the outputs the RIG HAS, never over
+    // the raw mask: it is default-on across all 32 bits and the app only gates
+    // the sockets the device reports, so `mask == 0` is a value the rig cannot
+    // produce — gating both outputs of a stereo interface leaves 0xFFFFFFFC.
     final silent = context.select<LooperBloc, bool>((bloc) {
       final looper = bloc.state;
       final outputs = looper.status.outputChannels;
@@ -108,27 +122,34 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
           List.generate(outputs, looper.isOutputEnabled).every((on) => !on);
     });
 
-    final blocks = <Widget>[
-      _card(context, state),
-      if (silent)
-        ConsoleCard(
-          key: const Key('audio_no_outputs_card'),
-          children: [
-            ConsoleBanner(
-              key: const Key('audio_no_outputs_banner'),
-              message: l10n.audioNoOutputsBanner,
-              tone: ConsoleBannerTone.failure,
-            ),
-          ],
-        ),
-    ];
-
     return KeyedSubtree(
       key: const Key('audio_device_tab'),
       child: AudioFace(
         lastGroupExtent: state.asioOnly ? _asioExtent(state) : 0,
         groups: [
-          AudioGroup(caption: l10n.audioGroupLabel, blocks: blocks),
+          AudioGroup(
+            caption: l10n.audioGroupLabel,
+            blocks: [
+              _card(context, state),
+              if (silent)
+                ConsoleCard(
+                  key: const Key('audio_no_outputs_card'),
+                  children: [
+                    ConsoleBanner(
+                      key: const Key('audio_no_outputs_banner'),
+                      message: l10n.audioNoOutputsBanner,
+                      tone: ConsoleBannerTone.failure,
+                    ),
+                  ],
+                ),
+              // The same sentence the setup page shows, so the two surfaces
+              // cannot reach different conclusions about the same rig. Only
+              // when there IS a loopback: the resolver's other branch names a
+              // kind that is not there.
+              if (state.loopback.available)
+                ConsoleProse(l10n.loopbackNote(state.loopback)),
+            ],
+          ),
           // Windows runs ASIO exclusively, so the driver it opens is a setting
           // of its own rather than one of the devices above.
           if (state.asioOnly) _asioGroup(context, state),
@@ -142,14 +163,13 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
   Widget _card(BuildContext context, AudioSetupState state) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final devices = _interfaces(context, state);
+    final devices = _interfaces(state);
     final current = _currentInterface(devices, state);
-    final rate = state.sampleRate;
-    final buffer = state.bufferFrames;
-    final estimate = AudioSetupState.estimatedRoundTripMs(buffer, rate);
+    final inputCount = _inputCount(state, current);
 
     return ConsoleCard(
       children: [
+        ?_phaseBanner(context, state),
         ConsoleRow(
           key: const Key('audio_device_row'),
           title: l10n.deviceLabel,
@@ -165,6 +185,9 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
           key: const Key('audio_device_chooser'),
           open: _open == _OpenRow.device,
           children: [
+            // Devices stay PICK ROWS while every other list here became a chip
+            // grid: a device carries its channel counts and a long name, so it
+            // is not a bare token and has something to put in a row's width.
             for (final (index, device) in devices.indexed)
               ConsolePickRow(
                 key: Key('audio_device_option_$index'),
@@ -185,14 +208,12 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
         ConsoleRow(
           key: const Key('audio_rate_row'),
           title: l10n.audioRateBufferRow,
-          // The ESTIMATE rides the closed row; the measured figure stays on
-          // Status, where it is measured.
-          subtitle: estimate > 0
-              ? l10n.audioRoundTripEstimate(estimate.toStringAsFixed(1))
-              : null,
+          // No estimate. Two buffer periods cannot include converter latency,
+          // so a figure here read as authoritative and was not; the measured
+          // one is on the row that measures it.
           value: l10n.audioRateBufferValue(
-            l10n.sampleRateKhzLabel(rate),
-            buffer,
+            l10n.sampleRateKhzLabel(state.sampleRate),
+            state.bufferFrames,
           ),
           expanded: _open == _OpenRow.rate,
           fill: _open == _OpenRow.rate ? surface.control : null,
@@ -203,38 +224,79 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
           open: _open == _OpenRow.rate,
           children: [
             ConsoleDrawerLabel(l10n.audioSampleRateGroup),
-            for (final (index, option) in state.sampleRateChoices.indexed)
-              ConsolePickRow(
-                key: Key('audio_sample_rate_$option'),
-                title: l10n.sampleRateKhzLabel(option),
-                // Only the option that COSTS something says so. 96 kHz halves
-                // the frames a buffer of the same size holds.
-                state: option >= 96000 ? l10n.audioSampleRateCost96 : null,
-                selected: option == rate,
-                onTap: () =>
-                    context.read<AudioSetupCubit>().setSampleRate(option),
-                showDivider: index < state.sampleRateChoices.length - 1,
+            Padding(
+              padding: _gridInset,
+              child: ConsoleChipGrid<int>(
+                selected: {state.sampleRate},
+                options: [
+                  for (final rate in state.sampleRateChoices)
+                    ConsoleSegment(
+                      value: rate,
+                      label: l10n.sampleRateKhzLabel(rate),
+                      optionKey: Key('audio_sample_rate_$rate'),
+                    ),
+                ],
+                onTap: context.read<AudioSetupCubit>().setSampleRate,
               ),
+            ),
             ConsoleDrawerLabel(l10n.audioBufferGroup),
-            for (final (index, option) in state.bufferChoices.indexed)
-              ConsolePickRow(
-                key: Key('audio_buffer_$option'),
-                title: '$option',
-                // EVERY option carries its own cost, not only the chosen one:
-                // a list where the current pick is the only annotated row
-                // cannot be used to choose.
-                state: _bufferCost(l10n, option, rate),
-                selected: option == buffer,
-                onTap: () =>
-                    context.read<AudioSetupCubit>().setBufferFrames(option),
-                showDivider: index < state.bufferChoices.length - 1,
+            Padding(
+              padding: _gridInset,
+              child: ConsoleChipGrid<int>(
+                selected: {state.bufferFrames},
+                options: [
+                  for (final frames in state.bufferChoices)
+                    ConsoleSegment(
+                      value: frames,
+                      label: '$frames',
+                      optionKey: Key('audio_buffer_$frames'),
+                    ),
+                ],
+                onTap: context.read<AudioSetupCubit>().setBufferFrames,
               ),
+            ),
           ],
         ),
-        _inputsRow(context, _inputCount(state, current)),
-        _inputsChooser(context, state, current),
+        _inputsRow(context, inputCount),
+        _inputsChooser(context, inputCount),
+        _latencyRow(context, state),
       ],
     );
+  }
+
+  // ------------------------------------------------------------ the banner
+
+  /// What the last requested config is doing, or null when nothing is.
+  ///
+  /// A banner rather than a row, per the console's own rule: anything in
+  /// flight or just failed sits at the top of the list the setting lives in.
+  Widget? _phaseBanner(BuildContext context, AudioSetupState state) {
+    final l10n = context.l10n;
+    final asked = l10n.audioRateBufferValue(
+      l10n.sampleRateKhzLabel(state.requestedRate),
+      state.requestedBuffer,
+    );
+    return switch (state.phase) {
+      ConfigPhase.settled => null,
+      ConfigPhase.opening => ConsoleBanner(
+        key: const Key('audio_opening_banner'),
+        message: l10n.audioReopening(asked),
+        tone: ConsoleBannerTone.pending,
+      ),
+      // The selection has ALREADY snapped to what the device gave, so this is
+      // the only place the request is still named.
+      ConfigPhase.refused => ConsoleBanner(
+        key: const Key('audio_refused_banner'),
+        message: l10n.audioRefusedConfig(
+          asked,
+          l10n.audioRateBufferValue(
+            l10n.sampleRateKhzLabel(state.sampleRate),
+            state.bufferFrames,
+          ),
+        ),
+        tone: ConsoleBannerTone.failure,
+      ),
+    };
   }
 
   // ----------------------------------------------------------- the inputs
@@ -242,34 +304,20 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
   Widget _inputsRow(BuildContext context, int count) {
     final l10n = context.l10n;
     final surface = context.surface;
-    // Counted over the sockets the list SHOWS, not over every socket a name
-    // was ever stored for: a name kept from a wider rig is still on disk, and
-    // "3 named" over a list of two names is a row disagreeing with itself.
-    final inputs = context.watch<InputsCubit>().state;
-    final named = [
-      for (var input = 0; input < count; input++)
-        if (inputs.isNamed(input)) input,
-    ].length;
+    final named = context.watch<InputsCubit>().state.namedCount(count);
     return ConsoleRow(
       key: const Key('audio_inputs_row'),
       title: l10n.audioInputsRow,
       value: l10n.audioInputsNamed(named),
       expanded: _open == _OpenRow.inputs,
       fill: _open == _OpenRow.inputs ? surface.control : null,
-      showDivider: false,
       onTap: () => _toggle(_OpenRow.inputs),
     );
   }
 
-  Widget _inputsChooser(
-    BuildContext context,
-    AudioSetupState state,
-    _Interface? current,
-  ) {
+  Widget _inputsChooser(BuildContext context, int count) {
     final l10n = context.l10n;
     final inputs = context.watch<InputsCubit>().state;
-    final names = inputs.names;
-    final count = _inputCount(state, current);
     return ConsoleChooser(
       key: const Key('audio_inputs_chooser'),
       open: _open == _OpenRow.inputs,
@@ -283,29 +331,40 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
             ),
           )
         else
-          for (var input = 0; input < count; input++)
-            ConsoleRow(
-              key: Key('audio_input_$input'),
-              // One step in, so the check column lines up with the pick rows
-              // of the lists above it.
-              indented: true,
-              leading: _NamedCheck(named: inputs.isNamed(input)),
-              title: l10n.inputName(names, input),
-              // The SOCKET, in the muted tone the mockups give a row's own
-              // facts — `guitar` over `input 1`.
-              state: l10n.inputOrdinal(input + 1),
-              valueColor: context.surface.textMuted,
-              showDisclosure: false,
-              showDivider: input < count - 1,
-              onTap: () => unawaited(_rename(context, names, input)),
+          Padding(
+            padding: ConsoleChooser.gridInset,
+            // A grid, not a row list: eighteen sockets as 70px rows is 1,260px,
+            // five times the height of the card they open inside. As a grid
+            // they are two runs and about 106px.
+            //
+            // Not a pick-one — nothing here is "selected", a tap renames. The
+            // chip carries the SOCKET on its second line whether or not it has
+            // a name, because the number is what the cable is plugged into and
+            // the name is only what you call it.
+            child: ConsoleChipGrid<int>(
+              selected: const {},
+              options: [
+                for (var input = 0; input < count; input++)
+                  ConsoleSegment(
+                    value: input,
+                    // An empty label leaves the ordinal alone in the chip and
+                    // promotes it to the primary ink — a rig where nothing is
+                    // named must not read as a grid of disabled chips.
+                    label: inputs.nameOf(input),
+                    sublabel: l10n.inputOrdinal(input + 1),
+                    optionKey: Key('audio_input_$input'),
+                  ),
+              ],
+              onTap: (input) => unawaited(_rename(context, inputs, input)),
             ),
+          ),
       ],
     );
   }
 
   Future<void> _rename(
     BuildContext context,
-    List<String> names,
+    InputsState inputs,
     int input,
   ) async {
     final l10n = context.l10n;
@@ -314,7 +373,7 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
       context,
       title: l10n.audioRenameInputTitle,
       subtitle: l10n.inputOrdinal(input + 1),
-      current: names[input],
+      current: inputs.nameOf(input),
       fieldLabel: l10n.a11yInputRenameField,
       // `AUDIO / settings-rename` has no Clear button — it has a backspace and
       // Save — so emptying the field IS how an input is un-named, and the
@@ -325,20 +384,76 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
     await cubit.rename(input, name);
   }
 
+  // ---------------------------------------------------------- the latency
+
+  /// The measurement: what it last reported, what that cost the take, and the
+  /// button that runs it again.
+  ///
+  /// One row for both. The readout and the action were two rows on the old
+  /// Status tab, which is one row too many for one fact — but the button is
+  /// **explicit**, because a bare tappable row says nothing about being one.
+  Widget _latencyRow(BuildContext context, AudioSetupState state) {
+    final l10n = context.l10n;
+    final cubit = context.read<AudioSetupCubit>();
+    final status = state.engineStatus;
+    final measuring = status.latencyState == LatencyState.measuring;
+    return ConsoleRow(
+      key: const Key('audio_latency_row'),
+      title: l10n.roundTripLatencyLabel,
+      // The offset is a CONSEQUENCE of the measurement, not a setting, so it
+      // rides this row rather than taking one of its own.
+      subtitle: l10n.audioRecordOffsetSub(status.recordOffsetFrames),
+      semanticLabel: l10n.a11yAudioMeasureLatency,
+      showDivider: false,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _latency(l10n, status),
+            style: TextStyle(
+              color: context.surface.textSecondary,
+              fontFamily: SurfaceTheme.monoFont,
+              fontSize: 14,
+              height: 1.14,
+              leadingDistribution: TextLeadingDistribution.even,
+            ),
+          ),
+          const SizedBox(width: kConsoleRowGap),
+          ConsoleSmallButton(
+            key: const Key('audio_measure_button'),
+            label: l10n.audioMeasure,
+            // Refuses while one is in flight rather than restarting the thing
+            // it is reporting.
+            onPressed: measuring ? null : cubit.measureLatency,
+          ),
+        ],
+      ),
+      customSemanticsActions: measuring
+          ? null
+          : {
+              CustomSemanticsAction(label: l10n.audioMeasure):
+                  cubit.measureLatency,
+            },
+    );
+  }
+
+  String _latency(AppLocalizations l10n, EngineStatus status) =>
+      switch (status.latencyState) {
+        LatencyState.measuring => l10n.measuringEllipsis,
+        LatencyState.done => l10n.latencyMs(
+          status.measuredLatencyMs.toStringAsFixed(2),
+        ),
+        LatencyState.timeout => l10n.noSignalDetected,
+        LatencyState.idle => l10n.notMeasured,
+      };
+
   // ------------------------------------------------------------ ASIO group
 
-  /// How tall the ASIO group is: its caption, plus either the install banner's
-  /// own card or one row per enumerated driver in a card that insets 1px top
-  /// and bottom.
   double _asioExtent(AudioSetupState state) {
     final drivers = state.cachedAsioDrivers.length;
     return ConsolePinnedGroupLabel.extent +
         (drivers == 0 ? _bannerCardExtent : kConsoleRowHeight * drivers + 2);
   }
-
-  /// The install banner's card: a 61px banner (the sentence plus the button
-  /// that is taller than it) inside a card that insets 1px top and bottom.
-  static const double _bannerCardExtent = 63;
 
   AudioGroup _asioGroup(BuildContext context, AudioSetupState state) {
     final l10n = context.l10n;
@@ -397,7 +512,7 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
 
   /// The host's devices, paired by name, plus the pinned one it is no longer
   /// reporting.
-  List<_Interface> _interfaces(BuildContext context, AudioSetupState state) {
+  List<_Interface> _interfaces(AudioSetupState state) {
     final paired = <String, _Interface>{};
     for (final device in state.playbackDevices) {
       final existing = paired[device.name];
@@ -420,9 +535,6 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
       );
     }
     final devices = paired.values.toList();
-    // A pinned device the host has stopped reporting stays listed and stays
-    // checked: a pin still points at it, and dropping it from the list would
-    // read as a device you never had.
     final pinnedPlayback = state.playbackDeviceId;
     final pinnedCapture = state.captureDeviceId;
     // Against the host's RAW list rather than the paired one: two interfaces
@@ -431,6 +543,9 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
     final present = state.devices.any(
       (device) => device.id == pinnedPlayback || device.id == pinnedCapture,
     );
+    // A pinned device the host has stopped reporting stays listed and stays
+    // checked: a pin still points at it, and dropping it from the list would
+    // read as a device you never had.
     if (!present && (pinnedPlayback.isNotEmpty || pinnedCapture.isNotEmpty)) {
       devices.add(
         _Interface(
@@ -496,15 +611,17 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
 
   /// How many input sockets to list.
   ///
-  /// Capped at the engine's own input ceiling: a socket past it can be neither
-  /// laned nor monitored, so a name for it would be one the rig could never
-  /// use. Falls back to a stereo pair while nothing is open — every other
-  /// surface assumes the same when the engine reports 0.
+  /// Whatever the device reports — **no ceiling of its own**. An earlier
+  /// version stopped at the engine's `LE_MAX_INPUTS`, on the reading that a
+  /// socket past it was unusable; that constant caps how many lanes one TRACK
+  /// may have and which inputs can be MONITORED, and a higher-numbered channel
+  /// is still recordable (#558). Bounded only by what a name can be stored
+  /// against.
   int _inputCount(AudioSetupState state, _Interface? current) {
     // The pinned device's OWN count first: it is known from enumeration even
     // while the engine is closed, which the engine's report is not.
     if (current != null && current.inputChannels > 0) {
-      return math.min(current.inputChannels, InputsState.maxInputs);
+      return math.min(current.inputChannels, InputsState.probeCeiling);
     }
     // A device the host lists only as playback is a real ZERO, not an unknown
     // one — and it outranks the engine's report, which still describes the
@@ -513,28 +630,9 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
       return 0;
     }
     final reported = state.engineStatus.inputChannels;
-    if (reported > 0) return math.min(reported, InputsState.maxInputs);
+    if (reported > 0) {
+      return math.min(reported, InputsState.probeCeiling);
+    }
     return 2;
   }
-
-  String? _bufferCost(AppLocalizations l10n, int frames, int rate) {
-    final ms = AudioSetupState.estimatedRoundTripMs(frames, rate);
-    return ms > 0 ? l10n.latencyMs(ms.toStringAsFixed(1)) : null;
-  }
-}
-
-/// The mark on an input that has been given a name.
-///
-/// Its slot is the same width lit or not, so the names beside it do not move
-/// as sockets are named and un-named.
-class _NamedCheck extends StatelessWidget {
-  const _NamedCheck({required this.named});
-
-  final bool named;
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    width: ConsolePickRow.checkWidth,
-    child: named ? const ConsoleCheck() : const SizedBox.shrink(),
-  );
 }
