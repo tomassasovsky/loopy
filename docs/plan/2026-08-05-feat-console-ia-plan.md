@@ -40,7 +40,7 @@ not of re-deciding it.
 | Control | Pedal · MIDI | the Pedal rail entry + Settings' MIDI groups |
 | Loop | Tempo · Click · Mode | Loop + `SettingsSection.tempo` + `SettingsSection.mode` |
 | Tracks | Names · Lengths · Routing | `SettingsSection.tracks` + the track routing dialog |
-| Audio | Device · Recording · Status | `SettingsSection.audio` |
+| Audio | Device · Recording | `SettingsSection.audio` |
 | Tuner | — | unchanged (still a stub, #482) |
 | Network | WiFi · Bluetooth | the two radio rail entries, merged |
 | System | Display · Updates · Storage · About | `SettingsSection.view` + `.updates` + new |
@@ -65,7 +65,7 @@ shared vocabulary every later one draws from.
 | 2 | Control — Pedal · MIDI | #516 | #521 | `2026-08-05-feat-console-ia-control-domain-plan.md` |
 | 3 | Loop — Tempo · Click · Mode | #518 | #522 | `2026-08-06-feat-console-ia-loop-domain-plan.md` |
 | 4 | Tracks — Names · Lengths · Routing | #523 | #531 | `2026-08-06-feat-console-ia-tracks-domain-plan.md` |
-| 5 | Audio — Device · Recording · Status | #528 | #534 | `2026-08-06-feat-console-ia-audio-domain-plan.md` |
+| 5 | Audio — Device · Recording | #528 | #554 | `2026-08-06-feat-console-ia-audio-domain-plan.md` |
 | 6 | System — Display · Updates · Storage · About | #530 | #532 | `2026-08-06-feat-console-ia-system-domain-plan.md` |
 | — | naming + pick-one corrections | #526, #527 | #531 | `2026-08-06-fix-console-naming-and-pick-one-plan.md` |
 | 7 | Signal — input · loop · track · master | #533 | — | not yet planned |
@@ -123,8 +123,9 @@ off the appliance.
 Building to the designs repeatedly found things the app could not do. Each was
 either added in its slice or split out:
 
-- **Naming a hardware input** — added in slice 5 (`input_name.$i`,
-  `InputsCubit`, `l10n.inputName`), immediately reused by Tracks routing.
+- **Naming a hardware input** — added in slice 5 (`input_name.$device.$input`,
+  `InputsCubit`, `l10n.inputName`), immediately reused by Tracks routing. Keyed
+  per DEVICE: the same socket on two interfaces is two different jacks.
 - **Naming a track everywhere it is referenced** — #526, corrected across
   pedal bindings, MIDI labels and routing summaries via `l10n.trackName`.
 - **Per-device channel counts** — the engine never asked miniaudio, so every
