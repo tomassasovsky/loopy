@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
@@ -42,18 +41,25 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
   /// the first time a dependency landed.
   int? _packages;
 
+  /// The one walk of the licence registry this face makes.
+  ///
+  /// Held rather than discarded once counted, and handed to the notices panel
+  /// when a LEGAL row opens it: `LicenseRegistry.licenses` re-runs every
+  /// collector on each access — Flutter's own re-decompresses and re-parses
+  /// the whole NOTICES asset — so a panel that read it again would make the
+  /// appliance pay for the same list twice per visit.
+  late final Future<List<ConsoleLicencePackage>> _licences;
+
   @override
   void initState() {
     super.initState();
     unawaited(context.read<ConsoleFactsCubit>().load());
+    _licences = readConsoleLicencePackages();
     unawaited(_countPackages());
   }
 
   Future<void> _countPackages() async {
-    final packages = <String>{};
-    await for (final licence in LicenseRegistry.licenses) {
-      packages.addAll(licence.packages);
-    }
+    final packages = await _licences;
     if (mounted) setState(() => _packages = packages.length);
   }
 
@@ -222,8 +228,8 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
 
   /// The one legal destination this build has, drawn in the console's own
   /// vocabulary rather than Material's master-detail route.
-  static void _showLicences(BuildContext context) =>
-      unawaited(showConsoleLicences(context));
+  void _showLicences(BuildContext context) =>
+      unawaited(showConsoleLicences(context, packages: _licences));
 
   /// Builds a card from the rows that survived, and tells the LAST survivor
   /// that it is last.

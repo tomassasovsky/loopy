@@ -19,20 +19,51 @@ import 'package:segno/theme/theme.dart';
 /// per-track routing dialog uses. It is a long document rather than a set of
 /// settings, which is why it is a panel and not a tab — but a long document
 /// is still a list, and this console already knows how to draw one.
-Future<void> showConsoleLicences(BuildContext context) {
+///
+/// [packages] is handed in rather than read here, because the row that opens
+/// this panel already prints how many there are: `LicenseRegistry.licenses`
+/// re-runs every collector on each access, and Flutter's own re-decompresses
+/// and re-parses the whole NOTICES asset — so a second walk would make the
+/// appliance pay that twice per visit for a list it has already read.
+Future<void> showConsoleLicences(
+  BuildContext context, {
+  required Future<List<ConsoleLicencePackage>> packages,
+}) {
   final surface = context.surface;
   return showDialog<void>(
     context: context,
     barrierColor: surface.scrim,
-    builder: (_) => const _ConsoleLicencesSheet(),
+    builder: (_) => _ConsoleLicencesSheet(packages: packages),
   );
+}
+
+/// Walks the licence registry once, keyed by package.
+///
+/// Rebuilt into a package-keyed list rather than held as entries: one package
+/// can register several licences, and the row is the package. The caller holds
+/// the future and passes it to [showConsoleLicences], so one walk serves both
+/// the count and the list.
+Future<List<ConsoleLicencePackage>> readConsoleLicencePackages() async {
+  final byPackage = <String, List<List<LicenseParagraph>>>{};
+  await for (final entry in LicenseRegistry.licenses) {
+    final paragraphs = entry.paragraphs.toList();
+    for (final package in entry.packages) {
+      byPackage.putIfAbsent(package, () => []).add(paragraphs);
+    }
+  }
+  final names = byPackage.keys.toList()..sort();
+  return [
+    for (final name in names) ConsoleLicencePackage(name, byPackage[name]!),
+  ];
 }
 
 /// One package and the licences it ships under.
 @immutable
-class _Package {
-  const _Package(this.name, this.paragraphs);
+class ConsoleLicencePackage {
+  /// Creates a [ConsoleLicencePackage].
+  const ConsoleLicencePackage(this.name, this.paragraphs);
 
+  /// The package's name, as the registry reports it.
   final String name;
 
   /// Every licence's paragraphs, in registry order, one list per licence.
@@ -40,7 +71,10 @@ class _Package {
 }
 
 class _ConsoleLicencesSheet extends StatefulWidget {
-  const _ConsoleLicencesSheet();
+  const _ConsoleLicencesSheet({required this.packages});
+
+  /// The one walk of the registry, already in flight or already done.
+  final Future<List<ConsoleLicencePackage>> packages;
 
   @override
   State<_ConsoleLicencesSheet> createState() => _ConsoleLicencesSheetState();
@@ -55,7 +89,7 @@ class _ConsoleLicencesSheetState extends State<_ConsoleLicencesSheet> {
   /// Inset from the screen edge, as the routing dialog's scrim is.
   static const double _scrimInset = 60;
 
-  List<_Package>? _packages;
+  List<ConsoleLicencePackage>? _packages;
 
   /// Which package is showing its text, or null when none is.
   String? _open;
@@ -66,24 +100,12 @@ class _ConsoleLicencesSheetState extends State<_ConsoleLicencesSheet> {
     unawaited(_load());
   }
 
-  /// Reads the registry once. Rebuilt into a package-keyed list rather than
-  /// held as entries: one package can register several licences, and the row
-  /// is the package.
+  /// Takes the walk the About face already started, rather than making its
+  /// own.
   Future<void> _load() async {
-    final byPackage = <String, List<List<LicenseParagraph>>>{};
-    await for (final entry in LicenseRegistry.licenses) {
-      final paragraphs = entry.paragraphs.toList();
-      for (final package in entry.packages) {
-        byPackage.putIfAbsent(package, () => []).add(paragraphs);
-      }
-    }
+    final packages = await widget.packages;
     if (!mounted) return;
-    final names = byPackage.keys.toList()..sort();
-    setState(() {
-      _packages = [
-        for (final name in names) _Package(name, byPackage[name]!),
-      ];
-    });
+    setState(() => _packages = packages);
   }
 
   @override
@@ -197,7 +219,11 @@ class _ConsoleLicencesSheetState extends State<_ConsoleLicencesSheet> {
     );
   }
 
-  Widget _row(BuildContext context, _Package package, {required bool last}) {
+  Widget _row(
+    BuildContext context,
+    ConsoleLicencePackage package, {
+    required bool last,
+  }) {
     final l10n = context.l10n;
     final surface = context.surface;
     final open = _open == package.name;

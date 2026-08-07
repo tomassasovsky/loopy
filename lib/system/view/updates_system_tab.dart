@@ -24,8 +24,12 @@ class UpdatesSystemTab extends StatelessWidget {
   /// Creates an [UpdatesSystemTab].
   const UpdatesSystemTab({super.key});
 
-  /// A card wrapping one row, plus its border.
-  static const double _rowCard = kConsoleRowHeight + ConsoleCard.borderExtent;
+  /// The AUTOMATIC group's first block: ONE card holding both switch rows.
+  ///
+  /// [ConsoleCard.borderExtent] is the card's own 1px inset on each side, so
+  /// it is added once for the card rather than once per row inside it.
+  static const double _switchCard =
+      kConsoleRowHeight * 2 + ConsoleCard.borderExtent;
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +45,7 @@ class UpdatesSystemTab extends StatelessWidget {
         previewKey: const Key('system_updates_upcoming'),
         lastGroupExtent:
             ConsolePinnedGroupLabel.extent +
-            _rowCard * 2 +
+            _switchCard +
             kConsoleBlockGap +
             banner.height +
             (staged ? kConsoleBlockGap + _proseHeight : 0),

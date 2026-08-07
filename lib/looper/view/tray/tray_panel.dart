@@ -24,7 +24,16 @@ import 'package:segno/theme/theme.dart';
 /// rather than let Flutter reuse its element for the incoming one.
 class TrayPanel extends StatelessWidget {
   /// Creates a [TrayPanel].
-  const TrayPanel({super.key});
+  const TrayPanel({this.motion = kTrayMotion, super.key});
+
+  /// How long the sheet's shadow takes to reach a new strength.
+  ///
+  /// Handed down from the shell so it is the *same* duration the sheet slides
+  /// on — including the [Duration.zero] the shell uses mid-drag and under
+  /// reduced motion. A shadow that read `dragProgress` directly would snap,
+  /// because a tap moves that value between 0 and 1 in a single frame while
+  /// the sheet takes [kTrayMotion] to get there.
+  final Duration motion;
 
   @override
   Widget build(BuildContext context) {
@@ -35,36 +44,49 @@ class TrayPanel extends StatelessWidget {
 
     return Material(
       color: Colors.transparent,
-      child: DecoratedBox(
-        // Opaque, and the CARD tone rather than the page's — measured off the
-        // mockups' tray layer. It was a frosted 78% page fill behind a 24px
-        // blur, which was not only the wrong colour: a translucent sheet let
-        // the stage's waveforms move behind the settings being read.
-        //
-        // The shadow lifts the sheet off the tracks grid, and the hairline
-        // along the bottom edge is the seam the drag handle rides on.
-        //
-        // The shadow FADES IN with the drag, and that is not decoration. A
-        // closed tray is parked with its bottom edge exactly on the top of the
-        // screen, so a shadow at full strength there would cast its 19px
-        // offset and 48px blur straight down over the stage — a dark band
-        // under the pull tab that never goes away.
-        decoration: BoxDecoration(
-          color: surface.card,
-          borderRadius: const BorderRadius.vertical(
-            bottom: Radius.circular(kTraySheetRadius),
-          ),
-          border: Border(bottom: BorderSide(color: surface.borderStrong)),
-          boxShadow: [
-            BoxShadow(
-              color: surface.dropShadow.withValues(
-                alpha:
-                    surface.dropShadow.a * state.dragProgress.clamp(0.0, 1.0),
-              ),
-              offset: const Offset(0, 19),
-              blurRadius: 48,
+      // The shadow FADES IN with the sheet, and that is not decoration. A
+      // closed tray is parked with its bottom edge exactly on the top of the
+      // screen, so a shadow at full strength there would cast its 19px offset
+      // and 48px blur straight down over the stage — a dark band under the
+      // pull tab that never goes away.
+      //
+      // Animated rather than read straight off `dragProgress`, because that
+      // value only moves continuously while a finger is on the handle. A TAP
+      // snaps it between 0 and 1 in one frame while the sheet takes [motion]
+      // to slide, so a shadow driven by it directly would pop off a sheet
+      // still on screen (closing) and paint the band it exists to prevent
+      // (opening). [motion] is the shell's own — zero mid-drag, so the drag
+      // still tracks the finger exactly.
+      child: TweenAnimationBuilder<double>(
+        duration: motion,
+        curve: kTrayMotionCurve,
+        tween: Tween<double>(end: state.dragProgress.clamp(0.0, 1.0)),
+        builder: (context, lift, child) => DecoratedBox(
+          // Opaque, and the CARD tone rather than the page's — measured off
+          // the mockups' tray layer. It was a frosted 78% page fill behind a
+          // 24px blur, which was not only the wrong colour: a translucent
+          // sheet let the stage's waveforms move behind the settings being
+          // read.
+          //
+          // The shadow lifts the sheet off the tracks grid, and the hairline
+          // along the bottom edge is the seam the drag handle rides on.
+          decoration: BoxDecoration(
+            color: surface.card,
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(kTraySheetRadius),
             ),
-          ],
+            border: Border(bottom: BorderSide(color: surface.borderStrong)),
+            boxShadow: [
+              BoxShadow(
+                color: surface.dropShadow.withValues(
+                  alpha: surface.dropShadow.a * lift,
+                ),
+                offset: const Offset(0, 19),
+                blurRadius: 48,
+              ),
+            ],
+          ),
+          child: child,
         ),
         child: ClipRRect(
           borderRadius: const BorderRadius.vertical(

@@ -9,5 +9,10 @@
 library;
 
 export 'tray_metrics.dart'
-    show kTrayHandleHeight, kTrayHandlePill, kTraySheetRadius;
+    show
+        kTrayHandleHeight,
+        kTrayHandlePill,
+        kTrayMotion,
+        kTrayMotionCurve,
+        kTraySheetRadius;
 export 'tray_panel.dart' show TrayPanel;
