@@ -393,7 +393,6 @@ void main() {
     );
     expect(find.byKey(const Key('assign_prompt')), findsOneWidget);
   });
-
 }
 
 extension on WidgetTester {
