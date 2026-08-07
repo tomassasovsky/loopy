@@ -11,10 +11,10 @@
           "image-name": "Logo.svg",
           "name": "Logo",
           "position": {
-            "scale": 1.2,
+            "scale": 0.88,
             "translation-in-points": [
               0,
-              -40
+              -84
             ]
           }
         }
