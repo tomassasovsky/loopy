@@ -166,6 +166,105 @@ static int32_t device_channels(ma_context* ctx, const ma_device_id* id,
   return (int32_t)widest;
 }
 
+/* ---- channel-count cache ----
+ *
+ * device_channels is ~0.4-1.3 ms PER DEVICE (measured: macOS, Core Audio, see
+ * src/test/bench/bench_devices.c), because ma_context_get_device_info is a
+ * round trip to the audio daemon rather than a read of the list already in
+ * hand. The picker re-enumerates on a 1 Hz timer, synchronously over FFI on
+ * the UI isolate, in both directions — so uncached that is ~8 ms of blocked UI
+ * every second on a 9-device host, against ~1.5 ms for the rest of the tick.
+ * Nine devices is a laptop; a real rig has more, and the cost is linear in the
+ * count.
+ *
+ * A device's channel count is a property OF THE DEVICE, not of the moment, so
+ * the second query for the same id answers what the first one did. This caches
+ * it by serialized id and direction. The id set is what actually changes across
+ * ticks, and ma_context_get_devices already hands us that for free — so the
+ * per-id lookup IS the hot-plug diff: a device that appears misses and is
+ * queried once, a device that vanishes is swept. Steady state on an unchanging
+ * rig costs zero queries.
+ *
+ * STALENESS: a device that changes its channel count WITHOUT changing its id
+ * keeps the old count until it disappears from the list once. That is an
+ * aggregate device being reconfigured, or an interface re-moded in its control
+ * panel — rare, and the cost of being wrong is a readout, not a routing. The
+ * count is re-taken on the next unplug/replug.
+ *
+ * THREAD OWNERSHIP: control thread, like everything else in this file. The
+ * table is plain static state with no locking because enumeration has exactly
+ * one caller thread; it is never touched from the audio thread. */
+#define LE_CHANNEL_CACHE_CAP 64
+
+typedef struct le_channel_cache_entry {
+  char id[256];
+  int capture;      /* the direction this count was taken in */
+  int32_t channels; /* 0 = the device could not answer; cached as such */
+  int seen;         /* mark bit for the sweep at the end of an enumeration */
+} le_channel_cache_entry;
+
+static le_channel_cache_entry g_channel_cache[LE_CHANNEL_CACHE_CAP];
+static int32_t g_channel_cache_count;
+
+/* Clears the mark bit on every entry for `capture`'s direction, so the walk can
+ * set it on the ids it still sees and the sweep can drop the rest. Entries for
+ * the OTHER direction are untouched: a playback enumeration is no evidence
+ * about which capture devices still exist. */
+static void channel_cache_begin(int capture) {
+  for (int32_t i = 0; i < g_channel_cache_count; ++i) {
+    if (g_channel_cache[i].capture == capture) g_channel_cache[i].seen = 0;
+  }
+}
+
+/* Drops every unmarked entry for `capture`'s direction — the devices that were
+ * cached but no longer enumerate, i.e. unplugged. Compacts in place so the
+ * table cannot fill up with the ghosts of a session's worth of hot-plugs. */
+static void channel_cache_end(int capture) {
+  int32_t kept = 0;
+  for (int32_t i = 0; i < g_channel_cache_count; ++i) {
+    if (g_channel_cache[i].capture == capture && !g_channel_cache[i].seen) {
+      continue;
+    }
+    if (kept != i) g_channel_cache[kept] = g_channel_cache[i];
+    ++kept;
+  }
+  g_channel_cache_count = kept;
+}
+
+/* The cached count for (`id`, `capture`), querying and caching it on a miss.
+ * A full table degrades to querying every time rather than evicting — the cap
+ * is well past any real host's device count, so this is a safety valve and not
+ * a path anything is expected to take. */
+static int32_t device_channels_cached(ma_context* ctx, const ma_device_id* raw,
+                                      const char* id, int capture) {
+  for (int32_t i = 0; i < g_channel_cache_count; ++i) {
+    le_channel_cache_entry* e = &g_channel_cache[i];
+    if (e->capture == capture && strcmp(e->id, id) == 0) {
+      e->seen = 1;
+      return e->channels;
+    }
+  }
+  const int32_t channels = device_channels(ctx, raw, capture);
+  if (g_channel_cache_count < LE_CHANNEL_CACHE_CAP) {
+    le_channel_cache_entry* e = &g_channel_cache[g_channel_cache_count++];
+    strncpy(e->id, id, sizeof(e->id) - 1);
+    e->id[sizeof(e->id) - 1] = '\0';
+    e->capture = capture;
+    e->channels = channels;
+    e->seen = 1;
+  }
+  return channels;
+}
+
+/* Drops every cached count. Exposed for the unit tests, which need a known
+ * empty table to assert the miss-then-hit behaviour; nothing in the shipping
+ * paths calls it, because the mark-and-sweep keeps the table honest on its
+ * own. Declared in engine_internal.h. */
+void le_channel_cache_reset(void) { g_channel_cache_count = 0; }
+
+/* The number of entries currently cached — tests only, same rationale. */
+int32_t le_channel_cache_size(void) { return g_channel_cache_count; }
+
 static void device_info_copy(le_device_info* dst, const ma_device_info* src,
                              ma_context* ctx, int capture) {
   /* Zero everything first so the miniaudio path never surfaces stack garbage for
@@ -180,9 +279,11 @@ static void device_info_copy(le_device_info* dst, const ma_device_info* src,
    * that cannot answer keeps 0 too, which still means UNKNOWN — the UI omits
    * the readout rather than printing a zero count. */
   if (capture) {
-    dst->input_channels = device_channels(ctx, &src->id, /*capture=*/1);
+    dst->input_channels =
+        device_channels_cached(ctx, &src->id, dst->id, /*capture=*/1);
   } else {
-    dst->output_channels = device_channels(ctx, &src->id, /*capture=*/0);
+    dst->output_channels =
+        device_channels_cached(ctx, &src->id, dst->id, /*capture=*/0);
   }
 }
 
@@ -215,9 +316,18 @@ int32_t enumerate_devices(le_device_info* out, int32_t max, int32_t* count,
   ma_device_info* list = capture ? cap : playback;
   ma_uint32 n = capture ? cap_count : playback_count;
   int32_t written = 0;
+  /* Mark-and-sweep around the walk: every id still present gets its mark set by
+   * device_channels_cached, and the sweep drops what kept none — the devices
+   * that went away. See the channel-count cache notes above. */
+  channel_cache_begin(capture);
   for (ma_uint32 i = 0; i < n && written < max; ++i) {
     device_info_copy(&out[written++], &list[i], &ctx, capture);
   }
+  /* Only sweep when the whole list was walked. A list truncated by `max` leaves
+   * the devices past the cap unmarked though they still exist, and sweeping
+   * then would evict them every call — turning the tail of an over-cap host
+   * into a permanent cache miss instead of merely an unlisted device. */
+  if (written == (int32_t)n) channel_cache_end(capture);
   *count = written;
   ma_context_uninit(&ctx);
   return LE_OK;
