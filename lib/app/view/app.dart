@@ -236,6 +236,19 @@ class App extends StatelessWidget {
               return cubit;
             },
           ),
+          // Beside the track names and for the same reason: an input is called
+          // what the player calls it on every surface that shows one — the
+          // Audio face's input list, the Tracks routing summary, and the
+          // per-track lane list — so the names load once, here.
+          BlocProvider(
+            create: (context) {
+              final cubit = InputsCubit(
+                settings: context.read<SettingsRepository>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
           BlocProvider(
             create: (context) {
               final cubit = HighContrastCubit(

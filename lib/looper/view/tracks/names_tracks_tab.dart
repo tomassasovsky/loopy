@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
-import 'package:segno/looper/view/tracks/track_rename_sheet.dart';
 import 'package:segno/looper/view/tracks/tracks_face.dart';
 
 /// The Names tab: what each track is called.
@@ -43,10 +43,12 @@ class NamesTracksTab extends StatelessWidget {
               expanded: false,
               showDivider: channel < count - 1,
               onTap: () async {
-                final name = await showTrackRenameSheet(
+                final name = await showConsoleRenameSheet(
                   context,
-                  channel: channel,
+                  title: l10n.tracksRenameSheetTitle,
+                  subtitle: l10n.tracksOrdinal(channel + 1),
                   current: l10n.trackName(names, channel),
+                  fieldLabel: l10n.a11yTracksRenameField,
                 );
                 if (name != null) await cubit.rename(channel, name);
               },

@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:segno/audio_setup/view/console/audio_tray_panel.dart';
 import 'package:segno/control/view/control_tray_panel.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
@@ -84,6 +85,10 @@ class TrayPanel extends StatelessWidget {
                               SettingsTrayDestination.tracks =>
                                 const _TrayFaceFrame(
                                   child: TracksTrayPanel(),
+                                ),
+                              SettingsTrayDestination.audio =>
+                                const _TrayFaceFrame(
+                                  child: AudioTrayPanel(),
                                 ),
                               SettingsTrayDestination.tuner => _TrayFaceFrame(
                                 child: TunerTrayPanel(

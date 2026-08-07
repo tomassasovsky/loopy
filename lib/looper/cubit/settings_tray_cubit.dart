@@ -3,6 +3,7 @@ import 'package:brightness_client/brightness_client.dart';
 import 'package:equatable/equatable.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/software_brightness.dart';
+import 'package:segno/audio_setup/audio_tab.dart';
 import 'package:segno/control/control_tab.dart';
 import 'package:segno/looper/loop_tab.dart';
 import 'package:segno/looper/tracks_tab.dart';
@@ -85,10 +86,9 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// `closeTray` rather than `close` — the latter is `Cubit.close()`, which
   /// disposes the bloc's stream; overriding it here would be a hard
   /// invalid-override error, not a UI action. Always returns to the home
-  /// face so the next open isn't stuck in a config domain — but leaves
-  /// [SettingsTrayState.networkTab], [SettingsTrayState.controlTab] and
-  /// [SettingsTrayState.loopTab] alone, so returning to a domain lands where
-  /// it was left.
+  /// face so the next open isn't stuck in a config domain — but leaves every
+  /// domain's own tab alone, so returning to a domain lands where it was
+  /// left.
   void closeTray() => emit(
     state.copyWith(
       dragProgress: 0,
@@ -138,6 +138,9 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
 
   /// Moves the Tracks domain's tab. Same rule as [showNetworkTab].
   void showTracksTab(TracksTab tab) => emit(state.copyWith(tracksTab: tab));
+
+  /// Moves the Audio domain's tab. Same rule as [showNetworkTab].
+  void showAudioTab(AudioTab tab) => emit(state.copyWith(audioTab: tab));
 
   /// Returns from an expanded panel to the tile grid.
   void showHome() =>

@@ -52,6 +52,10 @@ class TrayNavigationRail extends StatelessWidget {
         // Three upright bars, as the mockups draw it: a track is a lane of
         // the rig, and this domain is about the set of them.
         SettingsTrayDestination.tracks => Icons.view_week_outlined,
+        // A speaker cone, as the mockups draw it: this domain is about what
+        // the rig plays THROUGH. Not a slider or a waveform — those say
+        // "levels", which is Signal's question, not this one.
+        SettingsTrayDestination.audio => Icons.volume_up_outlined,
         SettingsTrayDestination.tuner => Icons.graphic_eq,
         // An antenna, not a WiFi fan or a Bluetooth rune: either radio's own
         // glyph on a shared entry would read as only that one radio.
@@ -68,6 +72,7 @@ class TrayNavigationRail extends StatelessWidget {
     SettingsTrayDestination.control => l10n.trayControlLabel,
     SettingsTrayDestination.loop => l10n.trayLoopLabel,
     SettingsTrayDestination.tracks => l10n.trayTracksLabel,
+    SettingsTrayDestination.audio => l10n.trayAudioLabel,
     SettingsTrayDestination.tuner => l10n.trayTunerLabel,
     SettingsTrayDestination.network => l10n.trayNetworkLabel,
   };
