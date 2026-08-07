@@ -103,17 +103,23 @@ class _ClickLoopTabState extends State<ClickLoopTab> {
         key: const Key('loop_click_when_slot'),
         open: open,
         children: [
-          for (final (index, mode) in ClickMode.values.indexed)
-            ConsolePickRow(
-              key: Key('loop_click_when_${mode.name}'),
-              title: labels[mode]!,
-              selected: mode == transport.clickMode,
-              showDivider: index < ClickMode.values.length - 1,
-              onTap: () {
+          _gridPad(
+            ConsoleChipGrid<ClickMode>(
+              selected: {transport.clickMode},
+              options: [
+                for (final mode in ClickMode.values)
+                  ConsoleSegment(
+                    value: mode,
+                    label: labels[mode]!,
+                    optionKey: Key('loop_click_when_${mode.name}'),
+                  ),
+              ],
+              onTap: (mode) {
                 setState(() => _open = null);
                 unawaited(cubit.setClickMode(mode));
               },
             ),
+          ),
         ],
       ),
     ];
@@ -168,18 +174,40 @@ class _ClickLoopTabState extends State<ClickLoopTab> {
         key: const Key('loop_click_output_slot'),
         open: open,
         children: [
-          for (var i = 0; i < outputs; i++)
-            ConsolePickRow(
-              key: Key('loop_click_output_$i'),
-              title: l10n.outputChannelLabel(i + 1),
-              selected: mask & (1 << i) != 0,
-              showDivider: i < outputs - 1,
-              onTap: () => unawaited(cubit.setClickOutput(mask ^ (1 << i))),
+          _gridPad(
+            ConsoleChipGrid<int>(
+              // A set, not a single value: this is the bitmask case the grid
+              // exists to serve, and several cells are lit at once.
+              selected: chosen.toSet(),
+              options: [
+                for (var i = 0; i < outputs; i++)
+                  ConsoleSegment(
+                    value: i,
+                    label: l10n.outputChannelLabel(i + 1),
+                    optionKey: Key('loop_click_output_$i'),
+                  ),
+              ],
+              // Toggles one bit and leaves the grid open: no single tap
+              // answers this question, so nothing here closes it.
+              onTap: (i) => unawaited(cubit.setClickOutput(mask ^ (1 << i))),
             ),
+          ),
         ],
       ),
     ];
   }
+
+  /// The inset a grid takes inside a drawer: the pick rows' own, so a grid
+  /// and a list of rows start on the same line.
+  Widget _gridPad(Widget child) => Padding(
+    padding: const EdgeInsets.fromLTRB(
+      ConsoleRow.indentedInset,
+      kConsoleBlockGap,
+      kConsoleRowInset,
+      kConsoleBlockGap,
+    ),
+    child: child,
+  );
 
   // ---------------------------------------------------------------- volume
 

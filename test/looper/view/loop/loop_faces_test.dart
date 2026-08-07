@@ -295,6 +295,43 @@ void main() {
     });
 
     testWidgets(
+      'seventeen time signatures lay out as a grid, not a column — a column '
+      'is 1,190px of scroll inside an 830px sheet, each row spending its '
+      'whole width on four characters',
+      (tester) async {
+        seed(const LooperState());
+        await pump(tester);
+
+        await tester.tap(find.byKey(const Key('loop_signature_row')));
+        await tester.pumpAndSettle();
+
+        for (final ts in kValidTimeSignatures) {
+          expect(
+            find.byKey(Key('loop_signature_${ts.$1}_${ts.$2}')),
+            findsOneWidget,
+            reason: '${ts.$1}/${ts.$2} has no cell',
+          );
+        }
+
+        final chooser = tester.getSize(
+          find.byKey(const Key('loop_signature_slot')),
+        );
+        // Comfortably under what even a quarter of them would cost as rows.
+        expect(
+          chooser.height,
+          lessThan(kConsoleRowHeight * 4),
+          reason: 'the chooser fell back to one row per option',
+        );
+        // And the cells share the width rather than each taking all of it.
+        final cell = tester.getSize(
+          find.byKey(const Key('loop_signature_3_4')),
+        );
+        expect(cell.height, ConsoleChipGrid.cellHeight);
+        expect(cell.width, lessThan(chooser.width / 4));
+      },
+    );
+
+    testWidgets(
       'quantise offers every division the engine has, not the four the '
       'mockup drew',
       (tester) async {
@@ -487,6 +524,24 @@ void main() {
       seed(const LooperState());
       await pump(tester, tab: LoopTab.click);
       expect(find.text(l10nOf(tester).loopClickOutputNone), findsOne);
+    });
+
+    testWidgets('eighteen outputs stay a grid too', (tester) async {
+      seed(
+        const LooperState(
+          status: EngineStatus(sampleRate: 48000, outputChannels: 18),
+        ),
+      );
+      await pump(tester, tab: LoopTab.click);
+
+      await tester.tap(find.byKey(const Key('loop_click_output_row')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('loop_click_output_17')), findsOneWidget);
+      expect(
+        tester.getSize(find.byKey(const Key('loop_click_output_slot'))).height,
+        lessThan(kConsoleRowHeight * 4),
+      );
     });
 
     testWidgets(

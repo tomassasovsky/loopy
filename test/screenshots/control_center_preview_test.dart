@@ -751,6 +751,18 @@ void main() {
     );
   }, skip: !hasFonts);
 
+  testWidgets('loop domain, the time signature grid open', (tester) async {
+    await pumpLoop(tester, LoopTab.tempo);
+    // Seventeen options. As a column of rows this is a 1,200px scroll inside
+    // an 830px sheet, each row spending its whole width on four characters.
+    await tester.tap(find.byKey(const Key('loop_signature_row')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_loop_signature.png'),
+    );
+  }, skip: !hasFonts);
+
   testWidgets('loop domain, click tab', (tester) async {
     await pumpLoop(tester, LoopTab.click);
     await expectLater(

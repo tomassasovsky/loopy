@@ -18,6 +18,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -1368,17 +1369,25 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
   }
 }
 
-/// One choice in a [ConsoleSegmented].
+/// One choice in a [ConsoleSegmented] or a [ConsoleChipGrid].
 @immutable
 class ConsoleSegment<T> {
   /// Creates a [ConsoleSegment].
-  const ConsoleSegment({required this.value, required this.label});
+  const ConsoleSegment({
+    required this.value,
+    required this.label,
+    this.optionKey,
+  });
 
   /// The value reported when this segment is chosen.
   final T value;
 
   /// The visible caption.
   final String label;
+
+  /// The cell's own key, for a grid whose cells are otherwise identified only
+  /// by a two-character label.
+  final Key? optionKey;
 }
 
 /// A pick-one control for a short, symmetric pair — Toggle vs Momentary.
@@ -1735,6 +1744,149 @@ class ConsoleChooser extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// A wrapping grid of equal cells — the console's pick-one for options that
+/// are **bare tokens**: `3/4`, `1/8`, `x2`, `Out 3`.
+///
+/// [ConsolePickRow] is the other half of the same control, and the split is
+/// about what an option has to say for itself. A row earns its width when the
+/// choice carries a second fact — a mode and its one-liner, a device and its
+/// channel counts, a buffer size and its latency. A token has nothing to put
+/// in that width, so a column of rows spends 70px of height and 1,600px of
+/// width on four characters, and seventeen time signatures become a
+/// 1,200px scroll inside a sheet that is 830px tall.
+///
+/// The cell is `LOOP / loop-quantise`'s: 166x48 at an 11px radius on a 10px
+/// gutter, accent-surface and accent-outlined when lit. That screen drew the
+/// grid inside a centred modal; this puts the same grid inside the drawer the
+/// rest of the file opens rows into, which is the half each of the two
+/// drawings got right.
+///
+/// [selected] is a set rather than one value, so the same control serves a
+/// pick-one (`{current}`) and a bitmask (`{every lit bit}`) without a second
+/// widget. What a tap MEANS — replace, or toggle — is the caller's, since only
+/// the caller knows whether the question has one answer.
+class ConsoleChipGrid<T> extends StatelessWidget {
+  /// Creates a [ConsoleChipGrid].
+  const ConsoleChipGrid({
+    required this.options,
+    required this.selected,
+    required this.onTap,
+    super.key,
+  });
+
+  /// The choices, in display order.
+  final List<ConsoleSegment<T>> options;
+
+  /// Every value currently lit.
+  final Set<T> selected;
+
+  /// Called with the tapped value.
+  final ValueChanged<T> onTap;
+
+  /// The cell width the mockup draws, and the width the grid aims at.
+  ///
+  /// A *target*, not a column count: four across is right on that screen's
+  /// 694px measure and absurd on the drawer's 1,600, where it would waste the
+  /// width the row layout was already wasting. The grid fits as many cells of
+  /// about this size as it can and shares out the remainder, so the cells stay
+  /// equal and the run stays flush to both edges.
+  static const double cellWidth = 166;
+
+  /// Gap between cells, both ways.
+  static const double gutter = 10;
+
+  /// Cell height.
+  static const double cellHeight = 48;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final width = constraints.maxWidth;
+      final columns = math.max(
+        1,
+        ((width + gutter) / (cellWidth + gutter)).floor(),
+      );
+      final cell = (width - gutter * (columns - 1)) / columns;
+      return Wrap(
+        spacing: gutter,
+        runSpacing: gutter,
+        children: [
+          for (final option in options)
+            SizedBox(
+              width: cell,
+              child: _ConsoleChip(
+                key: option.optionKey,
+                label: option.label,
+                selected: selected.contains(option.value),
+                onTap: () => onTap(option.value),
+              ),
+            ),
+        ],
+      );
+    },
+  );
+}
+
+class _ConsoleChip extends StatelessWidget {
+  const _ConsoleChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    super.key,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: FocusableTapTarget(
+        onTap: onTap,
+        selected: selected,
+        borderRadius: 11,
+        semanticLabel: label,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(11),
+          child: AnimatedContainer(
+            duration: consoleMotion(context),
+            curve: Curves.easeOut,
+            height: ConsoleChipGrid.cellHeight,
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: selected ? surface.accentSurface : surface.cardHigh,
+              borderRadius: BorderRadius.circular(11),
+              border: Border.all(
+                color: selected ? surface.accent : surface.line,
+              ),
+            ),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: selected ? surface.accent : surface.textPrimary,
+                fontSize: 16,
+                height: 1.13,
+                leadingDistribution: TextLeadingDistribution.even,
+                // One weight for both states, as everywhere on this surface.
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// The check that marks the target something is already pointed at.

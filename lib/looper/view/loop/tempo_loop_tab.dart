@@ -63,6 +63,37 @@ class _TempoLoopTabState extends State<TempoLoopTab> {
     write();
   }
 
+  /// A chooser whose options are bare tokens, laid out as a grid.
+  ///
+  /// Every option on this face is one — `3/4`, `x2`, `1/8`, `1 bar` — so all
+  /// four choosers take the grid. See [ConsoleChipGrid] for why a token in a
+  /// 70px row is the wrong shape.
+  Widget _grid<T>({
+    required String slot,
+    required bool open,
+    required List<ConsoleSegment<T>> options,
+    required T current,
+    required ValueChanged<T> onPick,
+  }) => ConsoleChooser(
+    key: Key(slot),
+    open: open,
+    children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(
+          ConsoleRow.indentedInset,
+          kConsoleBlockGap,
+          kConsoleRowInset,
+          kConsoleBlockGap,
+        ),
+        child: ConsoleChipGrid<T>(
+          options: options,
+          selected: {current},
+          onTap: (value) => _pick(() => onPick(value)),
+        ),
+      ),
+    ],
+  );
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -151,21 +182,19 @@ class _TempoLoopTabState extends State<TempoLoopTab> {
         fill: open ? context.surface.control : null,
         onTap: () => _toggle(_TempoRow.signature),
       ),
-      ConsoleChooser(
-        key: const Key('loop_signature_slot'),
+      _grid<(int, int)>(
+        slot: 'loop_signature_slot',
         open: open,
-        children: [
-          for (final (index, ts) in kValidTimeSignatures.indexed)
-            ConsolePickRow(
-              key: Key('loop_signature_${ts.$1}_${ts.$2}'),
-              title: l10n.timeSignatureOption(ts.$1, ts.$2),
-              selected: ts.$1 == transport.tsNum && ts.$2 == transport.tsDen,
-              showDivider: index < kValidTimeSignatures.length - 1,
-              onTap: () => _pick(
-                () => unawaited(tempo.setTimeSignature(ts.$1, ts.$2)),
-              ),
+        current: (transport.tsNum, transport.tsDen),
+        options: [
+          for (final ts in kValidTimeSignatures)
+            ConsoleSegment(
+              value: ts,
+              label: l10n.timeSignatureOption(ts.$1, ts.$2),
+              optionKey: Key('loop_signature_${ts.$1}_${ts.$2}'),
             ),
         ],
+        onPick: (ts) => unawaited(tempo.setTimeSignature(ts.$1, ts.$2)),
       ),
     ];
   }
@@ -200,20 +229,19 @@ class _TempoLoopTabState extends State<TempoLoopTab> {
         fill: open ? context.surface.control : null,
         onTap: () => _toggle(_TempoRow.length),
       ),
-      ConsoleChooser(
-        key: const Key('loop_length_slot'),
+      _grid<int>(
+        slot: 'loop_length_slot',
         open: open,
-        children: [
-          for (final (index, value) in _multiples.indexed)
-            ConsolePickRow(
-              key: Key('loop_length_$value'),
-              title: label(value),
-              selected: value == multiple,
-              showDivider: index < _multiples.length - 1,
-              onTap: () =>
-                  _pick(() => unawaited(options.setDefaultMultiple(value))),
+        current: multiple,
+        options: [
+          for (final value in _multiples)
+            ConsoleSegment(
+              value: value,
+              label: label(value),
+              optionKey: Key('loop_length_$value'),
             ),
         ],
+        onPick: (value) => unawaited(options.setDefaultMultiple(value)),
       ),
     ];
   }
@@ -245,19 +273,19 @@ class _TempoLoopTabState extends State<TempoLoopTab> {
         fill: open ? context.surface.control : null,
         onTap: () => _toggle(_TempoRow.quantise),
       ),
-      ConsoleChooser(
-        key: const Key('loop_quantise_slot'),
+      _grid<GridDivision>(
+        slot: 'loop_quantise_slot',
         open: open,
-        children: [
-          for (final (index, div) in GridDivision.values.indexed)
-            ConsolePickRow(
-              key: Key('loop_quantise_${div.name}'),
-              title: labels[div]!,
-              selected: div == transport.quantizeDiv,
-              showDivider: index < GridDivision.values.length - 1,
-              onTap: () => _pick(() => unawaited(tempo.setQuantizeDiv(div))),
+        current: transport.quantizeDiv,
+        options: [
+          for (final div in GridDivision.values)
+            ConsoleSegment(
+              value: div,
+              label: labels[div]!,
+              optionKey: Key('loop_quantise_${div.name}'),
             ),
         ],
+        onPick: (div) => unawaited(tempo.setQuantizeDiv(div)),
       ),
     ];
   }
@@ -291,19 +319,19 @@ class _TempoLoopTabState extends State<TempoLoopTab> {
         fill: open ? context.surface.control : null,
         onTap: () => _toggle(_TempoRow.countIn),
       ),
-      ConsoleChooser(
-        key: const Key('loop_count_in_slot'),
+      _grid<int>(
+        slot: 'loop_count_in_slot',
         open: open,
-        children: [
-          for (final (index, bars) in _countIns.indexed)
-            ConsolePickRow(
-              key: Key('loop_count_in_$bars'),
-              title: labels[bars]!,
-              selected: bars == transport.countInBars,
-              showDivider: index < _countIns.length - 1,
-              onTap: () => _pick(() => unawaited(tempo.setCountInBars(bars))),
+        current: transport.countInBars,
+        options: [
+          for (final bars in _countIns)
+            ConsoleSegment(
+              value: bars,
+              label: labels[bars]!,
+              optionKey: Key('loop_count_in_$bars'),
             ),
         ],
+        onPick: (bars) => unawaited(tempo.setCountInBars(bars)),
       ),
     ];
   }
