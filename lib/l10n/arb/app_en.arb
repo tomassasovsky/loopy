@@ -2120,15 +2120,6 @@
             }
         }
     },
-    "controlPickTargetTitle": "What should {name} act on?",
-    "@controlPickTargetTitle": {
-        "description": "Title of the sheet that picks a footswitch's target.",
-        "placeholders": {
-            "name": {
-                "type": "String"
-            }
-        }
-    },
     "controlBankLabel": "{bank}",
     "@controlBankLabel": {
         "description": "The A/B bank selector's captions.",
@@ -2149,10 +2140,6 @@
     "midiDeviceNone": "None",
     "@midiDeviceNone": {
         "description": "Value of the MIDI device row when nothing is selected."
-    },
-    "midiPickDeviceTitle": "Which MIDI input?",
-    "@midiPickDeviceTitle": {
-        "description": "Title of the sheet that picks a MIDI input device."
     },
     "midiStatusWaiting": "Waiting for MIDI input",
     "@midiStatusWaiting": {
@@ -2218,14 +2205,6 @@
     "midiStateSwitch": "switch",
     "@midiStateSwitch": {
         "description": "State word on a discrete mapping row."
-    },
-    "midiPickSweepTitle": "What should the sweep drive?",
-    "@midiPickSweepTitle": {
-        "description": "Title of the sheet that picks a continuous mapping's target."
-    },
-    "midiPickSwitchTitle": "What should the switch drive?",
-    "@midiPickSwitchTitle": {
-        "description": "Title of the sheet that picks a discrete mapping's target."
     },
     "midiMappingsEmpty": "Nothing is mapped yet. Add a sweep or a switch, then move the control you want to use.",
     "@midiMappingsEmpty": {

@@ -92,17 +92,84 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
     });
   }
 
+  /// The key [_open] holds, when what is open is a mapping.
+  (MappingTrigger, String)? get _openKey => switch (_open) {
+    _MappingOpen(:final key) => key,
+    _ => null,
+  };
+
+  /// The row a relearn is re-teaching while its calibration is open, and the
+  /// mappings that existed when that capture started — see [_followRelearn].
+  ({(MappingTrigger, String) key, Set<(MappingTrigger, String)> before})?
+  _relearning;
+
+  /// Keeps the opened calibration open across a relearn.
+  ///
+  /// A mapping's identity IS its control, so re-teaching it a different one
+  /// gives it a new key — and [_open], which holds the old one, would then
+  /// match nothing and shut the drawer the user is working in at the exact
+  /// moment their relearn succeeded.
+  ///
+  /// Two deliveries, not one: the cubit clears the capture BEFORE it emits the
+  /// set that capture edited, so on the first the row is always still here and
+  /// this stays armed for the next. What it then follows is the mapping on the
+  /// same target that was NOT in the set before — the one signature a rebind
+  /// has and a removal never does, which is what keeps a cancelled capture
+  /// followed by a Remove from hopping the drawer onto a row that merely
+  /// shares the target.
+  void _followRelearn(ControlState state) {
+    final bindings = state.controllerBindings.bindings;
+    final learn = state.controllerLearn;
+    if (learn != null) {
+      final open = _openKey;
+      _relearning = open != null && learn.replacingKey == open
+          ? (key: open, before: {for (final b in bindings) b.key})
+          : null;
+      return;
+    }
+    final armed = _relearning;
+    if (armed == null) return;
+    if (bindings.any((binding) => binding.key == armed.key)) return;
+    _relearning = null;
+    if (_openKey != armed.key) return;
+    final moved = bindings
+        .where(
+          (b) => b.target == armed.key.$2 && !armed.before.contains(b.key),
+        )
+        .firstOrNull;
+    if (moved == null) return;
+    setState(() => _open = _MappingOpen(moved.key));
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final connection = context.watch<MidiSetupCubit>().state.connection;
+    // The CONNECTION only. Watching the whole state would rebuild this face on
+    // every raw MIDI message, since `activityTick` bumps on each one — the
+    // per-message work the listener below exists to avoid, taken anyway.
+    final connection = context.select<MidiSetupCubit, MidiConnection>(
+      (cubit) => cubit.state.connection,
+    );
 
-    return BlocListener<MidiSetupCubit, MidiSetupState>(
-      // The tick's value is meaningless; only its changes are. Watching it in
-      // `build` and setting state there would be a write during a build, so
-      // the blink is driven from a listener instead.
-      listenWhen: (a, b) => a.activityTick != b.activityTick,
-      listener: (_, _) => _sawTraffic(),
+    return MultiBlocListener(
+      listeners: [
+        BlocListener<MidiSetupCubit, MidiSetupState>(
+          // The tick's value is meaningless; only its changes are. Watching it
+          // in `build` and setting state there would be a write during a
+          // build, so the blink is driven from a listener instead.
+          listenWhen: (a, b) => a.activityTick != b.activityTick,
+          listener: (_, _) => _sawTraffic(),
+        ),
+        BlocListener<ControlCubit, ControlState>(
+          // The mappings too, not just the capture: a relearn lands as two
+          // emits — the capture clearing, then the set it edited — and the
+          // one that moves the row is the second.
+          listenWhen: (a, b) =>
+              a.controllerLearn != b.controllerLearn ||
+              a.controllerBindings != b.controllerBindings,
+          listener: (_, state) => _followRelearn(state),
+        ),
+      ],
       child: KeyedSubtree(
         key: const Key('midi_tray_body'),
         child: SingleChildScrollView(
@@ -347,13 +414,18 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
         ),
         for (final binding in bindings)
           _MappingRow(
-            key: Key('midi_mapping_${binding.key.$1.id}_${binding.key.$2}'),
+            // The WHOLE identity, not just the control number: a trigger is
+            // (kind, number, channel), and the set allows two controls to
+            // drive one target — so CC 20 on two channels, or note 20 and
+            // CC 20, are two legal rows whose keys would otherwise collide.
+            key: Key('midi_mapping_${binding.trigger}_${binding.target}'),
             binding: binding,
             open: switch (_open) {
               _MappingOpen(:final key) => key == binding.key,
               _ => false,
             },
             learn: learn?.replacingKey == binding.key ? learn : null,
+            connected: connected,
             onToggle: () => setState(() {
               final already = switch (_open) {
                 _MappingOpen(:final key) => key == binding.key,
@@ -363,7 +435,7 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
             }),
           ),
         _addRow(context, cubit, connected: connected),
-        _addChooser(context, cubit),
+        _addChooser(context, cubit, connected: connected),
       ],
     );
   }
@@ -429,13 +501,24 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
   /// The same drawer the device row uses, for the same reason: a button that
   /// raised a modal would be the only control on this console that leaves the
   /// list it belongs to.
-  Widget _addChooser(BuildContext context, ControlCubit cubit) {
+  ///
+  /// Shuts with the link, on the Add buttons' own rule: a capture needs a
+  /// control to move, so a chooser left open when the device went away would
+  /// reach the doomed capture the inert buttons exist to prevent, one tap
+  /// later. The choice is kept, so it comes back when the device does.
+  Widget _addChooser(
+    BuildContext context,
+    ControlCubit cubit, {
+    required bool connected,
+  }) {
     final l10n = context.l10n;
     final looper = context.read<LooperRepository>();
-    final adding = switch (_open) {
-      _AddOpen(:final continuous) => continuous,
-      _ => null,
-    };
+    final adding = !connected
+        ? null
+        : switch (_open) {
+            _AddOpen(:final continuous) => continuous,
+            _ => null,
+          };
 
     final choices = <({String target, String title, String? state})>[
       if (adding == true)
@@ -524,6 +607,7 @@ class _MappingRow extends StatelessWidget {
     required this.binding,
     required this.open,
     required this.learn,
+    required this.connected,
     required this.onToggle,
     super.key,
   });
@@ -533,6 +617,12 @@ class _MappingRow extends StatelessWidget {
 
   /// The capture running FOR THIS ROW (a relearn), or null.
   final ControllerLearn? learn;
+
+  /// Whether a MIDI link is up. A mapping is GLOBAL — the row is drawn from
+  /// the settings blob whether or not anything is plugged in — so the row has
+  /// to be told, and Relearn obeys the same rule the Add buttons do: a capture
+  /// needs a control to move.
+  final bool connected;
 
   final VoidCallback onToggle;
 
@@ -741,7 +831,11 @@ class _MappingRow extends StatelessWidget {
                 ConsoleActionChip(
                   key: const Key('midi_relearn'),
                   label: l10n.midiLearnRelearn,
-                  onPressed: capture != null
+                  // Inert with nothing attached, exactly as Add sweep / Add
+                  // switch are: re-teaching a control needs one to move, and
+                  // offering to listen on a link that is not there is a
+                  // 15-second capture nothing can end but the timeout.
+                  onPressed: capture != null || !connected
                       ? null
                       : () => cubit.learnControllerBinding(
                           target: binding.target,

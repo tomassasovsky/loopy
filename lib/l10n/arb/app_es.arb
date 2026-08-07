@@ -1646,15 +1646,6 @@
             }
         }
     },
-    "controlPickTargetTitle": "¿Sobre qué actúa {name}?",
-    "@controlPickTargetTitle": {
-        "description": "Title of the sheet that picks a footswitch's target.",
-        "placeholders": {
-            "name": {
-                "type": "String"
-            }
-        }
-    },
     "controlBankLabel": "{bank}",
     "@controlBankLabel": {
         "description": "The A/B bank selector's captions.",
@@ -1675,10 +1666,6 @@
     "midiDeviceNone": "Ninguno",
     "@midiDeviceNone": {
         "description": "Value of the MIDI device row when nothing is selected."
-    },
-    "midiPickDeviceTitle": "¿Qué entrada MIDI?",
-    "@midiPickDeviceTitle": {
-        "description": "Title of the sheet that picks a MIDI input device."
     },
     "midiStatusWaiting": "Esperando entrada MIDI",
     "@midiStatusWaiting": {
@@ -1744,14 +1731,6 @@
     "midiStateSwitch": "conmutador",
     "@midiStateSwitch": {
         "description": "State word on a discrete mapping row."
-    },
-    "midiPickSweepTitle": "¿Qué controla el barrido?",
-    "@midiPickSweepTitle": {
-        "description": "Title of the sheet that picks a continuous mapping's target."
-    },
-    "midiPickSwitchTitle": "¿Qué controla el conmutador?",
-    "@midiPickSwitchTitle": {
-        "description": "Title of the sheet that picks a discrete mapping's target."
     },
     "midiMappingsEmpty": "Todavía no hay nada asignado. Añade un barrido o un conmutador y luego mueve el control que quieras usar.",
     "@midiMappingsEmpty": {

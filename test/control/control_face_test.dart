@@ -27,6 +27,23 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 
 class _MockMidiDevices extends Mock implements MidiDeviceRepository {}
 
+/// A controller source a test can move a control on, so a MIDI-learn capture
+/// can be COMPLETED here and not merely started.
+class _FakeControllerSource implements ControllerSource {
+  final _inputs = StreamController<RawControllerInput>.broadcast();
+
+  @override
+  Stream<RawControllerInput> get inputs => _inputs.stream;
+
+  @override
+  Future<void> dispose() => _inputs.close();
+
+  /// Moves control [id] — a CC by default, the shape a relearn catches.
+  void move(int id, {int value = 64}) => _inputs.add(
+    RawControllerInput(kind: ControllerSourceKind.midiCc, id: id, value: value),
+  );
+}
+
 TrackEffect _fx(String slotId, TrackEffectType type) =>
     BuiltInEffect(type: type, slotId: slotId);
 
@@ -43,6 +60,7 @@ void main() {
   late ControlCubit control;
   late MidiSetupCubit midi;
   late SettingsTrayCubit tray;
+  late _FakeControllerSource source;
   late List<TrackEffect> masterChain;
 
   setUp(() {
@@ -106,10 +124,12 @@ void main() {
       exportsRoot: () async => '.',
     );
     addTearDown(performance.dispose);
-    // A real ControllerRepository with no sources: the learn path needs one to
-    // exist at all — without it `learnControllerBinding` returns on its first
-    // line, which is exactly the app-wiring bug this slice fixed.
-    final controller = ControllerRepository(sources: const []);
+    // A real ControllerRepository: the learn path needs one to exist at all —
+    // without it `learnControllerBinding` returns on its first line, which is
+    // exactly the app-wiring bug this slice fixed. Over a source a test can
+    // feed, so a capture can be completed rather than only started.
+    source = _FakeControllerSource();
+    final controller = ControllerRepository(sources: [source]);
     addTearDown(controller.dispose);
     control = ControlCubit(
       looper: looper,
@@ -504,6 +524,63 @@ void main() {
       await tester.pumpAndSettle();
     });
 
+    testWidgets('the target chooser shuts when the device goes away', (
+      tester,
+    ) async {
+      await pump(tester, connection: connected);
+      await showMidi(tester);
+
+      final target = const FxChainTarget(_master).canonicalString();
+      await tester.tap(find.byKey(const Key('midi_add_switch')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(Key('midi_add_target_$target')), findsOneWidget);
+
+      // The link drops with the chooser up. A capture needs a control to move,
+      // so the choices go with it — the Add buttons' own rule, which a drawer
+      // left open would otherwise reach one tap later.
+      connections.add(const MidiConnection());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(Key('midi_add_target_$target')), findsNothing);
+      expect(control.state.controllerLearn, isNull);
+    });
+
+    testWidgets('a relearn keeps the calibration it was started from open', (
+      tester,
+    ) async {
+      await pump(tester, connection: connected);
+      await control.setControllerBindings(mappings());
+      await showMidi(tester);
+
+      final sweep = control.state.controllerBindings.bindings
+          .whereType<ContinuousBinding>()
+          .single;
+      await tester.tap(
+        find.byKey(Key('midi_mapping_${sweep.trigger}_${sweep.target}')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('midi_relearn')));
+      await tester.pumpAndSettle();
+
+      // Re-taught on a DIFFERENT control, so the mapping's identity — and the
+      // key the open row is tracked by — changes under the drawer.
+      source.move(30);
+      await tester.pumpAndSettle();
+      // Past the mappings-write debounce, which would otherwise still be
+      // pending when the tree comes down.
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(
+        control.state.controllerBindings.bindings
+            .whereType<ContinuousBinding>()
+            .single
+            .trigger
+            .id,
+        30,
+      );
+      expect(find.byKey(const Key('midi_lo')), findsOneWidget);
+    });
+
     testWidgets('stacks the device, its status and the mappings', (
       tester,
     ) async {
@@ -603,7 +680,9 @@ void main() {
       final sweep = control.state.controllerBindings.bindings
           .whereType<ContinuousBinding>()
           .single;
-      await tester.tap(find.byKey(Key('midi_mapping_11_${sweep.target}')));
+      await tester.tap(
+        find.byKey(Key('midi_mapping_${sweep.trigger}_${sweep.target}')),
+      );
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('midi_lo')), findsOneWidget);
@@ -625,7 +704,9 @@ void main() {
           .whereType<DiscreteBinding>()
           .single;
       await tester.tap(
-        find.byKey(Key('midi_mapping_36_${discrete.target}')),
+        find.byKey(
+          Key('midi_mapping_${discrete.trigger}_${discrete.target}'),
+        ),
       );
       await tester.pumpAndSettle();
 
@@ -641,7 +722,9 @@ void main() {
       final sweep = control.state.controllerBindings.bindings
           .whereType<ContinuousBinding>()
           .single;
-      await tester.tap(find.byKey(Key('midi_mapping_11_${sweep.target}')));
+      await tester.tap(
+        find.byKey(Key('midi_mapping_${sweep.trigger}_${sweep.target}')),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('midi_remove')));
       // Past the mappings-write debounce: the binding leaves the widget tree
@@ -669,6 +752,39 @@ void main() {
         isNull,
       );
       expect(find.byKey(const Key('midi_idle_notice')), findsOneWidget);
+    });
+
+    testWidgets("so is a mapping's Relearn, on the same rule", (
+      tester,
+    ) async {
+      // Mappings are GLOBAL, so the list draws them with nothing plugged in —
+      // which is exactly when Relearn could otherwise start a capture no
+      // control can end.
+      await pump(tester);
+      await control.setControllerBindings(mappings());
+      await showMidi(tester);
+
+      final sweep = control.state.controllerBindings.bindings
+          .whereType<ContinuousBinding>()
+          .single;
+      await tester.tap(
+        find.byKey(Key('midi_mapping_${sweep.trigger}_${sweep.target}')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<ConsoleActionChip>(find.byKey(const Key('midi_relearn')))
+            .onPressed,
+        isNull,
+      );
+      // Remove still works: dropping a mapping needs no controller.
+      expect(
+        tester
+            .widget<ConsoleActionChip>(find.byKey(const Key('midi_remove')))
+            .onPressed,
+        isNotNull,
+      );
     });
   });
 }

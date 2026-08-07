@@ -1189,6 +1189,13 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
     widget.onChanged(next);
   }
 
+  /// Hands the bar back to [ConsoleValueBar.value] — what the finger reported
+  /// is only the truth while the finger is down.
+  void _release() {
+    if (_dragging == null) return;
+    setState(() => _dragging = null);
+  }
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
@@ -1221,13 +1228,19 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
                 return GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTapDown: (d) => _report(width, d.localPosition.dx),
+                  // A tap ends a touch as much as a drag does. Without these
+                  // the bar stayed pinned to the last tapped fraction for the
+                  // rest of its life, and stopped redrawing the value it is
+                  // supposed to be reading — visible the moment a write is
+                  // clamped, as the threshold's own floor clamps it.
+                  onTapUp: (_) => _release(),
+                  onTapCancel: _release,
                   onHorizontalDragStart: (d) =>
                       _report(width, d.localPosition.dx),
                   onHorizontalDragUpdate: (d) =>
                       _report(width, d.localPosition.dx),
-                  onHorizontalDragEnd: (_) => setState(() => _dragging = null),
-                  onHorizontalDragCancel: () =>
-                      setState(() => _dragging = null),
+                  onHorizontalDragEnd: (_) => _release(),
+                  onHorizontalDragCancel: _release,
                   child: Container(
                     height: ConsoleValueBar.height,
                     decoration: BoxDecoration(
