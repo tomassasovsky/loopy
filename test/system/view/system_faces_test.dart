@@ -167,6 +167,9 @@ void main() {
   });
 
   setUp(() {
+    // The registry is a global and licences ADD to it, so without this each
+    // test inherits every package the ones before it registered.
+    LicenseRegistry.reset();
     repository = _MockLooperRepository();
     when(
       () => repository.looperState,
@@ -880,6 +883,77 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('BETA TERMS'), findsOneWidget);
       expect(find.text('ALPHA TERMS'), findsNothing);
+    });
+
+    testWidgets('a registry too tall for the panel SCROLLS rather than '
+        'overflowing it', (tester) async {
+      // 150 packages is roughly what a real build registers, and comfortably
+      // past the panel's own height. A `shrinkWrap` list handed unbounded
+      // height sizes to all of it, paints past the card, and has no viewport
+      // left to scroll — which is an overflow the framework reports as a test
+      // failure, and a list that silently cannot be reached past its fold.
+      LicenseRegistry.addLicense(
+        () => Stream.fromIterable([
+          for (var i = 0; i < 150; i++)
+            LicenseEntryWithLineBreaks(
+              ['pkg_${i.toString().padLeft(3, '0')}'],
+              'TERMS $i',
+            ),
+        ]),
+      );
+      await pump(tester, tab: SystemTab.about);
+      await tester.tap(find.byKey(const Key('system_about_notices')));
+      await tester.pumpAndSettle();
+
+      final list = tester.widget<ListView>(
+        find.byKey(const Key('console_licences_list')),
+      );
+      expect(list.shrinkWrap, isTrue);
+
+      final position = tester
+          .state<ScrollableState>(
+            find.descendant(
+              of: find.byKey(const Key('console_licences_list')),
+              matching: find.byType(Scrollable),
+            ),
+          )
+          .position;
+      // There is somewhere to scroll TO, which is the claim the shrinkWrap
+      // comment makes and the thing an unbounded list cannot do.
+      expect(position.maxScrollExtent, greaterThan(0));
+
+      // And the panel is still inside the screen it was drawn for.
+      final panel = tester.getRect(
+        find.byKey(const Key('console_licences_sheet')),
+      );
+      expect(panel.height, lessThanOrEqualTo(1080));
+
+      // The last package is reachable.
+      await tester.drag(
+        find.byKey(const Key('console_licences_list')),
+        const Offset(0, -20000),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('console_licence_pkg_149')), findsOneWidget);
+    });
+
+    testWidgets('a registry that fits shrinks the card to it, rather than '
+        'filling the panel with nothing', (tester) async {
+      LicenseRegistry.addLicense(
+        () => Stream.fromIterable([
+          const LicenseEntryWithLineBreaks(['solo_pkg'], 'SOLO TERMS'),
+        ]),
+      );
+      await pump(tester, tab: SystemTab.about);
+      await tester.tap(find.byKey(const Key('system_about_notices')));
+      await tester.pumpAndSettle();
+
+      final panel = tester.getRect(
+        find.byKey(const Key('console_licences_sheet')),
+      );
+      // Title + count + one 70px row + Close, nowhere near the 960 a filled
+      // panel would take.
+      expect(panel.height, lessThan(400));
     });
 
     testWidgets('the panel opens mid-animation, not between two frames', (

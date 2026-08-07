@@ -145,20 +145,30 @@ class _ConsoleLicencesSheetState extends State<_ConsoleLicencesSheet> {
                         : ConsoleCard(
                             fill: surface.background,
                             children: [
-                              // shrinkWrap, so a registry of three packages
-                              // draws a card three rows tall rather than one
-                              // that fills the panel with nothing. The
-                              // Flexible above caps it, and the list scrolls
-                              // once it hits that cap.
-                              ListView.builder(
-                                key: const Key('console_licences_list'),
-                                padding: EdgeInsets.zero,
-                                shrinkWrap: true,
-                                itemCount: packages.length,
-                                itemBuilder: (context, index) => _row(
-                                  context,
-                                  packages[index],
-                                  last: index == packages.length - 1,
+                              // The flex goes INSIDE the card, and that is the
+                              // whole trick. `ConsoleCard` is a
+                              // `Column(mainAxisSize: min)`, which hands a
+                              // plain child UNBOUNDED height — so a
+                              // `shrinkWrap` list there sizes to its full
+                              // content, overflows the cap the outer
+                              // [Flexible] applies, and has no viewport left
+                              // to scroll. A `Flexible` here bounds it to what
+                              // the panel actually has, and `shrinkWrap` then
+                              // means "no taller than the content" rather than
+                              // "as tall as the content": three packages draw
+                              // a card three rows tall, and a hundred and
+                              // fifty scroll.
+                              Flexible(
+                                child: ListView.builder(
+                                  key: const Key('console_licences_list'),
+                                  padding: EdgeInsets.zero,
+                                  shrinkWrap: true,
+                                  itemCount: packages.length,
+                                  itemBuilder: (context, index) => _row(
+                                    context,
+                                    packages[index],
+                                    last: index == packages.length - 1,
+                                  ),
                                 ),
                               ),
                             ],

@@ -1449,6 +1449,9 @@ void main() {
   }, skip: !hasFonts);
 
   testWidgets('system domain, the open-source notices panel', (tester) async {
+    // A global that accumulates: reset so the panel shows these three and
+    // whatever another test registered earlier is not in the picture.
+    LicenseRegistry.reset();
     LicenseRegistry.addLicense(
       () => Stream.fromIterable([
         const LicenseEntryWithLineBreaks(
