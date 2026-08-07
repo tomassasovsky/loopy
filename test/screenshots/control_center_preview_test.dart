@@ -1,14 +1,24 @@
 @Tags(['screenshots'])
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:bluetooth_repository/bluetooth_repository.dart';
+import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart';
+import 'package:midi_device_repository/midi_device_repository.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:pedal_repository/pedal_repository.dart';
+import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/control/control_tab.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/view/settings_tray.dart';
@@ -17,6 +27,19 @@ import 'package:settings_repository/settings_repository.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 import '../helpers/helpers.dart';
+
+class _MockLooperRepository extends Mock implements LooperRepository {}
+
+class _MockMidiDevices extends Mock implements MidiDeviceRepository {}
+
+/// A rig with a Master insert carrying two effects — enough for the assign
+/// list to have chains, slots and a bound target to draw.
+const _master = FxAddress(stage: FxStage.master);
+
+final _masterChain = <TrackEffect>[
+  BuiltInEffect(type: TrackEffectType.drive, slotId: 'slot-drive'),
+  BuiltInEffect(type: TrackEffectType.reverb, slotId: 'slot-reverb'),
+];
 
 ThemeData _theme() => ThemeData(
   fontFamily: 'Roboto',
@@ -245,12 +268,69 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
   }
 
+  /// The Control face's own providers — the real tray inherits these from
+  /// `App`, so a preview that shows the Control destination has to stand them
+  /// up too.
+  ({ControlCubit control, MidiSetupCubit midi, LooperRepository looper})
+  controlProviders(
+    WidgetTester tester, {
+    MidiConnection connection = const MidiConnection(),
+  }) {
+    final looper = _MockLooperRepository();
+    final looperStates = StreamController<LooperState>.broadcast();
+    addTearDown(looperStates.close);
+    when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
+    when(() => looper.state).thenReturn(
+      LooperState(
+        tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
+        status: const EngineStatus(sampleRate: 48000),
+      ),
+    );
+    when(looper.allMonitors).thenReturn(const {});
+    when(looper.allLaneChains).thenReturn(const {});
+    when(looper.allTrackChains).thenReturn(const {});
+    when(() => looper.trackEffects(any())).thenReturn(const []);
+    when(() => looper.masterEffects).thenAnswer((_) => _masterChain);
+    when(() => looper.chainEntriesAt(_master)).thenAnswer((_) => _masterChain);
+    when(looper.masterChainEnvelope).thenReturn(const FxChainEnvelope());
+
+    final devices = _MockMidiDevices();
+    final connections = StreamController<MidiConnection>.broadcast();
+    final activity = StreamController<void>.broadcast();
+    addTearDown(connections.close);
+    addTearDown(activity.close);
+    when(() => devices.connections).thenAnswer((_) => connections.stream);
+    when(() => devices.activity).thenAnswer((_) => activity.stream);
+    when(() => devices.connection).thenReturn(connection);
+
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final performance = PerformanceRepository(
+      engine: FakeAudioEngine(),
+      exportsRoot: () async => '.',
+    );
+    addTearDown(performance.dispose);
+    final control = ControlCubit(
+      looper: looper,
+      pedal: PedalRepository(const NoopPedalTransport()),
+      settings: settings,
+      performance: performance,
+      keepAliveInterval: Duration.zero,
+    );
+    final midi = MidiSetupCubit(repository: devices);
+    addTearDown(() => unawaited(control.close()));
+    addTearDown(() => unawaited(midi.close()));
+    return (control: control, midi: midi, looper: looper);
+  }
+
   Future<void> pumpTray(
     WidgetTester tester, {
     required SettingsTrayCubit cubit,
     WifiRepository? wifi,
     BluetoothRepository? bluetooth,
+    ({ControlCubit control, MidiSetupCubit midi, LooperRepository looper})?
+    control,
   }) {
+    final rig = control ?? controlProviders(tester);
     return tester.pumpWidget(
       MaterialApp(
         debugShowCheckedModeBanner: false,
@@ -270,9 +350,14 @@ void main() {
                     client: UnsupportedBluetoothClient(),
                   ),
             ),
+            RepositoryProvider<LooperRepository>.value(value: rig.looper),
           ],
-          child: BlocProvider.value(
-            value: cubit,
+          child: MultiBlocProvider(
+            providers: [
+              BlocProvider.value(value: cubit),
+              BlocProvider.value(value: rig.control),
+              BlocProvider.value(value: rig.midi),
+            ],
             child: Scaffold(
               body: Stack(
                 children: [
@@ -383,7 +468,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('wifi_forget')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('network_forget_confirm')), findsOneWidget);
+    expect(find.byKey(const Key('console_forget_confirm')), findsOneWidget);
     // The confirm rides in the route overlay, above the Scaffold.
     await expectLater(
       find.byType(MaterialApp),
@@ -450,6 +535,126 @@ void main() {
     await expectLater(
       find.byType(Scaffold),
       matchesGoldenFile('goldens/control_center_network_bt_expanded.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('control domain, pedal tab with a switch selected', (
+    tester,
+  ) async {
+    await size(tester);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.control);
+    addTearDown(cubit.close);
+
+    final rig = controlProviders(tester);
+    await rig.control.setGlobalBindings(
+      PedalBindingSet([
+        PedalBinding(
+          key: const PedalBindingKey(button: PedalButton.recPlay),
+          target: const FxChainTarget(_master).canonicalString(),
+        ),
+      ]),
+    );
+    await pumpTray(tester, cubit: cubit, control: rig);
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.byKey(const Key('pedal_switch_track1')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_control_pedal.png'),
+    );
+
+    // And again on bank B, where the same four caps drive tracks 5-8.
+    await tester.tap(find.text('B'));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_control_pedal_bank_b.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('control domain, midi tab on a live link', (tester) async {
+    await size(tester);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.control)
+      ..showControlTab(ControlTab.midi);
+    addTearDown(cubit.close);
+
+    final rig = controlProviders(
+      tester,
+      connection: const MidiConnection(
+        devices: [MidiDevice(id: 'dev-1', name: 'Nektar Pacer')],
+        selectedId: 'dev-1',
+        selectedName: 'Nektar Pacer',
+        status: MidiConnectionStatus.connected,
+      ),
+    );
+    await rig.control.setControllerBindings(
+      ControllerBindingSet([
+        ContinuousBinding(
+          trigger: const MappingTrigger(
+            kind: ControllerSourceKind.midiCc,
+            id: 11,
+            midiChannel: 0,
+          ),
+          target: const MasterGainTarget().canonicalString(),
+        ),
+        DiscreteBinding(
+          trigger: const MappingTrigger(
+            kind: ControllerSourceKind.midiNote,
+            id: 36,
+            midiChannel: 0,
+          ),
+          target: const FxChainTarget(_master).canonicalString(),
+        ),
+      ]),
+    );
+    await pumpTray(tester, cubit: cubit, control: rig);
+    await tester.pumpAndSettle();
+    // Past the mappings-write debounce, which would otherwise still be
+    // pending when the tree comes down.
+    await tester.pump(const Duration(milliseconds: 500));
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_control_midi.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('control domain, midi device chooser open', (tester) async {
+    await size(tester);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.control)
+      ..showControlTab(ControlTab.midi);
+    addTearDown(cubit.close);
+
+    final rig = controlProviders(
+      tester,
+      connection: const MidiConnection(
+        devices: [
+          MidiDevice(id: 'dev-1', name: 'Nektar Pacer'),
+          MidiDevice(id: 'dev-2', name: 'AirTurn BT-200'),
+        ],
+        selectedId: 'dev-1',
+        selectedName: 'Nektar Pacer',
+        status: MidiConnectionStatus.connected,
+      ),
+    );
+    await pumpTray(tester, cubit: cubit, control: rig);
+    await tester.pumpAndSettle();
+    // Opens in place, under the row — the shape `AUDIO / settings-device`
+    // draws for the same question.
+    await tester.tap(find.byKey(const Key('midi_device_row')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_control_midi_device.png'),
     );
   }, skip: !hasFonts);
 }

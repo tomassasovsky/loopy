@@ -1396,10 +1396,6 @@
     "@readoutStateEmpty": {
         "description": "Track cell state on the 7-inch readout: nothing captured yet."
     },
-    "trayPedalLabel": "Pedal",
-    "@trayPedalLabel": {
-        "description": "Navigation rail entry for the settings tray's pedal-assignment face. Deliberately shorter than pedalAssignTitle, which titles the face itself \u2014 rail entries are single words."
-    },
     "trayTunerLabel": "Tuner",
     "@trayTunerLabel": {
         "description": "Label for the settings tray's Tuner shortcut button (stub — no real functionality yet)."
@@ -2057,5 +2053,183 @@
     "bluetoothForgetConfirmAction": "Forget device",
     "@bluetoothForgetConfirmAction": {
         "description": "Destructive action on the forget-device confirmation."
+    },
+    "trayControlLabel": "Control",
+    "@trayControlLabel": {
+        "description": "Navigation rail entry for the Control domain — the footswitch plate and the MIDI foot controller as two tabs of one destination."
+    },
+    "controlPedalTab": "Pedal",
+    "@controlPedalTab": {
+        "description": "Tab of the Control domain: the footswitch plate's assignable switches."
+    },
+    "controlMidiTab": "MIDI",
+    "@controlMidiTab": {
+        "description": "Tab of the Control domain: the MIDI foot controller and its mappings."
+    },
+    "controlTransportGroup": "TRANSPORT SWITCHES",
+    "@controlTransportGroup": {
+        "description": "Group caption over the four transport footswitch cards. Upper case, as every group caption on the console is."
+    },
+    "controlTrackGroup": "TRACK SWITCHES",
+    "@controlTrackGroup": {
+        "description": "Group caption over the four track footswitch rows."
+    },
+    "controlAssignGroup": "ASSIGN {name} · BANK {bank}",
+    "@controlAssignGroup": {
+        "description": "Group caption over the target list, naming the switch being assigned and the bank it applies to.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            },
+            "bank": {
+                "type": "String"
+            }
+        }
+    },
+    "controlAssignGroupPlain": "ASSIGN {name}",
+    "@controlAssignGroupPlain": {
+        "description": "Group caption over the target list for a switch that holds one binding whatever the bank.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "controlUnassigned": "unassigned",
+    "@controlUnassigned": {
+        "description": "What a footswitch card or row says when nothing is bound to it. Lower case — a readout, not a sentence."
+    },
+    "controlTargetMissing": "Missing target",
+    "@controlTargetMissing": {
+        "description": "What a switch or mapping says when the chain or effect it pointed at is gone."
+    },
+    "controlShowEffects": "Show individual effects",
+    "@controlShowEffects": {
+        "description": "Footer of the assign list: reveals the individual effect slots under each chain."
+    },
+    "controlHideEffects": "Hide individual effects",
+    "@controlHideEffects": {
+        "description": "Footer of the assign list once the individual effect slots are showing."
+    },
+    "controlEffectIn": "in {chain}",
+    "@controlEffectIn": {
+        "description": "Trailing readout on an individual effect row, naming the chain it sits in.",
+        "placeholders": {
+            "chain": {
+                "type": "String"
+            }
+        }
+    },
+    "controlBankLabel": "{bank}",
+    "@controlBankLabel": {
+        "description": "The A/B bank selector's captions.",
+        "placeholders": {
+            "bank": {
+                "type": "String"
+            }
+        }
+    },
+    "midiDeviceGroup": "MIDI FOOT CONTROLLER",
+    "@midiDeviceGroup": {
+        "description": "Group caption over the MIDI device row and its status card."
+    },
+    "midiDeviceRow": "Device",
+    "@midiDeviceRow": {
+        "description": "Row that opens the MIDI input picker."
+    },
+    "midiDeviceNone": "None",
+    "@midiDeviceNone": {
+        "description": "Value of the MIDI device row when nothing is selected."
+    },
+    "midiStatusWaiting": "Waiting for MIDI input",
+    "@midiStatusWaiting": {
+        "description": "Traffic line on a live link that has not delivered a message yet."
+    },
+    "midiStatusReceiving": "Receiving MIDI",
+    "@midiStatusReceiving": {
+        "description": "Traffic line on a live link that is delivering messages."
+    },
+    "midiTransportMap": "CC {map}",
+    "@midiTransportMap": {
+        "description": "The fixed transport CC map, stated and not editable. The list is built from the rig's own default mapping so the two cannot drift.",
+        "placeholders": {
+            "map": {
+                "type": "String"
+            }
+        }
+    },
+    "midiActionRecord": "record",
+    "@midiActionRecord": {
+        "description": "Name of the record/overdub transport action in the fixed CC map."
+    },
+    "midiActionStop": "stop",
+    "@midiActionStop": {
+        "description": "Name of the stop transport action in the fixed CC map."
+    },
+    "midiActionPlay": "play",
+    "@midiActionPlay": {
+        "description": "Name of the play transport action in the fixed CC map."
+    },
+    "midiActionClear": "clear",
+    "@midiActionClear": {
+        "description": "Name of the clear transport action in the fixed CC map."
+    },
+    "midiActionUndo": "undo",
+    "@midiActionUndo": {
+        "description": "Name of the undo transport action in the fixed CC map."
+    },
+    "midiActionPlayAll": "play all",
+    "@midiActionPlayAll": {
+        "description": "Name of the play-all transport action in the fixed CC map."
+    },
+    "midiActionStopAll": "stop all",
+    "@midiActionStopAll": {
+        "description": "Name of the stop-all transport action in the fixed CC map."
+    },
+    "midiActionTapTempo": "tap tempo",
+    "@midiActionTapTempo": {
+        "description": "Name of the tap-tempo action in the fixed CC map."
+    },
+    "midiActionMetronome": "click",
+    "@midiActionMetronome": {
+        "description": "Name of the metronome-toggle action in the fixed CC map."
+    },
+    "midiActionCancelArm": "cancel arm",
+    "@midiActionCancelArm": {
+        "description": "Name of the cancel-arm action in the fixed CC map."
+    },
+    "midiStateSweep": "sweep",
+    "@midiStateSweep": {
+        "description": "State word on a continuous mapping row."
+    },
+    "midiStateSwitch": "switch",
+    "@midiStateSwitch": {
+        "description": "State word on a discrete mapping row."
+    },
+    "midiMappingsEmpty": "Nothing is mapped yet. Add a sweep or a switch, then move the control you want to use.",
+    "@midiMappingsEmpty": {
+        "description": "Empty state at the head of the mapping list."
+    },
+    "midiDeviceUnplugged": "unplugged",
+    "@midiDeviceUnplugged": {
+        "description": "Trailing readout on a MIDI device the enumeration has lost — it is still listed, because the selection is what survives the cable being found again."
+    },
+    "controlTrackSwitchName": "Track {number}",
+    "@controlTrackSwitchName": {
+        "description": "What a Control-face row calls a track footswitch: the CHANNEL that cap drives in the bank being shown \u2014 tracks 1-4 in bank A and 5-8 in bank B, which is what Bank is for.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "controlTrackSwitchLegend": "TRACK {number}",
+    "@controlTrackSwitchLegend": {
+        "description": "The upper-case form of controlTrackSwitchName, for the assign caption, which sits among other upper-case captions.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
     }
 }

@@ -59,6 +59,25 @@ String valueTargetLabel(
     ),
 };
 
+/// The display name of the effect sitting in [target]'s slot, or `null` when
+/// the slot is gone.
+///
+/// The effect's own name, not its slot id: a list of `slot-7f2a` rows names
+/// nothing a performer recognises. The id stays the binding's identity — it is
+/// what survives a reorder — and this is only what the row says.
+String? fxSlotName(LooperRepository looper, FxSlotTarget target) {
+  final entries = looper.chainEntriesAt(target.address);
+  if (entries == null) return null;
+  for (final fx in entries) {
+    if (fx.slotId != target.slotId) continue;
+    return switch (fx) {
+      BuiltInEffect(:final type) => type.label,
+      PluginEffect(:final name) => name,
+    };
+  }
+  return null;
+}
+
 /// Names the CONTROL a binding is keyed to — the CC/note number and the
 /// channel it was learned on.
 String controlLabel(AppLocalizations l10n, MappingTrigger trigger) {
