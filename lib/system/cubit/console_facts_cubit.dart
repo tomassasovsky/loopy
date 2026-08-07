@@ -30,7 +30,12 @@ class ConsoleFactsCubit extends Cubit<ConsoleFactsState> {
   /// Reports [ConsoleFactsStatus.failed] rather than throwing: a face that
   /// cannot read the disk says so, and there is nothing above it to catch.
   Future<void> load() async {
-    emit(state.copyWith(status: ConsoleFactsStatus.loading));
+    emit(
+      state.copyWith(
+        status: ConsoleFactsStatus.loading,
+        actionFailed: false,
+      ),
+    );
     try {
       final storage = await _client.storage();
       final facts = await _client.facts();
@@ -61,7 +66,7 @@ class ConsoleFactsCubit extends Cubit<ConsoleFactsState> {
   /// what the face shows afterwards is measured, not the figures it held minus
   /// what the delete claimed to remove.
   Future<int> deleteCapturesOlderThan(int days) async {
-    emit(state.copyWith(busy: true));
+    emit(state.copyWith(busy: true, actionFailed: false));
     try {
       final removed = await _client.deleteCapturesOlderThan(days);
       if (isClosed) return removed;
@@ -69,9 +74,9 @@ class ConsoleFactsCubit extends Cubit<ConsoleFactsState> {
       await load();
       return removed;
     } on Object {
-      if (!isClosed) {
-        emit(state.copyWith(busy: false, status: ConsoleFactsStatus.failed));
-      }
+      // The ACTION failed, not the read: the figures already on screen were
+      // measured and are still true.
+      if (!isClosed) emit(state.copyWith(busy: false, actionFailed: true));
       return 0;
     }
   }
@@ -108,14 +113,13 @@ class ConsoleFactsCubit extends Cubit<ConsoleFactsState> {
   Future<void> exportEverything() async {
     final destination = state.exportDestination;
     if (destination.isEmpty) return;
-    emit(state.copyWith(busy: true));
+    emit(state.copyWith(busy: true, actionFailed: false));
     try {
       await _client.exportEverything(destination);
       if (!isClosed) emit(state.copyWith(busy: false));
     } on Object {
-      if (!isClosed) {
-        emit(state.copyWith(busy: false, status: ConsoleFactsStatus.failed));
-      }
+      // Same rule as the delete: a refused write is not an unreadable disk.
+      if (!isClosed) emit(state.copyWith(busy: false, actionFailed: true));
     }
   }
 }

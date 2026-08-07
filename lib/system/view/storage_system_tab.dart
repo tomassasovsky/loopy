@@ -74,11 +74,17 @@ class _StorageSystemTabState extends State<StorageSystemTab> {
           ConsoleGroup(
             caption: l10n.systemThisConsoleGroup,
             blocks: [
+              // Nothing at all while the read is in flight. "This build can't
+              // read the console's disk" is an ANSWER, and an answer that has
+              // not arrived yet is not an answer of no.
               if (!state.hasStorage)
-                ConsoleEmptyCard(
-                  key: const Key('system_storage_unknown'),
-                  message: l10n.storageUnknown,
-                )
+                if (state.settled)
+                  ConsoleEmptyCard(
+                    key: const Key('system_storage_unknown'),
+                    message: l10n.storageUnknown,
+                  )
+                else
+                  const SizedBox.shrink()
               else
                 ConsoleCard(
                   key: const Key('system_storage_card'),
@@ -121,6 +127,15 @@ class _StorageSystemTabState extends State<StorageSystemTab> {
             blocks: [
               ConsoleCard(
                 children: [
+                  // The failure sits at the top of the list the action lives
+                  // in, in the console's own idiom — never a toast, and never
+                  // by taking the disk figures off the screen.
+                  if (state.actionFailed)
+                    ConsoleBanner(
+                      key: const Key('system_storage_action_failed'),
+                      message: l10n.storageActionFailed,
+                      tone: ConsoleBannerTone.failure,
+                    ),
                   ConsoleRow(
                     key: const Key('system_storage_delete_captures'),
                     title: l10n.storageDeleteCapturesTitle,

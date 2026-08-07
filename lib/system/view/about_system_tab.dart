@@ -9,6 +9,7 @@ import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
+import 'package:segno/system/view/console_licences_sheet.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 
 /// The About tab: what this console is, what hardware it has, and the legal
@@ -179,7 +180,7 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
         value: l10n.aboutLicenceValue,
         expanded: false,
         showDivider: !last,
-        onTap: () => _showLicences(context, update),
+        onTap: () => _showLicences(context),
       ),
       ({required last}) => ConsoleRow(
         key: const Key('system_about_notices'),
@@ -189,7 +190,7 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
         value: (packages ?? 0) == 0 ? null : l10n.aboutNoticesCount(packages!),
         expanded: false,
         showDivider: !last,
-        onTap: () => _showLicences(context, update),
+        onTap: () => _showLicences(context),
       ),
     ]);
 
@@ -219,13 +220,10 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
     );
   }
 
-  /// The one legal destination this build has.
-  static void _showLicences(BuildContext context, UpdateState update) =>
-      showLicensePage(
-        context: context,
-        applicationName: context.l10n.appMenuLabel,
-        applicationVersion: '${update.currentVersion ?? ''}',
-      );
+  /// The one legal destination this build has, drawn in the console's own
+  /// vocabulary rather than Material's master-detail route.
+  static void _showLicences(BuildContext context) =>
+      unawaited(showConsoleLicences(context));
 
   /// Builds a card from the rows that survived, and tells the LAST survivor
   /// that it is last.

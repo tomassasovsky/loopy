@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:console_facts_client/console_facts_client.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -61,6 +62,41 @@ class _RecordingFactsClient implements ConsoleFactsClient {
     exportedTo.add(destination);
     if (failExport) throw StateError('the stick went away');
   }
+}
+
+/// A client whose reads hang until [release] is called.
+class _SlowFactsClient implements ConsoleFactsClient {
+  final _gate = Completer<void>();
+  final _inner = FakeConsoleFactsClient(latency: Duration.zero);
+
+  void release() => _gate.complete();
+
+  @override
+  bool get isSupported => true;
+
+  @override
+  Future<StorageUsage> storage() async {
+    await _gate.future;
+    return _inner.storage();
+  }
+
+  @override
+  Future<ConsoleFacts> facts() async {
+    await _gate.future;
+    return _inner.facts();
+  }
+
+  @override
+  Future<int> deleteCapturesOlderThan(int days) async => 0;
+
+  @override
+  Future<String> exportDestination() async {
+    await _gate.future;
+    return _inner.exportDestination();
+  }
+
+  @override
+  Future<void> exportEverything(String destination) async {}
 }
 
 /// A client that throws every read, for the "cannot read the disk" face.
@@ -419,12 +455,49 @@ void main() {
       expect(find.byKey(const Key('system_update_action')), findsNothing);
     });
 
+    testWidgets('a failed DOWNLOAD names the download and retries the '
+        'download — not the check', (tester) async {
+      await pump(
+        tester,
+        tab: SystemTab.updates,
+        updateState: _running.copyWith(
+          phase: UpdatePhase.error,
+          failure: UpdateFailure.download,
+          errorMessage: 'connection reset',
+          available: UpdateManifest(
+            version: Version.parse('0.1.1'),
+            bundle: 'b',
+            channel: 'experimental',
+          ),
+        ),
+      );
+      final l10n = l10nOf(tester);
+
+      expect(
+        find.text(l10n.updatesDownloadFailedBanner('connection reset')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(l10n.updatesCheckFailedBanner('connection reset')),
+        findsNothing,
+      );
+
+      await tester.tap(find.byKey(const Key('system_update_action')));
+      await tester.pumpAndSettle();
+
+      // Retrying a broken download by looking again for a build already on
+      // offer is the wrong button under the right word.
+      verify(update.startDownload).called(1);
+      verifyNever(update.check);
+    });
+
     testWidgets('a failed check is red and offers a retry', (tester) async {
       await pump(
         tester,
         tab: SystemTab.updates,
         updateState: _running.copyWith(
           phase: UpdatePhase.error,
+          failure: UpdateFailure.check,
           errorMessage: 'connection refused',
         ),
       );
@@ -601,17 +674,44 @@ void main() {
       expect(facts.state.busy, isFalse);
     });
 
-    testWidgets('an export that throws leaves the face saying it cannot read '
-        'the disk, not silently pretending it worked', (tester) async {
+    testWidgets('an export that throws says so WHERE THE ACTION IS, and does '
+        'not take the disk figures down with it', (tester) async {
       final client = _RecordingFactsClient(failExport: true);
       await pump(tester, tab: SystemTab.storage, client: client);
+      final l10n = l10nOf(tester);
 
       await tester.tap(find.byKey(const Key('system_storage_export')));
       await tester.pumpAndSettle();
 
-      expect(facts.state.status, ConsoleFactsStatus.failed);
+      // A refused WRITE is not an unreadable disk. The five figures were
+      // measured and are still true.
+      expect(find.byKey(const Key('system_storage_card')), findsOneWidget);
+      expect(find.text(l10n.storageGigabytes('41.6')), findsOneWidget);
+      expect(find.text(l10n.storageUnknown), findsNothing);
+      expect(facts.state.hasStorage, isTrue);
+
+      // And the failure is named, at the top of the list the action lives in.
+      expect(
+        find.byKey(const Key('system_storage_action_failed')),
+        findsOneWidget,
+      );
       expect(facts.state.busy, isFalse);
-      expect(find.text(l10nOf(tester).storageUnknown), findsOneWidget);
+    });
+
+    testWidgets('nothing is claimed while the read is still in flight', (
+      tester,
+    ) async {
+      final client = _SlowFactsClient();
+      await pump(tester, tab: SystemTab.storage, client: client);
+      final l10n = l10nOf(tester);
+
+      // Mid-read: an answer that has not arrived is not an answer of no.
+      expect(find.text(l10n.storageUnknown), findsNothing);
+      expect(find.byKey(const Key('system_storage_card')), findsNothing);
+
+      client.release();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('system_storage_card')), findsOneWidget);
     });
 
     testWidgets('every readout of the breakdown is drawn, not just the two '
@@ -728,15 +828,87 @@ void main() {
       expect(find.text(l10n.aboutPedalFirmwareSubtitle), findsOneWidget);
     });
 
-    testWidgets('the notices row counts what it opens, and opens it', (
-      tester,
-    ) async {
-      await pump(tester, tab: SystemTab.about);
+    testWidgets("both LEGAL rows reach the console's own notices panel — never "
+        "Material's master-detail route", (tester) async {
+      for (final row in const [
+        Key('system_about_notices'),
+        Key('system_about_licence'),
+      ]) {
+        await pump(tester, tab: SystemTab.about);
 
+        await tester.tap(find.byKey(row));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('console_licences_sheet')),
+          findsOneWidget,
+          reason: '$row',
+        );
+        // The console has no back chevron and no app bar; the rail is always
+        // on screen, so a second navigation surface is the thing this panel
+        // exists to avoid.
+        expect(find.byType(LicensePage), findsNothing);
+        expect(find.byType(AppBar), findsNothing);
+
+        await tester.tap(find.byKey(const Key('console_licences_close')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('console_licences_sheet')), findsNothing);
+      }
+    });
+
+    testWidgets('a package opens IN PLACE, one at a time, and its text is '
+        "the registry's own", (tester) async {
+      LicenseRegistry.addLicense(
+        () => Stream.fromIterable([
+          const LicenseEntryWithLineBreaks(['alpha_pkg'], 'ALPHA TERMS'),
+          const LicenseEntryWithLineBreaks(['beta_pkg'], 'BETA TERMS'),
+        ]),
+      );
+      await pump(tester, tab: SystemTab.about);
       await tester.tap(find.byKey(const Key('system_about_notices')));
       await tester.pumpAndSettle();
 
-      expect(find.byType(LicensePage), findsOneWidget);
+      // Shut: the drawer mounts nothing, so there is nothing to read.
+      expect(find.text('ALPHA TERMS'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('console_licence_alpha_pkg')));
+      await tester.pumpAndSettle();
+      expect(find.text('ALPHA TERMS'), findsOneWidget);
+
+      // One at a time — opening the next shuts the last.
+      await tester.tap(find.byKey(const Key('console_licence_beta_pkg')));
+      await tester.pumpAndSettle();
+      expect(find.text('BETA TERMS'), findsOneWidget);
+      expect(find.text('ALPHA TERMS'), findsNothing);
+    });
+
+    testWidgets('the panel opens mid-animation, not between two frames', (
+      tester,
+    ) async {
+      LicenseRegistry.addLicense(
+        () => Stream.fromIterable([
+          const LicenseEntryWithLineBreaks(['gamma_pkg'], 'GAMMA TERMS'),
+        ]),
+      );
+      await pump(tester, tab: SystemTab.about);
+      await tester.tap(find.byKey(const Key('system_about_notices')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('console_licence_gamma_pkg')));
+      await tester.pump();
+      await tester.pump(kConsoleMotion ~/ 2);
+
+      // The DRAWER's box, not the text's: the text is laid out at full size
+      // from the first frame and the drawer clips it, so measuring the text
+      // reports a settled size all the way through.
+      const drawer = Key('console_licence_drawer_gamma_pkg');
+      final opening = tester.getRect(find.byKey(drawer));
+      await tester.pumpAndSettle();
+      final settled = tester.getRect(find.byKey(drawer));
+
+      // Grown out from under the row rather than appearing at full height.
+      expect(opening.height, lessThan(settled.height));
+      expect(opening.height, greaterThan(0));
     });
 
     testWidgets('the name row opens the console rename sheet', (tester) async {

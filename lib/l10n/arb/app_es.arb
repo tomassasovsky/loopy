@@ -1981,5 +1981,23 @@
                 "type": "int"
             }
         }
+    },
+    "storageActionFailed": "No se completó. No se modificó nada en el disco.",
+    "updatesDownloadFailedBanner": "Falló la descarga — {reason}",
+    "@updatesDownloadFailedBanner": {
+        "placeholders": {
+            "reason": {
+                "type": "String"
+            }
+        }
+    },
+    "licencesReading": "Leyendo el registro de licencias…",
+    "licenceCount": "{count, plural, =1{1 licencia} other{{count} licencias}}",
+    "@licenceCount": {
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
     }
 }

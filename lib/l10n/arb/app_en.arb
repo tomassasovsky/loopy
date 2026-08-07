@@ -2654,5 +2654,23 @@
                 "type": "int"
             }
         }
+    },
+    "storageActionFailed": "That didn't finish. Nothing on the disk was changed.",
+    "updatesDownloadFailedBanner": "Download failed — {reason}",
+    "@updatesDownloadFailedBanner": {
+        "placeholders": {
+            "reason": {
+                "type": "String"
+            }
+        }
+    },
+    "licencesReading": "Reading the licence registry…",
+    "licenceCount": "{count, plural, =1{1 licence} other{{count} licences}}",
+    "@licenceCount": {
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
     }
 }

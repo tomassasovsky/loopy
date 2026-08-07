@@ -91,7 +91,13 @@ class UpdateCubit extends Cubit<UpdateState> {
       );
     } on Object catch (error) {
       if (!isClosed) {
-        emit(state.copyWith(phase: UpdatePhase.error, errorMessage: '$error'));
+        emit(
+          state.copyWith(
+            phase: UpdatePhase.error,
+            errorMessage: '$error',
+            failure: UpdateFailure.check,
+          ),
+        );
       }
     }
   }
@@ -119,7 +125,13 @@ class UpdateCubit extends Cubit<UpdateState> {
       }
     } on Object catch (error) {
       if (!isClosed) {
-        emit(state.copyWith(phase: UpdatePhase.error, errorMessage: '$error'));
+        emit(
+          state.copyWith(
+            phase: UpdatePhase.error,
+            errorMessage: '$error',
+            failure: UpdateFailure.download,
+          ),
+        );
       }
     }
   }

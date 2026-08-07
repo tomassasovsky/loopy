@@ -219,18 +219,30 @@ class UpdatesSystemTab extends StatelessWidget {
         ),
         _actionHeight,
       ),
+      // A failed download is not a failed check, and saying so matters twice
+      // over: the sentence names the wrong operation, and the retry runs the
+      // wrong one — offering to look again for a build already on offer.
       UpdatePhase.error => _wrap(
         ConsoleBanner(
           key: const Key('system_update_banner'),
-          message: l10n.updatesCheckFailedBanner(
-            state.errorMessage ?? l10n.updatesCheckFailedReason,
-          ),
+          message: switch (state.failure) {
+            UpdateFailure.download => l10n.updatesDownloadFailedBanner(
+              state.errorMessage ?? l10n.updatesCheckFailedReason,
+            ),
+            UpdateFailure.check || null => l10n.updatesCheckFailedBanner(
+              state.errorMessage ?? l10n.updatesCheckFailedReason,
+            ),
+          },
           tone: ConsoleBannerTone.failure,
           actions: [
             ConsoleSmallButton(
               key: const Key('system_update_action'),
               label: l10n.consoleTryAgain,
-              onPressed: () => unawaited(cubit.check()),
+              onPressed: () => unawaited(
+                state.failure == UpdateFailure.download
+                    ? cubit.startDownload()
+                    : cubit.check(),
+              ),
             ),
           ],
         ),

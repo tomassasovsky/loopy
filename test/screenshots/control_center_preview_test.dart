@@ -8,6 +8,7 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -1444,6 +1445,37 @@ void main() {
     await expectLater(
       find.byType(Scaffold),
       matchesGoldenFile('goldens/control_center_system_storage.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('system domain, the open-source notices panel', (tester) async {
+    LicenseRegistry.addLicense(
+      () => Stream.fromIterable([
+        const LicenseEntryWithLineBreaks(
+          [
+            'segno',
+          ],
+          'GNU GENERAL PUBLIC LICENSE\n\nVersion 3, 29 June 2007\n\nThis '
+          'program is free software: you can redistribute it and/or modify '
+          'it under the terms of the GNU General Public License as '
+          'published by the Free Software Foundation, either version 3 of '
+          'the License, or (at your option) any later version.',
+        ),
+        const LicenseEntryWithLineBreaks(['miniaudio'], 'Public domain.'),
+        const LicenseEntryWithLineBreaks(['vst3sdk'], 'MIT License'),
+      ]),
+    );
+    await pumpSystem(tester, SystemTab.about);
+    await tester.tap(find.byKey(const Key('system_about_notices')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('console_licence_segno')));
+    await tester.pumpAndSettle();
+
+    await expectLater(
+      // MaterialApp, not Scaffold: the panel is a route in the navigator's
+      // overlay, which sits ABOVE the Scaffold rather than inside it.
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/control_center_system_licences.png'),
     );
   }, skip: !hasFonts);
 

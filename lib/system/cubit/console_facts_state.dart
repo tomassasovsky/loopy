@@ -27,6 +27,7 @@ class ConsoleFactsState extends Equatable {
     this.exportDestination = '',
     this.givenName = '',
     this.busy = false,
+    this.actionFailed = false,
   });
 
   /// Whether this build can read any of it.
@@ -54,12 +55,29 @@ class ConsoleFactsState extends Equatable {
   /// Whether a housekeeping action is running.
   final bool busy;
 
+  /// Whether the last housekeeping action failed.
+  ///
+  /// Separate from [status], and that separation is the whole point: a write
+  /// that fails says nothing about whether the READ was good. Folding the two
+  /// together made a refused export claim the disk was unreadable and take
+  /// five correct figures off the screen with it.
+  final bool actionFailed;
+
   /// Whether the Storage face can draw figures at all.
   ///
-  /// A supported build whose read threw is NOT usable: zeroes drawn as facts
+  /// A supported build whose READ threw is not usable: zeroes drawn as facts
   /// would be worse than saying nothing, so the face replaces the whole card
-  /// with one that says it cannot read the disk.
+  /// with one that says it cannot read the disk. A failed housekeeping WRITE
+  /// is not that — see [actionFailed].
   bool get hasStorage => storage.known && status != ConsoleFactsStatus.failed;
+
+  /// Whether the read has come back at all, either way.
+  ///
+  /// The face draws nothing while a read is in flight rather than the "cannot
+  /// read the disk" card: an answer that has not arrived is not an answer of
+  /// no.
+  bool get settled =>
+      status == ConsoleFactsStatus.ready || status == ConsoleFactsStatus.failed;
 
   /// Returns a copy with the given fields replaced.
   ConsoleFactsState copyWith({
@@ -70,6 +88,7 @@ class ConsoleFactsState extends Equatable {
     String? exportDestination,
     String? givenName,
     bool? busy,
+    bool? actionFailed,
   }) => ConsoleFactsState(
     supported: supported ?? this.supported,
     status: status ?? this.status,
@@ -78,6 +97,7 @@ class ConsoleFactsState extends Equatable {
     exportDestination: exportDestination ?? this.exportDestination,
     givenName: givenName ?? this.givenName,
     busy: busy ?? this.busy,
+    actionFailed: actionFailed ?? this.actionFailed,
   );
 
   @override
@@ -89,5 +109,6 @@ class ConsoleFactsState extends Equatable {
     exportDestination,
     givenName,
     busy,
+    actionFailed,
   ];
 }

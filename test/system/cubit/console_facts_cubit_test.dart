@@ -6,6 +6,31 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
+/// A client that reads fine and refuses every write.
+class _FailingWriteClient implements ConsoleFactsClient {
+  final _inner = FakeConsoleFactsClient(latency: Duration.zero);
+
+  @override
+  bool get isSupported => true;
+
+  @override
+  Future<StorageUsage> storage() => _inner.storage();
+
+  @override
+  Future<ConsoleFacts> facts() => _inner.facts();
+
+  @override
+  Future<String> exportDestination() => _inner.exportDestination();
+
+  @override
+  Future<int> deleteCapturesOlderThan(int days) async =>
+      throw StateError('read-only');
+
+  @override
+  Future<void> exportEverything(String destination) async =>
+      throw StateError('read-only');
+}
+
 /// A client that throws every read.
 class _FailingClient implements ConsoleFactsClient {
   @override
@@ -88,17 +113,48 @@ void main() {
       expect(cubit.state.busy, isFalse);
     });
 
-    test(
-      'a delete that throws leaves the face saying it cannot read',
-      () async {
-        final cubit = build(client: _FailingClient());
-        addTearDown(cubit.close);
+    test('a housekeeping write that throws does NOT invalidate a good '
+        'read', () async {
+      final cubit = build(client: _FailingWriteClient());
+      addTearDown(cubit.close);
+      await cubit.load();
+      expect(cubit.state.hasStorage, isTrue);
 
-        expect(await cubit.deleteCapturesOlderThan(30), 0);
-        expect(cubit.state.status, ConsoleFactsStatus.failed);
-        expect(cubit.state.busy, isFalse);
-      },
-    );
+      expect(await cubit.deleteCapturesOlderThan(30), 0);
+
+      // The figures were measured; the WRITE is what failed.
+      expect(cubit.state.hasStorage, isTrue);
+      expect(cubit.state.storage.captureBytes, greaterThan(0));
+      expect(cubit.state.actionFailed, isTrue);
+      expect(cubit.state.busy, isFalse);
+
+      // An export failure behaves the same way.
+      await cubit.load();
+      expect(cubit.state.actionFailed, isFalse);
+      await cubit.exportEverything();
+      expect(cubit.state.hasStorage, isTrue);
+      expect(cubit.state.actionFailed, isTrue);
+    });
+
+    test('a read that throws IS the case where nothing can be drawn', () async {
+      final cubit = build(client: _FailingClient());
+      addTearDown(cubit.close);
+
+      await cubit.load();
+
+      expect(cubit.state.status, ConsoleFactsStatus.failed);
+      expect(cubit.state.settled, isTrue);
+      expect(cubit.state.hasStorage, isFalse);
+    });
+
+    test('a read in flight is not settled — it has not answered yet', () async {
+      final cubit = build();
+      addTearDown(cubit.close);
+      expect(cubit.state.settled, isFalse);
+
+      await cubit.load();
+      expect(cubit.state.settled, isTrue);
+    });
 
     test('exporting with nowhere to export does nothing at all', () async {
       final cubit = build(
