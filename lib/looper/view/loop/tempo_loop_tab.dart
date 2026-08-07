@@ -1,0 +1,365 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/common/console_surface.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/record_options_cubit.dart';
+import 'package:segno/looper/cubit/tempo_cubit.dart';
+import 'package:segno/looper/view/loop/tempo_keypad_sheet.dart';
+import 'package:segno/theme/theme.dart';
+
+/// Exactly the transport fields the Tempo face draws.
+///
+/// A record, so `context.select` can compare it structurally: `TransportState`
+/// also carries `masterPositionFrames` and `currentBeat`, which move on every
+/// poll tick, and selecting the whole thing would rebuild the face at frame
+/// rate for values it never shows.
+typedef _TempoValues = ({
+  double tempoBpm,
+  int tsNum,
+  int tsDen,
+  GridDivision quantizeDiv,
+  int countInBars,
+  bool syncTempo,
+});
+
+_TempoValues _tempoValues(TransportState t) => (
+  tempoBpm: t.tempoBpm,
+  tsNum: t.tsNum,
+  tsDen: t.tsDen,
+  quantizeDiv: t.quantizeDiv,
+  countInBars: t.countInBars,
+  syncTempo: t.syncTempo,
+);
+
+/// Which row of the Tempo face has its chooser open. At most one — an
+/// accordion across the whole face, not one per card: two drawers open at once
+/// would push the second past the sheet the face has to fit in.
+enum _TempoRow {
+  /// The 17 valid time signatures.
+  signature,
+
+  /// Auto, or a fixed multiple of the base loop.
+  length,
+
+  /// The musical quantization granularity.
+  quantise,
+
+  /// Count-in measures.
+  countIn,
+}
+
+/// The Tempo tab of the Loop domain: what the grid is, and what the loop does
+/// about it.
+///
+/// **Live values come off the transport, writes go through the cubits.** Every
+/// readout here is [LooperBloc]'s `TransportState` — the tempo especially,
+/// because [TempoCubit] holds *explicitly configured intent* (`0` until
+/// someone types one) and never moves for a tapped or loop-derived tempo.
+/// Reading the cubit to display "the current tempo" is a bug that only shows
+/// up for the inputs the user cannot type.
+///
+/// The one exception is the loop length, and it is an exception because the
+/// engine projects no global default onto the transport: `RecordOptionsCubit`
+/// is the only place that value exists.
+class TempoLoopTab extends StatefulWidget {
+  /// Creates a [TempoLoopTab].
+  const TempoLoopTab({super.key});
+
+  @override
+  State<TempoLoopTab> createState() => _TempoLoopTabState();
+}
+
+class _TempoLoopTabState extends State<TempoLoopTab> {
+  _TempoRow? _open;
+
+  void _toggle(_TempoRow row) =>
+      setState(() => _open = _open == row ? null : row);
+
+  /// Closes the drawer and applies [write]. Every pick does both: a chooser
+  /// left open after its answer arrived is a list of alternatives to a
+  /// question nobody is still asking.
+  void _pick(VoidCallback write) {
+    setState(() => _open = null);
+    write();
+  }
+
+  /// A chooser whose options are bare tokens, laid out as a grid.
+  ///
+  /// Every option on this face is one — `3/4`, `x2`, `1/8`, `1 bar` — so all
+  /// four choosers take the grid. See [ConsoleChipGrid] for why a token in a
+  /// 70px row is the wrong shape.
+  Widget _grid<T>({
+    required String slot,
+    required bool open,
+    required List<ConsoleSegment<T>> options,
+    required T current,
+    required ValueChanged<T> onPick,
+  }) => ConsoleChooser.grid(
+    key: Key(slot),
+    open: open,
+    grid: ConsoleChipGrid<T>(
+      options: options,
+      selected: {current},
+      onTap: (value) => _pick(() => onPick(value)),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    // `select`, not `watch`: TransportState carries masterPositionFrames and
+    // currentBeat, which move on every ~16 ms poll — watching the whole bloc
+    // rebuilds this face, chip grids and LayoutBuilder included, at poll rate
+    // while the rig runs.
+    final transport = context.select<LooperBloc, _TempoValues>(
+      (bloc) => _tempoValues(bloc.state.transport),
+    );
+    final multiple = context.select<RecordOptionsCubit, int>(
+      (cubit) => cubit.state.defaultMultiple,
+    );
+    final tempo = context.read<TempoCubit>();
+    final options = context.read<RecordOptionsCubit>();
+
+    return KeyedSubtree(
+      key: const Key('loop_tempo_tab'),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: kConsoleGroupGap),
+            ConsoleGroupLabel(l10n.loopTempoGroup),
+            const SizedBox(height: kConsoleLabelGap),
+            ConsoleCard(
+              children: [
+                _tempoRow(context, transport),
+                ..._signatureRow(context, transport, tempo),
+                ..._lengthRow(context, multiple, options),
+                ..._quantiseRow(context, transport, tempo),
+                ..._countInRow(context, transport, tempo),
+              ],
+            ),
+            const SizedBox(height: kConsoleBlockGap),
+            ConsoleCard(
+              children: [
+                ConsoleRow(
+                  key: const Key('loop_sync_row'),
+                  title: l10n.syncTempoTitle,
+                  subtitle: l10n.syncTempoSubtitle,
+                  showDivider: false,
+                  trailing: ConsoleSwitch(
+                    key: const Key('loop_sync_switch'),
+                    value: transport.syncTempo,
+                    semanticLabel: l10n.syncTempoTitle,
+                    onChanged: (on) => unawaited(tempo.setSyncTempo(value: on)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ----------------------------------------------------------------- tempo
+
+  /// The tempo row. Opens the keypad sheet rather than a drawer: a tempo is
+  /// typed, not chosen, and the console's number entry is a sheet
+  /// (`NETWORK / wifi-password` draws the same shape for a passphrase).
+  Widget _tempoRow(BuildContext context, _TempoValues transport) {
+    final l10n = context.l10n;
+    return ConsoleRow(
+      key: const Key('loop_tempo_row'),
+      title: l10n.loopTempoRow,
+      subtitle: l10n.loopTempoHint,
+      // `0` is "no tempo has ever been established", which is a different
+      // fact from "the tempo is zero" — the console says which.
+      state: transport.tempoBpm > 0
+          ? l10n.loopTempoReadout(transport.tempoBpm.toStringAsFixed(1))
+          : l10n.loopTempoUnset,
+      expanded: false,
+      onTap: () => unawaited(showTempoKeypadSheet(context)),
+    );
+  }
+
+  // ------------------------------------------------------------- signature
+
+  List<Widget> _signatureRow(
+    BuildContext context,
+    _TempoValues transport,
+    TempoCubit tempo,
+  ) {
+    final l10n = context.l10n;
+    final open = _open == _TempoRow.signature;
+    return [
+      ConsoleRow(
+        key: const Key('loop_signature_row'),
+        title: l10n.timeSignatureLabel,
+        state: l10n.timeSignatureOption(transport.tsNum, transport.tsDen),
+        expanded: open,
+        fill: open ? context.surface.control : null,
+        onTap: () => _toggle(_TempoRow.signature),
+      ),
+      // Two groups, not one list of seventeen. The note value is what you
+      // narrow by first, and it is the split the Settings picker and the
+      // engine's own `kValidTimeSignatures` already carry — six over a
+      // quarter note, eleven over an eighth. `AUDIO / settings-rate` draws
+      // exactly this shape: one drawer, two captioned sub-groups.
+      ConsoleChooser(
+        key: const Key('loop_signature_slot'),
+        open: open,
+        children: [
+          for (final (caption, den) in [
+            (l10n.loopSignatureQuarterGroup, 4),
+            (l10n.loopSignatureEighthGroup, 8),
+          ]) ...[
+            ConsoleDrawerLabel(caption),
+            Padding(
+              padding: ConsoleChooser.gridInset.copyWith(top: 0),
+              child: ConsoleChipGrid<(int, int)>(
+                selected: {(transport.tsNum, transport.tsDen)},
+                options: [
+                  for (final ts in kValidTimeSignatures)
+                    if (ts.$2 == den)
+                      ConsoleSegment(
+                        value: ts,
+                        label: l10n.timeSignatureOption(ts.$1, ts.$2),
+                        optionKey: Key('loop_signature_${ts.$1}_${ts.$2}'),
+                      ),
+                ],
+                onTap: (ts) => _pick(
+                  () => unawaited(tempo.setTimeSignature(ts.$1, ts.$2)),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    ];
+  }
+
+  // ---------------------------------------------------------------- length
+
+  /// The multiples offered: Auto, then a fixed count of base loops.
+  ///
+  /// The mockups draw "8 bars" here, and the app has no bars figure behind
+  /// this setting — what it has is a multiple of the base loop the first take
+  /// defines. The row says the multiple.
+  static const List<int> _multiples = [0, 1, 2, 3];
+
+  List<Widget> _lengthRow(
+    BuildContext context,
+    int multiple,
+    RecordOptionsCubit options,
+  ) {
+    final l10n = context.l10n;
+    final open = _open == _TempoRow.length;
+    String label(int value) =>
+        value == 0 ? l10n.loopLengthAuto : l10n.loopLengthMultiple(value);
+    return [
+      ConsoleRow(
+        key: const Key('loop_length_row'),
+        title: l10n.loopLength,
+        // Only while it reads Auto: once a fixed multiple is set, the first
+        // take no longer sets it and the subtitle would be a lie.
+        subtitle: multiple == 0 ? l10n.loopLengthHint : null,
+        state: label(multiple),
+        expanded: open,
+        fill: open ? context.surface.control : null,
+        onTap: () => _toggle(_TempoRow.length),
+      ),
+      _grid<int>(
+        slot: 'loop_length_slot',
+        open: open,
+        current: multiple,
+        options: [
+          for (final value in _multiples)
+            ConsoleSegment(
+              value: value,
+              label: label(value),
+              optionKey: Key('loop_length_$value'),
+            ),
+        ],
+        onPick: (value) => unawaited(options.setDefaultMultiple(value)),
+      ),
+    ];
+  }
+
+  // -------------------------------------------------------------- quantise
+
+  List<Widget> _quantiseRow(
+    BuildContext context,
+    _TempoValues transport,
+    TempoCubit tempo,
+  ) {
+    final l10n = context.l10n;
+    final open = _open == _TempoRow.quantise;
+    final labels = quantizeDivisionLabels(l10n);
+    return [
+      ConsoleRow(
+        key: const Key('loop_quantise_row'),
+        title: l10n.loopQuantiseRow,
+        subtitle: l10n.loopQuantiseHint,
+        state: labels[transport.quantizeDiv],
+        expanded: open,
+        fill: open ? context.surface.control : null,
+        onTap: () => _toggle(_TempoRow.quantise),
+      ),
+      _grid<GridDivision>(
+        slot: 'loop_quantise_slot',
+        open: open,
+        current: transport.quantizeDiv,
+        options: [
+          for (final div in GridDivision.values)
+            ConsoleSegment(
+              value: div,
+              label: labels[div]!,
+              optionKey: Key('loop_quantise_${div.name}'),
+            ),
+        ],
+        onPick: (div) => unawaited(tempo.setQuantizeDiv(div)),
+      ),
+    ];
+  }
+
+  // -------------------------------------------------------------- count-in
+
+  List<Widget> _countInRow(
+    BuildContext context,
+    _TempoValues transport,
+    TempoCubit tempo,
+  ) {
+    final l10n = context.l10n;
+    final open = _open == _TempoRow.countIn;
+    final labels = countInLabels(l10n);
+    return [
+      ConsoleRow(
+        key: const Key('loop_count_in_row'),
+        title: l10n.loopCountInRow,
+        state: labels[transport.countInBars] ?? l10n.countInOffLabel,
+        expanded: open,
+        showDivider: false,
+        fill: open ? context.surface.control : null,
+        onTap: () => _toggle(_TempoRow.countIn),
+      ),
+      _grid<int>(
+        slot: 'loop_count_in_slot',
+        open: open,
+        current: transport.countInBars,
+        options: [
+          for (final bars in kCountInBarOptions)
+            ConsoleSegment(
+              value: bars,
+              label: labels[bars]!,
+              optionKey: Key('loop_count_in_$bars'),
+            ),
+        ],
+        onPick: (bars) => unawaited(tempo.setCountInBars(bars)),
+      ),
+    ];
+  }
+}

@@ -46,6 +46,9 @@ class TrayNavigationRail extends StatelessWidget {
         // A foot controller, not a keyboard: this domain covers the floor
         // pedal and whatever MIDI box is beside it, and neither is a piano.
         SettingsTrayDestination.control => Icons.dialpad,
+        // A repeat arrow, as the mockups draw it: this domain is about what
+        // the loop goes round to, not about any one of tempo/click/mode.
+        SettingsTrayDestination.loop => Icons.repeat,
         SettingsTrayDestination.tuner => Icons.graphic_eq,
         // An antenna, not a WiFi fan or a Bluetooth rune: either radio's own
         // glyph on a shared entry would read as only that one radio.
@@ -60,6 +63,7 @@ class TrayNavigationRail extends StatelessWidget {
   ) => switch (destination) {
     SettingsTrayDestination.home => l10n.trayHomeLabel,
     SettingsTrayDestination.control => l10n.trayControlLabel,
+    SettingsTrayDestination.loop => l10n.trayLoopLabel,
     SettingsTrayDestination.tuner => l10n.trayTunerLabel,
     SettingsTrayDestination.network => l10n.trayNetworkLabel,
   };

@@ -135,7 +135,7 @@ void main() {
       await tester.tap(find.byKey(const Key('looperMode_option_sync')));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('looperMode_confirm_dialog')), findsNothing);
+      expect(find.byKey(const Key('console_confirm_confirm')), findsNothing);
       verify(
         () => bloc.add(const LooperModeChanged(LooperMode.sync)),
       ).called(1);
@@ -173,7 +173,7 @@ void main() {
       // The confirmation is shown, and the mode change is NOT dispatched yet
       // — this is the exact silent-no-op the D4 UX flow exists to prevent.
       expect(
-        find.byKey(const Key('looperMode_confirm_dialog')),
+        find.byKey(const Key('console_confirm_confirm')),
         findsOneWidget,
       );
       verifyNever(() => bloc.add(any()));
@@ -191,11 +191,11 @@ void main() {
 
     await tester.tap(find.byKey(const Key('looperMode_option_sync')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('looperMode_confirm_cancel')));
+    await tester.tap(find.byKey(const Key('console_confirm_cancel')));
     await tester.pumpAndSettle();
 
     expect(
-      find.byKey(const Key('looperMode_confirm_dialog')),
+      find.byKey(const Key('console_confirm_confirm')),
       findsNothing,
     );
     verifyNever(() => bloc.add(any()));
@@ -220,7 +220,7 @@ void main() {
 
       await tester.tap(find.byKey(const Key('looperMode_option_sync')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('looperMode_confirm_confirm')));
+      await tester.tap(find.byKey(const Key('console_confirm_confirm')));
       // Let the confirm handler's `clearAll()` await settle and reach the
       // "await the bloc report cleared" point.
       await tester.pump();
@@ -268,14 +268,14 @@ void main() {
 
       await tester.tap(find.byKey(const Key('looperMode_option_sync')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('looperMode_confirm_confirm')));
+      await tester.tap(find.byKey(const Key('console_confirm_confirm')));
       await tester.pumpAndSettle();
       verify(() => repository.clear()).called(1);
 
       // The confirm dialog is already dismissed at this point (its pop
       // animation has settled) — before the SnackBar fix, the screen here
       // looked identical to before the user ever tapped anything.
-      expect(find.byKey(const Key('looperMode_confirm_dialog')), findsNothing);
+      expect(find.byKey(const Key('console_confirm_confirm')), findsNothing);
       expect(
         find.byKey(const Key('looperMode_timeout_snackbar')),
         findsNothing,

@@ -4,6 +4,7 @@ import 'package:equatable/equatable.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/control/control_tab.dart';
+import 'package:segno/looper/loop_tab.dart';
 import 'package:segno/network/network_tab.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -84,8 +85,9 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// disposes the bloc's stream; overriding it here would be a hard
   /// invalid-override error, not a UI action. Always returns to the home
   /// face so the next open isn't stuck in a config domain — but leaves
-  /// [SettingsTrayState.networkTab] and [SettingsTrayState.controlTab] alone,
-  /// so returning to a domain lands where it was left.
+  /// [SettingsTrayState.networkTab], [SettingsTrayState.controlTab] and
+  /// [SettingsTrayState.loopTab] alone, so returning to a domain lands where
+  /// it was left.
   void closeTray() => emit(
     state.copyWith(
       dragProgress: 0,
@@ -129,6 +131,9 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
 
   /// Moves the Control domain's tab. Same rule as [showNetworkTab].
   void showControlTab(ControlTab tab) => emit(state.copyWith(controlTab: tab));
+
+  /// Moves the Loop domain's tab. Same rule as [showNetworkTab].
+  void showLoopTab(LoopTab tab) => emit(state.copyWith(loopTab: tab));
 
   /// Returns from an expanded panel to the tile grid.
   void showHome() =>

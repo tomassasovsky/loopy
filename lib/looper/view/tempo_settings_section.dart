@@ -10,11 +10,6 @@ import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/setup/setup_surface.dart';
 import 'package:segno/theme/surface_theme.dart';
 
-/// The click's own gain-stage ceiling — matches the engine's `LE_MAX_GAIN`
-/// (2.0, +6.02 dB headroom above unity), the same ceiling every other volume
-/// control in the app (lane/monitor) uses.
-const double _kMaxClickGain = 2;
-
 /// The looper feature's own tempo settings surface (index plan's UI
 /// conventions: tempo/click/quantize/count-in controls live here, not in
 /// `audio_setup`, which stays device/routing-oriented): BPM + tap tempo, the
@@ -336,14 +331,7 @@ class _QuantizeDivisionPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final labels = {
-      GridDivision.off: l10n.quantizeDivOffLabel,
-      GridDivision.bar: l10n.quantizeDivBarLabel,
-      GridDivision.half: l10n.quantizeDivHalfLabel,
-      GridDivision.quarter: l10n.quantizeDivQuarterLabel,
-      GridDivision.eighth: l10n.quantizeDivEighthLabel,
-      GridDivision.sixteenth: l10n.quantizeDivSixteenthLabel,
-    };
+    final labels = quantizeDivisionLabels(l10n);
     return SetupOptionRow<GridDivision>(
       selected: selected,
       onSelected: onSelected,
@@ -384,12 +372,7 @@ class _ClickSettingsGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final labels = {
-      ClickMode.off: l10n.clickModeOffLabel,
-      ClickMode.rec: l10n.clickModeRecLabel,
-      ClickMode.recFirst: l10n.clickModeRecFirstLabel,
-      ClickMode.playRec: l10n.clickModePlayRecLabel,
-    };
+    final labels = clickModeLabels(l10n);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -432,7 +415,7 @@ class _ClickVolumeSlider extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final clamped = volume.clamp(0.0, _kMaxClickGain);
+    final clamped = volume.clamp(0.0, kMaxClickGain);
     return Row(
       children: [
         Expanded(
@@ -448,7 +431,7 @@ class _ClickVolumeSlider extends StatelessWidget {
                 child: Slider(
                   key: const Key('tempoSettings_clickVolume_slider'),
                   value: clamped,
-                  max: _kMaxClickGain,
+                  max: kMaxClickGain,
                   onChanged: onChanged,
                 ),
               ),
@@ -483,30 +466,17 @@ class _CountInPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final labels = countInLabels(l10n);
     return SetupOptionRow<int>(
       selected: bars,
       onSelected: onSelected,
       options: [
-        SetupOption(
-          value: 0,
-          label: l10n.countInOffLabel,
-          optionKey: const Key('tempoSettings_countIn_0'),
-        ),
-        SetupOption(
-          value: 1,
-          label: l10n.countInBarsLabel1,
-          optionKey: const Key('tempoSettings_countIn_1'),
-        ),
-        SetupOption(
-          value: 2,
-          label: l10n.countInBarsLabel2,
-          optionKey: const Key('tempoSettings_countIn_2'),
-        ),
-        SetupOption(
-          value: 4,
-          label: l10n.countInBarsLabel4,
-          optionKey: const Key('tempoSettings_countIn_4'),
-        ),
+        for (final bars in kCountInBarOptions)
+          SetupOption(
+            value: bars,
+            label: labels[bars]!,
+            optionKey: Key('tempoSettings_countIn_$bars'),
+          ),
       ],
     );
   }

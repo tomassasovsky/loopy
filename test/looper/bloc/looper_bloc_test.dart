@@ -404,6 +404,72 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
+    'LooperAllOneShotToggled sweeps every track the repository is holding, '
+    'from the repository snapshot rather than the bloc state — the console '
+    "switch's whole point is that no half-applied sweep is observable",
+    build: () {
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          tracks: [
+            Track(oneShot: true),
+            Track(channel: 1),
+            Track(channel: 2, oneShot: true),
+          ],
+        ),
+      );
+      return buildBloc();
+    },
+    act: (bloc) => bloc.add(const LooperAllOneShotToggled(oneShot: true)),
+    verify: (_) {
+      for (final channel in [0, 1, 2]) {
+        verify(
+          () => repository.setOneShot(channel: channel, oneShot: true),
+        ).called(1);
+      }
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperAllOneShotToggled carries the flag it was given — clearing the '
+    'switch clears every track, it does not toggle each one',
+    build: () {
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          tracks: [Track(oneShot: true), Track(channel: 1, oneShot: true)],
+        ),
+      );
+      return buildBloc();
+    },
+    act: (bloc) => bloc.add(const LooperAllOneShotToggled(oneShot: false)),
+    verify: (_) {
+      verify(
+        () => repository.setOneShot(channel: 0, oneShot: false),
+      ).called(1);
+      verify(
+        () => repository.setOneShot(channel: 1, oneShot: false),
+      ).called(1);
+      verifyNever(
+        () => repository.setOneShot(
+          channel: any(named: 'channel'),
+          oneShot: true,
+        ),
+      );
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperAllOneShotToggled with no tracks writes nothing',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperAllOneShotToggled(oneShot: true)),
+    verify: (_) => verifyNever(
+      () => repository.setOneShot(
+        channel: any(named: 'channel'),
+        oneShot: any(named: 'oneShot'),
+      ),
+    ),
+  );
+
+  blocTest<LooperBloc, LooperState>(
     'LooperCrownPrimaryPressed forwards the channel to the repository (D18, '
     'B5c)',
     build: buildBloc,

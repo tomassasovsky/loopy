@@ -312,7 +312,7 @@ void main() {
       await tester.tap(find.byKey(const Key('wifi_disconnect')));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('console_forget_confirm')), findsNothing);
+      expect(find.byKey(const Key('console_confirm_confirm')), findsNothing);
       expect(client.connectedSsid, isEmpty);
     });
 
@@ -327,10 +327,10 @@ void main() {
       await tester.tap(find.byKey(const Key('wifi_forget')));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('console_forget_confirm')), findsOneWidget);
+      expect(find.byKey(const Key('console_confirm_confirm')), findsOneWidget);
       expect(client.forgotten, isEmpty, reason: 'not until confirmed');
 
-      await tester.tap(find.byKey(const Key('console_forget_confirm')));
+      await tester.tap(find.byKey(const Key('console_confirm_confirm')));
       await tester.pumpAndSettle();
       expect(client.forgotten, ['HomeNet']);
     });
@@ -343,7 +343,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('wifi_forget')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('console_forget_cancel')));
+      await tester.tap(find.byKey(const Key('console_confirm_cancel')));
       await tester.pumpAndSettle();
 
       expect(client.forgotten, isEmpty);
@@ -559,7 +559,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(client.forgotten, isEmpty);
-      await tester.tap(find.byKey(const Key('console_forget_confirm')));
+      await tester.tap(find.byKey(const Key('console_confirm_confirm')));
       await tester.pumpAndSettle();
       expect(client.forgotten, ['AA:AA:AA:AA:AA:AA']);
     });

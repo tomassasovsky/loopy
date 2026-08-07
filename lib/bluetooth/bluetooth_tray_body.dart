@@ -358,7 +358,7 @@ class _BluetoothTrayBodyState extends State<BluetoothTrayBody> {
     BluetoothDevice device,
   ) async {
     final l10n = context.l10n;
-    final confirmed = await showConsoleForgetDialog(
+    final confirmed = await showConsoleConfirmDialog(
       context,
       title: l10n.bluetoothForgetTitleNamed(device.name),
       body: l10n.bluetoothForgetBody,

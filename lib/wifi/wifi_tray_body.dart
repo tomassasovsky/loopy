@@ -362,7 +362,7 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
     String ssid,
   ) async {
     final l10n = context.l10n;
-    final confirmed = await showConsoleForgetDialog(
+    final confirmed = await showConsoleConfirmDialog(
       context,
       title: l10n.wifiForgetTitleNamed(ssid),
       body: l10n.wifiForgetBody,

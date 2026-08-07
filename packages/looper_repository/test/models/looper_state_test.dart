@@ -26,6 +26,28 @@ void main() {
       expect(a.hashCode, const LooperState().hashCode);
     });
 
+    test('allOneShot is false on an empty rig, not vacuously true', () {
+      // `every` on an empty list is true, which is never what the rig-wide
+      // one-shot question means — a stopped engine reporting no tracks would
+      // otherwise answer "yes, all of them".
+      expect(const LooperState().allOneShot, isFalse);
+    });
+
+    test('allOneShot needs EVERY track, not just one', () {
+      expect(
+        const LooperState(
+          tracks: [Track(oneShot: true), Track(channel: 1)],
+        ).allOneShot,
+        isFalse,
+      );
+      expect(
+        const LooperState(
+          tracks: [Track(oneShot: true), Track(channel: 1, oneShot: true)],
+        ).allOneShot,
+        isTrue,
+      );
+    });
+
     test('Master insert fields default and participate in equality', () {
       const state = LooperState();
       expect(state.masterEffects, isEmpty);

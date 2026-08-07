@@ -49,6 +49,14 @@ class LooperState extends Equatable {
   /// Whether any track holds recorded audio.
   bool get hasContent => tracks.any((t) => t.hasContent);
 
+  /// Whether EVERY track is one-shot — the rig-wide answer the console's
+  /// one-shot switch shows.
+  ///
+  /// Guarded on non-empty deliberately: `every` on an empty list is vacuously
+  /// true, so a stopped engine reporting no tracks would otherwise answer
+  /// "yes, all of them", which is never what the question means.
+  bool get allOneShot => tracks.isNotEmpty && tracks.every((t) => t.oneShot);
+
   @override
   List<Object?> get props => [
     transport,

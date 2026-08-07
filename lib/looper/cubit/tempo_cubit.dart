@@ -1,7 +1,59 @@
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/l10n/l10n.dart';
 import 'package:settings_repository/settings_repository.dart';
+
+/// The click's own gain-stage ceiling — the engine's `LE_MAX_GAIN` (2.0,
+/// +6.02 dB above unity), the same ceiling every other volume control in the
+/// app (lane/monitor) uses.
+///
+/// Beside the cubit that writes the value rather than private to one of the
+/// surfaces that draws it: two click controls now exist — the Settings slider
+/// and the console's own bar — and a ceiling known to only one of them is a
+/// pair of controls with different reach over the same setting.
+const double kMaxClickGain = 2;
+
+/// The tempo range the engine accepts, inclusive.
+///
+/// `LooperRepository.setTempo` clamps to this and reports nothing, so a
+/// surface that submits outside it closes on a value the rig never took.
+/// Stated here so every tempo control can clamp before it writes.
+const (double, double) kTempoRange = (30, 300);
+
+/// The count-in lengths offered, in measures; `0` is off.
+///
+/// Beside the cubit that writes the value rather than in a picker, for the
+/// same reason [kMaxClickGain] is: two surfaces offer this setting — the
+/// Settings section and the console's Loop face — and a set known to only one
+/// of them is two pickers that can drift into offering different lengths.
+const List<int> kCountInBarOptions = [0, 1, 2, 4];
+
+/// What each [GridDivision] is called. One table, both surfaces.
+Map<GridDivision, String> quantizeDivisionLabels(AppLocalizations l10n) => {
+  GridDivision.off: l10n.quantizeDivOffLabel,
+  GridDivision.bar: l10n.quantizeDivBarLabel,
+  GridDivision.half: l10n.quantizeDivHalfLabel,
+  GridDivision.quarter: l10n.quantizeDivQuarterLabel,
+  GridDivision.eighth: l10n.quantizeDivEighthLabel,
+  GridDivision.sixteenth: l10n.quantizeDivSixteenthLabel,
+};
+
+/// What each [ClickMode] is called. One table, both surfaces.
+Map<ClickMode, String> clickModeLabels(AppLocalizations l10n) => {
+  ClickMode.off: l10n.clickModeOffLabel,
+  ClickMode.rec: l10n.clickModeRecLabel,
+  ClickMode.recFirst: l10n.clickModeRecFirstLabel,
+  ClickMode.playRec: l10n.clickModePlayRecLabel,
+};
+
+/// What each count-in length is called, keyed by [kCountInBarOptions].
+Map<int, String> countInLabels(AppLocalizations l10n) => {
+  0: l10n.countInOffLabel,
+  1: l10n.countInBarsLabel1,
+  2: l10n.countInBarsLabel2,
+  4: l10n.countInBarsLabel4,
+};
 
 /// The 17 Sheeran-verified time signatures (index plan D1): denominator `4`
 /// with numerator `2..7`, denominator `8` with numerator `5..15`. Shared by

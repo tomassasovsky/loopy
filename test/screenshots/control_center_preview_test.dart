@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:bloc_test/bloc_test.dart';
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +22,8 @@ import 'package:segno/control/control.dart';
 import 'package:segno/control/control_tab.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
+import 'package:segno/looper/loop_tab.dart';
+import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -29,6 +32,9 @@ import 'package:wifi_repository/wifi_repository.dart';
 import '../helpers/helpers.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
+
+class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
+    implements LooperBloc {}
 
 class _MockMidiDevices extends Mock implements MidiDeviceRepository {}
 
@@ -271,10 +277,18 @@ void main() {
   /// The Control face's own providers — the real tray inherits these from
   /// `App`, so a preview that shows the Control destination has to stand them
   /// up too.
-  ({ControlCubit control, MidiSetupCubit midi, LooperRepository looper})
+  ({
+    ControlCubit control,
+    MidiSetupCubit midi,
+    LooperRepository looper,
+    LooperBloc bloc,
+    TempoCubit tempo,
+    RecordOptionsCubit options,
+  })
   controlProviders(
     WidgetTester tester, {
     MidiConnection connection = const MidiConnection(),
+    LooperState looperState = const LooperState(),
   }) {
     final looper = _MockLooperRepository();
     final looperStates = StreamController<LooperState>.broadcast();
@@ -317,9 +331,30 @@ void main() {
       keepAliveInterval: Duration.zero,
     );
     final midi = MidiSetupCubit(repository: devices);
+    // The Loop face's own providers. A mock bloc rather than a real one over
+    // the mock repository: these previews exist to pin a specific transport,
+    // and a real bloc would only ever show the repository's defaults.
+    final bloc = _MockLooperBloc();
+    whenListen(
+      bloc,
+      const Stream<LooperState>.empty(),
+      initialState: looperState,
+    );
+    when(() => bloc.state).thenReturn(looperState);
+    final tempo = TempoCubit(repository: looper, settings: settings);
+    final options = RecordOptionsCubit(repository: looper, settings: settings);
     addTearDown(() => unawaited(control.close()));
     addTearDown(() => unawaited(midi.close()));
-    return (control: control, midi: midi, looper: looper);
+    addTearDown(() => unawaited(tempo.close()));
+    addTearDown(() => unawaited(options.close()));
+    return (
+      control: control,
+      midi: midi,
+      looper: looper,
+      bloc: bloc,
+      tempo: tempo,
+      options: options,
+    );
   }
 
   Future<void> pumpTray(
@@ -327,7 +362,14 @@ void main() {
     required SettingsTrayCubit cubit,
     WifiRepository? wifi,
     BluetoothRepository? bluetooth,
-    ({ControlCubit control, MidiSetupCubit midi, LooperRepository looper})?
+    ({
+      ControlCubit control,
+      MidiSetupCubit midi,
+      LooperRepository looper,
+      LooperBloc bloc,
+      TempoCubit tempo,
+      RecordOptionsCubit options,
+    })?
     control,
   }) {
     final rig = control ?? controlProviders(tester);
@@ -357,6 +399,9 @@ void main() {
               BlocProvider.value(value: cubit),
               BlocProvider.value(value: rig.control),
               BlocProvider.value(value: rig.midi),
+              BlocProvider<LooperBloc>.value(value: rig.bloc),
+              BlocProvider.value(value: rig.tempo),
+              BlocProvider.value(value: rig.options),
             ],
             child: Scaffold(
               body: Stack(
@@ -468,7 +513,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('wifi_forget')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('console_forget_confirm')), findsOneWidget);
+    expect(find.byKey(const Key('console_confirm_confirm')), findsOneWidget);
     // The confirm rides in the route overlay, above the Scaffold.
     await expectLater(
       find.byType(MaterialApp),
@@ -655,6 +700,106 @@ void main() {
     await expectLater(
       find.byType(Scaffold),
       matchesGoldenFile('goldens/control_center_control_midi_device.png'),
+    );
+  }, skip: !hasFonts);
+
+  /// The rig the Loop previews draw: a live 120 bpm grid, the click on while
+  /// recording out of the first pair of outputs, and four tracks.
+  const loopRig = LooperState(
+    tracks: [
+      Track(state: TrackState.playing, lengthFrames: 96000),
+      Track(channel: 1, state: TrackState.playing, lengthFrames: 96000),
+      Track(channel: 2),
+      Track(channel: 3),
+    ],
+    status: EngineStatus(sampleRate: 48000, outputChannels: 4),
+    transport: TransportState(
+      isRunning: true,
+      tempoBpm: 120,
+      tempoSource: TempoSource.manual,
+      quantizeDiv: GridDivision.bar,
+      countInBars: 1,
+      clickMode: ClickMode.rec,
+      clickMask: 0x3,
+      clickVolume: 1.4,
+      masterLengthFrames: 96000,
+    ),
+  );
+
+  Future<void> pumpLoop(WidgetTester tester, LoopTab tab) async {
+    await size(tester);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.loop)
+      ..showLoopTab(tab);
+    addTearDown(cubit.close);
+
+    await pumpTray(
+      tester,
+      cubit: cubit,
+      control: controlProviders(tester, looperState: loopRig),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('loop domain, tempo tab', (tester) async {
+    await pumpLoop(tester, LoopTab.tempo);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_loop_tempo.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('loop domain, the time signature grid open', (tester) async {
+    await pumpLoop(tester, LoopTab.tempo);
+    // Seventeen options. As a column of rows this is a 1,200px scroll inside
+    // an 830px sheet, each row spending its whole width on four characters.
+    await tester.tap(find.byKey(const Key('loop_signature_row')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_loop_signature.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('loop domain, click tab', (tester) async {
+    await pumpLoop(tester, LoopTab.click);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_loop_click.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('loop domain, mode tab with the mode chooser open', (
+    tester,
+  ) async {
+    await pumpLoop(tester, LoopTab.mode);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_loop_mode.png'),
+    );
+
+    // Opens in place, under the row — the shape `LOOP / settings-mode-confirm`
+    // draws, and the same one `AUDIO / settings-rate` draws for its own pick.
+    await tester.tap(find.byKey(const Key('loop_mode_row')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_loop_mode_chooser.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('loop domain, the tempo keypad sheet', (tester) async {
+    await pumpLoop(tester, LoopTab.tempo);
+    await tester.tap(find.byKey(const Key('loop_tempo_row')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('tempo_keypad_sheet')), findsOneWidget);
+    // MaterialApp, not Scaffold: a modal route lives in the navigator's
+    // overlay, above the Scaffold that opened it.
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/control_center_loop_tempo_sheet.png'),
     );
   }, skip: !hasFonts);
 }

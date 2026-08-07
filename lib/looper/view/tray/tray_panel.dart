@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:segno/control/view/control_tray_panel.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
+import 'package:segno/looper/view/loop/loop_tray_panel.dart';
 import 'package:segno/looper/view/tray/tray_home.dart';
 import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
 import 'package:segno/looper/view/tray/tuner_tray_panel.dart';
@@ -14,9 +15,11 @@ import 'package:segno/theme/theme.dart';
 /// The tray's contents once open — near-fullscreen frosted sheet, split into
 /// a persistent [TrayNavigationRail] and the face it selects.
 ///
-/// The face swap is an animated destination switch inside the sheet, never a
-/// full-screen route: config is an overlay you drop out of with one gesture,
-/// so it never routes the performer away from the stage view.
+/// The face swap is a plain switch inside the sheet, never a full-screen
+/// route: config is an overlay you drop out of with one gesture, so it never
+/// routes the performer away from the stage view. The `KeyedSubtree` on the
+/// destination is what makes the swap discard the outgoing face's state
+/// rather than let Flutter reuse its element for the incoming one.
 class TrayPanel extends StatelessWidget {
   /// Creates a [TrayPanel].
   const TrayPanel({super.key});
@@ -27,7 +30,6 @@ class TrayPanel extends StatelessWidget {
     final surface = context.surface;
     final state = context.watch<SettingsTrayCubit>().state;
     final cubit = context.read<SettingsTrayCubit>();
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     return Material(
       color: Colors.transparent,
@@ -66,52 +68,28 @@ class TrayPanel extends StatelessWidget {
                           // [_TrayFaceFrame] footprint and are centred
                           // individually, since a WiFi list stretched across
                           // a 1080p sheet reads worse than a centred panel.
-                          child: AnimatedSwitcher(
-                            duration: reduceMotion
-                                ? Duration.zero
-                                : const Duration(milliseconds: 240),
-                            switchInCurve: Curves.easeOutCubic,
-                            switchOutCurve: Curves.easeInCubic,
-                            transitionBuilder: (child, animation) {
-                              // Vertical handoff: incoming rises from below.
-                              final offset =
-                                  Tween<Offset>(
-                                    begin: const Offset(0, 0.12),
-                                    end: Offset.zero,
-                                  ).animate(
-                                    CurvedAnimation(
-                                      parent: animation,
-                                      curve: Curves.easeOutCubic,
-                                    ),
-                                  );
-                              return FadeTransition(
-                                opacity: animation,
-                                child: SlideTransition(
-                                  position: offset,
-                                  child: child,
+                          child: KeyedSubtree(
+                            key: ValueKey(state.destination),
+                            child: switch (state.destination) {
+                              SettingsTrayDestination.home => const TrayHome(),
+                              SettingsTrayDestination.control =>
+                                const _TrayFaceFrame(
+                                  child: ControlTrayPanel(),
                                 ),
-                              );
+                              SettingsTrayDestination.loop =>
+                                const _TrayFaceFrame(
+                                  child: LoopTrayPanel(),
+                                ),
+                              SettingsTrayDestination.tuner => _TrayFaceFrame(
+                                child: TunerTrayPanel(
+                                  onBack: cubit.showHome,
+                                ),
+                              ),
+                              SettingsTrayDestination.network =>
+                                const _TrayFaceFrame(
+                                  child: NetworkTrayPanel(),
+                                ),
                             },
-                            child: KeyedSubtree(
-                              key: ValueKey(state.destination),
-                              child: switch (state.destination) {
-                                SettingsTrayDestination.home =>
-                                  const TrayHome(),
-                                SettingsTrayDestination.control =>
-                                  const _TrayFaceFrame(
-                                    child: ControlTrayPanel(),
-                                  ),
-                                SettingsTrayDestination.tuner => _TrayFaceFrame(
-                                  child: TunerTrayPanel(
-                                    onBack: cubit.showHome,
-                                  ),
-                                ),
-                                SettingsTrayDestination.network =>
-                                  const _TrayFaceFrame(
-                                    child: NetworkTrayPanel(),
-                                  ),
-                              },
-                            ),
                           ),
                         ),
                       ),

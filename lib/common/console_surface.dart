@@ -18,9 +18,13 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/common/pill_tabs.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -40,6 +44,21 @@ const double kConsoleDisclosureWidth = 11;
 
 /// The gap between a row's content and its trailing marks.
 const double kConsoleRowGap = 14;
+
+/// The gap above a group caption — the space that separates one group from
+/// the last thing of the group before it.
+///
+/// The three gaps below are one rhythm, and the mockups set it the same way on
+/// every face: **a caption belongs to what is under it**, so the gap below one
+/// ([kConsoleLabelGap]) is smaller than the gap above it, and two blocks
+/// inside one group sit at [kConsoleBlockGap] — between the two.
+const double kConsoleGroupGap = 19;
+
+/// The gap between a group caption and the card under it.
+const double kConsoleLabelGap = 9;
+
+/// The gap between two cards of the same group.
+const double kConsoleBlockGap = 14;
 
 /// How long a row takes to open or shut.
 ///
@@ -679,6 +698,79 @@ class ConsoleActionChip extends StatelessWidget {
   }
 }
 
+/// A domain's whole face: its name, its tab strip, and the tab's body.
+///
+/// **The title sits above the strip.** A tab that carries a per-tab control (a
+/// radio's power switch, a rescan) needs a title row to hang it on and puts
+/// its tabs first; a domain whose tabs carry no such control says its name
+/// once, at the top. That is the mockups' own distinction, and Control and
+/// Loop are both on the second side of it — which is why they were the same
+/// widget written twice before this existed.
+class ConsoleDomainPanel<T> extends StatelessWidget {
+  /// Creates a [ConsoleDomainPanel].
+  const ConsoleDomainPanel({
+    required this.title,
+    required this.tabs,
+    required this.selected,
+    required this.onChanged,
+    required this.body,
+    this.tabsKey,
+    super.key,
+  });
+
+  /// The domain's name.
+  final String title;
+
+  /// The tabs, in display order.
+  final List<PillTab<T>> tabs;
+
+  /// The showing tab.
+  final T selected;
+
+  /// Called with the newly chosen tab.
+  final ValueChanged<T> onChanged;
+
+  /// The showing tab's body; fills the rest of the sheet.
+  final Widget body;
+
+  /// Key for the strip, so a test can find one domain's tabs.
+  final Key? tabsKey;
+
+  /// Gap between the title and the strip, as the mockups set it.
+  static const double titleGap = 14;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            color: surface.textPrimary,
+            fontSize: 20,
+            height: 1.15,
+            leadingDistribution: TextLeadingDistribution.even,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: titleGap),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: PillTabs<T>(
+            key: tabsKey,
+            selected: selected,
+            onChanged: onChanged,
+            tabs: tabs,
+          ),
+        ),
+        Expanded(child: body),
+      ],
+    );
+  }
+}
+
 /// A domain face's title row: its name, an optional live-state line, and that
 /// surface's own controls.
 ///
@@ -1146,6 +1238,7 @@ class ConsoleValueBar extends StatefulWidget {
     required this.value,
     required this.readout,
     required this.onChanged,
+    this.resetValue,
     this.semanticLabel,
     super.key,
   });
@@ -1162,6 +1255,35 @@ class ConsoleValueBar extends StatefulWidget {
   /// Called with each new value during and at the end of a drag.
   final ValueChanged<double> onChanged;
 
+  /// What a double tap snaps back to, or null for a bar with no default.
+  ///
+  /// A bar has no numbers to aim at, so landing back on unity by dragging is
+  /// luck. **Not** `GestureDetector.onDoubleTap`: a disambiguating recognizer
+  /// charges its latency to the common path, so every single tap would wait
+  /// out `kDoubleTapTimeout` — a third of a second of nothing on a control
+  /// people drag. The first tap applies immediately and opens a timer; a
+  /// second tap while it is live overrides with this value.
+  ///
+  /// It has to be the same tap twice, though, and both halves are measured
+  /// off the RELEASE, the way Flutter's own recognizer measures them:
+  /// - **the window opens on tap-UP.** A tap-down is not yet a tap: the
+  ///   pointer can still be stolen by the scroll view this face sits in, and
+  ///   a cancelled press must not leave a live window for the next real tap
+  ///   to fall into. Anchoring on the release also gives the second tap the
+  ///   whole `kDoubleTapTimeout` rather than what a slow first press left of
+  ///   it.
+  /// - **near the first**, within `kDoubleTapSlop`, which is the gate
+  ///   Flutter's own recognizer applies. Two taps at opposite ends of the bar
+  ///   are two adjustments, and reading them as a reset throws away the
+  ///   second one's position.
+  /// - **applied on tap-UP too.** A press that becomes a drag still fires
+  ///   `onTapDown` once it outlives `kPressTimeout`, so writing on the way
+  ///   down would send the default to the engine every time someone tapped
+  ///   and then dragged.
+  ///
+  /// Drags bypass the window entirely.
+  final double? resetValue;
+
   /// The announced label; defaults to [label].
   final String? semanticLabel;
 
@@ -1175,6 +1297,11 @@ class ConsoleValueBar extends StatefulWidget {
   /// Width of the readout column, on the same reasoning.
   static const double readoutWidth = 94;
 
+  /// The filled part of the track. Keyed so a test can measure it against the
+  /// bar: a fill is the one thing here with no text to assert on, and "the
+  /// bar rendered" is not the same claim as "the bar drew a fill".
+  static const Key fillKey = Key('console_value_bar_fill');
+
   @override
   State<ConsoleValueBar> createState() => _ConsoleValueBarState();
 }
@@ -1183,17 +1310,86 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
   /// The value the finger is on, or null when nothing is dragging.
   double? _dragging;
 
+  /// Live between the two taps of a double tap. See
+  /// [ConsoleValueBar.resetValue] for why this is hand-rolled.
+  Timer? _tapWindow;
+
+  /// Where the tap that opened [_tapWindow] landed, so the second one can be
+  /// required to land near it.
+  double? _tapAt;
+
+  /// Set by a tap-down that qualifies as the second of a pair, and spent on
+  /// the tap-UP that follows — see [ConsoleValueBar.resetValue] for why the
+  /// write cannot happen on the way down.
+  bool _resetPending = false;
+
+  @override
+  void dispose() {
+    _tapWindow?.cancel();
+    super.dispose();
+  }
+
   void _report(double width, double dx) {
     final next = (dx / width).clamp(0.0, 1.0);
     setState(() => _dragging = next);
     widget.onChanged(next);
   }
 
+  /// A tap: applies where it landed, unless it is the second of a pair —
+  /// close enough to the first to be the same tap twice — and this bar has a
+  /// default to snap to. That case only ARMS the reset; [_release] spends it,
+  /// because a tap-down is not yet proof the gesture stayed a tap.
+  void _tap(double width, double dx) {
+    final reset = widget.resetValue;
+    final first = _tapAt;
+    if (reset != null &&
+        _tapWindow != null &&
+        first != null &&
+        (dx - first).abs() <= kDoubleTapSlop) {
+      _tapWindow!.cancel();
+      _tapWindow = null;
+      _resetPending = true;
+      return;
+    }
+    _tapAt = dx;
+    _report(width, dx);
+  }
+
   /// Hands the bar back to [ConsoleValueBar.value] — what the finger reported
   /// is only the truth while the finger is down.
-  void _release() {
+  ///
+  /// [applyReset] marks the tap-UP path — the only one that spends an armed
+  /// reset, and the only one that opens a window for the next tap. The same
+  /// call arrives from `onTapCancel` (the press was stolen by the scroll view
+  /// or turned into a drag) and from the drag ends, where a pending reset has
+  /// to be dropped and no window may be left behind.
+  void _release({bool applyReset = false}) {
+    final reset = widget.resetValue;
+    if (applyReset && reset != null) {
+      if (_resetPending) {
+        unawaited(HapticFeedback.selectionClick());
+        widget.onChanged(reset.clamp(0.0, 1.0));
+        // No fresh window: a third tap starts its own pair rather than
+        // resetting again.
+      } else {
+        _tapWindow?.cancel();
+        _tapWindow = Timer(kDoubleTapTimeout, () => _tapWindow = null);
+      }
+    }
+    _resetPending = false;
     if (_dragging == null) return;
     setState(() => _dragging = null);
+  }
+
+  /// Cancels a pending double-tap window: a drag is not the first half of a
+  /// double tap, and leaving the window open would let the tap that ends the
+  /// drag get read as one.
+  void _dragStart(double width, double dx) {
+    _tapWindow?.cancel();
+    _tapWindow = null;
+    _tapAt = null;
+    _resetPending = false;
+    _report(width, dx);
   }
 
   @override
@@ -1227,16 +1423,16 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
                 final width = constraints.maxWidth;
                 return GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onTapDown: (d) => _report(width, d.localPosition.dx),
+                  onTapDown: (d) => _tap(width, d.localPosition.dx),
                   // A tap ends a touch as much as a drag does. Without these
                   // the bar stayed pinned to the last tapped fraction for the
                   // rest of its life, and stopped redrawing the value it is
                   // supposed to be reading — visible the moment a write is
                   // clamped, as the threshold's own floor clamps it.
-                  onTapUp: (_) => _release(),
+                  onTapUp: (_) => _release(applyReset: true),
                   onTapCancel: _release,
                   onHorizontalDragStart: (d) =>
-                      _report(width, d.localPosition.dx),
+                      _dragStart(width, d.localPosition.dx),
                   onHorizontalDragUpdate: (d) =>
                       _report(width, d.localPosition.dx),
                   onHorizontalDragEnd: (_) => _release(),
@@ -1255,6 +1451,7 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
                       child: Align(
                         alignment: Alignment.centerLeft,
                         child: AnimatedContainer(
+                          key: ConsoleValueBar.fillKey,
                           duration: _dragging == null
                               ? consoleMotion(context)
                               : Duration.zero,
@@ -1297,17 +1494,25 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
   }
 }
 
-/// One choice in a [ConsoleSegmented].
+/// One choice in a [ConsoleSegmented] or a [ConsoleChipGrid].
 @immutable
 class ConsoleSegment<T> {
   /// Creates a [ConsoleSegment].
-  const ConsoleSegment({required this.value, required this.label});
+  const ConsoleSegment({
+    required this.value,
+    required this.label,
+    this.optionKey,
+  });
 
   /// The value reported when this segment is chosen.
   final T value;
 
   /// The visible caption.
   final String label;
+
+  /// The cell's own key, for a grid whose cells are otherwise identified only
+  /// by a two-character label.
+  final Key? optionKey;
 }
 
 /// A pick-one control for a short, symmetric pair — Toggle vs Momentary.
@@ -1627,6 +1832,269 @@ class ConsolePickRow extends StatelessWidget {
   }
 }
 
+/// A row's chooser: the [ConsolePickRow] list it grows open and shut.
+///
+/// The console's pick-one, and the shape four screens draw for it —
+/// `AUDIO / settings-device`, `settings-rate`, `settings-maxloop` and
+/// `LOOP / settings-mode-confirm`. A row turns its marker, tints, and the
+/// alternatives slide out from under it; the rest of the face stays lit, which
+/// is the whole point — on a console the list is the context for the choice.
+///
+/// Always in the tree, so opening is a transition rather than a swap.
+/// [ConsoleExpansion] mounts nothing while this is shut — so a shut chooser
+/// has nothing tappable — and holds the last children for exactly as long as
+/// the close takes.
+class ConsoleChooser extends StatelessWidget {
+  /// Creates a [ConsoleChooser].
+  const ConsoleChooser({
+    required this.open,
+    required this.children,
+    super.key,
+  });
+
+  /// A chooser holding one [ConsoleChipGrid], inset the way a drawer's
+  /// contents always are.
+  ///
+  /// The inset was being re-stated by every face that opened a grid; it
+  /// belongs to the drawer, which is the thing that knows how far in its
+  /// contents sit.
+  factory ConsoleChooser.grid({
+    required bool open,
+    required Widget grid,
+    Key? key,
+  }) => ConsoleChooser(
+    key: key,
+    open: open,
+    children: [Padding(padding: gridInset, child: grid)],
+  );
+
+  /// Whether the chooser is showing.
+  final bool open;
+
+  /// The alternatives, in display order.
+  final List<Widget> children;
+
+  /// What a grid inside a drawer is inset by — the 40px an opened row's
+  /// children take on the leading edge, a row's own inset on the trailing
+  /// one. Public so a chooser holding several captioned grids can apply it
+  /// per group.
+  static const EdgeInsets gridInset = EdgeInsets.fromLTRB(
+    ConsoleRow.indentedInset,
+    kConsoleBlockGap,
+    kConsoleRowInset,
+    kConsoleBlockGap,
+  );
+
+  @override
+  Widget build(BuildContext context) => ConsoleExpansion(
+    expanded: open,
+    child: ConsoleDrawer(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
+    ),
+  );
+}
+
+/// A caption that splits one drawer into named sub-groups.
+///
+/// `AUDIO / settings-rate` draws it: one chooser holding SAMPLE RATE and
+/// BUFFER, because those are two questions the row asks at once. The Loop
+/// face's time signatures use it for the same reason — seventeen of them are
+/// two families, not one list, and the note value is the thing you narrow by
+/// first.
+///
+/// Stepped in to the 40px inset an opened row's children take, so it lines up
+/// with the choices under it rather than with the list outside.
+class ConsoleDrawerLabel extends StatelessWidget {
+  /// Creates a [ConsoleDrawerLabel].
+  const ConsoleDrawerLabel(this.label, {super.key});
+
+  /// The caption. Upper-cased by the caller, as [ConsoleGroupLabel]'s is.
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(
+      ConsoleRow.indentedInset,
+      14,
+      kConsoleRowInset,
+      7,
+    ),
+    child: ConsoleGroupLabel(label),
+  );
+}
+
+/// A wrapping grid of equal cells — the console's pick-one for options that
+/// are **bare tokens**: `3/4`, `1/8`, `x2`, `Out 3`.
+///
+/// [ConsolePickRow] is the other half of the same control, and the split is
+/// about what an option has to say for itself. A row earns its width when the
+/// choice carries a second fact — a mode and its one-liner, a device and its
+/// channel counts, a buffer size and its latency. A token has nothing to put
+/// in that width, so a column of rows spends 70px of height and 1,600px of
+/// width on four characters, and seventeen time signatures become a
+/// 1,200px scroll inside a sheet that is 830px tall.
+///
+/// The cell is `LOOP / loop-quantise`'s: 166x48 at an 11px radius on a 10px
+/// gutter, accent-surface and accent-outlined when lit. That screen drew the
+/// grid inside a centred modal; this puts the same grid inside the drawer the
+/// rest of the file opens rows into, which is the half each of the two
+/// drawings got right.
+///
+/// [selected] is a set rather than one value, so the same control serves a
+/// pick-one (`{current}`) and a bitmask (`{every lit bit}`) without a second
+/// widget. What a tap MEANS — replace, or toggle — is the caller's, since only
+/// the caller knows whether the question has one answer.
+class ConsoleChipGrid<T> extends StatelessWidget {
+  /// Creates a [ConsoleChipGrid].
+  const ConsoleChipGrid({
+    required this.options,
+    required this.selected,
+    required this.onTap,
+    super.key,
+  });
+
+  /// The choices, in display order.
+  final List<ConsoleSegment<T>> options;
+
+  /// Every value currently lit.
+  final Set<T> selected;
+
+  /// Called with the tapped value.
+  final ValueChanged<T> onTap;
+
+  /// The cell width the mockup draws, and the width the grid aims at.
+  ///
+  /// A *target*, not a column count: four across is right on that screen's
+  /// 694px measure and absurd on the drawer's 1,600, where it would waste the
+  /// width the row layout was already wasting. The grid fits as many cells of
+  /// about this size as it can and shares out the remainder, so the cells stay
+  /// equal and the run stays flush to both edges.
+  static const double cellWidth = 166;
+
+  /// Gap between cells, both ways.
+  static const double gutter = 10;
+
+  /// Cell height.
+  static const double cellHeight = 48;
+
+  /// How many cells to put across, given the room and how many there are.
+  ///
+  /// Not simply "as many as fit": seventeen options across a nine-wide measure
+  /// is 9 + 8, which is fine, but the same rule on a narrower sheet gives
+  /// 4 + 4 + 4 + 4 + **1**, and a last row holding one cell reads as a
+  /// mistake. So it takes the widest count that fits, then tries narrower ones
+  /// and keeps whichever strands the fewest cells on the last row — ties going
+  /// to the wider one, since fewer rows is better when the raggedness is the
+  /// same.
+  ///
+  /// The search stops at half the fitting width. Below that a perfect division
+  /// is always reachable (one column divides everything) and the cells would
+  /// grow to absurd widths to reach it — the cure being worse than the ragged
+  /// row it fixes.
+  static int columnsFor(double width, int count) {
+    final fits = math.max(1, ((width + gutter) / (cellWidth + gutter)).floor());
+    if (count <= fits) return count;
+    var best = fits;
+    var least = fits * (count / fits).ceil() - count;
+    for (var columns = fits - 1; columns >= (fits / 2).ceil(); columns--) {
+      final stranded = columns * (count / columns).ceil() - count;
+      if (stranded < least) {
+        best = columns;
+        least = stranded;
+      }
+    }
+    return best;
+  }
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final width = constraints.maxWidth;
+      final columns = columnsFor(width, options.length);
+      final cell = (width - gutter * (columns - 1)) / columns;
+      return Wrap(
+        spacing: gutter,
+        runSpacing: gutter,
+        children: [
+          for (final option in options)
+            SizedBox(
+              width: cell,
+              child: _ConsoleChip(
+                key: option.optionKey,
+                label: option.label,
+                selected: selected.contains(option.value),
+                onTap: () => onTap(option.value),
+              ),
+            ),
+        ],
+      );
+    },
+  );
+}
+
+class _ConsoleChip extends StatelessWidget {
+  const _ConsoleChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    super.key,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    // No outer Semantics: FocusableTapTarget already emits a merged
+    // button/selected/label node, and wrapping a second one round it gives a
+    // screen reader two nested labelled buttons for one chip. ConsolePickRow
+    // makes the same call.
+    return FocusableTapTarget(
+      onTap: onTap,
+      selected: selected,
+      borderRadius: 11,
+      semanticLabel: label,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(11),
+        child: AnimatedContainer(
+          duration: consoleMotion(context),
+          curve: Curves.easeOut,
+          height: ConsoleChipGrid.cellHeight,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: selected ? surface.accentSurface : surface.cardHigh,
+            borderRadius: BorderRadius.circular(11),
+            border: Border.all(
+              color: selected ? surface.accent : surface.line,
+            ),
+          ),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: selected ? surface.accent : surface.textPrimary,
+              fontSize: 16,
+              height: 1.13,
+              leadingDistribution: TextLeadingDistribution.even,
+              // One weight for both states, as everywhere on this surface.
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// The check that marks the target something is already pointed at.
 class ConsoleCheck extends StatelessWidget {
   /// Creates a [ConsoleCheck].
@@ -1649,14 +2117,26 @@ class ConsoleCheck extends StatelessWidget {
   }
 }
 
-/// Confirms forgetting something named in [title]; resolves true when the
+/// Confirms the destructive thing [title] asks about; resolves true when the
 /// user goes through with it.
 ///
-/// **Destructive confirms; reversible does not.** Forgetting deletes a
-/// credential nothing else holds, so it asks. Disconnecting is undone by
-/// tapping the row again, so it does not — a confirm on a reversible action
-/// teaches people to dismiss confirms.
-Future<bool> showConsoleForgetDialog(
+/// **Destructive confirms; reversible does not.** Forgetting a network deletes
+/// a credential nothing else holds, and switching looper mode clears every
+/// track, so both ask. Disconnecting is undone by tapping the row again, so it
+/// does not — a confirm on a reversible action teaches people to dismiss
+/// confirms.
+///
+/// The one modal on this console that is not an editor. Everything a row can
+/// answer, a row answers in place; this interrupts because the thing behind it
+/// is about to stop existing.
+///
+/// Drawn to `NETWORK / wifi-forget` and `LOOP / settings-mode-confirm`, which
+/// are the same 528px dialog with different words.
+///
+/// The dismissive label is fixed rather than a parameter: "keep it" is the
+/// same answer on every one of these, and a per-caller override only invited
+/// each surface to invent its own word for "no".
+Future<bool> showConsoleConfirmDialog(
   BuildContext context, {
   required String title,
   required String body,
@@ -1705,13 +2185,13 @@ Future<bool> showConsoleForgetDialog(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   _DialogButton(
-                    key: const Key('console_forget_cancel'),
-                    label: l10n.networkKeepIt,
+                    key: const Key('console_confirm_cancel'),
+                    label: l10n.consoleKeepIt,
                     onPressed: () => Navigator.of(dialogContext).pop(false),
                   ),
                   const SizedBox(width: 10),
                   _DialogButton(
-                    key: const Key('console_forget_confirm'),
+                    key: const Key('console_confirm_confirm'),
                     label: confirmLabel,
                     destructive: true,
                     onPressed: () => Navigator.of(dialogContext).pop(true),
