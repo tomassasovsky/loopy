@@ -288,14 +288,24 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       // Refused outright. Hand the selection back what the engine is still
       // running, so the rows never report a setting the rig has not got.
       final live = _repository.state.status;
+      final liveRate = live.sampleRate > 0 ? live.sampleRate : askedRate;
+      final liveBuffer = live.bufferFrames > 0
+          ? live.bufferFrames
+          : askedBuffer;
       emit(
         state.copyWith(
           status: AudioSetupStatus.error,
           phase: ConfigPhase.refused,
           requestedRate: askedRate,
           requestedBuffer: askedBuffer,
-          sampleRate: live.sampleRate > 0 ? live.sampleRate : askedRate,
-          bufferFrames: live.bufferFrames > 0 ? live.bufferFrames : askedBuffer,
+          actualRate: liveRate,
+          actualBuffer: liveBuffer,
+          sampleRate: _offerable(liveRate, state.sampleRateChoices, askedRate),
+          bufferFrames: _offerable(
+            liveBuffer,
+            state.bufferChoices,
+            askedBuffer,
+          ),
           error: AudioSetupError.openDeviceFailed,
           errorDetail: result.name,
         ),
@@ -309,31 +319,50 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     // silently kept its old clock produces.
     final live = _repository.state.status;
     final known = live.sampleRate > 0 && live.bufferFrames > 0;
-    final rate = known ? live.sampleRate : askedRate;
-    final buffer = known ? live.bufferFrames : askedBuffer;
-    final gave = rate == askedRate && buffer == askedBuffer;
+    final actualRate = known ? live.sampleRate : askedRate;
+    final actualBuffer = known ? live.bufferFrames : askedBuffer;
+    final gave = actualRate == askedRate && actualBuffer == askedBuffer;
+    // The SELECTION follows what the device gave — as far as the chooser can
+    // represent it. A row that keeps saying 96 kHz while the engine runs 48 is
+    // the lie the Status tab existed to correct; a row saying 480 when the
+    // grid only offers 64/128/256/512 is a different one, with no chip lit and
+    // no way back, and it would be PERSISTED. So an off-list figure stays out
+    // of the selection and is named by the banner instead.
+    final rate = _offerable(actualRate, state.sampleRateChoices, askedRate);
+    final buffer = _offerable(actualBuffer, state.bufferChoices, askedBuffer);
     final settled = state.copyWith(
       status: AudioSetupStatus.running,
       clearError: true,
-      // The SELECTION follows what the device gave. A row that keeps saying
-      // 96 kHz while the engine runs 48 is the lie the Status tab existed to
-      // correct.
       sampleRate: rate,
       bufferFrames: buffer,
       phase: gave ? ConfigPhase.settled : ConfigPhase.refused,
       requestedRate: askedRate,
       requestedBuffer: askedBuffer,
+      actualRate: actualRate,
+      actualBuffer: actualBuffer,
     );
     emit(settled);
-    // The selection moved, so what was written above — the config that was
-    // asked for — no longer describes the rig. Persist what it is actually
-    // running, or the next boot re-asks for the config this device just
-    // declined and the banner returns on every start.
-    if (!gave) {
+    // Only when the SELECTION moved: what was written above — the config that
+    // was asked for — no longer describes it, and the next boot would re-ask
+    // for a config this device already declined. A negotiated figure the
+    // chooser cannot offer never reaches the selection, so it never reaches
+    // disk either.
+    if (rate != askedRate || buffer != askedBuffer) {
       unawaited(_settings.saveAudioConfig(_storedConfig(settled)));
     }
     _autoMeasureIfLoopback();
   }
+
+  /// [negotiated] when the chooser can show it, otherwise [asked].
+  ///
+  /// The selection may only ever hold a value from its own option list: it is
+  /// what the chip grids check against and what gets persisted, so a device
+  /// period outside [AudioSetupState.bufferSizes] — an ALSA quantum, an ASIO
+  /// granularity step — would leave the grid with nothing selected and stay
+  /// off-list across restarts. [AudioSetupState.actualBuffer] carries the real
+  /// figure for the banner.
+  int _offerable(int negotiated, List<int> options, int asked) =>
+      negotiated > 0 && options.contains(negotiated) ? negotiated : asked;
 
   /// Whether the current options form a config the engine can actually open.
   /// "Startable" = a positive sample rate and buffer **and** a resolvable

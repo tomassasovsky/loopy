@@ -58,7 +58,13 @@ class AudioFace extends StatelessWidget {
       child: ConsoleStickyGroups(
         fill: surface.background,
         upcoming: last?.caption,
-        upcomingExtent: lastGroupExtent,
+        // Plus the sheet's own bottom inset below: what [ConsoleStickyGroups]
+        // measures is the distance from the bottom edge to the END of the
+        // content, and this face puts a [kConsoleGroupGap] spacer after the
+        // last group. Leaving it out drops the preview a gap early, with the
+        // real caption already risen — the two on screen at once, which is the
+        // one thing the handover exists to prevent.
+        upcomingExtent: lastGroupExtent + kConsoleGroupGap,
         previewKey: const Key('audio_upcoming_group'),
         slivers: [
           for (final (index, group) in groups.indexed) ...[

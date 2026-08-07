@@ -79,6 +79,8 @@ class AudioSetupState extends Equatable {
     this.phase = ConfigPhase.settled,
     this.requestedRate = 0,
     this.requestedBuffer = 0,
+    this.actualRate = 0,
+    this.actualBuffer = 0,
     this.error,
     this.errorDetail,
   });
@@ -148,6 +150,21 @@ class AudioSetupState extends Equatable {
 
   /// The buffer that was asked for, on the same terms as [requestedRate].
   final int requestedBuffer;
+
+  /// The rate the device is actually clocked at, kept only while [phase] is
+  /// not settled.
+  ///
+  /// Distinct from [sampleRate] because the selection can only ever hold a
+  /// value the chooser offers: a device that negotiates a rate outside
+  /// [sampleRateChoices] leaves the selection where it was, and this is where
+  /// the real figure lives so the banner can still name it.
+  final int actualRate;
+
+  /// The period the device is actually running, on the same terms as
+  /// [actualRate]. This is the one that drifts in practice — a negotiated
+  /// buffer is an ALSA quantum or an ASIO granularity step, rarely one of
+  /// [bufferSizes].
+  final int actualBuffer;
 
   /// The most recent pinned-device connectivity transition (drives the banner).
   final DeviceConnectivity deviceConnectivity;
@@ -247,6 +264,8 @@ class AudioSetupState extends Equatable {
     ConfigPhase? phase,
     int? requestedRate,
     int? requestedBuffer,
+    int? actualRate,
+    int? actualBuffer,
     AudioSetupError? error,
     String? errorDetail,
     bool clearError = false,
@@ -272,6 +291,8 @@ class AudioSetupState extends Equatable {
       phase: phase ?? this.phase,
       requestedRate: requestedRate ?? this.requestedRate,
       requestedBuffer: requestedBuffer ?? this.requestedBuffer,
+      actualRate: actualRate ?? this.actualRate,
+      actualBuffer: actualBuffer ?? this.actualBuffer,
       // [clearError] resets the error on a successful (re)start, since nullable
       // fields cannot otherwise be cleared through `?? this`.
       error: clearError ? null : (error ?? this.error),
@@ -300,6 +321,8 @@ class AudioSetupState extends Equatable {
     phase,
     requestedRate,
     requestedBuffer,
+    actualRate,
+    actualBuffer,
     error,
     errorDetail,
   ];

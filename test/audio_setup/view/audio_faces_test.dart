@@ -923,6 +923,15 @@ void main() {
       expect(audio.state.requestedRate, 48000);
       expect(audio.state.requestedBuffer, 128);
       expect(find.textContaining('0 kHz · 0'), findsNothing);
+      // And it reports the OPEN, not the config: a device pick moves neither
+      // rate nor buffer, so a banner naming them would name the same figures
+      // on both sides and claim the rig was running while it is stopped.
+      expect(find.byKey(const Key('audio_open_failed_banner')), findsOneWidget);
+      expect(find.byKey(const Key('audio_refused_banner')), findsNothing);
+      expect(
+        find.text(l10nOf(tester).failedToOpenDevice(EngineResult.device.name)),
+        findsOneWidget,
+      );
 
       // And a later success unsticks it rather than leaving the banner up.
       when(() => repository.startEngine(any())).thenReturn(EngineResult.ok);
@@ -933,6 +942,7 @@ void main() {
 
       expect(audio.state.phase, ConfigPhase.settled);
       expect(find.byKey(const Key('audio_refused_banner')), findsNothing);
+      expect(find.byKey(const Key('audio_open_failed_banner')), findsNothing);
     });
 
     testWidgets('a device that negotiates something else also reports', (
