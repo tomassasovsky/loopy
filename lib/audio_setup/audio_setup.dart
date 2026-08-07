@@ -2,7 +2,9 @@
 /// status, and round-trip latency measurement.
 library;
 
+export 'audio_tab.dart';
 export 'cubit/audio_setup_cubit.dart';
+export 'cubit/inputs_cubit.dart';
 export 'cubit/midi_setup_cubit.dart';
 export 'cubit/monitor_cubit.dart';
 export 'view/audio_device_picker.dart';

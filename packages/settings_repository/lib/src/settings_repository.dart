@@ -817,6 +817,27 @@ class SettingsRepository {
   Future<void> saveTrackName(int channel, String name) =>
       _store.setString(_trackNameKey(channel), name);
 
+  /// Keyed per SOCKET, not per device: the interface says input 2 and the
+  /// player says "mic", and swapping interfaces and swapping back must not
+  /// lose that. A two-input device simply shows two.
+  String _inputNameKey(int input) => 'input_name.$input';
+
+  /// Loads the given name for hardware [input], or `null` if it has none.
+  Future<String?> loadInputName(int input) =>
+      _store.getString(_inputNameKey(input));
+
+  /// Saves the given [name] for hardware [input].
+  Future<void> saveInputName(int input, String name) =>
+      _store.setString(_inputNameKey(input), name);
+
+  /// Forgets hardware [input]'s given name, handing the socket back its
+  /// ordinal.
+  ///
+  /// Removed rather than stored as an empty string: an input's fallback is not
+  /// a name it was given, and a stored `''` would be a name the next reader has
+  /// to know to ignore. A track has no equivalent — its fallback IS a name.
+  Future<void> clearInputName(int input) => _store.remove(_inputNameKey(input));
+
   String _trackQuantizeKey(int channel) => 'track_quantize.$channel';
 
   /// Loads track [channel]'s quantize override: `null` (inherit the global

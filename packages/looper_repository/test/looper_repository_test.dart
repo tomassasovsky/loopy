@@ -1827,9 +1827,13 @@ void main() {
       expect(engine.outputEnabled.containsKey(1), isFalse);
     });
 
-    test('_project surfaces the engine output-gate mask', () {
+    test('_project surfaces the output gate from the re-apply cache', () {
+      // The engine claims every output is on — which is what a STOPPED engine
+      // always claims, since the gate is only re-applied at start. The mask the
+      // app reads has to be the repository's own intent, or a session loaded
+      // with an output gated reads as audible until the device opens.
       engine.nextSnapshot = const EngineSnapshot(
-        isRunning: true,
+        isRunning: false,
         sampleRate: 48000,
         bufferFrames: 128,
         framesProcessed: 0,
@@ -1839,12 +1843,30 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        outputEnabledMask: 0x1, // only output 0 enabled
       );
-      final state = buildRepo().state;
-      expect(state.outputEnabledMask, 0x1);
+      final repo = buildRepo()..setOutputEnabled(output: 1, enabled: false);
+      final state = repo.state;
       expect(state.isOutputEnabled(0), isTrue);
       expect(state.isOutputEnabled(1), isFalse);
+
+      // And re-enabling puts the bit back.
+      repo.setOutputEnabled(output: 1, enabled: true);
+      expect(repo.state.isOutputEnabled(1), isTrue);
+    });
+
+    test('setOutputEnabled re-projects so a stopped rig reports it', () async {
+      // No user gesture on the face that draws this: a session load gates the
+      // output, and without the re-projection nothing on the stream would say
+      // so. Mirrors the setTrackQuantize case.
+      final repo = buildRepo();
+      final states = <LooperState>[];
+      final sub = repo.looperState.listen(states.add);
+      addTearDown(() => unawaited(sub.cancel()));
+
+      repo.setOutputEnabled(output: 2, enabled: false);
+      await Future<void>.delayed(Duration.zero);
+      expect(states, isNotEmpty);
+      expect(states.last.isOutputEnabled(2), isFalse);
     });
 
     test('record snapshots the input monitor chain onto the lane (G3/AC3)', () {

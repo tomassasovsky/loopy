@@ -851,9 +851,9 @@
     },
     "quantizeRecordingSubtitle": "Snap record start/stop to the loop grid. The default for all tracks; override per track from its routing dialog.",
     "overdubOnSecondPressTitle": "Overdub on second press",
-    "overdubOnSecondPressSubtitle": "A second record press keeps layering (rec/dub) instead of stopping and playing back",
+    "overdubOnSecondPressSubtitle": "A second record press keeps layering (rec/dub) instead of stopping and playing back.",
     "soundActivatedRecordingTitle": "Sound-activated recording",
-    "soundActivatedRecordingSubtitle": "After pressing record, capture starts when the input signal begins, instead of immediately",
+    "soundActivatedRecordingSubtitle": "After pressing record, capture starts when the input signal begins, instead of immediately.",
     "defaultLoopLengthIntro": "Default loop length for new recordings. Auto rounds up to whole base loops; a fixed length records exactly that many. Override it per track from its routing dialog.",
     "statusGroupLabel": "STATUS",
     "deviceLabel": "Device",
@@ -2384,5 +2384,100 @@
     "@a11yTrackLaneStopRecording": {
         "description": "The lane row's custom action: what the check gutter does. Published on the row because the gutter's own semantics sit inside the row's ExcludeSemantics, and without it a screen reader can only reach `None (clean)`, which clears every lane on the track."
     },
-    "a11yTracksRenameField": "Track name"
+    "a11yTracksRenameField": "Track name",
+    "trayAudioLabel": "Audio",
+    "audioDeviceTab": "Device",
+    "audioRecordingTab": "Recording",
+    "audioStatusTab": "Status",
+    "audioGroupLabel": "AUDIO",
+    "audioRateBufferRow": "Sample rate / buffer",
+    "audioRoundTripEstimate": "round-trip {milliseconds} ms",
+    "@audioRoundTripEstimate": {
+        "description": "Subtitle of the closed rate/buffer row: two buffer periods, so an ESTIMATE. The measured figure lives on the Status tab, where it is measured.",
+        "placeholders": {
+            "milliseconds": {
+                "type": "String"
+            }
+        }
+    },
+    "audioRateBufferValue": "{rate} · {buffer}",
+    "@audioRateBufferValue": {
+        "placeholders": {
+            "rate": {
+                "type": "String"
+            },
+            "buffer": {
+                "type": "int"
+            }
+        }
+    },
+    "audioInputsRow": "Inputs",
+    "audioInputsNamed": "{count, plural, =0{none named} =1{1 named} other{{count} named}}",
+    "@audioInputsNamed": {
+        "description": "Readout of the Inputs row: how many hardware sockets the player has given a name.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "audioDeviceChannels": "{inputs} in · {outputs} out",
+    "@audioDeviceChannels": {
+        "description": "A device's own channel counts. Never printed when either side is unknown — a device claiming no channels reads as one that cannot be used.",
+        "placeholders": {
+            "inputs": {
+                "type": "int"
+            },
+            "outputs": {
+                "type": "int"
+            }
+        }
+    },
+    "audioDeviceInputsOnly": "{inputs} in",
+    "@audioDeviceInputsOnly": {
+        "placeholders": {
+            "inputs": {
+                "type": "int"
+            }
+        }
+    },
+    "audioDeviceOutputsOnly": "{outputs} out",
+    "@audioDeviceOutputsOnly": {
+        "placeholders": {
+            "outputs": {
+                "type": "int"
+            }
+        }
+    },
+    "audioDeviceUnplugged": "unplugged",
+    "@audioDeviceUnplugged": {
+        "description": "A pinned device that is no longer connected. Still listed and still checked: dropping it would read as a device you never had."
+    },
+    "audioSampleRateGroup": "SAMPLE RATE",
+    "audioBufferGroup": "BUFFER",
+    "audioSampleRateCost96": "halves the buffer headroom",
+    "audioNoInputs": "This device has no inputs.",
+    "audioNoOutputsBanner": "No outputs are enabled — nothing will be heard. Tap a greyed output to turn it back on.",
+    "audioAsioDriverGroup": "ASIO DRIVER",
+    "audioNoAsioDriver": "No ASIO driver found. Segno uses ASIO on Windows. Install your interface's ASIO driver, or get a generic one from ASIO4ALL.",
+    "@audioNoAsioDriver": {
+        "description": "Windows with no ASIO driver installed. ASIO4ALL is LINKED and never bundled — its licence forbids redistribution."
+    },
+    "audioOpenAsio4all": "Open asio4all.org",
+    "audioMaxLoopTitle": "Maximum loop length",
+    "audioMaxLoopSubtitle": "A higher cap reserves more memory per track. Changing it reopens the device.",
+    "audioDefaultLoopLengthTitle": "Default loop length",
+    "audioDefaultLoopLengthSubtitle": "Auto rounds up to whole base loops; a fixed multiple records that many.",
+    "audioRenameInputTitle": "Rename input",
+    "inputOrdinal": "input {number}",
+    "@inputOrdinal": {
+        "description": "The mono readout beside an input's name: which socket on the interface it is. Lower case, like every other mono readout on this surface.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "a11yInputRenameField": "Input name",
+    "a11yAudioMeasureLatency": "Measure round-trip latency. Refuses while a measurement is already running."
 }

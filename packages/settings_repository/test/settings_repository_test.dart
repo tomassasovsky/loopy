@@ -116,6 +116,30 @@ void main() {
     });
   });
 
+  group('input names', () {
+    test('round-trips a saved name', () async {
+      await repository.saveInputName(1, 'mic');
+      expect(await repository.loadInputName(1), 'mic');
+      expect(await repository.loadInputName(0), isNull);
+    });
+
+    test('clearing REMOVES the key, never stores an empty name', () async {
+      // An input's fallback is not a name it was given, so a stored `''` would
+      // be a name every later reader has to know to ignore. A track has no
+      // equivalent — its fallback IS a name.
+      await repository.saveInputName(2, 'guitar');
+      await repository.clearInputName(2);
+      expect(await repository.loadInputName(2), isNull);
+    });
+
+    test('a name is kept per SOCKET, independent of the track keys', () async {
+      await repository.saveInputName(0, 'mic');
+      await repository.saveTrackName(0, 'DRUMS');
+      expect(await repository.loadInputName(0), 'mic');
+      expect(await repository.loadTrackName(0), 'DRUMS');
+    });
+  });
+
   group('lane routing', () {
     test('returns sensible defaults when nothing is stored', () async {
       expect(await repository.loadLaneCount(0), 1);

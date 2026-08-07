@@ -170,7 +170,22 @@ class AudioSetupState extends Equatable {
   static const bufferSizes = [64, 128, 256, 512];
 
   /// Selectable max-loop-length options, in minutes. `0` is the engine default.
-  static const maxLoopMinuteOptions = [0, 2, 5, 10];
+  static const maxLoopMinuteOptions = [0, 1, 2, 5, 10];
+
+  /// The round-trip latency [bufferFrames] costs at [sampleRate], in ms.
+  ///
+  /// **An estimate, and said to be one**: two buffer periods, one in and one
+  /// out. It cannot include the converter's own delay, which no host reports —
+  /// the MEASURED figure lives on the Status tab, where a loopback actually
+  /// measures it.
+  ///
+  /// It exists because `AUDIO / settings-rate` gives **every** buffer option
+  /// its own cost, not only the chosen one: a list where the current pick is
+  /// the only annotated row cannot be used to choose.
+  static double estimatedRoundTripMs(int bufferFrames, int sampleRate) =>
+      sampleRate <= 0 || bufferFrames <= 0
+      ? 0
+      : bufferFrames * 2 * 1000 / sampleRate;
 
   /// Returns a copy with the given fields replaced.
   AudioSetupState copyWith({

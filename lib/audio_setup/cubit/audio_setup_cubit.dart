@@ -87,10 +87,18 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     // pinned-device connectivity watch (see [_detectConnectivity]) only tracks
     // the selected device, not the full list. Enumeration runs on a transient
     // ma_context independent of the streaming device, so it is glitch-free.
-    _deviceRefreshTimer = Timer.periodic(
-      deviceRefreshInterval,
-      (_) => refreshDevices(),
-    );
+    //
+    // A non-positive interval means DO NOT re-enumerate. That is for a
+    // harness whose device list never changes: a widget test verifies its
+    // invariants before any tearDown runs, so a periodic timer left live for
+    // the length of the test body fails it however promptly the cubit is
+    // closed afterwards.
+    if (deviceRefreshInterval > Duration.zero) {
+      _deviceRefreshTimer = Timer.periodic(
+        deviceRefreshInterval,
+        (_) => refreshDevices(),
+      );
+    }
   }
 
   final LooperRepository _repository;
@@ -212,6 +220,30 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// Selects the capture device to open (empty id = system default).
   void setCaptureDevice(String deviceId) =>
       _selectDevice(captureDeviceId: deviceId);
+
+  /// Pins both directions of one interface at once.
+  ///
+  /// The console shows ONE Device row, because an interface is one box even
+  /// though the host lists its playback and capture halves separately. Setting
+  /// them through [setPlaybackDevice] and [setCaptureDevice] in turn would
+  /// persist twice and reopen the device twice for a single tap — the second
+  /// reopen tearing down the stream the first had just brought up.
+  void setDevice({
+    required String playbackDeviceId,
+    required String captureDeviceId,
+  }) {
+    if (playbackDeviceId == state.playbackDeviceId &&
+        captureDeviceId == state.captureDeviceId) {
+      return;
+    }
+    emit(
+      state.copyWith(
+        playbackDeviceId: playbackDeviceId,
+        captureDeviceId: captureDeviceId,
+      ),
+    );
+    _persistAndApply();
+  }
 
   void _selectDevice({String? playbackDeviceId, String? captureDeviceId}) {
     assert(

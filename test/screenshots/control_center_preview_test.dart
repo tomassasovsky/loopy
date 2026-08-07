@@ -17,6 +17,9 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/audio_setup/audio_tab.dart';
+import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
+import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/control_tab.dart';
@@ -38,6 +41,56 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
 
 class _MockMidiDevices extends Mock implements MidiDeviceRepository {}
+
+/// What the host reports for `AUDIO / settings-device`: an 18-in interface
+/// listed in both directions, and the built-in pair. Both sides carry their
+/// real channel counts, which is the fact the engine was never asking
+/// miniaudio for.
+const _previewDevices = <AudioDevice>[
+  AudioDevice(
+    id: 'scarlett-out',
+    name: 'Scarlett 18i20',
+    isDefault: false,
+    isInput: false,
+    outputChannels: 20,
+  ),
+  AudioDevice(
+    id: 'scarlett-in',
+    name: 'Scarlett 18i20',
+    isDefault: false,
+    isInput: true,
+    inputChannels: 18,
+  ),
+  AudioDevice(
+    id: 'builtin-out',
+    name: 'Built-in audio',
+    isDefault: true,
+    isInput: false,
+    outputChannels: 2,
+  ),
+  AudioDevice(
+    id: 'builtin-in',
+    name: 'Built-in audio',
+    isDefault: true,
+    isInput: true,
+    inputChannels: 2,
+  ),
+];
+
+/// What the engine reports while the Scarlett is open — the figures the Status
+/// tab reads, and the device name the Device row falls back to.
+const _previewStatus = EngineStatus(
+  isConnected: true,
+  deviceName: 'Scarlett 18i20',
+  sampleRate: 48000,
+  bufferFrames: 128,
+  inputChannels: 18,
+  outputChannels: 20,
+  devicePresent: true,
+  latencyState: LatencyState.done,
+  measuredLatencyMs: 7.42,
+  recordOffsetFrames: 64,
+);
 
 /// A rig with a Master insert carrying two effects — enough for the assign
 /// list to have chains, slots and a bound target to draw.
@@ -285,6 +338,8 @@ void main() {
     LooperBloc bloc,
     TracksCubit tracks,
     QuantizeCubit quantize,
+    InputsCubit inputs,
+    AudioSetupCubit audio,
     TempoCubit tempo,
     RecordOptionsCubit options,
   })
@@ -300,7 +355,7 @@ void main() {
     when(() => looper.state).thenReturn(
       LooperState(
         tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
-        status: const EngineStatus(sampleRate: 48000),
+        status: _previewStatus,
       ),
     );
     when(looper.allMonitors).thenReturn(const {});
@@ -310,6 +365,27 @@ void main() {
     when(() => looper.masterEffects).thenAnswer((_) => _masterChain);
     when(() => looper.chainEntriesAt(_master)).thenAnswer((_) => _masterChain);
     when(looper.masterChainEnvelope).thenReturn(const FxChainEnvelope());
+    // What `AUDIO / settings-device` draws: an interface the host reports in
+    // both directions with its real channel counts, and the built-in pair.
+    when(looper.devices).thenReturn(_previewDevices);
+    when(looper.asioDrivers).thenReturn(const <AudioDevice>[]);
+    when(looper.detectLoopback).thenReturn(
+      const LoopbackInfo(
+        available: true,
+        kind: LoopbackKind.virtualDevice,
+        deviceName: 'Scarlett 18i20',
+      ),
+    );
+    // The saved config the cubit hydrates from — this is how the Scarlett is
+    // the PINNED device without the preview having to open one.
+    when(() => looper.lastEngineConfig).thenReturn(
+      const EngineConfig(
+        sampleRate: 48000,
+        bufferFrames: 128,
+        playbackDeviceId: 'scarlett-out',
+        captureDeviceId: 'scarlett-in',
+      ),
+    );
 
     final devices = _MockMidiDevices();
     final connections = StreamController<MidiConnection>.broadcast();
@@ -347,9 +423,20 @@ void main() {
     final tempo = TempoCubit(repository: looper, settings: settings);
     final options = RecordOptionsCubit(repository: looper, settings: settings);
     final tracks = TracksCubit(settings: settings);
+    final inputs = InputsCubit(settings: settings);
     final quantize = QuantizeCubit(repository: looper, settings: settings);
+    final audio = AudioSetupCubit(
+      repository: looper,
+      settings: settings,
+      // No re-enumeration: the preview's device list never changes, and a
+      // periodic timer live for the length of the test body fails the
+      // binding's own invariant check before any tearDown can cancel it.
+      deviceRefreshInterval: Duration.zero,
+    );
     addTearDown(() => unawaited(tracks.close()));
+    addTearDown(() => unawaited(inputs.close()));
     addTearDown(() => unawaited(quantize.close()));
+    addTearDown(() => unawaited(audio.close()));
     addTearDown(() => unawaited(control.close()));
     addTearDown(() => unawaited(midi.close()));
     addTearDown(() => unawaited(tempo.close()));
@@ -363,6 +450,8 @@ void main() {
       options: options,
       tracks: tracks,
       quantize: quantize,
+      inputs: inputs,
+      audio: audio,
     );
   }
 
@@ -378,6 +467,8 @@ void main() {
       LooperBloc bloc,
       TracksCubit tracks,
       QuantizeCubit quantize,
+      InputsCubit inputs,
+      AudioSetupCubit audio,
       TempoCubit tempo,
       RecordOptionsCubit options,
     })?
@@ -415,6 +506,8 @@ void main() {
               BlocProvider.value(value: rig.options),
               BlocProvider.value(value: rig.tracks),
               BlocProvider.value(value: rig.quantize),
+              BlocProvider.value(value: rig.inputs),
+              BlocProvider.value(value: rig.audio),
             ],
             child: Scaffold(
               body: Stack(
@@ -997,10 +1090,111 @@ void main() {
     await pumpTracks(tester, TracksTab.names);
     await tester.tap(find.byKey(const Key('tracks_names_row_2')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('track_rename_sheet')), findsOneWidget);
+    expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
     await expectLater(
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/control_center_track_rename.png'),
+    );
+  }, skip: !hasFonts);
+
+  /// The rig the Audio previews draw: an open device on a 48k/128 clock, with
+  /// the latency measured and a record offset applied.
+  const audioRig = LooperState(tracks: [Track()], status: _previewStatus);
+
+  Future<
+    ({
+      ControlCubit control,
+      MidiSetupCubit midi,
+      LooperRepository looper,
+      LooperBloc bloc,
+      TracksCubit tracks,
+      QuantizeCubit quantize,
+      InputsCubit inputs,
+      AudioSetupCubit audio,
+      TempoCubit tempo,
+      RecordOptionsCubit options,
+    })
+  >
+  pumpAudio(WidgetTester tester, AudioTab tab) async {
+    await size(tester);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.audio)
+      ..showAudioTab(tab);
+    addTearDown(cubit.close);
+
+    final providers = controlProviders(tester, looperState: audioRig);
+    // Two of the eighteen sockets have been given names, which is what the
+    // Device row's `2 named` counts.
+    await providers.inputs.rename(0, 'guitar');
+    await providers.inputs.rename(1, 'mic');
+    await pumpTray(tester, cubit: cubit, control: providers);
+    await tester.pumpAndSettle();
+    return providers;
+  }
+
+  testWidgets('audio domain, device tab with the device list open', (
+    tester,
+  ) async {
+    await pumpAudio(tester, AudioTab.device);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_audio_device.png'),
+    );
+
+    // Opened, because the per-device channel counts are the part worth
+    // pinning: they read 0 in / 0 out until the engine started asking.
+    await tester.tap(find.byKey(const Key('audio_device_row')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_audio_device_list.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('audio domain, every buffer option carrying its own cost', (
+    tester,
+  ) async {
+    await pumpAudio(tester, AudioTab.device);
+    await tester.tap(find.byKey(const Key('audio_rate_row')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_audio_rate.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('audio domain, the named inputs', (tester) async {
+    await pumpAudio(tester, AudioTab.device);
+    await tester.tap(find.byKey(const Key('audio_inputs_row')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_audio_inputs.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('audio domain, recording tab', (tester) async {
+    await pumpAudio(tester, AudioTab.recording);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_audio_recording.png'),
+    );
+
+    await tester.tap(find.byKey(const Key('audio_max_loop_row')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_audio_max_loop.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('audio domain, status tab', (tester) async {
+    await pumpAudio(tester, AudioTab.status);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_audio_status.png'),
     );
   }, skip: !hasFonts);
 }
