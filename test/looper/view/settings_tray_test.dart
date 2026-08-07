@@ -491,6 +491,7 @@ void main() {
       await pump(tester);
       cubit.dragTo(0.5);
       await tester.pump();
+      await tester.pumpAndSettle();
 
       final midway = shadowOf(tester).color.a;
       expect(midway, greaterThan(0));
@@ -498,6 +499,34 @@ void main() {
       cubit.open();
       await tester.pumpAndSettle();
       expect(shadowOf(tester).color.a, greaterThan(midway));
+    });
+
+    testWidgets('the shadow TRACKS the slide on a tap, rather than snapping '
+        'ahead of it — a tap moves dragProgress between 0 and 1 in one '
+        'frame while the sheet takes 220ms to get there', (tester) async {
+      await pump(tester);
+      cubit.open();
+      await tester.pumpAndSettle();
+      final open = shadowOf(tester).color.a;
+      expect(open, greaterThan(0));
+
+      // Closing: the sheet is still fully on screen for the whole slide, so
+      // the shadow under it has to still be there part-way through. Reading
+      // `dragProgress` straight off the cubit drops it to zero on frame one.
+      cubit.closeTray();
+      // Three frames, and each earns its place: the first delivers the
+      // cubit's emit, the second is the fade's own first frame, and only
+      // then is there an animation to advance halfway.
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(kTrayMotion ~/ 2);
+
+      final sliding = shadowOf(tester).color.a;
+      expect(sliding, greaterThan(0));
+      expect(sliding, lessThan(open));
+
+      await tester.pumpAndSettle();
+      expect(shadowOf(tester).color.a, 0);
     });
 
     testWidgets('is opaque: the stage never shows through the settings being '

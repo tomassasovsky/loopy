@@ -195,11 +195,14 @@ class _StorageSystemTabState extends State<StorageSystemTab> {
     showDivider: showDivider,
   );
 
-  /// Bytes as the GB figure the mockups print, to one decimal.
+  /// Bytes as the GB figure the mockups print.
   ///
   /// Decimal gigabytes, not gibibytes: this is the number printed on the disk
   /// and quoted by every other appliance, and a "12.4 GB free" that disagrees
   /// with the sticker is a bug report.
-  static String _gigabytes(int bytes) =>
-      (bytes / 1000000000).toStringAsFixed(1);
+  ///
+  /// Handed over as a number, not a printed string: the one decimal and the
+  /// separator are the locale's, so `es` reads `41,6 GB` rather than
+  /// disagreeing with the sample rate About prints two tabs away.
+  static double _gigabytes(int bytes) => bytes / 1000000000;
 }

@@ -113,7 +113,7 @@ class _SettingsTrayState extends State<SettingsTray> {
     final cubit = context.read<SettingsTrayCubit>();
     final motion = _dragging || MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
-        : const Duration(milliseconds: 220);
+        : kTrayMotion;
 
     // Full-height, like iOS Control Center — the tray covers the entire
     // touchscreen with a translucent scrim (see [TrayPanel]), not a small
@@ -159,7 +159,7 @@ class _SettingsTrayState extends State<SettingsTray> {
         // reads as content *appearing in place*, not as something sliding).
         AnimatedPositioned(
           duration: motion,
-          curve: Curves.easeOut,
+          curve: kTrayMotionCurve,
           top: (state.dragProgress.clamp(0.0, 1.0) - 1) * trayHeight,
           left: 0,
           right: 0,
@@ -174,7 +174,10 @@ class _SettingsTrayState extends State<SettingsTray> {
                 BlocProvider<WifiCubit>.value(value: _wifi!),
                 BlocProvider<BluetoothCubit>.value(value: _bluetooth!),
               ],
-              child: const TrayPanel(),
+              // The same duration the slide above runs on — zero mid-drag, so
+              // the sheet's shadow tracks the finger exactly and fades with
+              // the slide on a tap rather than snapping ahead of it.
+              child: TrayPanel(motion: motion),
             ),
           ),
         ),

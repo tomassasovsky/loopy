@@ -4,7 +4,7 @@
 /// same pixels. Anything only one file needs stays private to that file.
 library;
 
-import 'dart:ui';
+import 'package:flutter/animation.dart';
 
 /// Rendered height of the tray's drag handle.
 ///
@@ -24,3 +24,14 @@ const double kTraySheetRadius = 17;
 
 /// Size of the drag handle's pill, as the mockups draw it.
 const Size kTrayHandlePill = Size(62, 5);
+
+/// How long the sheet takes to slide open or shut on a tap.
+///
+/// Here rather than private to `settings_tray.dart` because the sheet's own
+/// cast shadow has to fade over exactly this, on exactly this curve: a shadow
+/// driven straight off `dragProgress` — which a tap snaps between 0 and 1 in
+/// one frame — pops off a sheet that is still sliding.
+const Duration kTrayMotion = Duration(milliseconds: 220);
+
+/// The curve the slide follows, and so the curve the shadow fades on.
+const Curve kTrayMotionCurve = Curves.easeOut;

@@ -399,6 +399,23 @@ void main() {
     // the test should be written against whatever that surface turns out to be
     // rather than against the stopgap.
 
+    /// Takes the failure toast back down before this test's tree goes away.
+    ///
+    /// `_showWaveformWindowFailedBanner` raises it with no `autoCloseDuration`,
+    /// so it is manual-dismiss — nothing retires it on its own. And
+    /// `toastification`'s manager is a GLOBAL that outlives the tree, while
+    /// `resetAppToastsForTest` in setUp only clears THIS module's registry, not
+    /// the item still live in that manager. A toast left standing here is
+    /// therefore not this test's problem but the next one's: the following
+    /// test's `showAppToast` renders into the dead overlay and its banner is
+    /// never found. Ordering hid it — the toast test happens to be declared
+    /// first — until a randomised seed put it last.
+    Future<void> dismissFailureToast(WidgetTester tester) async {
+      dismissAppToast(AppToastId.waveformFailed);
+      // Past the removal animation and the overlay teardown it schedules.
+      await tester.pump(const Duration(seconds: 10));
+    }
+
     testWidgets(
       'a window that never readies is attempted ONCE, and the failure is on '
       'the cubit the Display face reads',
@@ -419,6 +436,8 @@ void main() {
             .read<WaveformWindowCubit>();
         expect(waveform.state.openFailed, isTrue);
         expect(waveform.state.enabled, isTrue);
+
+        await dismissFailureToast(tester);
       },
     );
 
@@ -437,10 +456,10 @@ void main() {
 
         expect(windowService.openCalls, 2);
 
-        // Drain the failure toasts' own dismiss timers: two failures raise
-        // two, and the binding fails the test on a timer that outlives the
-        // tree rather than on anything this test is about.
-        await tester.pump(const Duration(seconds: 10));
+        // Two failed opens, but ONE toast: they share an id, so the second
+        // `showAppToast` dismissed the first. Taking it down is not tidiness —
+        // see [dismissFailureToast].
+        await dismissFailureToast(tester);
       },
     );
 

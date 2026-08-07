@@ -619,7 +619,7 @@ void main() {
       await pump(tester, tab: SystemTab.storage);
       final l10n = l10nOf(tester);
 
-      expect(find.text(l10n.storageGigabytes('6.2')), findsOneWidget);
+      expect(find.text(l10n.storageGigabytes(6.2)), findsOneWidget);
 
       await tester.tap(
         find.byKey(const Key('system_storage_delete_captures')),
@@ -630,7 +630,7 @@ void main() {
       // Backing out changes nothing.
       await tester.tap(find.byKey(const Key('console_confirm_cancel')));
       await tester.pumpAndSettle();
-      expect(find.text(l10n.storageGigabytes('6.2')), findsOneWidget);
+      expect(find.text(l10n.storageGigabytes(6.2)), findsOneWidget);
 
       await tester.tap(
         find.byKey(const Key('system_storage_delete_captures')),
@@ -641,8 +641,8 @@ void main() {
 
       // The fake mutates its own figures, so this number could not have been
       // guessed by subtracting anything the face already held.
-      expect(find.text(l10n.storageGigabytes('6.2')), findsNothing);
-      expect(find.text(l10n.storageGigabytes('2.1')), findsOneWidget);
+      expect(find.text(l10n.storageGigabytes(6.2)), findsNothing);
+      expect(find.text(l10n.storageGigabytes(2.1)), findsOneWidget);
     });
 
     testWidgets('nowhere to export is a fact, not a failure — the row says '
@@ -689,7 +689,7 @@ void main() {
       // A refused WRITE is not an unreadable disk. The five figures were
       // measured and are still true.
       expect(find.byKey(const Key('system_storage_card')), findsOneWidget);
-      expect(find.text(l10n.storageGigabytes('41.6')), findsOneWidget);
+      expect(find.text(l10n.storageGigabytes(41.6)), findsOneWidget);
       expect(find.text(l10n.storageUnknown), findsNothing);
       expect(facts.state.hasStorage, isTrue);
 
@@ -723,11 +723,11 @@ void main() {
       final l10n = l10nOf(tester);
 
       for (final (key, figure) in const [
-        (Key('system_storage_sessions'), '41.6'),
-        (Key('system_storage_captures'), '6.2'),
-        (Key('system_storage_plugins'), '1.1'),
-        (Key('system_storage_system'), '4.7'),
-        (Key('system_storage_free'), '12.4'),
+        (Key('system_storage_sessions'), 41.6),
+        (Key('system_storage_captures'), 6.2),
+        (Key('system_storage_plugins'), 1.1),
+        (Key('system_storage_system'), 4.7),
+        (Key('system_storage_free'), 12.4),
       ]) {
         expect(find.byKey(key), findsOneWidget, reason: '$key');
         expect(
@@ -750,7 +750,7 @@ void main() {
 
       expect(find.text(l10n.storageUnknown), findsOneWidget);
       expect(find.byKey(const Key('system_storage_card')), findsNothing);
-      expect(find.text(l10n.storageGigabytes('0.0')), findsNothing);
+      expect(find.text(l10n.storageGigabytes(0)), findsNothing);
     });
   });
 

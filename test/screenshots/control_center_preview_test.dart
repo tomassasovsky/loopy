@@ -1448,16 +1448,21 @@ void main() {
     );
   }, skip: !hasFonts);
 
-  testWidgets('system domain, the open-source notices panel', (tester) async {
-    // A global that accumulates: reset so the panel shows these three and
-    // whatever another test registered earlier is not in the picture.
+  /// Puts the licence registry in the state both LEGAL goldens are drawn
+  /// against: exactly these three packages, and nothing an earlier test left.
+  ///
+  /// Called by BOTH of them rather than once by whichever runs first. The
+  /// registry is process-global and accumulates, so a golden that inherits its
+  /// predecessor's registration passes in file order and fails the moment it
+  /// runs alone, under `--plain-name`, or with a randomised ordering seed —
+  /// and the About row draws the COUNT, so an inherited registry is an
+  /// inherited pixel.
+  void seedLicences() {
     LicenseRegistry.reset();
     LicenseRegistry.addLicense(
       () => Stream.fromIterable([
         const LicenseEntryWithLineBreaks(
-          [
-            'segno',
-          ],
+          ['segno'],
           'GNU GENERAL PUBLIC LICENSE\n\nVersion 3, 29 June 2007\n\nThis '
           'program is free software: you can redistribute it and/or modify '
           'it under the terms of the GNU General Public License as '
@@ -1468,6 +1473,10 @@ void main() {
         const LicenseEntryWithLineBreaks(['vst3sdk'], 'MIT License'),
       ]),
     );
+  }
+
+  testWidgets('system domain, the open-source notices panel', (tester) async {
+    seedLicences();
     await pumpSystem(tester, SystemTab.about);
     await tester.tap(find.byKey(const Key('system_about_notices')));
     await tester.pumpAndSettle();
@@ -1483,6 +1492,7 @@ void main() {
   }, skip: !hasFonts);
 
   testWidgets('system domain, about tab', (tester) async {
+    seedLicences();
     await pumpSystem(tester, SystemTab.about);
     await expectLater(
       find.byType(Scaffold),

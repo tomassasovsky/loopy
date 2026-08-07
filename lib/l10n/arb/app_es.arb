@@ -1895,7 +1895,7 @@
     "storageCapturesTitle": "Capturas",
     "storageCapturesSubtitle": "exportaciones y pistas",
     "storagePluginsTitle": "Plugins",
-    "storagePluginsSubtitle": "{count} instalados",
+    "storagePluginsSubtitle": "{count, plural, =1{1 instalado} other{{count} instalados}}",
     "@storagePluginsSubtitle": {
         "placeholders": {
             "count": {
@@ -1910,7 +1910,11 @@
     "@storageGigabytes": {
         "placeholders": {
             "value": {
-                "type": "String"
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
             }
         }
     },
@@ -1974,7 +1978,7 @@
     "aboutLicenceRow": "Licencia",
     "aboutLicenceValue": "GPLv3",
     "aboutNoticesRow": "Avisos de código abierto",
-    "aboutNoticesCount": "{count} componentes",
+    "aboutNoticesCount": "{count, plural, =1{1 componente} other{{count} componentes}}",
     "@aboutNoticesCount": {
         "placeholders": {
             "count": {

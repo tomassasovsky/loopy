@@ -2562,7 +2562,7 @@
     "storageCapturesTitle": "Captures",
     "storageCapturesSubtitle": "exports and stems",
     "storagePluginsTitle": "Plugins",
-    "storagePluginsSubtitle": "{count} installed",
+    "storagePluginsSubtitle": "{count, plural, =1{1 installed} other{{count} installed}}",
     "@storagePluginsSubtitle": {
         "placeholders": {
             "count": {
@@ -2575,9 +2575,14 @@
     "storageFreeTitle": "Free",
     "storageGigabytes": "{value} GB",
     "@storageGigabytes": {
+        "description": "One figure of the disk breakdown. Formatted rather than pre-printed, so the decimal separator is the locale's — the sample rate beside it in About already is.",
         "placeholders": {
             "value": {
-                "type": "String"
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
             }
         }
     },
@@ -2647,7 +2652,7 @@
     "aboutLicenceRow": "Licence",
     "aboutLicenceValue": "GPLv3",
     "aboutNoticesRow": "Open-source notices",
-    "aboutNoticesCount": "{count} components",
+    "aboutNoticesCount": "{count, plural, =1{1 component} other{{count} components}}",
     "@aboutNoticesCount": {
         "placeholders": {
             "count": {

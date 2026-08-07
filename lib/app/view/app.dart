@@ -273,7 +273,15 @@ class App extends StatelessWidget {
           // About tab must not be the only thing that can ask. Loads on
           // create; the Storage face re-reads on open, because a USB stick may
           // have arrived since.
+          //
+          // Eager, and that is what makes those two separate reads. Both faces
+          // that read this cubit also call `load()` from their own `initState`,
+          // so created LAZILY it would be constructed by that very read — the
+          // create-load and the face's re-read firing in the same instant, two
+          // concurrent disk walks answering one question instead of a boot
+          // read the face later refreshes.
           BlocProvider(
+            lazy: false,
             create: (context) {
               final cubit = ConsoleFactsCubit(
                 client: context.read<ConsoleFactsClient>(),
