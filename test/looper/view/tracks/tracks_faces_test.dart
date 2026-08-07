@@ -676,13 +676,12 @@ void main() {
       expect(midway.height, greaterThan(0));
     });
 
-    testWidgets('a caption is overhead at every scroll position', (
+    testWidgets('the group you have not reached waits at the bottom edge', (
       tester,
     ) async {
-      // Sticky section headers: LANES holds the top of a long lane list, and
-      // scrolled far enough QUANTIZE RECORDING pushes it out and takes over —
-      // so the panel never stops saying which of its two questions a row
-      // answers.
+      // Two captions, one viewport: the current one pins overhead, and the
+      // one below waits at the bottom edge so the panel's second question is
+      // visible before you have scrolled the whole lane list to find it.
       await pump(
         tester,
         tab: TracksTab.routing,
@@ -695,23 +694,30 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('tracks_routing_row_0')));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('track_routing_input_0')));
+      await tester.pumpAndSettle();
       final l10n = l10nOf(tester);
 
       final panel = tester.getRect(
         find.byKey(const Key('track_routing_dialog_0')),
       );
       final lanesTop = tester.getRect(find.text(l10n.trackLanesGroup)).top;
-      final quantizeTop = tester
-          .getRect(
-            find.text(l10n.trackQuantizeGroup),
-          )
-          .top;
       final firstRow = tester.getRect(
         find.byKey(const Key('track_routing_input_0')),
       );
-      // Pinned, not merely present: the caption sits ABOVE its own first row
-      // and stays there as the list runs under it.
+      // Pinned, not merely present: the caption sits ABOVE its own first row.
       expect(lanesTop, lessThan(firstRow.top));
+
+      // The upcoming caption is showing, and it is at the BOTTOM of the
+      // scrolling area rather than up with the list.
+      final preview = find.byKey(const Key('track_routing_upcoming_group'));
+      expect(tester.widget<AnimatedOpacity>(preview).opacity, 1);
+      // At the BOTTOM: below the first lane row, not up with the list.
+      expect(tester.getRect(preview).top, greaterThan(firstRow.bottom));
+      expect(
+        tester.getRect(preview).bottom,
+        lessThanOrEqualTo(panel.bottom),
+      );
 
       await tester.drag(
         find.byKey(const Key('track_routing_input_3')),
@@ -719,29 +725,38 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text(l10n.trackLanesGroup), findsOneWidget);
       expect(
         tester.getRect(find.text(l10n.trackLanesGroup)).top,
         lanesTop,
         reason: 'the caption floats — it does not travel with its list',
       );
 
-      // The second caption is NOT pinned in place — it travels with the list
-      // until it would reach the top, which is how section headers hand over.
-      expect(
-        tester.getRect(find.text(l10n.trackQuantizeGroup)).top,
-        lessThan(quantizeTop),
+      // Scrolled to the end, the real caption has arrived and the preview has
+      // stood down, so the two are never on screen at once.
+      await tester.drag(
+        find.byKey(const Key('track_routing_input_5')),
+        const Offset(0, -2000),
       );
-      // Both are still inside the panel: the list scrolls, the panel does not.
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<AnimatedOpacity>(preview).opacity, 0);
+      // The REAL caption — the preview lives outside the scroll view, and is
+      // faded out rather than removed, so scope the search to the list.
       expect(
-        panel.contains(tester.getRect(find.text(l10n.trackLanesGroup)).topLeft),
-        isTrue,
-      );
-      expect(
-        panel.contains(
-          tester.getRect(find.text(l10n.trackQuantizeGroup)).topLeft,
+        find.descendant(
+          of: find.byType(CustomScrollView),
+          matching: find.text(l10n.trackQuantizeGroup),
         ),
-        isTrue,
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('track_routing_quantize_never')),
+        findsOneWidget,
+      );
+      // The panel itself never moved; only its contents did.
+      expect(
+        tester.getRect(find.byKey(const Key('track_routing_dialog_0'))),
+        panel,
       );
     });
 
@@ -898,7 +913,12 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       expect(find.byKey(const Key('track_routing_input_7')), findsOneWidget);
-      // ...and the quantize group never went anywhere to reach it.
+      // ...and the quantize group is reachable in the same scroll.
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('track_routing_quantize_never')),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(
         find.byKey(const Key('track_routing_quantize_never')),
         findsOneWidget,

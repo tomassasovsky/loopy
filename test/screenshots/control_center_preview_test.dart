@@ -960,6 +960,20 @@ void main() {
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/control_center_track_routing_scrolled.png'),
     );
+
+    // Scrolled to the end: QUANTIZE RECORDING has taken the pinned slot and
+    // pushed LANES out — the handover that makes both captions sticky.
+    // Dragged from a row that is actually on screen: a drag on an off-screen
+    // finder warps the pointer and never reaches the scrollable.
+    await tester.drag(
+      find.byKey(const Key('track_routing_input_5')),
+      const Offset(0, -2000),
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/control_center_track_routing_handover.png'),
+    );
   }, skip: !hasFonts);
 
   testWidgets("tracks domain, a track's own routing panel", (tester) async {
