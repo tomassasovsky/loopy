@@ -65,19 +65,21 @@ class ConsoleFactsCubit extends Cubit<ConsoleFactsState> {
   /// The only write this cubit makes, and it does not model its own effect:
   /// what the face shows afterwards is measured, not the figures it held minus
   /// what the delete claimed to remove.
-  Future<int> deleteCapturesOlderThan(int days) async {
+  ///
+  /// Returns nothing, and the client's own count is dropped on the floor here
+  /// deliberately: a cubit's output is its state, and no face draws "14
+  /// captures removed". The figures after the re-read are the answer.
+  Future<void> deleteCapturesOlderThan(int days) async {
     emit(state.copyWith(busy: true, actionFailed: false));
     try {
-      final removed = await _client.deleteCapturesOlderThan(days);
-      if (isClosed) return removed;
+      await _client.deleteCapturesOlderThan(days);
+      if (isClosed) return;
       emit(state.copyWith(busy: false));
       await load();
-      return removed;
     } on Object {
       // The ACTION failed, not the read: the figures already on screen were
       // measured and are still true.
       if (!isClosed) emit(state.copyWith(busy: false, actionFailed: true));
-      return 0;
     }
   }
 

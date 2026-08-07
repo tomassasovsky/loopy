@@ -104,9 +104,8 @@ void main() {
       await cubit.load();
       final before = cubit.state.storage.captureBytes;
 
-      final removed = await cubit.deleteCapturesOlderThan(30);
+      await cubit.deleteCapturesOlderThan(30);
 
-      expect(removed, greaterThan(0));
       // The figure came back off the client, not off arithmetic here.
       expect(cubit.state.storage.captureBytes, lessThan(before));
       expect(cubit.state.status, ConsoleFactsStatus.ready);
@@ -120,7 +119,7 @@ void main() {
       await cubit.load();
       expect(cubit.state.hasStorage, isTrue);
 
-      expect(await cubit.deleteCapturesOlderThan(30), 0);
+      await cubit.deleteCapturesOlderThan(30);
 
       // The figures were measured; the WRITE is what failed.
       expect(cubit.state.hasStorage, isTrue);
