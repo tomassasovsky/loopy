@@ -275,7 +275,7 @@ class _SettingsPageState extends State<SettingsPage> {
         SetupTrackNameRow(
           rowKey: Key('settings_trackName_$i'),
           channel: i,
-          name: l10n.displayTrackName(tracks.state.names[i], i),
+          name: l10n.trackName(tracks.state.names, i),
           onTap: () => showRenameTrackDialog(
             context: context,
             cubit: context.read<TracksCubit>(),
@@ -293,10 +293,7 @@ class _SettingsPageState extends State<SettingsPage> {
           rowKey: Key('settings_trackLengthPreset_$i'),
           channel: i,
           bars: looperTracks[i].lengthPresetBars,
-          label: l10n.displayTrackName(
-            i < tracks.state.names.length ? tracks.state.names[i] : '',
-            i,
-          ),
+          label: l10n.trackName(tracks.state.names, i),
           autoLabel: l10n.lengthPresetAuto,
           barsLabel: l10n.lengthPresetBars,
           onChanged: (bars) => context.read<LooperBloc>().add(
@@ -315,10 +312,7 @@ class _SettingsPageState extends State<SettingsPage> {
           rowKey: Key('settings_trackOneShot_$i'),
           channel: i,
           oneShot: looperTracks[i].oneShot,
-          label: l10n.displayTrackName(
-            i < tracks.state.names.length ? tracks.state.names[i] : '',
-            i,
-          ),
+          label: l10n.trackName(tracks.state.names, i),
           onChanged: (oneShot) => context.read<LooperBloc>().add(
             LooperOneShotToggled(i, oneShot: oneShot),
           ),

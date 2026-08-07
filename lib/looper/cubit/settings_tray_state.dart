@@ -35,6 +35,20 @@ enum SettingsTrayDestination {
   /// showing is [SettingsTrayState.loopTab], not a destination of its own.
   loop,
 
+  /// In-tray Tracks domain — names, lengths and routing as tabs of one entry.
+  ///
+  /// One destination, not three: all three tabs answer the same question —
+  /// *what is each track, and where does it go?* — and they had been split
+  /// between the Settings scroll's `tracks` section, the Signal page and, for
+  /// the quantize override, nowhere at all (#523).
+  ///
+  /// The difference from [control] and [loop] is what a ROW means: there a row
+  /// is a global setting, here every row on all three tabs is a **track**, and
+  /// the engine's own roster drives all three lists. That is why this domain
+  /// is the one that needed an empty state — a face whose rows are objects can
+  /// have none of them.
+  tracks,
+
   /// In-tray tuner panel. Placement only — the tuner itself is not
   /// implemented, and this face says so.
   tuner,
@@ -59,6 +73,7 @@ class SettingsTrayState extends Equatable {
     this.networkTab = NetworkTab.wifi,
     this.controlTab = ControlTab.pedal,
     this.loopTab = LoopTab.tempo,
+    this.tracksTab = TracksTab.names,
   });
 
   /// Live drag/settle progress in `0..1` — `0` fully closed, `1` fully open.
@@ -95,6 +110,9 @@ class SettingsTrayState extends Equatable {
   /// Which tab the Loop domain shows. Same rule as [networkTab].
   final LoopTab loopTab;
 
+  /// Which tab the Tracks domain shows. Same rule as [networkTab].
+  final TracksTab tracksTab;
+
   /// Returns a copy with the given fields replaced.
   SettingsTrayState copyWith({
     double? dragProgress,
@@ -104,6 +122,7 @@ class SettingsTrayState extends Equatable {
     NetworkTab? networkTab,
     ControlTab? controlTab,
     LoopTab? loopTab,
+    TracksTab? tracksTab,
   }) => SettingsTrayState(
     dragProgress: dragProgress ?? this.dragProgress,
     isNavigating: isNavigating ?? this.isNavigating,
@@ -112,6 +131,7 @@ class SettingsTrayState extends Equatable {
     networkTab: networkTab ?? this.networkTab,
     controlTab: controlTab ?? this.controlTab,
     loopTab: loopTab ?? this.loopTab,
+    tracksTab: tracksTab ?? this.tracksTab,
   );
 
   @override
@@ -123,5 +143,6 @@ class SettingsTrayState extends Equatable {
     networkTab,
     controlTab,
     loopTab,
+    tracksTab,
   ];
 }

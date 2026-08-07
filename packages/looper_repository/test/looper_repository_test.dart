@@ -599,6 +599,52 @@ void main() {
       },
     );
 
+    test('a per-track override is projected onto the track it names', () async {
+      // The engine takes the override and never reports it back, so the
+      // repository's own map is the only thing that knows it — and a surface
+      // that draws the override has to be told when it changes, including on
+      // the session load that writes them with no user gesture at all.
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [
+          TrackSnapshot(
+            state: TrackState.empty,
+            volume: 1,
+            muted: false,
+            lengthFrames: 0,
+            undoDepth: 0,
+            rms: 0,
+            peak: 0,
+          ),
+        ],
+      );
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      expect(repo.state.tracks.first.quantizeOverride, isNull);
+
+      final emitted = repo.looperState.firstWhere(
+        (state) => state.tracks.first.quantizeOverride != null,
+      );
+      repo.setTrackQuantize(channel: 0, enabled: false);
+
+      expect((await emitted).tracks.first.quantizeOverride, isFalse);
+      expect(repo.state.tracks.first.quantizeOverride, isFalse);
+
+      repo.setTrackQuantize(channel: 0, enabled: true);
+      expect(repo.state.tracks.first.quantizeOverride, isTrue);
+
+      repo.setTrackQuantize(channel: 0, enabled: null);
+      expect(repo.state.tracks.first.quantizeOverride, isNull);
+    });
+
     test('rec/dub, auto-record and multiples re-apply on start', () {
       final repo = buildRepo()
         ..setRecDub(enabled: true)

@@ -9,6 +9,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/pedal/view/pedal_assignment_page.dart';
 import 'package:segno/theme/surface_theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -23,12 +24,16 @@ TrackEffect _fx(String slotId) =>
 
 void main() {
   late _MockLooperRepository looper;
+  late TracksCubit tracks;
   late StreamController<LooperState> looperStates;
   late Map<int, List<TrackEffect>> trackChains;
   late ControlCubit control;
   late SettingsRepository settings;
 
   setUp(() {
+    tracks = TracksCubit(
+      settings: SettingsRepository(store: FakeKeyValueStore()),
+    );
     looper = _MockLooperRepository();
     looperStates = StreamController<LooperState>.broadcast();
     trackChains = {
@@ -85,7 +90,10 @@ void main() {
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(extensions: const [SurfaceTheme.dark]),
         home: MultiBlocProvider(
-          providers: [BlocProvider.value(value: control)],
+          providers: [
+            BlocProvider.value(value: control),
+            BlocProvider.value(value: tracks),
+          ],
           child: RepositoryProvider<LooperRepository>.value(
             value: looper,
             child: const PedalAssignmentPage(),
@@ -159,7 +167,7 @@ void main() {
       await select(tester, PedalButton.recPlay);
 
       await tapVisible(tester, find.byKey(const Key('assign_target_picker')));
-      await tester.tap(find.text('Track 3 chain').last);
+      await tester.tap(find.text('TRACK 4 chain').last);
       await tester.pumpAndSettle();
 
       final binding = control.state.globalBindings.lookup(
@@ -330,7 +338,7 @@ void main() {
         await bindThenBreak(tester);
 
         await tapVisible(tester, find.text(tester.l10n.pedalAssignRebind));
-        await tester.tap(find.text('Track 5 chain').last);
+        await tester.tap(find.text('TRACK 6 chain').last);
         await tester.pumpAndSettle();
 
         expect(

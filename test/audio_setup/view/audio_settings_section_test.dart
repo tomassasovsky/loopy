@@ -35,9 +35,13 @@ void main() {
   // The MIDI-learn section (part 7) reads the mapping set off ControlCubit and
   // enumerates its targets from the looper repository.
   late ControlCubit control;
+  late TracksCubit tracks;
   late LooperRepository looper;
 
   setUp(() {
+    tracks = TracksCubit(
+      settings: SettingsRepository(store: FakeKeyValueStore()),
+    );
     cubit = _MockAudioSetupCubit();
     midi = _MockMidiSetupCubit();
     when(() => midi.state).thenReturn(const MidiSetupState());
@@ -117,6 +121,7 @@ void main() {
         BlocProvider<QuantizeCubit>.value(value: quantize),
         BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
         BlocProvider<ControlCubit>.value(value: control),
+        BlocProvider<TracksCubit>.value(value: tracks),
       ],
       child: RepositoryProvider<LooperRepository>.value(
         value: looper,

@@ -5,6 +5,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/common/pill_tabs.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/pedal/view/pedal_plate.dart';
 import 'package:segno/theme/page_transitions.dart';
@@ -19,10 +20,16 @@ import 'package:segno/theme/theme.dart';
 Future<void> showPedalAssignmentPage(BuildContext context) {
   final control = context.read<ControlCubit>();
   final looper = context.read<LooperRepository>();
+  // Re-provided across the route: this page names its targets by the rig's
+  // track names now (#526), and a pushed route inherits nothing.
+  final tracks = context.read<TracksCubit>();
   return Navigator.of(context).push(
     desktopPageRoute<void>(
       (_) => MultiBlocProvider(
-        providers: [BlocProvider.value(value: control)],
+        providers: [
+          BlocProvider.value(value: control),
+          BlocProvider.value(value: tracks),
+        ],
         child: RepositoryProvider<LooperRepository>.value(
           value: looper,
           child: const PedalAssignmentPage(),
@@ -154,6 +161,7 @@ class _PlatePicker extends StatelessWidget {
           // hardware, and mirroring the running rig's LEDs here would read as
           // state the user can edit from this screen.
           frame: PedalStateFrame.blank(),
+          trackNames: context.watch<TracksCubit>().state.names,
           // Select on the PRESS edge and swallow the release: a picker, not a
           // control surface — nothing here may reach the engine.
           onPress: (button, {required down}) {
@@ -355,7 +363,11 @@ class _BindingRow extends StatelessWidget {
     final target = binding.decodeTarget();
     final label = !resolves || target == null
         ? l10n.pedalAssignStale
-        : bindingTargetLabel(l10n, target);
+        : bindingTargetLabel(
+            l10n,
+            context.watch<TracksCubit>().state.names,
+            target,
+          );
 
     return Semantics(
       label: l10n.a11yPedalAssignRow(binding.key.button.name, label),
@@ -468,6 +480,9 @@ class _TargetPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    // Read HERE, not inside `itemBuilder`: a popup's items are built outside
+    // the build phase, and `watch` from there is an error.
+    final trackNames = context.watch<TracksCubit>().state.names;
     return PopupMenuButton<FxBindingTarget>(
       key: const Key('assign_target_picker'),
       tooltip: l10n.pedalAssignTarget,
@@ -476,7 +491,7 @@ class _TargetPicker extends StatelessWidget {
         for (final target in targets)
           PopupMenuItem(
             value: target,
-            child: Text(bindingTargetLabel(l10n, target)),
+            child: Text(bindingTargetLabel(l10n, trackNames, target)),
           ),
       ],
       child: Text(label ?? l10n.pedalAssignTarget),

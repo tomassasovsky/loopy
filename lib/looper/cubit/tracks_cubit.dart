@@ -1,6 +1,7 @@
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:segno/common/console_mode.dart';
+import 'package:segno/l10n/localized.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'tracks_state.dart';
@@ -20,7 +21,7 @@ class TracksCubit extends Cubit<TracksState> {
   }) : _settings = settings,
        super(
          TracksState(
-           names: List.generate(trackCount, (i) => 'TRACK ${i + 1}'),
+           names: List.generate(trackCount, storedDefaultTrackName),
          ),
        );
 

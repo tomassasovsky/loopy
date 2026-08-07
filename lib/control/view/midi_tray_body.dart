@@ -9,6 +9,7 @@ import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The MIDI tab of the Control domain: the foot controller, and every global
@@ -507,6 +508,7 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
   }) {
     final l10n = context.l10n;
     final looper = context.read<LooperRepository>();
+    final trackNames = context.watch<TracksCubit>().state.names;
     final adding = !connected
         ? null
         : switch (_open) {
@@ -519,15 +521,15 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
         for (final target in looper.availableValueTargets())
           (
             target: target.canonicalString(),
-            title: valueTargetLabel(l10n, looper, target),
+            title: valueTargetLabel(l10n, trackNames, looper, target),
             state: null,
           )
       else if (adding == false)
         for (final target in looper.availableBindingTargets())
           (
             target: target.canonicalString(),
-            title: bindingTargetLabel(l10n, target),
-            state: fxStageLabel(l10n, target.address),
+            title: bindingTargetLabel(l10n, trackNames, target),
+            state: fxStageLabel(l10n, trackNames, target.address),
           ),
     ];
 
@@ -625,7 +627,12 @@ class _MappingRow extends StatelessWidget {
     final l10n = context.l10n;
     final surface = context.surface;
     final looper = context.read<LooperRepository>();
-    final resolved = _resolve(l10n, looper, binding);
+    final resolved = _resolve(
+      l10n,
+      context.watch<TracksCubit>().state.names,
+      looper,
+      binding,
+    );
 
     final row = ConsoleRow(
       key: const Key('midi_mapping_row'),
@@ -859,6 +866,7 @@ class _MappingRow extends StatelessWidget {
   /// resolves still HAS a name, and the row says it.
   ({String label, bool resolves})? _resolve(
     AppLocalizations l10n,
+    List<String> trackNames,
     LooperRepository looper,
     ControllerBinding binding,
   ) {
@@ -867,14 +875,14 @@ class _MappingRow extends StatelessWidget {
         final target = ControlValueTarget.tryParse(binding.target);
         if (target == null) return null;
         return (
-          label: valueTargetLabel(l10n, looper, target),
+          label: valueTargetLabel(l10n, trackNames, looper, target),
           resolves: looper.valueTargetResolves(target),
         );
       case DiscreteBinding():
         final target = FxBindingTarget.tryParse(binding.target);
         if (target == null) return null;
         return (
-          label: bindingTargetLabel(l10n, target),
+          label: bindingTargetLabel(l10n, trackNames, target),
           resolves: looper.bindingResolves(target),
         );
     }

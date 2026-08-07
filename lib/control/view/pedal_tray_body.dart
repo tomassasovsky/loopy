@@ -9,6 +9,7 @@ import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The Pedal tab of the Control domain: which footswitch you are editing, and
@@ -194,6 +195,7 @@ class _PedalTrayBodyState extends State<PedalTrayBody> {
     final l10n = context.l10n;
     final surface = context.surface;
     final looper = context.read<LooperRepository>();
+    final trackNames = context.watch<TracksCubit>().state.names;
     final binding = _bindingFor(state, button, bank);
     final target = binding?.decodeTarget();
     final resolves = target != null && looper.bindingResolves(target);
@@ -205,7 +207,7 @@ class _PedalTrayBodyState extends State<PedalTrayBody> {
       value: switch ((binding, resolves)) {
         (null, _) => l10n.controlUnassigned,
         (_, false) => l10n.controlTargetMissing,
-        _ => bindingTargetLabel(l10n, target!),
+        _ => bindingTargetLabel(l10n, trackNames, target!),
       },
       // A binding whose target is gone takes the warning tone. Drawing it in
       // the muted grey of "unassigned" would state a different and wrong fact:
@@ -330,15 +332,17 @@ class _PedalTrayBodyState extends State<PedalTrayBody> {
     final l10n = context.l10n;
     final surface = context.surface;
     final chosen = target == current;
-    final stage = fxStageLabel(l10n, target.address);
+    final trackNames = context.watch<TracksCubit>().state.names;
+    final stage = fxStageLabel(l10n, trackNames, target.address);
     return ConsoleRow(
       key: Key('pedal_target_${target.canonicalString()}'),
       title: switch (target) {
-        FxChainTarget() => bindingTargetLabel(l10n, target),
+        FxChainTarget() => bindingTargetLabel(l10n, trackNames, target),
         // Named by its own effect rather than by repeating the chain above
         // it, which the row already says at its trailing edge.
         FxSlotTarget() =>
-          fxSlotName(looper, target) ?? bindingTargetLabel(l10n, target),
+          fxSlotName(looper, target) ??
+              bindingTargetLabel(l10n, trackNames, target),
       },
       titleColor: target is FxSlotTarget ? surface.textSecondary : null,
       state: switch (target) {
@@ -379,6 +383,7 @@ class _SwitchCard extends StatelessWidget {
     final l10n = context.l10n;
     final surface = context.surface;
     final looper = context.read<LooperRepository>();
+    final trackNames = context.watch<TracksCubit>().state.names;
     final target = binding?.decodeTarget();
     final resolves = target != null && looper.bindingResolves(target);
     // Transport switches only — a track switch is a row, and its name depends
@@ -387,7 +392,7 @@ class _SwitchCard extends StatelessWidget {
     final label = switch ((binding, resolves)) {
       (null, _) => l10n.controlUnassigned,
       (_, false) => l10n.controlTargetMissing,
-      _ => bindingTargetLabel(l10n, target!),
+      _ => bindingTargetLabel(l10n, trackNames, target!),
     };
 
     return FocusableTapTarget(

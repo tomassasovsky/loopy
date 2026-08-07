@@ -49,6 +49,7 @@ void main() {
           builder: (context) => Scaffold(
             body: PedalPlate(
               frame: frame ?? _frame(),
+              trackNames: const ['drums', 'bass', 'rhythm', 'lead'],
               onPress: (button, {required down}) =>
                   presses.add((button: button, down: down)),
               onTurn: turns.add,

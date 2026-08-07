@@ -283,11 +283,6 @@ class _OutputRow extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onToggleGate;
 
-  String _trackLabel(AppLocalizations l10n, int track) =>
-      track < trackNames.length
-      ? l10n.displayTrackName(trackNames[track], track)
-      : l10n.trackNumberLabel(track + 1);
-
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -352,7 +347,9 @@ class _OutputRow extends StatelessWidget {
               _FieldRow(
                 label: l10n.signalFieldTracks,
                 child: _FeederChips(
-                  labels: [for (final t in tracks) _trackLabel(l10n, t)],
+                  labels: [
+                    for (final t in tracks) l10n.trackName(trackNames, t),
+                  ],
                 ),
               ),
           ],

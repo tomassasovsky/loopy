@@ -14,6 +14,11 @@ BuiltInEffect _drive(String slotId) =>
     BuiltInEffect(type: TrackEffectType.drive, slotId: slotId);
 
 void main() {
+  /// A rig whose tracks are NAMED — the point of #526. Track 3 has no name of
+  /// its own, so it still falls back to the ordinal, which is how a partly
+  /// named rig reads.
+  const names = ['drums', 'bass', 'rhythm', 'TRACK 4'];
+
   late AppLocalizations l10n;
   late _MockLooperRepository looper;
   late Map<int, List<TrackEffect>> trackChains;
@@ -65,22 +70,31 @@ void main() {
   group('fxStageLabel', () {
     test('names every stage', () {
       expect(
-        fxStageLabel(l10n, const FxAddress(stage: FxStage.input, index: 2)),
-        l10n.pedalAssignStageInput(2),
+        fxStageLabel(
+          l10n,
+          names,
+          const FxAddress(stage: FxStage.input, index: 2),
+        ),
+        l10n.pedalAssignStageInput(3),
       );
       expect(
         fxStageLabel(
           l10n,
+          names,
           const FxAddress(stage: FxStage.loop, index: 1, lane: 0),
         ),
-        l10n.pedalAssignStageLoop(1, 0),
+        l10n.pedalAssignStageLoop('bass', 0),
       );
       expect(
-        fxStageLabel(l10n, const FxAddress(stage: FxStage.track, index: 3)),
-        l10n.pedalAssignStageTrack(3),
+        fxStageLabel(
+          l10n,
+          names,
+          const FxAddress(stage: FxStage.track, index: 3),
+        ),
+        l10n.pedalAssignStageTrack('TRACK 4'),
       );
       expect(
-        fxStageLabel(l10n, const FxAddress(stage: FxStage.master)),
+        fxStageLabel(l10n, names, const FxAddress(stage: FxStage.master)),
         l10n.pedalAssignStageMaster,
       );
     });
@@ -91,12 +105,13 @@ void main() {
       const address = FxAddress(stage: FxStage.track, index: 3);
 
       expect(
-        bindingTargetLabel(l10n, const FxChainTarget(address)),
-        l10n.pedalAssignChainTarget(l10n.pedalAssignStageTrack(3)),
+        bindingTargetLabel(l10n, names, const FxChainTarget(address)),
+        l10n.pedalAssignChainTarget(l10n.pedalAssignStageTrack('TRACK 4')),
       );
       expect(
         bindingTargetLabel(
           l10n,
+          names,
           const FxSlotTarget(address: address, slotId: 't-1'),
         ),
         contains('t-1'),
@@ -107,11 +122,11 @@ void main() {
   group('valueTargetLabel', () {
     test('names the rig-level controls', () {
       expect(
-        valueTargetLabel(l10n, looper, const TrackVolumeTarget(2)),
-        l10n.midiLearnTargetVolume(2),
+        valueTargetLabel(l10n, names, looper, const TrackVolumeTarget(2)),
+        l10n.midiLearnTargetVolume('rhythm'),
       );
       expect(
-        valueTargetLabel(l10n, looper, const MasterGainTarget()),
+        valueTargetLabel(l10n, names, looper, const MasterGainTarget()),
         l10n.midiLearnTargetMaster,
       );
     });
@@ -126,9 +141,9 @@ void main() {
         );
 
         expect(
-          valueTargetLabel(l10n, looper, target),
+          valueTargetLabel(l10n, names, looper, target),
           l10n.midiLearnTargetParam(
-            l10n.pedalAssignStageTrack(3),
+            l10n.pedalAssignStageTrack('TRACK 4'),
             't-1',
             TrackEffectType.drive.params[1].label,
           ),
@@ -145,7 +160,7 @@ void main() {
         param: 2,
       );
 
-      expect(valueTargetLabel(l10n, looper, target), contains('#2'));
+      expect(valueTargetLabel(l10n, names, looper, target), contains('#2'));
     });
 
     test('falls back for a plugin slot and an out-of-range param', () {
@@ -160,8 +175,8 @@ void main() {
         param: 99,
       );
 
-      expect(valueTargetLabel(l10n, looper, plugin), contains('#0'));
-      expect(valueTargetLabel(l10n, looper, past), contains('#99'));
+      expect(valueTargetLabel(l10n, names, looper, plugin), contains('#0'));
+      expect(valueTargetLabel(l10n, names, looper, past), contains('#99'));
     });
 
     test(
@@ -175,7 +190,7 @@ void main() {
           param: 0,
         );
 
-        expect(valueTargetLabel(l10n, looper, laneless), contains('#0'));
+        expect(valueTargetLabel(l10n, names, looper, laneless), contains('#0'));
       },
     );
   });
