@@ -327,17 +327,25 @@ void main() {
     });
 
     testWidgets('a rate and a buffer reach the engine', (tester) async {
+      // What the ENGINE was asked for — not what the selection ends at, which
+      // is now whatever the device gives back.
       await pump(tester);
       await tester.tap(find.byKey(const Key('audio_rate_row')));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('audio_sample_rate_44100')));
       await tester.pumpAndSettle();
-      expect(audio.state.sampleRate, 44100);
+      final asked = verify(
+        () => repository.startEngine(captureAny()),
+      ).captured.cast<EngineConfig>();
+      expect(asked.last.sampleRate, 44100);
 
       await tester.tap(find.byKey(const Key('audio_buffer_256')));
       await tester.pumpAndSettle();
-      expect(audio.state.bufferFrames, 256);
+      final then = verify(
+        () => repository.startEngine(captureAny()),
+      ).captured.cast<EngineConfig>();
+      expect(then.last.bufferFrames, 256);
     });
 
     testWidgets('a chip carries the name AND the socket', (tester) async {
@@ -864,61 +872,22 @@ void main() {
   // ------------------------------------------------------------ negotiation
 
   group('Audio — negotiation', () {
-    testWidgets('a config in flight is a banner naming what was asked', (
+    // There is deliberately no in-flight test: `startEngine` is a synchronous
+    // FFI call, so the device is open or failed by the time it returns and a
+    // slow driver blocks the isolate rather than yielding a frame. A
+    // "reopening…" banner would be unreachable UI — see [ConfigPhase].
+
+    testWidgets('the device giving what was asked settles quietly', (
       tester,
     ) async {
-      await pump(tester);
-      expect(find.byKey(const Key('audio_opening_banner')), findsNothing);
-
-      await tester.tap(find.byKey(const Key('audio_rate_row')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('audio_sample_rate_96000')));
-      await tester.pumpAndSettle();
-
-      expect(audio.state.phase, ConfigPhase.opening);
-      expect(find.byKey(const Key('audio_opening_banner')), findsOneWidget);
-      expect(
-        find.text(
-          l10nOf(tester).audioReopening(
-            l10nOf(tester).audioRateBufferValue(
-              l10nOf(tester).sampleRateKhzLabel(96000),
-              128,
-            ),
-          ),
-        ),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('a refused config snaps the selection back', (tester) async {
-      when(() => repository.startEngine(any())).thenReturn(EngineResult.device);
+      // The everyday path, and the one the failure branches were hiding: the
+      // rig runs what was picked and says nothing about it.
       await pump(tester);
       await tester.tap(find.byKey(const Key('audio_rate_row')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('audio_sample_rate_96000')));
-      await tester.pumpAndSettle();
-
-      // The rig never reports a setting it is not running.
-      expect(audio.state.phase, ConfigPhase.refused);
-      expect(audio.state.sampleRate, 48000);
-      expect(find.byKey(const Key('audio_refused_banner')), findsOneWidget);
-      // And the banner is the only place the request is still named.
-      expect(audio.state.requestedRate, 96000);
-    });
-
-    testWidgets('a device that negotiates something else also reports', (
-      tester,
-    ) async {
-      // The open SUCCEEDS, and the device runs 44.1 anyway. Without this the
-      // rows would go on claiming 96 kHz — the lie the old Status tab existed
-      // to correct.
-      await pump(tester);
-      await tester.tap(find.byKey(const Key('audio_rate_row')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('audio_sample_rate_96000')));
-      await tester.pumpAndSettle();
-
-      engine.add(
+      // The device gives back exactly what was asked, which is what a real
+      // reopen reports the moment `startEngine` returns.
+      when(() => repository.state).thenReturn(
         const LooperState(
           status: EngineStatus(
             isConnected: true,
@@ -928,10 +897,61 @@ void main() {
           ),
         ),
       );
+      await tester.tap(find.byKey(const Key('audio_sample_rate_44100')));
       await tester.pumpAndSettle();
 
+      expect(audio.state.phase, ConfigPhase.settled);
       expect(audio.state.sampleRate, 44100);
+      expect(find.byKey(const Key('audio_refused_banner')), findsNothing);
+    });
+
+    testWidgets('a refused DEVICE pick names the config, never 0 kHz', (
+      tester,
+    ) async {
+      // Every reopen goes through one path, so every reopen declares what it
+      // is opening at. A device pick that fails used to reach the failure
+      // branch with nothing requested and say "could not open at 0 kHz" — and
+      // then stick there, since only a settled phase clears it.
+      when(() => repository.startEngine(any())).thenReturn(EngineResult.device);
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('audio_device_row')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('audio_device_option_1')));
+      await tester.pumpAndSettle();
+
       expect(audio.state.phase, ConfigPhase.refused);
+      expect(audio.state.requestedRate, 48000);
+      expect(audio.state.requestedBuffer, 128);
+      expect(find.textContaining('0 kHz · 0'), findsNothing);
+
+      // And a later success unsticks it rather than leaving the banner up.
+      when(() => repository.startEngine(any())).thenReturn(EngineResult.ok);
+      await tester.tap(find.byKey(const Key('audio_device_option_0')));
+      await tester.pumpAndSettle();
+      engine.add(const LooperState(status: _open));
+      await tester.pumpAndSettle();
+
+      expect(audio.state.phase, ConfigPhase.settled);
+      expect(find.byKey(const Key('audio_refused_banner')), findsNothing);
+    });
+
+    testWidgets('a device that negotiates something else also reports', (
+      tester,
+    ) async {
+      // The open SUCCEEDS and the device runs 48 anyway. Without this the rows
+      // would go on claiming 96 kHz — the lie the old Status tab existed to
+      // correct. The repository drops a tick whose projection is unchanged, so
+      // this is precisely the case a stream-driven snap would never see.
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('audio_rate_row')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('audio_sample_rate_96000')));
+      await tester.pumpAndSettle();
+
+      expect(audio.state.sampleRate, 48000);
+      expect(audio.state.phase, ConfigPhase.refused);
+      expect(audio.state.requestedRate, 96000);
+      expect(find.byKey(const Key('audio_refused_banner')), findsOneWidget);
     });
   });
 

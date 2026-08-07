@@ -1849,6 +1849,5 @@
     "a11yAudioMeasureLatency": "Medir la latencia de ida y vuelta. No hace nada mientras ya hay una medición en curso.",
     "audioMeasure": "Medir",
     "audioRecordOffsetSub": "desfase de grabación {frames} frames",
-    "audioReopening": "Reabriendo el dispositivo a {config}…",
     "audioRefusedConfig": "El dispositivo no pudo abrirse a {asked}. Funcionando a {actual}."
 }

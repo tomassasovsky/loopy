@@ -7,21 +7,25 @@ enum AudioSetupError {
   openDeviceFailed,
 }
 
-/// What the last requested config is doing.
+/// How the last requested config turned out.
 ///
 /// The Audio face has no Status tab: a figure shown both beside the setting
 /// that decides it and on a page of its own is a figure that can disagree with
-/// itself. So the Device tab reports the config's own progress instead, and
-/// this is what it reports.
+/// itself. So the Device tab reports the config's own outcome instead.
+///
+/// **There is no in-flight member, because there is no in-flight state.**
+/// `LooperRepository.startEngine` is a synchronous FFI call — the device is
+/// open, or it has failed, by the time it returns, and a slow driver blocks the
+/// isolate rather than yielding a frame to draw a banner in. A "reopening…"
+/// state would be unreachable UI.
 enum ConfigPhase {
-  /// Nothing in flight — the rig is running what the rows say.
+  /// The rig is running what the rows say.
   settled,
 
-  /// A config was asked for and the device is being reopened at it.
-  opening,
-
-  /// The device would not open at the asked-for config. The selection has
-  /// already snapped back to what it did give.
+  /// The device is not running what was asked for — it either refused the
+  /// config outright, or opened and negotiated something else. The selection
+  /// has already moved to what it IS running; this is what says the request
+  /// did not survive.
   refused,
 }
 

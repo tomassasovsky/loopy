@@ -2493,15 +2493,6 @@
             }
         }
     },
-    "audioReopening": "Reopening the device at {config}…",
-    "@audioReopening": {
-        "description": "Pending banner while a requested config is being opened. Names what was ASKED for.",
-        "placeholders": {
-            "config": {
-                "type": "String"
-            }
-        }
-    },
     "audioRefusedConfig": "The device could not open at {asked}. Running at {actual}.",
     "@audioRefusedConfig": {
         "description": "Failure banner when the device would not run the requested config. The selection has already snapped to what it did give, so the banner is the only place the request is still named.",

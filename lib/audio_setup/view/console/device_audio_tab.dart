@@ -266,37 +266,31 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
 
   // ------------------------------------------------------------ the banner
 
-  /// What the last requested config is doing, or null when nothing is.
+  /// What the last requested config turned out to be, or null when it is
+  /// simply what the rows say.
   ///
-  /// A banner rather than a row, per the console's own rule: anything in
-  /// flight or just failed sits at the top of the list the setting lives in.
+  /// A banner rather than a row, per the console's own rule: anything just
+  /// failed sits at the top of the list the setting lives in. There is no
+  /// in-flight banner — see [ConfigPhase] for why one would be unreachable.
   Widget? _phaseBanner(BuildContext context, AudioSetupState state) {
+    if (state.phase == ConfigPhase.settled) return null;
     final l10n = context.l10n;
-    final asked = l10n.audioRateBufferValue(
-      l10n.sampleRateKhzLabel(state.requestedRate),
-      state.requestedBuffer,
-    );
-    return switch (state.phase) {
-      ConfigPhase.settled => null,
-      ConfigPhase.opening => ConsoleBanner(
-        key: const Key('audio_opening_banner'),
-        message: l10n.audioReopening(asked),
-        tone: ConsoleBannerTone.pending,
-      ),
-      // The selection has ALREADY snapped to what the device gave, so this is
-      // the only place the request is still named.
-      ConfigPhase.refused => ConsoleBanner(
-        key: const Key('audio_refused_banner'),
-        message: l10n.audioRefusedConfig(
-          asked,
-          l10n.audioRateBufferValue(
-            l10n.sampleRateKhzLabel(state.sampleRate),
-            state.bufferFrames,
-          ),
+    // The selection has ALREADY moved to what the device gave, so this is the
+    // only place the request is still named.
+    return ConsoleBanner(
+      key: const Key('audio_refused_banner'),
+      message: l10n.audioRefusedConfig(
+        l10n.audioRateBufferValue(
+          l10n.sampleRateKhzLabel(state.requestedRate),
+          state.requestedBuffer,
         ),
-        tone: ConsoleBannerTone.failure,
+        l10n.audioRateBufferValue(
+          l10n.sampleRateKhzLabel(state.sampleRate),
+          state.bufferFrames,
+        ),
       ),
-    };
+      tone: ConsoleBannerTone.failure,
+    );
   }
 
   // ----------------------------------------------------------- the inputs

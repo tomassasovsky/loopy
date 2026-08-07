@@ -51,7 +51,7 @@ void main() {
   }
 
   /// Lets the constructor's own device read land before the test asserts.
-  Future<void> settle() => Future<void>.delayed(Duration.zero);
+  Future<void> settle() => pumpEventQueue();
 
   group('InputsCubit', () {
     test('adopts the device the engine already has open', () async {
@@ -187,6 +187,11 @@ void main() {
 
       expect(cubit.state.nameOf(0), 'DI', reason: 'the rename wins');
       expect(cubit.state.nameOf(3), 'keys', reason: 'the restore still lands');
+      // The merge's other branch — a socket UN-named mid-walk — is left
+      // uncovered on purpose. It is only reachable during a device SWAP, where
+      // whether the un-name lands before or after the walk begins is a matter
+      // of microtask ordering; a test that pins it would be pinning the
+      // scheduler, not the behaviour.
     });
   });
 

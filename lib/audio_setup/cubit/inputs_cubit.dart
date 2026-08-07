@@ -73,7 +73,11 @@ class InputsCubit extends Cubit<InputsState> {
   /// blank every chip for the length of a reopen. The state simply keeps the
   /// outgoing device's names until the incoming one names itself.
   Future<void> _followDevice(String device) async {
-    if (device.isEmpty || device == state.device) return;
+    // Against [_device], which moves the moment a walk starts — NOT
+    // `state.device`, which cannot move until the walk has something to emit.
+    // Guarding on the state would let every tick during a walk start another
+    // one, and an early finisher would clear `_loading` while the rest ran.
+    if (device.isEmpty || device == _device) return;
     await _restore(device);
   }
 
