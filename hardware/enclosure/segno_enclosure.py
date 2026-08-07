@@ -1584,7 +1584,13 @@ def build_mini_console():
     tray = tray.cut(usb).cut(roof)
 
     # --- lid (prints FLAT; seats on the wall tops at the real slope) ------
-    lid = cq.Workplane("XY").box(Wt, V1S, T, centered=False)
+    # SAME plan corners as the tray. The shell went rounded when it stopped
+    # being four unioned boxes; the lid stayed a rectangle, so its square
+    # corners hung over the tray's R6 by ~1.8 mm diagonally at all four (#539).
+    # Tilted, a circular fillet here projects to an ellipse 6.0 x 5.86 -- wholly
+    # inside the tray's R6 circle, so it insets by <=0.14 mm and never proud.
+    lid = (cq.Workplane("XY").box(Wt, V1S, T, centered=False)
+           .edges("|Z").fillet(CORNER_R))
     for u in PEDS:
         x = u - U0
         lid = lid.cut(cq.Workplane("XY").box(FSW_SLOT_W, FSW_SLOT_D, 3*T, centered=(True, True, False))
@@ -1644,6 +1650,23 @@ def build_mini_console():
         lid_asm = lid_asm.union(
             _diffuser_solid(cq, LED_INS_CLR_FDM).translate((u - U0, vcp, 0)))
     seated = lid_asm.rotate((0, 0, 0), (1, 0, 0), SLOPE_ANGLE).translate((0, 0, C0))
+    # ...and the other half of "does it close": nothing of the lid may hang over
+    # the tray's outer envelope. Overlap alone never showed this -- a lid can
+    # clear every tray feature and still overhang the edge it is meant to seat
+    # on. The ONE thing allowed past it is the lip a tilted slab always makes:
+    # the top face sits T*sin(slope) forward of the bottom, a 0.43 mm reveal at
+    # the front (and the same inset at the rear).
+    env = (cq.Workplane("XY").box(Wt, D, 400.0, centered=False)
+           .edges("|Z").fillet(CORNER_R).translate((0, 0, -100.0)))
+    over = seated.cut(env).val()
+    over_v = over.Volume()
+    lip_v = 0.5 * (T * sn) * (T / cs) * Wt
+    assert over_v <= lip_v * 1.3, (
+        f"MINI_FIT: {over_v:.1f} mm3 of lid hangs past the tray "
+        f"(only the {lip_v:.1f} mm3 tilt lip should) -- "
+        + "; ".join(f"{c.Volume():.1f}mm3 at x{c.BoundingBox().xmin:.0f} "
+                    f"y{c.BoundingBox().ymin:.0f}" for c in over.Solids()))
+
     clash = tray.val().intersect(seated.val())
     clash_v = clash.Volume() if clash is not None else 0.0
     assert clash_v < 0.5, (
