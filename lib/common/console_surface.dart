@@ -1262,7 +1262,25 @@ class ConsoleValueBar extends StatefulWidget {
   /// charges its latency to the common path, so every single tap would wait
   /// out `kDoubleTapTimeout` — a third of a second of nothing on a control
   /// people drag. The first tap applies immediately and opens a timer; a
-  /// second tap while it is live cancels it and overrides with this value.
+  /// second tap while it is live overrides with this value.
+  ///
+  /// It has to be the same tap twice, though, and both halves are measured
+  /// off the RELEASE, the way Flutter's own recognizer measures them:
+  /// - **the window opens on tap-UP.** A tap-down is not yet a tap: the
+  ///   pointer can still be stolen by the scroll view this face sits in, and
+  ///   a cancelled press must not leave a live window for the next real tap
+  ///   to fall into. Anchoring on the release also gives the second tap the
+  ///   whole `kDoubleTapTimeout` rather than what a slow first press left of
+  ///   it.
+  /// - **near the first**, within `kDoubleTapSlop`, which is the gate
+  ///   Flutter's own recognizer applies. Two taps at opposite ends of the bar
+  ///   are two adjustments, and reading them as a reset throws away the
+  ///   second one's position.
+  /// - **applied on tap-UP too.** A press that becomes a drag still fires
+  ///   `onTapDown` once it outlives `kPressTimeout`, so writing on the way
+  ///   down would send the default to the engine every time someone tapped
+  ///   and then dragged.
+  ///
   /// Drags bypass the window entirely.
   final double? resetValue;
 
@@ -1296,6 +1314,15 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
   /// [ConsoleValueBar.resetValue] for why this is hand-rolled.
   Timer? _tapWindow;
 
+  /// Where the tap that opened [_tapWindow] landed, so the second one can be
+  /// required to land near it.
+  double? _tapAt;
+
+  /// Set by a tap-down that qualifies as the second of a pair, and spent on
+  /// the tap-UP that follows — see [ConsoleValueBar.resetValue] for why the
+  /// write cannot happen on the way down.
+  bool _resetPending = false;
+
   @override
   void dispose() {
     _tapWindow?.cancel();
@@ -1308,26 +1335,48 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
     widget.onChanged(next);
   }
 
-  /// A tap: applies where it landed, unless it is the second of a pair and
-  /// this bar has a default to snap to.
+  /// A tap: applies where it landed, unless it is the second of a pair —
+  /// close enough to the first to be the same tap twice — and this bar has a
+  /// default to snap to. That case only ARMS the reset; [_release] spends it,
+  /// because a tap-down is not yet proof the gesture stayed a tap.
   void _tap(double width, double dx) {
     final reset = widget.resetValue;
-    if (reset != null && _tapWindow != null) {
+    final first = _tapAt;
+    if (reset != null &&
+        _tapWindow != null &&
+        first != null &&
+        (dx - first).abs() <= kDoubleTapSlop) {
       _tapWindow!.cancel();
       _tapWindow = null;
-      setState(() => _dragging = null);
-      unawaited(HapticFeedback.selectionClick());
-      widget.onChanged(reset.clamp(0.0, 1.0));
+      _resetPending = true;
       return;
     }
+    _tapAt = dx;
     _report(width, dx);
-    if (reset == null) return;
-    _tapWindow = Timer(kDoubleTapTimeout, () => _tapWindow = null);
   }
 
   /// Hands the bar back to [ConsoleValueBar.value] — what the finger reported
   /// is only the truth while the finger is down.
-  void _release() {
+  ///
+  /// [applyReset] marks the tap-UP path — the only one that spends an armed
+  /// reset, and the only one that opens a window for the next tap. The same
+  /// call arrives from `onTapCancel` (the press was stolen by the scroll view
+  /// or turned into a drag) and from the drag ends, where a pending reset has
+  /// to be dropped and no window may be left behind.
+  void _release({bool applyReset = false}) {
+    final reset = widget.resetValue;
+    if (applyReset && reset != null) {
+      if (_resetPending) {
+        unawaited(HapticFeedback.selectionClick());
+        widget.onChanged(reset.clamp(0.0, 1.0));
+        // No fresh window: a third tap starts its own pair rather than
+        // resetting again.
+      } else {
+        _tapWindow?.cancel();
+        _tapWindow = Timer(kDoubleTapTimeout, () => _tapWindow = null);
+      }
+    }
+    _resetPending = false;
     if (_dragging == null) return;
     setState(() => _dragging = null);
   }
@@ -1338,6 +1387,8 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
   void _dragStart(double width, double dx) {
     _tapWindow?.cancel();
     _tapWindow = null;
+    _tapAt = null;
+    _resetPending = false;
     _report(width, dx);
   }
 
@@ -1378,7 +1429,7 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
                   // rest of its life, and stopped redrawing the value it is
                   // supposed to be reading — visible the moment a write is
                   // clamped, as the threshold's own floor clamps it.
-                  onTapUp: (_) => _release(),
+                  onTapUp: (_) => _release(applyReset: true),
                   onTapCancel: _release,
                   onHorizontalDragStart: (d) =>
                       _dragStart(width, d.localPosition.dx),

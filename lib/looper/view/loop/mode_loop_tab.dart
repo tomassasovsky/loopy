@@ -125,7 +125,16 @@ class _ModeLoopTabState extends State<ModeLoopTab> {
               // the switch went through — `LOOP / settings-mode-confirm`
               // draws the mode list still open behind the dialog, and a
               // declined confirm leaves the user still choosing.
+              //
+              // Re-picking the mode already lit is not a declined confirm: it
+              // is an answer, and every other chooser on these faces shuts on
+              // one. `requestLooperModeChange` reports false for it (there is
+              // nothing to dispatch), so it shuts here instead.
               onTap: () async {
+                if (value == mode) {
+                  setState(() => _open = null);
+                  return;
+                }
                 final switched = await requestLooperModeChange(
                   context,
                   current: mode,

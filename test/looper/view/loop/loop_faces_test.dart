@@ -601,6 +601,139 @@ void main() {
       expect(written, moreOrLessEquals(1, epsilon: 0.001));
     });
 
+    testWidgets(
+      'two taps far apart are two adjustments, not a reset — the second one '
+      'lands where it was aimed',
+      (tester) async {
+        seed(const LooperState(transport: TransportState(clickVolume: 0.2)));
+        await pump(tester, tab: LoopTab.click);
+        await tester.pumpAndSettle();
+
+        final track = trackOf(tester);
+        await tester.tapAt(
+          Offset(track.left + track.width / 4, track.center.dy),
+        );
+        await tester.pump(const Duration(milliseconds: 40));
+        await tester.tapAt(
+          Offset(track.left + track.width * 3 / 4, track.center.dy),
+        );
+        await tester.pump();
+
+        final written =
+            verify(
+                  () => repository.setClickVolume(captureAny()),
+                ).captured.last
+                as double;
+        // Three quarters of the gain stage, NOT unity: the taps are further
+        // apart than kDoubleTapSlop, so they are never one double tap.
+        expect(
+          written,
+          moreOrLessEquals(kMaxClickGain * 3 / 4, epsilon: 0.05),
+        );
+        await tester.pump(kDoubleTapTimeout * 2);
+      },
+    );
+
+    testWidgets(
+      'a tap then a drag never writes the default — a press that becomes a '
+      'drag still fires onTapDown once it outlives kPressTimeout',
+      (tester) async {
+        seed(const LooperState(transport: TransportState(clickVolume: 0.2)));
+        await pump(tester, tab: LoopTab.click);
+        await tester.pumpAndSettle();
+
+        final track = trackOf(tester);
+        final spot = Offset(track.left + track.width / 4, track.center.dy);
+        await tester.tapAt(spot);
+        await tester.pump(const Duration(milliseconds: 40));
+
+        // Press on the same spot, hold past the tap deadline so onTapDown
+        // fires, then drag away — the old code sent unity on that tap-down.
+        final gesture = await tester.startGesture(spot);
+        await tester.pump(kPressTimeout + const Duration(milliseconds: 20));
+        await gesture.moveTo(
+          Offset(track.left + track.width / 10, track.center.dy),
+        );
+        await tester.pump();
+        await gesture.up();
+        await tester.pump();
+
+        final written = verify(
+          () => repository.setClickVolume(captureAny()),
+        ).captured.cast<double>();
+        expect(
+          written,
+          isNot(contains(moreOrLessEquals(1, epsilon: 0.001))),
+          reason: 'the drag must not be read as the second half of a pair',
+        );
+        expect(written.last, lessThan(kMaxClickGain / 4));
+        await tester.pump(kDoubleTapTimeout * 2);
+      },
+    );
+
+    testWidgets(
+      'a press the scroll view steals is not the first half of a pair — the '
+      'tap that follows sets where it landed',
+      (tester) async {
+        seed(const LooperState(transport: TransportState(clickVolume: 0.2)));
+        await pump(tester, tab: LoopTab.click);
+        await tester.pumpAndSettle();
+
+        final track = trackOf(tester);
+        final spot = Offset(track.left + track.width / 4, track.center.dy);
+
+        // Hold past the tap deadline so onTapDown fires, then let the gesture
+        // be cancelled the way a vertical scroll cancels it.
+        final gesture = await tester.startGesture(spot);
+        await tester.pump(kPressTimeout + const Duration(milliseconds: 20));
+        await gesture.cancel();
+        await tester.pump();
+
+        await tester.tapAt(spot);
+        await tester.pump();
+
+        final written =
+            verify(
+                  () => repository.setClickVolume(captureAny()),
+                ).captured.last
+                as double;
+        // A quarter of the gain stage, NOT unity: the cancelled press left no
+        // window for this tap to fall into.
+        expect(written, moreOrLessEquals(kMaxClickGain / 4, epsilon: 0.05));
+        await tester.pump(kDoubleTapTimeout * 2);
+      },
+    );
+
+    testWidgets(
+      'the double-tap window is measured off the release, so a slow first '
+      'press does not eat the second tap’s budget',
+      (tester) async {
+        seed(const LooperState(transport: TransportState(clickVolume: 0.2)));
+        await pump(tester, tab: LoopTab.click);
+        await tester.pumpAndSettle();
+
+        final track = trackOf(tester);
+        final spot = Offset(track.right - 1, track.center.dy);
+
+        // 250 ms down before the lift — anchored on the press, the window
+        // would have almost nothing left of kDoubleTapTimeout by now.
+        final gesture = await tester.startGesture(spot);
+        await tester.pump(const Duration(milliseconds: 250));
+        await gesture.up();
+        await tester.pump(const Duration(milliseconds: 200));
+
+        await tester.tapAt(spot);
+        await tester.pump();
+
+        final written =
+            verify(
+                  () => repository.setClickVolume(captureAny()),
+                ).captured.last
+                as double;
+        expect(written, moreOrLessEquals(1, epsilon: 0.001));
+      },
+    );
+
     testWidgets('the click mode chooser applies and closes', (tester) async {
       seed(const LooperState());
       await pump(tester, tab: LoopTab.click);
@@ -779,6 +912,26 @@ void main() {
         verifyNever(() => bloc.add(any()));
         // And a declined confirm leaves the user still choosing.
         expect(find.byKey(const Key('loop_mode_free')), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      're-picking the mode already lit shuts the chooser — it is an answer, '
+      'not a declined confirm',
+      (tester) async {
+        seed(const LooperState());
+        await pump(tester, tab: LoopTab.mode);
+
+        await tester.tap(find.byKey(const Key('loop_mode_row')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('loop_mode_sync')), findsOneWidget);
+
+        // Multi is the default, so this row already carries the check.
+        await tester.tap(find.byKey(const Key('loop_mode_multi')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('loop_mode_sync')), findsNothing);
+        verifyNever(() => bloc.add(any()));
       },
     );
 
