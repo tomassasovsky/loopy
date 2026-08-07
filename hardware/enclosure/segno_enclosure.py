@@ -1274,7 +1274,7 @@ def _transition_face(cq):
            * cq.Location(cq.Vector(0,0,0), cq.Vector(0,1,0), TRANS_ANGLE))
     return box.val().moved(loc)
 
-def _platform_printed(cq, ph, v_c):
+def _platform_printed(cq, ph, v_c, standalone=True, baffle_t=None):
     """3D-printed pedal pedestal: solid deck + perimeter wall, hollowed below
     (tall MID parts) with boss columns at the insert stations. M3 heat-set
     inserts press in from BELOW at the base PLAT_SCR pattern; the deck top gets
@@ -1295,18 +1295,27 @@ def _platform_printed(cq, ph, v_c):
     body = cq.Workplane("XY").box(sd, sw, h, centered=(True, True, False))
     cav_h = h - PLAT_DECK
     foot_x = (-(sd/2 - PLATFORM_FOOT/2), sd/2 - PLATFORM_FOOT/2)
-    if cav_h > 2.0:
+    # `standalone` = this pedestal is its own printed part, bolted to the base
+    # plate from below. It then prints deck-down, so the weight-saving cavity
+    # opens upward and costs nothing, and the base-insert pilots are reachable.
+    # Built INTO the mini tray neither holds: the tray prints floor-down, which
+    # turns the cavity into a 17,000 mm2 ceiling over a sealed void (nothing can
+    # bridge it, and any support the slicer drops in is trapped forever), and
+    # the pilots end up buried against the tray floor. Solid instead, and let
+    # INFILL do the hollowing (#539).
+    if standalone and cav_h > 2.0:
         body = body.cut(cq.Workplane("XY").box(
             sd - 2*PLAT_WALL, sw - 2*PLAT_WALL, cav_h, centered=(True, True, False)))
         for dx in foot_x:                      # boss columns for the base inserts
             for dy in platform_foot_u(sw):
                 body = body.union(cq.Workplane("XY").cylinder(
                     cav_h, 6.0, centered=(True, True, False)).translate((dx, dy, 0)))
-    for dx in foot_x:                          # base inserts, from below
-        for dy in platform_foot_u(sw):
-            body = body.cut(cq.Workplane("XY").cylinder(
-                pil, INSERT_PILOT_D/2,
-                centered=(True, True, False)).translate((dx, dy, 0)))
+    if standalone:
+        for dx in foot_x:                      # base inserts, from below
+            for dy in platform_foot_u(sw):
+                body = body.cut(cq.Workplane("XY").cylinder(
+                    pil, INSERT_PILOT_D/2,
+                    centered=(True, True, False)).translate((dx, dy, 0)))
     # bottom-pad locating pocket, from above. The pad is inset from the case
     # back edge, so its centre sits forward (toe-ward, -X) of the pedal centre:
     # pad centre from back = INSET + PAD_D/2; pedal centre from back = PEDAL_D/2.
@@ -1316,7 +1325,13 @@ def _platform_printed(cq, ph, v_c):
         centered=(True, True, False)).translate((-pocket_dx, 0, h - POCKET_DEPTH)))
     # light-baffle skirt: perimeter ring above the deck, top following the
     # sloped faceplate underside at SKIRT_GAP. Local +X = rearward = up-slope.
-    ring = (cq.Workplane("XY").box(sd, sw, 60.0, centered=(True, True, False))
+    # The ring's DEPTH walls are only (SKIRT_OUT_D - SKIRT_IN_D)/2 = 0.85 mm --
+    # two beads, free-standing, ~28 mm tall. The inner face cannot move (it is
+    # already only SKIRT_SETBACK behind the slot cut line), so a caller that
+    # wants a printable baffle grows the ring OUTWARD instead; the 0.75 mm
+    # ledge that leaves on the pedestal face is a trivial overhang. (#539)
+    ring_od = sd if baffle_t is None else max(sd, SKIRT_IN_D + 2*baffle_t)
+    ring = (cq.Workplane("XY").box(ring_od, sw, 60.0, centered=(True, True, False))
             .cut(cq.Workplane("XY").box(SKIRT_IN_D, SKIRT_IN_W, 60.0,
                                         centered=(True, True, False)))
             .translate((0, 0, h)))
@@ -1349,7 +1364,8 @@ def _platform_printed(cq, ph, v_c):
     # REAL plate (drift-calibrated per row). Deck inside the opening keeps
     # full height; the pedal (76.35 x 109.87) never sits on the shaved strips.
     opening_d = FSW_SLOT_D * math.cos(math.radians(SLOPE_ANGLE))
-    ring_region = (cq.Workplane("XY").box(sd, sw, 200.0, centered=(True, True, False))
+    ring_region = (cq.Workplane("XY").box(max(sd, ring_od), sw, 200.0,
+                                          centered=(True, True, False))
                    .cut(cq.Workplane("XY").box(opening_d, FSW_SLOT_W, 200.0,
                                                centered=(True, True, False))))
     body = body.cut(ring_region.intersect(cutter))
@@ -1381,6 +1397,17 @@ def build_mini_console():
       LID  -- prints FLAT: the faceplate section (2 pedal slots + 2 LED
       pills), four registration tabs, two rear M3 through-holes. Open/close =
       two screws; the tabs + slope keep it located.
+
+    PRINTABILITY (#539 -- the first tray warped at the sides). This is a
+    199 x 156 mm flat print, which survives only if it is anchored over its
+    whole footprint. The first rev stood on four 14 x 14 feet, so it gripped
+    the bed over 2.5% of what it spanned and the entire floor started 2 mm up
+    in the air: every mm of contraction pulled on four pads and the free edges
+    curled. So: no printed feet (rubber ones stick into shallow recesses), the
+    floor is its own bed contact, and it is 3.2 mm of PRINTED floor rather than
+    the 2.0 mm aluminium sheet gauge it used to borrow. Walls run into the
+    pedestal tubs instead of standing free beside them, the plan corners are
+    radiused, and the wall/floor junction carries a gusset.
     Frame: X = u - MINI_U0, Y = FLAT (projected) v, Z = world z."""
     import cadquery as cq
     cs = math.cos(math.radians(SLOPE_ANGLE))
@@ -1389,10 +1416,20 @@ def build_mini_console():
     PEDS = [_row1_u(6), _row1_u(7)]  # the TRACK3/TRACK4 pair, pitch preserved
     V1S = 160.0                      # depth on-slope (pedals + pills + board bay)
     D = V1S * cs
-    WALL_T = 2.4
-    # right wall hugs TRACK4's tub (+0.5); left wall is the print's own edge
-    Wt = (PEDS[1] - U0) + SKIRT_OUT_W/2.0 + 0.5 + WALL_T   # = 199.0
-    C0 = (lid_top_z(PEDAL_ROW1_V) + SKIRT_DRIFT_ROW1 - T) - tn * (PEDAL_ROW1_V * cs)
+    # PRINTED wall/floor gauges -- deliberately NOT T (that is sheet metal)
+    FLOOR_T  = 3.2      # 16 layers at 0.2: enough section to resist curl
+    WALL_T   = 3.2
+    CORNER_R = 6.0      # plan corner radius: square corners peel first
+    BOT_CHAM = 0.6      # bottom edge: kills elephant foot and the lifting knife edge
+    GUSSET   = 2.5      # 45deg ramp along the wall/floor junction
+    FOOT_D, FOOT_REC = 12.0, 0.6      # stick-on rubber feet, located in recesses
+    MINI_BAFFLE_T = 1.6               # 4 beads on the tub's light-baffle ring
+    ZLIFT = FLOOR_T - T               # everything above the floor rises with it
+    # the right wall OVERLAPS TRACK4's tub by 0.5 so the two fuse into one
+    # braced section -- the old +0.5 left them a 0.5 mm slot the nozzle cannot
+    # resolve, running 115 mm up a 44 mm wall
+    Wt = (PEDS[1] - U0) + SKIRT_OUT_W/2.0 - 0.5 + WALL_T
+    C0 = (lid_top_z(PEDAL_ROW1_V) + SKIRT_DRIFT_ROW1 - T) - tn * (PEDAL_ROW1_V * cs) + ZLIFT
     # under-base lid anchors: triangle clamp, nothing on top. The screws lean
     # REARWARD going down (they follow the lid normal), so each bottom exit
     # lands ~(pillar-top z)*tan(slope) behind the pillar -- the rear pair
@@ -1410,23 +1447,26 @@ def build_mini_console():
         return sol.cut(cutter)
 
     # --- tray -------------------------------------------------------------
-    tray = cq.Workplane("XY").box(Wt, D, T, centered=False)              # floor
-    walls = (cq.Workplane("XY").box(Wt, WALL_T, 60.0, centered=False)    # front
-             .union(cq.Workplane("XY").box(WALL_T, D, 60.0, centered=False))   # left
-             .union(cq.Workplane("XY").box(WALL_T, D, 60.0, centered=False)
-                    .translate((Wt - WALL_T, 0, 0)))                     # right
-             .union(cq.Workplane("XY").box(Wt, WALL_T, 60.0, centered=False)
-                    .translate((0, D - WALL_T, 0))))                     # rear
+    # ONE rounded-rect shell hollowed from above, not five unioned boxes: the
+    # corners come out radiused (nothing for a peeling edge to start from) and
+    # there are no coincident union faces for the slicer to trip over. The
+    # cavity's own bottom edge is chamfered, so cutting it leaves a 45deg
+    # gusset all the way round the wall/floor junction.
+    shell = (cq.Workplane("XY").box(Wt, D, 80.0, centered=False)
+             .edges("|Z").fillet(CORNER_R))
+    shell = shell.faces("<Z").chamfer(BOT_CHAM)
+    cav = (cq.Workplane("XY").box(Wt - 2*WALL_T, D - 2*WALL_T, 80.0, centered=False)
+           .edges("|Z").fillet(max(0.6, CORNER_R - WALL_T)))
+    cav = cav.faces("<Z").chamfer(GUSSET).translate((WALL_T, WALL_T, FLOOR_T))
+    tray = slope_cut(shell, C0).cut(cav)
     # NO top-face fasteners (same language as the big console): the lid clamps
     # from BELOW. Anchor pillars stop LID_BOSS_H short of the wall-top plane;
     # the lid carries insert bosses that land on them, and M3 screws come up
     # through the floor along the LID NORMAL (12.5deg from vertical), heads
-    # recessed in angled pockets under the base, hidden by the feet.
+    # recessed in pockets that stay clear of the table on their own.
     LID_BOSS_H = 8.0   # boss deep enough that the insert pilot NEVER enters the
                        # 2mm plate (tilted pilot tip rim stays below it) -- the
                        # top face stays pristine
-    walls = slope_cut(walls.translate((0, 0, T)), C0)
-    tray = tray.union(walls)
     ncs, nsn = math.cos(math.radians(SLOPE_ANGLE)), math.sin(math.radians(SLOPE_ANGLE))
     for (bx, byy) in ANCHORS:
         by = (D - WALL_T - 6.8) if byy is None else byy
@@ -1434,7 +1474,7 @@ def build_mini_console():
         # floor -- no drift, exit directly under the pillar, flat head seat.
         # The 12.5deg lives in the LID's insert pilot instead (pressed tilted).
         pillar = cq.Workplane("XY").box(10.0, 12.0, 60.0, centered=False)\
-            .translate((bx - 5.0, by - 6.0, T))
+            .translate((bx - 5.0, by - 6.0, FLOOR_T))
         # vertical drop of the boss bottom = LID_BOSS_H / cos(slope), +0.2 so the
         # WALLS stay the seating datum and the screws preload across the gap
         pillar = slope_cut(pillar, C0 - (LID_BOSS_H / ncs + 0.2))
@@ -1444,30 +1484,57 @@ def build_mini_console():
         assert exit_rim <= (D - WALL_T) - 0.8, \
             f"MINI_ANCHOR: exit pocket rim y{exit_rim:.1f} too close to the rear wall"
         bore = cq.Workplane("XY").circle(1.8).extrude(90.0).translate((bx, by, -5.0))
-        # 8.5 head/driver pocket from below, flat seat 3.5 above the floor bottom
-        pocket = cq.Workplane("XY").circle(4.25).extrude(40.0).translate((bx, by, 3.5 - 40.0))
+        # 8.5 head/driver pocket from below, seat 1.5 above the floor top: the
+        # head ends up ~4.7 mm off the table, so nothing has to lift the case
+        pocket = cq.Workplane("XY").circle(4.25).extrude(40.0)\
+            .translate((bx, by, FLOOR_T + 1.5 - 40.0))
         tray = tray.cut(bore).cut(pocket)
-    # feet: four pads so the unit stands clear of the recessed screw heads
-    # (rear pair inboard, clear of the rear anchors' angled exit pockets)
-    for (fx, fy) in ((8.0, 8.0), (Wt - 22.0, 8.0), (30.0, D - 16.0), (155.0, D - 16.0)):
-        tray = tray.union(cq.Workplane("XY").box(14.0, 14.0, 2.0, centered=False)
-                          .translate((fx, fy, -2.0)))
+    # FEET: not printed. Printed pads made the floor a 30,000 mm2 bridge over
+    # 784 mm2 of bed contact -- the warp that killed the first tray (#539).
+    # Stick-on rubber feet drop into these recesses instead, which a floor unit
+    # wants anyway, and the floor itself is what grips the bed.
+    for (fx, fy) in ((15.0, 15.0), (Wt - 15.0, 15.0),
+                     (30.0, D - 14.0), (155.0, D - 14.0)):
+        tray = tray.cut(cq.Workplane("XY").circle(FOOT_D/2.0).extrude(FOOT_REC)
+                        .translate((fx, fy, 0.0)))
     yc = PEDAL_ROW1_V * cs
     for u in PEDS:
-        ped = (_platform_printed(cq, platform_h(PEDAL_ROW1_V), PEDAL_ROW1_V)
+        ped = (_platform_printed(cq, platform_h(PEDAL_ROW1_V), PEDAL_ROW1_V,
+                                 standalone=False, baffle_t=MINI_BAFFLE_T)
                .rotate((0, 0, 0), (0, 0, 1), 90)
-               .translate((u - U0, yc, T)))
+               .translate((u - U0, yc, FLOOR_T)))
         tray = tray.union(ped)
+    # BRACING. The tall thin side walls have to lean on something, and the bare
+    # floor between and behind the tubs is where the warp map peaked.
+    tub_x = [(u - U0 - SKIRT_OUT_W/2.0, u - U0 + SKIRT_OUT_W/2.0) for u in PEDS]
+    tub_od = max(SKIRT_OUT_D, SKIRT_IN_D + 2*MINI_BAFFLE_T)   # grown baffle ring
+    tub_y = (yc - tub_od/2.0, yc + tub_od/2.0)                # ring, above the deck
+    body_y = (yc - SKIRT_OUT_D/2.0, yc + SKIRT_OUT_D/2.0)     # pedestal body, below it
+    gap_l = tub_x[0][0] - WALL_T           # left wall stood in a 3 mm canyon
+    if gap_l > 0.05:                       # fill it: the wall becomes tub-braced
+        tray = tray.union(slope_cut(cq.Workplane("XY").box(
+            gap_l + 0.2, D - 2*WALL_T, 80.0, centered=False)
+            .translate((WALL_T, WALL_T, FLOOR_T)), C0))
+    for ry in (25.0, 66.0, 108.0):         # ties the two tubs to each other
+        tray = tray.union(cq.Workplane("XY").box(
+            tub_x[1][0] - tub_x[0][1] + 0.4, 5.0, 8.0, centered=False)
+            .translate((tub_x[0][1] - 0.2, ry - 2.5, FLOOR_T)))
+    for rx in (30.0, 70.0, 135.0, 170.0):  # stiffens the open rear bay
+        # (kept off the Pro Micro boss's x 80.0..122.2: a rib landing just
+        # beside it leaves a 0.8 mm slot the nozzle cannot resolve)
+        tray = tray.union(cq.Workplane("XY").box(
+            4.0, (D - WALL_T) - body_y[1] + 0.4, 8.0, centered=False)
+            .translate((rx - 2.0, body_y[1] - 0.2, FLOOR_T)))
     # Pro Micro bay: raised boss against the rear wall, open-top pocket, and a
     # USB cutout through the rear wall (board slides in from above; the USB
     # lead + pocket friction retain it -- PROVISIONAL, fine for the mini)
     boss = cq.Workplane("XY").box(BOARD_W + 8.0, BOARD_D + 4.0, 4.0, centered=False)\
-        .translate((BOARD_XC - BOARD_W/2.0 - 4.0, D - WALL_T - BOARD_D - 4.0, T))
+        .translate((BOARD_XC - BOARD_W/2.0 - 4.0, D - WALL_T - BOARD_D - 4.0, FLOOR_T))
     pocket = cq.Workplane("XY").box(BOARD_W, BOARD_D, 3.0, centered=False)\
-        .translate((BOARD_XC - BOARD_W/2.0, D - WALL_T - BOARD_D, T + 1.8))
+        .translate((BOARD_XC - BOARD_W/2.0, D - WALL_T - BOARD_D, FLOOR_T + 1.8))
     tray = tray.union(boss).cut(pocket)
     usb = cq.Workplane("XY").box(12.0, WALL_T + 2.0, 5.0, centered=False)\
-        .translate((BOARD_XC - 6.0, D - WALL_T - 1.0, T + 2.6))
+        .translate((BOARD_XC - 6.0, D - WALL_T - 1.0, FLOOR_T + 2.6))
     tray = tray.cut(usb)
 
     # --- lid (prints FLAT; seats on the wall tops at the real slope) ------
@@ -1510,11 +1577,22 @@ def build_mini_console():
     outp = []
     for tag, sol in (("tray", tray), ("lid", lid)):
         base = os.path.join(OUT, f"segno_mini_console_{tag}")
-        cq.exporters.export(sol.val(), base + ".step")
-        cq.exporters.export(sol, base + ".stl", tolerance=0.05)
+        cq.exporters.export(sol.val(), base + ".step")   # STEP: assembly frame
+        # STL: PRINT frame. The tray already lies on its floor, but the lid is
+        # authored bosses-down -- slice it that way and it prints on the tips of
+        # seven studs (1.9% of its footprint). Flipped, the plate is the bed
+        # contact, the visible face gets the bed finish, and every boss and tab
+        # points up with nothing to support.
+        pr = sol
+        if tag == "lid":
+            pr = pr.rotate((0, 0, 0), (1, 0, 0), 180)
+            pr = pr.translate((0, -pr.val().BoundingBox().ymin,
+                               -pr.val().BoundingBox().zmin))
+        cq.exporters.export(pr, base + ".stl", tolerance=0.05)
         bb = sol.val().BoundingBox()
         print(f"Mini console {tag}: {base}.step/.stl  footprint "
-              f"{bb.xmax-bb.xmin:.1f} x {bb.ymax-bb.ymin:.1f} x {bb.zmax-bb.zmin:.1f} mm")
+              f"{bb.xmax-bb.xmin:.1f} x {bb.ymax-bb.ymin:.1f} x {bb.zmax-bb.zmin:.1f} mm"
+              + ("  (STL flipped plate-down for printing)" if tag == "lid" else ""))
         outp.append(base + ".step")
     return outp
 
