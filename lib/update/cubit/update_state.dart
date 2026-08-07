@@ -24,6 +24,20 @@ enum UpdatePhase {
   error,
 }
 
+/// Which operation put the flow into [UpdatePhase.error].
+///
+/// The two read differently and retry differently: a check that could not
+/// reach the server is retried by checking, and a download that broke off is
+/// retried by downloading. One error phase with one wording told half the
+/// users the wrong thing and offered all of them the wrong button.
+enum UpdateFailure {
+  /// The read-only availability check.
+  check,
+
+  /// The download and stage of an offered bundle.
+  download,
+}
+
 /// Immutable state of the update feature.
 class UpdateState extends Equatable {
   /// Creates an [UpdateState].
@@ -37,6 +51,7 @@ class UpdateState extends Equatable {
     this.autoCheck = true,
     this.dismissed = const {},
     this.errorMessage,
+    this.failure,
   });
 
   /// The current phase of the flow.
@@ -69,6 +84,9 @@ class UpdateState extends Equatable {
   /// A human-readable message when [phase] is [UpdatePhase.error].
   final String? errorMessage;
 
+  /// What failed, when [phase] is [UpdatePhase.error].
+  final UpdateFailure? failure;
+
   /// Whether a newer build is currently on offer (available or staged).
   bool get hasUpdate => available != null;
 
@@ -91,6 +109,7 @@ class UpdateState extends Equatable {
     bool? autoCheck,
     Set<Version>? dismissed,
     String? errorMessage,
+    UpdateFailure? failure,
     bool clearError = false,
   }) {
     return UpdateState(
@@ -103,6 +122,7 @@ class UpdateState extends Equatable {
       autoCheck: autoCheck ?? this.autoCheck,
       dismissed: dismissed ?? this.dismissed,
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+      failure: clearError ? null : (failure ?? this.failure),
     );
   }
 
@@ -117,5 +137,6 @@ class UpdateState extends Equatable {
     autoCheck,
     dismissed,
     errorMessage,
+    failure,
   ];
 }

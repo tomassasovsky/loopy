@@ -219,7 +219,7 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
       actions: [
         if (ssid case final failed?)
           ConsoleSmallButton(
-            label: l10n.networkTryAgain,
+            label: l10n.consoleTryAgain,
             onPressed: () => unawaited(_join(context, cubit, state, failed)),
           ),
       ],

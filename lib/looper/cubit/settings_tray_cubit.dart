@@ -8,6 +8,7 @@ import 'package:segno/control/control_tab.dart';
 import 'package:segno/looper/loop_tab.dart';
 import 'package:segno/looper/tracks_tab.dart';
 import 'package:segno/network/network_tab.dart';
+import 'package:segno/system/system_tab.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'settings_tray_state.dart';
@@ -141,6 +142,9 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
 
   /// Moves the Audio domain's tab. Same rule as [showNetworkTab].
   void showAudioTab(AudioTab tab) => emit(state.copyWith(audioTab: tab));
+
+  /// Moves the System domain's tab. Same rule as [showNetworkTab].
+  void showSystemTab(SystemTab tab) => emit(state.copyWith(systemTab: tab));
 
   /// Returns from an expanded panel to the tile grid.
   void showHome() =>

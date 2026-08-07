@@ -23,6 +23,10 @@ plugin, macOS dylib loading, flavor schemes). They will bite otherwise.
   under `firmware/` or `hardware/firmware/` or the pedal codec changes):
   `bash firmware/test/run_tests.sh`
 - Static analysis: `dart analyze` must come back clean
+- Bloc lint: `bloc lint lib test packages` must come back clean. CI runs this
+  as the `Bloc Lint` step of the reusable `flutter_package.yml`, and it carries
+  rules `dart analyze` does **not** — a cubit method returning anything but
+  void fails here and passes there
 - Formatting is automatic — a PostToolUse hook runs `dart format` on every
   edited `.dart` file, so never hand-format or commit format-only churn
 

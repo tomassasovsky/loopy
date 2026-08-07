@@ -278,11 +278,11 @@ class _TrayHandle extends StatelessWidget {
           alignment: Alignment.topCenter,
           child: AnimatedContainer(
             duration: duration,
-            width: 40,
-            height: 5,
+            width: kTrayHandlePill.width,
+            height: kTrayHandlePill.height,
             decoration: BoxDecoration(
               color: tint,
-              borderRadius: BorderRadius.circular(2.5),
+              borderRadius: BorderRadius.circular(kTrayHandlePill.height / 2),
             ),
           ),
         ),

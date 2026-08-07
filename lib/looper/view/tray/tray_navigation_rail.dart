@@ -60,6 +60,10 @@ class TrayNavigationRail extends StatelessWidget {
         // An antenna, not a WiFi fan or a Bluetooth rune: either radio's own
         // glyph on a shared entry would read as only that one radio.
         SettingsTrayDestination.network => Icons.settings_input_antenna,
+        // A chip, as the mockups draw it: the square with the smaller square
+        // inside is the console itself — the box, its screens, its disk and
+        // its build — not any one of the four tabs.
+        SettingsTrayDestination.system => Icons.memory_outlined,
       };
 
   /// The caption for [destination]. Exhaustive for the same reason as
@@ -75,6 +79,7 @@ class TrayNavigationRail extends StatelessWidget {
     SettingsTrayDestination.audio => l10n.trayAudioLabel,
     SettingsTrayDestination.tuner => l10n.trayTunerLabel,
     SettingsTrayDestination.network => l10n.trayNetworkLabel,
+    SettingsTrayDestination.system => l10n.traySystemLabel,
   };
 
   @override

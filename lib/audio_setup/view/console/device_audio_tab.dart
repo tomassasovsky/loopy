@@ -8,7 +8,6 @@ import 'package:looper_repository/looper_repository.dart'
     show EngineStatus, LatencyState;
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
-import 'package:segno/audio_setup/view/console/audio_face.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -124,10 +123,11 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
 
     return KeyedSubtree(
       key: const Key('audio_device_tab'),
-      child: AudioFace(
+      child: ConsoleFace(
+        previewKey: const Key('audio_upcoming_group'),
         lastGroupExtent: state.asioOnly ? _asioExtent(state) : 0,
         groups: [
-          AudioGroup(
+          ConsoleGroup(
             caption: l10n.audioGroupLabel,
             blocks: [
               _card(context, state),
@@ -469,12 +469,12 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
         (drivers == 0 ? _bannerCardExtent : kConsoleRowHeight * drivers + 2);
   }
 
-  AudioGroup _asioGroup(BuildContext context, AudioSetupState state) {
+  ConsoleGroup _asioGroup(BuildContext context, AudioSetupState state) {
     final l10n = context.l10n;
     // The cached enumeration, which stays populated even while ASIO holds the
     // device — re-probing live would tear the stream down (R1).
     final drivers = state.cachedAsioDrivers;
-    return AudioGroup(
+    return ConsoleGroup(
       caption: l10n.audioAsioDriverGroup,
       blocks: [
         if (drivers.isEmpty)

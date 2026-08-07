@@ -211,6 +211,13 @@ class ConsoleCard extends StatelessWidget {
   /// Corner radius of the card.
   static const double radius = 12;
 
+  /// What the card's own border adds to the height of the rows inside it.
+  ///
+  /// Public because every face that tells [ConsoleFace] how tall its last
+  /// group is has to add it, and four copies of one widget's border width is
+  /// four places to miss when it changes.
+  static const double borderExtent = 2;
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
@@ -1106,6 +1113,7 @@ class ConsoleBanner extends StatelessWidget {
     required this.message,
     required this.tone,
     this.actions = const [],
+    this.progress,
     super.key,
   });
 
@@ -1121,9 +1129,30 @@ class ConsoleBanner extends StatelessWidget {
   /// carries none.
   final List<Widget> actions;
 
+  /// How far along the thing described is, `0..1`, or null when it is not the
+  /// kind of thing that has a "how far".
+  ///
+  /// Under the message rather than beside it, because the message already
+  /// carries the percentage in words and the bar is the same fact drawn — a
+  /// bar in the action slot would read as a control. `SYSTEM /
+  /// update-downloading` is the one screen that draws it, and it is the one
+  /// phase on this console with a genuinely long, genuinely observable middle:
+  /// `UpdateCubit` emits a fresh progress on every chunk the repository yields.
+  final double? progress;
+
   /// The dot's diameter — also the reason the banner is 46px tall with no
   /// action and 61px with one: the button is taller than the sentence.
   static const double dotSize = 11;
+
+  /// Thickness of the [progress] track.
+  static const double progressHeight = 7;
+
+  /// The gap between the message and the [progress] track under it.
+  static const double progressGap = 10;
+
+  /// The track's own key: a bar has no text to assert on, and "the banner
+  /// rendered" is not the same claim as "the banner drew a bar".
+  static const Key progressKey = Key('console_banner_progress');
 
   @override
   Widget build(BuildContext context) {
@@ -1153,16 +1182,35 @@ class ConsoleBanner extends StatelessWidget {
           ),
           const SizedBox(width: kConsoleRowGap),
           Expanded(
-            child: Text(
-              message,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: surface.textSecondary,
-                fontSize: 16,
-                height: 1.13,
-                leadingDistribution: TextLeadingDistribution.even,
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  message,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: surface.textSecondary,
+                    fontSize: 16,
+                    height: 1.13,
+                    leadingDistribution: TextLeadingDistribution.even,
+                  ),
+                ),
+                if (progress case final fraction?) ...[
+                  const SizedBox(height: progressGap),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(progressHeight / 2),
+                    child: LinearProgressIndicator(
+                      key: progressKey,
+                      value: fraction.clamp(0.0, 1.0),
+                      minHeight: progressHeight,
+                      backgroundColor: surface.control,
+                      valueColor: AlwaysStoppedAnimation(surface.accent),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
           for (final action in actions) ...[
@@ -2484,6 +2532,128 @@ class _ConsoleStickyGroupsState extends State<ConsoleStickyGroups> {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// One captioned group of a domain face: its caption, and the blocks under it.
+@immutable
+class ConsoleGroup {
+  /// Creates a [ConsoleGroup].
+  const ConsoleGroup({required this.blocks, this.caption});
+
+  /// The caption over the group, upper-cased by the caller as every
+  /// [ConsoleGroupLabel] is — or **null** for a group that has none.
+  ///
+  /// Nullable because `SYSTEM / update` opens on two rows (installed version
+  /// and channel) with no caption at all, and a group forced to invent one
+  /// would be captioning a fact that needs no heading. An uncaptioned group
+  /// also sits [kConsoleBlockGap] from what is above it rather than
+  /// [kConsoleGroupGap] — the wider gap exists to hold a caption off the
+  /// thing before it, so with no caption there is nothing to hold off.
+  final String? caption;
+
+  /// The cards and banners under the caption, in display order. Separated by
+  /// [kConsoleBlockGap] — two blocks of one group sit closer together than two
+  /// groups do.
+  final List<Widget> blocks;
+
+  /// The gap above this group.
+  double get gapAbove => caption == null ? kConsoleBlockGap : kConsoleGroupGap;
+}
+
+/// The shape every domain tab shares: captioned groups that scroll under their
+/// own sticky captions.
+///
+/// Scrolling is not defensive, it is the common case. An 18-in interface with
+/// the device row open is a list of every device the host reports plus three
+/// settings rows; the Storage breakdown plus its housekeeping actions is
+/// another; and both are taller than the tray sheet. It is the same problem the
+/// per-track routing panel had at eight inputs, so it takes the same answer
+/// rather than a second one: each group is its own [SliverMainAxisGroup], so
+/// the current caption is pinned overhead and pushed out by the next rather
+/// than stacking under it, and the group you have not reached waits at the
+/// bottom edge.
+///
+/// The captions carry [SurfaceTheme.card] — the TRAY SHEET's own tone, which
+/// is what these faces sit directly on. Not the page background: the sheet is
+/// opaque and card-toned, so a caption painting the page's fill draws a darker
+/// band across the width of a face it is supposed to be part of.
+///
+/// Started as `AudioFace`, beside the one domain that had it, and moved here
+/// under this file's own promotion rule the moment System read it too.
+class ConsoleFace extends StatelessWidget {
+  /// Creates a [ConsoleFace].
+  const ConsoleFace({
+    required this.groups,
+    this.lastGroupExtent = 0,
+    this.previewKey,
+    super.key,
+  });
+
+  /// The groups, in display order.
+  final List<ConsoleGroup> groups;
+
+  /// How tall the LAST group is, caption included — 0 when there is only one.
+  ///
+  /// Stated by the caller rather than measured, because [ConsoleStickyGroups]
+  /// needs that height before the group has been laid out, to know when its
+  /// real caption has risen far enough to take the bottom preview's place.
+  final double lastGroupExtent;
+
+  /// Key for the bottom preview strip, so a test can find it.
+  final Key? previewKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final last = groups.length > 1 ? groups.last : null;
+    return Padding(
+      // The gap between the tab strip and the first group. On the face rather
+      // than inside the scroll view: a caption that pins flush against the
+      // strip is what this space exists to prevent.
+      padding: EdgeInsets.only(
+        top: groups.isEmpty ? kConsoleGroupGap : groups.first.gapAbove,
+      ),
+      child: ConsoleStickyGroups(
+        fill: surface.card,
+        // Null when the last group has no caption of its own: there is
+        // nothing to preview, and a blank strip at the bottom edge previews
+        // nothing while still taking the room.
+        upcoming: last?.caption,
+        // Plus the sheet's own bottom inset below: what [ConsoleStickyGroups]
+        // measures is the distance from the bottom edge to the END of the
+        // content, and this face puts a [kConsoleGroupGap] spacer after the
+        // last group. Leaving it out drops the preview a gap early, with the
+        // real caption already risen — the two on screen at once, which is the
+        // one thing the handover exists to prevent.
+        upcomingExtent: lastGroupExtent + kConsoleGroupGap,
+        previewKey: previewKey,
+        slivers: [
+          for (final (index, group) in groups.indexed) ...[
+            if (index > 0)
+              SliverToBoxAdapter(child: SizedBox(height: group.gapAbove)),
+            SliverMainAxisGroup(
+              slivers: [
+                if (group.caption case final caption?)
+                  ConsolePinnedGroupLabel(caption, fill: surface.card),
+                for (final (position, block) in group.blocks.indexed)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        top: position > 0 ? kConsoleBlockGap : 0,
+                      ),
+                      child: block,
+                    ),
+                  ),
+              ],
+            ),
+          ],
+          // The sheet's own bottom inset, so the last row can be scrolled clear
+          // of the drag handle that rides at the panel's bottom edge.
+          const SliverToBoxAdapter(child: SizedBox(height: kConsoleGroupGap)),
+        ],
+      ),
     );
   }
 }

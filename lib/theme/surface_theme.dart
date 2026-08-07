@@ -24,6 +24,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     required this.control,
     required this.controlStrong,
     required this.scrim,
+    required this.dropShadow,
     required this.borderHairline,
     required this.borderSubtle,
     required this.borderStrong,
@@ -78,6 +79,17 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
 
   /// Overlay scrim behind dialogs and trays (DS `bg-scrim`).
   final Color scrim;
+
+  /// The cast shadow under a surface that sits *over* the stage — today only
+  /// the tray sheet, which the mockups lift off the tracks grid rather than
+  /// letting it sit flush against it.
+  ///
+  /// A token rather than a literal in `tray_panel.dart` because
+  /// `test/theme/token_adoption_test.dart` fails on any colour literal in the
+  /// view layer, and rightly: a hex there is invisible to a palette migration
+  /// and to the high-contrast variant, where a shadow has to deepen along
+  /// with the scrim to keep separating the two surfaces.
+  final Color dropShadow;
 
   /// The white-alpha border tiers below [line] (DS `border-hairline`,
   /// `border-subtle`): hairline is the resting card edge, subtle is the
@@ -204,6 +216,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     Color? control,
     Color? controlStrong,
     Color? scrim,
+    Color? dropShadow,
     Color? borderHairline,
     Color? borderSubtle,
     Color? borderStrong,
@@ -249,6 +262,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     control: control ?? this.control,
     controlStrong: controlStrong ?? this.controlStrong,
     scrim: scrim ?? this.scrim,
+    dropShadow: dropShadow ?? this.dropShadow,
     borderHairline: borderHairline ?? this.borderHairline,
     borderSubtle: borderSubtle ?? this.borderSubtle,
     borderStrong: borderStrong ?? this.borderStrong,
@@ -300,6 +314,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       control: c(control, other.control),
       controlStrong: c(controlStrong, other.controlStrong),
       scrim: c(scrim, other.scrim),
+      dropShadow: c(dropShadow, other.dropShadow),
       borderHairline: c(borderHairline, other.borderHairline),
       borderSubtle: c(borderSubtle, other.borderSubtle),
       borderStrong: c(borderStrong, other.borderStrong),
@@ -371,6 +386,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     control: Color(0xFF26262A),
     controlStrong: Color(0xFF3A3A40),
     scrim: Color(0x6B08080A),
+    dropShadow: Color(0x99000000),
     borderHairline: Color(0x0BFFFFFF),
     borderSubtle: Color(0x1FFFFFFF),
     borderStrong: Color(0xFF3A3A40),
@@ -436,6 +452,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     control: Color(0xFF2E2E30),
     controlStrong: Color(0xFF4A4A4C),
     scrim: Color(0xA0000000),
+    dropShadow: Color(0xCC000000),
     borderHairline: Color(0x1FFFFFFF),
     borderSubtle: Color(0x3DFFFFFF),
     borderStrong: Color(0xFF8A8A8A),

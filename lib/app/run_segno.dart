@@ -1,5 +1,6 @@
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
+import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/widgets.dart';
@@ -119,6 +120,7 @@ Future<void> runSegno(
   final wifi = WifiRepository(client: createWifiClient());
   final bluetooth = BluetoothRepository(client: createBluetoothClient());
   final brightness = createBrightnessClient();
+  final consoleFacts = createConsoleFactsClient();
   // Owns the MIDI input device lifecycle (enumerate / open / close, hotplug,
   // persistence). Borrows the shared [midiSource] (owned by the controller
   // pipeline) and never disposes it. Held independent of the engine so MIDI
@@ -178,6 +180,7 @@ Future<void> runSegno(
       wifi: wifi,
       bluetooth: bluetooth,
       brightness: brightness,
+      consoleFacts: consoleFacts,
     ),
   );
 }

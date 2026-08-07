@@ -163,7 +163,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   List<Widget> _viewSection(BuildContext context) {
     final l10n = context.l10n;
-    final waveformEnabled = context.watch<WaveformWindowCubit>().state;
+    final waveformEnabled = context.watch<WaveformWindowCubit>().state.enabled;
     final highContrast = context.watch<HighContrastCubit>().state;
     final tracks = context.watch<TracksCubit>().state;
     final showIndicators = tracks.showIndicators;

@@ -266,6 +266,7 @@ List<Color> _colors(SurfaceTheme s) => [
   s.control,
   s.controlStrong,
   s.scrim,
+  s.dropShadow,
   s.borderHairline,
   s.borderSubtle,
   s.borderStrong,
