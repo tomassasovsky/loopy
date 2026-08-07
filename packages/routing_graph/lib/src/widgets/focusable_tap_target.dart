@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:routing_graph/src/theme/routing_graph_theme.dart';
 
@@ -22,6 +23,7 @@ class FocusableTapTarget extends StatefulWidget {
     required this.child,
     this.onLongPress,
     this.semanticLabel,
+    this.customSemanticsActions,
     this.selected,
     this.button = true,
     this.borderRadius = 6,
@@ -43,6 +45,17 @@ class FocusableTapTarget extends StatefulWidget {
   /// The accessible name announced by screen readers. When set, the child's own
   /// semantics are excluded so the target reads as one labelled control.
   final String? semanticLabel;
+
+  /// Extra actions published on THIS target's node, for a control the target
+  /// contains but cannot expose on its own.
+  ///
+  /// [semanticLabel] excludes the child's semantics, which is right for the
+  /// text it wraps and wrong for an interactive slot inside it — a row whose
+  /// leading glyph is its own tap target loses that target entirely. Naming
+  /// the inner action here puts it back on the node the reader focuses, which
+  /// wrapping the whole target in a `Semantics` cannot do: the target is a
+  /// merge boundary, so an outer annotation lands on a parent node instead.
+  final Map<CustomSemanticsAction, VoidCallback>? customSemanticsActions;
 
   /// Toggle/selected state exposed to assistive tech (e.g. a wired port).
   final bool? selected;
@@ -106,6 +119,7 @@ class _FocusableTapTargetState extends State<FocusableTapTarget> {
         enabled: widget.button ? enabled : null,
         selected: widget.selected,
         label: widget.semanticLabel,
+        customSemanticsActions: widget.customSemanticsActions,
         child: FocusableActionDetector(
           enabled: enabled,
           focusNode: widget.focusNode,

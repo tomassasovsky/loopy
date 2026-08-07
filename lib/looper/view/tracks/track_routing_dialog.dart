@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
@@ -117,6 +118,13 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
       bloc.add(LooperLaneInputChanged(channel, freed, input));
       return;
     }
+    // The engine caps a track at [kMaxLanes] lanes and rejects both writes
+    // past it — while a device may report up to 32 inputs, so this IS
+    // reachable. Stop rather than dispatch them: the repository caches and
+    // the bloc persists a lane input unconditionally, so a lane index the
+    // engine can never have would be replayed on every restart.
+    // [_laneRow] withholds the tap in the same state, so this is the backstop.
+    if (lanes.length >= kMaxLanes) return;
     // Grow FIRST, so the lane exists before it is routed.
     bloc
       ..add(LooperLaneCountChanged(channel, lanes.length + 1))
@@ -289,19 +297,37 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
     final lanes = track.lanes;
     // The engine reports 0 before the device is open; 2 is what every other
     // surface assumes then.
-    final inputs = state.status.inputChannels > 0
+    final deviceInputs = state.status.inputChannels > 0
         ? state.status.inputChannels
         : 2;
     final outputs = state.status.outputChannels > 0
         ? state.status.outputChannels
         : 2;
     final recording = recordedInputs(track);
+    // The device's own jacks, plus any input a lane is ALREADY recording that
+    // this device has not got — a session saved on an eight-in rig still
+    // records In 6 when it is reopened on a two-in one, and the Routing tab's
+    // summary says so. That lane needs a row or the panel cannot uncheck it,
+    // and the list would show nothing recorded while `None (clean)` stayed
+    // unlit. Only the recorded ones, though: a row for a jack that is neither
+    // present nor in use would OFFER to record silence.
+    // `recording` is ascending, so this stays in channel order.
+    final inputs = [
+      for (var input = 0; input < deviceInputs; input++) input,
+      ...recording.where((input) => input >= deviceInputs),
+    ];
+    // The engine caps a track at [kMaxLanes] lanes; a device can report more
+    // inputs than that. With every lane occupied there is none left to give a
+    // further input, so those rows stop offering the tap.
+    final full =
+        lanes.length >= kMaxLanes &&
+        !lanes.any((lane) => lane.inputChannel < 0);
 
     return ConsoleCard(
       fill: surface.background,
       children: [
-        for (var input = 0; input < inputs; input++)
-          ..._laneRow(context, lanes, input, outputs),
+        for (final input in inputs)
+          ..._laneRow(context, lanes, input, outputs, full: full),
         ConsolePickRow(
           key: const Key('track_routing_none'),
           title: l10n.tracksNoInputs,
@@ -319,8 +345,9 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
     BuildContext context,
     List<Lane> lanes,
     int input,
-    int outputs,
-  ) {
+    int outputs, {
+    required bool full,
+  }) {
     final l10n = context.l10n;
     final surface = context.surface;
     final lane = lanes.indexWhere((value) => value.inputChannel == input);
@@ -328,6 +355,31 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
     final open = recorded && _openLane == lane;
     final mask = recorded ? lanes[lane].outputMask : 0;
     final label = l10n.inputChannelLabel(input + 1);
+    // The device's own outputs, plus any bit this lane ALREADY reaches that
+    // the device has not got — same rule as the rows themselves, and for the
+    // same reason: a mask bit carried in from a wider rig needs a cell or the
+    // readout names an output the drawer cannot turn off, while a cell for a
+    // socket that is neither present nor in use would only add routing that
+    // can never be heard.
+    final cells = [
+      for (var out = 0; out < outputs; out++) out,
+      for (var out = outputs; out < mask.bitLength; out++)
+        if (mask & (1 << out) != 0) out,
+    ];
+    // With every lane occupied there is none left for a further input, so
+    // those rows take no tap rather than one the engine would drop.
+    final inert = !recorded && full;
+    final readout = recorded
+        ? (mask == 0 ? l10n.trackLaneOutputsNone : outputMaskLabel(l10n, mask))
+        : null;
+    // What the row SAYS about where the lane goes — built from the lane, not
+    // borrowed from the readout beside it. `nothing` is a token: it works in a
+    // column under a warning tint and, spoken, is a dangling noun that states
+    // no problem at all. The unrouted lane gets the sentence the drawer would
+    // show, which is the only place that fact is otherwise said.
+    final spokenRouting = recorded
+        ? (mask == 0 ? l10n.trackLaneUnrouted : outputMaskLabel(l10n, mask))
+        : null;
     return [
       ConsoleRow(
         key: Key('track_routing_input_$input'),
@@ -337,33 +389,68 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
         leading: _LaneCheck(
           key: Key('track_routing_check_$input'),
           recorded: recorded,
-          semanticLabel: recorded
-              ? l10n.a11yTrackLaneRecording(label)
-              : l10n.a11yTrackLaneIdle(label),
           // The check gutter both SHOWS and UNDOES the choice. It only takes
           // the tap once the lane exists; while the row is unchecked the whole
           // row, gutter included, is the thing that checks it.
+          //
+          // It carries no label of its own: [ConsoleRow] hands its own
+          // `semanticLabel` to `FocusableTapTarget`, which EXCLUDES everything
+          // it wraps, so a nested label here never reaches the tree. The row
+          // says the lane's state below, and the gutter's action is exposed
+          // beside it as a custom action.
           onTap: recorded ? () => _toggleInput(lanes, input) : null,
         ),
         title: label,
-        state: recorded
-            ? (mask == 0
-                  ? l10n.trackLaneOutputsNone
-                  : outputMaskLabel(l10n, mask))
-            : null,
+        // A row the track has no lane left for is drawn in the muted ink the
+        // console uses for "listed, but not choosable right now" — otherwise it
+        // is indistinguishable from the available rows above it and swallows
+        // the tap with nothing said.
+        titleColor: inert ? surface.textMuted : null,
+        state: readout,
         valueColor: recorded && mask == 0 ? surface.warning : null,
+        // The sentence rides the ROW, which is the node assistive tech gets,
+        // and it says what the row will actually do. The idle one reads
+        // "activate to record it" and the row's own tap does exactly that; the
+        // recorded one says where the lane goes, because the row's tap opens
+        // the drawer and stopping is the custom action below; the capped one
+        // promises nothing, because a row with no lane left to give takes no
+        // tap — the muted ink says so to the eye, and this says it aloud.
+        semanticLabel: [
+          if (recorded)
+            l10n.a11yTrackLaneRecording(label)
+          else if (inert)
+            l10n.a11yTrackLaneNoLane(label)
+          else
+            l10n.a11yTrackLaneIdle(label),
+          ?spokenRouting,
+          // Space, not the row's usual comma: both sentences already end in a
+          // full stop, and ", " after one reads as a stutter.
+        ].join(' '),
+        // The gutter's own semantics go out with the rest of the row's, so the
+        // un-route is published on the row instead. Without it a screen reader
+        // can only reach `None (clean)`, which clears EVERY lane on the track.
+        customSemanticsActions: recorded
+            ? {
+                CustomSemanticsAction(
+                  label: l10n.a11yTrackLaneStopRecording,
+                ): () =>
+                    _toggleInput(lanes, input),
+              }
+            : null,
         // An unchecked input is not a lane, so it has nothing to open and
         // draws no marker — the gutter stays reserved so the list's trailing
         // edge does not move as lanes come and go.
         expanded: recorded ? open : null,
         fill: open ? surface.control : null,
-        onTap: () {
-          if (!recorded) {
-            _toggleInput(lanes, input);
-            return;
-          }
-          setState(() => _openLane = open ? null : lane);
-        },
+        onTap: inert
+            ? null
+            : () {
+                if (!recorded) {
+                  _toggleInput(lanes, input);
+                  return;
+                }
+                setState(() => _openLane = open ? null : lane);
+              },
       ),
       ConsoleChooser(
         key: Key('track_routing_outputs_$input'),
@@ -382,11 +469,11 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
               // outputs, so several cells are lit and a tap toggles one bit.
               // Nothing here closes the drawer — no single tap answers it.
               selected: {
-                for (var out = 0; out < outputs; out++)
+                for (final out in cells)
                   if (mask & (1 << out) != 0) out,
               },
               options: [
-                for (var out = 0; out < outputs; out++)
+                for (final out in cells)
                   ConsoleSegment(
                     value: out,
                     label: l10n.outputChannelLabel(out + 1),
@@ -478,13 +565,11 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
 class _LaneCheck extends StatelessWidget {
   const _LaneCheck({
     required this.recorded,
-    required this.semanticLabel,
     required this.onTap,
     super.key,
   });
 
   final bool recorded;
-  final String semanticLabel;
   final VoidCallback? onTap;
 
   @override
@@ -493,11 +578,14 @@ class _LaneCheck extends StatelessWidget {
       width: ConsolePickRow.checkWidth,
       child: recorded ? const ConsoleCheck() : const SizedBox.shrink(),
     );
+    // Deliberately unlabelled: [ConsoleRow] hands its own `semanticLabel` to
+    // `FocusableTapTarget`, which wraps everything it holds in
+    // `ExcludeSemantics`, so a label given here would be dropped rather than
+    // announced. The row carries both sentences and the un-route action.
     if (onTap == null) return mark;
     return FocusableTapTarget(
       onTap: onTap,
       selected: recorded,
-      semanticLabel: semanticLabel,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
