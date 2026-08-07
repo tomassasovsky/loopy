@@ -287,11 +287,15 @@ typedef int (*le_snd_hwp_malloc_t)(void**);
 typedef void (*le_snd_hwp_free_t)(void*);
 typedef int (*le_snd_hwp_any_t)(void*, void*);
 typedef int (*le_snd_hwp_chan_max_t)(const void*, unsigned int*);
+/* snd_lib_error_set_handler; NULL restores libasound's default handler. */
+typedef void (*le_snd_err_fn_t)(const char*, int, const char*, int,
+                                const char*, ...);
+typedef int (*le_snd_err_set_t)(le_snd_err_fn_t);
 
-/* The libasound entry points the probe needs, resolved once per enumeration
- * rather than once per card. `lib == NULL` means "ALSA unavailable" and makes
- * every probe answer 0 — enumeration itself still succeeds, since a card list
- * without widths is strictly better than no card list. */
+/* The libasound entry points the probe needs. `lib == NULL` means "ALSA
+ * unavailable" and makes every probe answer 0 — enumeration itself still
+ * succeeds, since a card list without widths is strictly better than no card
+ * list. */
 typedef struct le_alsa_syms {
   void* lib;
   le_snd_open_t pcm_open;
@@ -300,9 +304,10 @@ typedef struct le_alsa_syms {
   le_snd_hwp_free_t hwp_free;
   le_snd_hwp_any_t hwp_any;
   le_snd_hwp_chan_max_t hwp_chan_max;
+  le_snd_err_set_t err_set; /* optional — probe still works without it */
 } le_alsa_syms;
 
-static void le_alsa_syms_open(le_alsa_syms* s) {
+static void le_alsa_syms_resolve(le_alsa_syms* s) {
   memset(s, 0, sizeof(*s));
   s->lib = dlopen("libasound.so.2", RTLD_NOW | RTLD_LOCAL);
   if (s->lib == NULL) s->lib = dlopen("libasound.so", RTLD_NOW | RTLD_LOCAL);
@@ -314,6 +319,7 @@ static void le_alsa_syms_open(le_alsa_syms* s) {
   s->hwp_any = (le_snd_hwp_any_t)dlsym(s->lib, "snd_pcm_hw_params_any");
   s->hwp_chan_max =
       (le_snd_hwp_chan_max_t)dlsym(s->lib, "snd_pcm_hw_params_get_channels_max");
+  s->err_set = (le_snd_err_set_t)dlsym(s->lib, "snd_lib_error_set_handler");
   if (!s->pcm_open || !s->pcm_close || !s->hwp_malloc || !s->hwp_free ||
       !s->hwp_any || !s->hwp_chan_max) {
     dlclose(s->lib);
@@ -321,13 +327,39 @@ static void le_alsa_syms_open(le_alsa_syms* s) {
   }
 }
 
-static void le_alsa_syms_close(le_alsa_syms* s) {
-  if (s->lib != NULL) dlclose(s->lib);
-  memset(s, 0, sizeof(*s));
+/* Resolved once and kept for the life of the process — deliberately never
+ * dlclosed. snd_pcm_open builds libasound's global config tree (it parses
+ * alsa.conf) and caches it behind a library global; unloading the library drops
+ * that global without freeing the tree, so a dlopen/dlclose per enumeration
+ * would orphan a fresh copy on every pass. Holding the handle keeps ALSA's
+ * cache alive to be reused instead, and also skips re-relocating the library.
+ * Same cache-it-once idiom as le_alsa_only(): the control thread owns
+ * enumeration (see engine_devices.c's ownership note), so no locking. */
+static const le_alsa_syms* le_alsa_syms_get(void) {
+  static le_alsa_syms syms;
+  static int resolved = 0;
+  if (!resolved) {
+    resolved = 1;
+    le_alsa_syms_resolve(&syms);
+  }
+  return &syms;
+}
+
+/* Swallows the probe's own ALSA diagnostics. Installed only around the open and
+ * removed straight after, so the engine's real device opens keep the default
+ * handler and still report failures. */
+static void le_alsa_quiet(const char* file, int line, const char* function,
+                          int err, const char* fmt, ...) {
+  (void)file;
+  (void)line;
+  (void)function;
+  (void)err;
+  (void)fmt;
 }
 
 /* The widest channel count hw:<card>,<dev> can carry in `capture`'s direction,
- * or 0 when the card cannot be asked. */
+ * or 0 when the card cannot be asked. Opens real hardware — go through
+ * le_alsa_channels_cached rather than calling this per enumeration. */
 static int32_t le_alsa_pcm_channels_max(const le_alsa_syms* s, int card,
                                         int dev, int capture) {
   if (s->lib == NULL) return 0;
@@ -344,8 +376,17 @@ static int32_t le_alsa_pcm_channels_max(const le_alsa_syms* s, int card,
    * instead of parking enumeration on it. On the appliance that other holder is
    * our OWN engine, and a running engine already publishes its negotiated count
    * through the status snapshot — so the picker has a count either way, and the
-   * probe only has to answer for cards that are idle. */
-  if (s->pcm_open(&pcm, name, stream, LE_SND_PCM_NONBLOCK) < 0) return 0;
+   * probe only has to answer for cards that are idle.
+   *
+   * A busy card is an ordinary, expected outcome here, not a fault, so mute
+   * libasound's default handler across the open — it would otherwise write an
+   * "open ... failed: Device or resource busy" line to stderr for the streaming
+   * card every time the list is refreshed. Restored (NULL = default) straight
+   * after, so this never hides a failure on the engine's own open path. */
+  if (s->err_set != NULL) s->err_set(le_alsa_quiet);
+  const int rc = s->pcm_open(&pcm, name, stream, LE_SND_PCM_NONBLOCK);
+  if (s->err_set != NULL) s->err_set(NULL);
+  if (rc < 0) return 0;
 
   int32_t channels = 0;
   void* params = NULL;
@@ -369,6 +410,84 @@ static int32_t le_alsa_pcm_channels_max(const le_alsa_syms* s, int card,
   return channels;
 }
 
+/* ---- width memo ----
+ *
+ * The picker re-enumerates on a 1s timer, through a synchronous FFI call on the
+ * UI isolate, in both directions per tick. Probing from there unconditionally
+ * would open every card's /dev/snd node ~2N times a second on that thread — a
+ * recurring stall on a Pi, where a USB card's open path runs control transfers,
+ * and a repeated intrusion on the very device the engine is streaming.
+ *
+ * A card's width cannot change while the card is present, so it is asked once
+ * and remembered. Identity is (card, dev, direction) PLUS the card's name,
+ * because ALSA reuses card indices: unplugging one interface and plugging
+ * another can hand index 1 back with different hardware behind it, and the name
+ * change is what catches that.
+ *
+ * UNKNOWN (0) is cached too — otherwise the busy streaming card, the exact case
+ * the storm was worst for, would be re-probed on every tick forever. It is
+ * retried every LE_ALSA_RETRY_EVERY passes so a card that was merely busy
+ * becomes knowable once the engine lets go, without a clock and at ~1/64 of the
+ * cost. In the meantime the running device's count still reaches the UI through
+ * the engine's status snapshot.
+ */
+#define LE_ALSA_MEMO_MAX 16
+#define LE_ALSA_RETRY_EVERY 64
+
+typedef struct le_alsa_memo {
+  int used;
+  int card;
+  int dev;
+  int capture;
+  char name[64];
+  int32_t channels;
+  unsigned probed_at; /* le_alsa_enum_seq when this was last probed */
+} le_alsa_memo;
+
+/* Bumped once per enumeration pass; the only "time" the retry rule needs. */
+static unsigned le_alsa_enum_seq;
+
+static int32_t le_alsa_channels_cached(const le_alsa_syms* s, int card, int dev,
+                                       int capture, const char* name) {
+  static le_alsa_memo memo[LE_ALSA_MEMO_MAX];
+  le_alsa_memo* slot = NULL;
+  for (int i = 0; i < LE_ALSA_MEMO_MAX; ++i) {
+    if (!memo[i].used) {
+      if (slot == NULL) slot = &memo[i]; /* first free, in case we miss */
+      continue;
+    }
+    if (memo[i].card == card && memo[i].dev == dev &&
+        memo[i].capture == capture) {
+      if (strncmp(memo[i].name, name, sizeof(memo[i].name) - 1) != 0) {
+        slot = &memo[i]; /* index reused by different hardware — re-probe */
+        break;
+      }
+      /* A known width is final; an UNKNOWN gets another chance periodically. */
+      if (memo[i].channels > 0 ||
+          le_alsa_enum_seq - memo[i].probed_at < LE_ALSA_RETRY_EVERY) {
+        return memo[i].channels;
+      }
+      slot = &memo[i];
+      break;
+    }
+  }
+
+  const int32_t channels = le_alsa_pcm_channels_max(s, card, dev, capture);
+  /* More cards than slots is not expected; such a card simply goes unmemoized
+   * rather than evicting a live entry. */
+  if (slot != NULL) {
+    slot->used = 1;
+    slot->card = card;
+    slot->dev = dev;
+    slot->capture = capture;
+    strncpy(slot->name, name, sizeof(slot->name) - 1);
+    slot->name[sizeof(slot->name) - 1] = '\0';
+    slot->channels = channels;
+    slot->probed_at = le_alsa_enum_seq;
+  }
+  return channels;
+}
+
 /* Appliance ALSA enumeration: one clean entry per real sound card from
  * /proc/asound/cards (e.g. "Scarlett 4i4 USB"), NOT the ALSA PCM-hint namespace
  * (default, sysdefault, plughw, dmix, front, surround40, samplerate, speex, ...)
@@ -383,9 +502,9 @@ static int le_alsa_enumerate_cards(le_device_info* out, int32_t max,
   FILE* f = fopen("/proc/asound/cards", "r");
   if (f == NULL) return 0;
 
-  /* Resolved once for the whole card list, not per card. */
-  le_alsa_syms alsa;
-  le_alsa_syms_open(&alsa);
+  /* Process-lifetime handle; the memo below keeps the actual probing rare. */
+  const le_alsa_syms* alsa = le_alsa_syms_get();
+  ++le_alsa_enum_seq;
 
   char line[512];
   int32_t n = 0;
@@ -429,14 +548,15 @@ static int le_alsa_enumerate_cards(le_device_info* out, int32_t max,
      * a PCM in that direction, and it says nothing about the other one here.
      * Mirrors what the portable miniaudio path fills in device_info_copy. */
     if (capture) {
-      d->input_channels = le_alsa_pcm_channels_max(&alsa, card, dev, capture);
+      d->input_channels =
+          le_alsa_channels_cached(alsa, card, dev, capture, name);
     } else {
-      d->output_channels = le_alsa_pcm_channels_max(&alsa, card, dev, capture);
+      d->output_channels =
+          le_alsa_channels_cached(alsa, card, dev, capture, name);
     }
     ++n;
   }
 
-  le_alsa_syms_close(&alsa);
   fclose(f);
   *count = n;
   return n > 0 ? 1 : 0;
