@@ -169,7 +169,7 @@ The parent plan lists "scope arrived mid-build" as one of four things skipping
 | Out | Where it goes |
 |---|---|
 | Racks, in all forms | #535 |
-| **Writing** the master output switches | **needs a new issue — see Risks** **[R]** |
+| **Writing** the master output switches | #569 **[R]** |
 | Removing `SettingsTrayDestination.home` / the tile grid | parent plan, "What remains" |
 | Splitting `console_surface.dart` | #530 — see below |
 | Tap-to-trace | **has no drawn replacement** — see Risks |
@@ -808,10 +808,10 @@ list with switches reflecting the current mask union. Turning every output off
 is also the silence the Audio face already warns about (`c/signal-master` says
 so outright), so the write path needs that guard too.
 
-**Before PR 2 opens, file an issue for the output-switch write path** and add
-it to the Out-of-scope table with its number, the way #535 has one. The first
-draft disclosed this only in prose, which is exactly how input naming arrived
-mid-build in #528.
+**Tracked as #569** (`stage:plan`, `autonomy:plan-gate`), the way racks are
+tracked as #535 — where the flag lives and what the last-output guard does are
+direction calls. The first draft disclosed this only in prose, which is exactly
+how input naming arrived mid-build in #528.
 
 **Tap-to-trace dies undesigned.** Named in the scope boundary; repeated here
 because it is the most likely "wait, where did that go" after PR 6.
