@@ -259,6 +259,116 @@ static int le_alsa_card_pcm_dev(int card, int capture) {
   return -1;
 }
 
+/* ---- ALSA channel-count probe ----
+ *
+ * /proc/asound says a card EXISTS and which directions it has, but never how
+ * WIDE it is: no file under /proc/asound/cardN carries a channel count for a
+ * device that is not currently streaming. The count lives in the PCM's
+ * hardware-parameter space, so the only way to learn it is to open the device
+ * and ask it.
+ *
+ * libasound is dlopen'd rather than linked, exactly as this file already
+ * reaches libjack and as miniaudio reaches its own ALSA backend — the Linux
+ * engine link line is `-lpthread -lm -ldl` and this must not add to it. A
+ * missing or unusable libasound leaves every count at 0 (UNKNOWN), which the
+ * picker renders as "no readout" rather than as a zero.
+ */
+
+/* snd_pcm_stream_t values and the open mode we want (alsa/pcm.h). */
+#define LE_SND_PCM_STREAM_PLAYBACK 0
+#define LE_SND_PCM_STREAM_CAPTURE 1
+#define LE_SND_PCM_NONBLOCK 0x00000001
+
+/* snd_pcm_t / snd_pcm_hw_params_t are opaque to callers, so `void*` here is the
+ * whole of their public shape — no ALSA headers needed to call through them. */
+typedef int (*le_snd_open_t)(void**, const char*, int, int);
+typedef int (*le_snd_close_t)(void*);
+typedef int (*le_snd_hwp_malloc_t)(void**);
+typedef void (*le_snd_hwp_free_t)(void*);
+typedef int (*le_snd_hwp_any_t)(void*, void*);
+typedef int (*le_snd_hwp_chan_max_t)(const void*, unsigned int*);
+
+/* The libasound entry points the probe needs, resolved once per enumeration
+ * rather than once per card. `lib == NULL` means "ALSA unavailable" and makes
+ * every probe answer 0 — enumeration itself still succeeds, since a card list
+ * without widths is strictly better than no card list. */
+typedef struct le_alsa_syms {
+  void* lib;
+  le_snd_open_t pcm_open;
+  le_snd_close_t pcm_close;
+  le_snd_hwp_malloc_t hwp_malloc;
+  le_snd_hwp_free_t hwp_free;
+  le_snd_hwp_any_t hwp_any;
+  le_snd_hwp_chan_max_t hwp_chan_max;
+} le_alsa_syms;
+
+static void le_alsa_syms_open(le_alsa_syms* s) {
+  memset(s, 0, sizeof(*s));
+  s->lib = dlopen("libasound.so.2", RTLD_NOW | RTLD_LOCAL);
+  if (s->lib == NULL) s->lib = dlopen("libasound.so", RTLD_NOW | RTLD_LOCAL);
+  if (s->lib == NULL) return;
+  s->pcm_open = (le_snd_open_t)dlsym(s->lib, "snd_pcm_open");
+  s->pcm_close = (le_snd_close_t)dlsym(s->lib, "snd_pcm_close");
+  s->hwp_malloc = (le_snd_hwp_malloc_t)dlsym(s->lib, "snd_pcm_hw_params_malloc");
+  s->hwp_free = (le_snd_hwp_free_t)dlsym(s->lib, "snd_pcm_hw_params_free");
+  s->hwp_any = (le_snd_hwp_any_t)dlsym(s->lib, "snd_pcm_hw_params_any");
+  s->hwp_chan_max =
+      (le_snd_hwp_chan_max_t)dlsym(s->lib, "snd_pcm_hw_params_get_channels_max");
+  if (!s->pcm_open || !s->pcm_close || !s->hwp_malloc || !s->hwp_free ||
+      !s->hwp_any || !s->hwp_chan_max) {
+    dlclose(s->lib);
+    memset(s, 0, sizeof(*s)); /* partial resolve == unusable, same as absent */
+  }
+}
+
+static void le_alsa_syms_close(le_alsa_syms* s) {
+  if (s->lib != NULL) dlclose(s->lib);
+  memset(s, 0, sizeof(*s));
+}
+
+/* The widest channel count hw:<card>,<dev> can carry in `capture`'s direction,
+ * or 0 when the card cannot be asked. */
+static int32_t le_alsa_pcm_channels_max(const le_alsa_syms* s, int card,
+                                        int dev, int capture) {
+  if (s->lib == NULL) return 0;
+  /* hw: — the raw device, the same one the id ":<card>,<dev>" opens. Going
+   * through plughw/default would answer about a conversion plugin's arbitrary
+   * capabilities, not about the hardware the user picked. */
+  char name[32];
+  snprintf(name, sizeof(name), "hw:%d,%d", card, dev);
+
+  void* pcm = NULL;
+  const int stream =
+      capture ? LE_SND_PCM_STREAM_CAPTURE : LE_SND_PCM_STREAM_PLAYBACK;
+  /* Non-blocking, so a card someone else already holds fails fast with -EBUSY
+   * instead of parking enumeration on it. On the appliance that other holder is
+   * our OWN engine, and a running engine already publishes its negotiated count
+   * through the status snapshot — so the picker has a count either way, and the
+   * probe only has to answer for cards that are idle. */
+  if (s->pcm_open(&pcm, name, stream, LE_SND_PCM_NONBLOCK) < 0) return 0;
+
+  int32_t channels = 0;
+  void* params = NULL;
+  if (s->hwp_malloc(&params) >= 0) {
+    unsigned int value = 0;
+    /* _any fills params with the device's FULL capability space, nothing
+     * narrowed down yet — which is the question being asked here: how wide can
+     * this card go, not how wide some stream happens to be configured. */
+    if (s->hwp_any(pcm, params) >= 0 && s->hwp_chan_max(params, &value) >= 0) {
+      /* A driver that answers with more channels than any device could have
+       * (the ALSA "unlimited" placeholder is 10000, and plugin devices do use
+       * it) has told us nothing, so keep 0 = UNKNOWN rather than print it.
+       * MA_MAX_CHANNELS is also the ceiling test_enumerate_devices_runs holds
+       * enumeration to, so bounding here keeps that invariant true by
+       * construction on this path. */
+      if (value > 0 && value <= MA_MAX_CHANNELS) channels = (int32_t)value;
+    }
+    s->hwp_free(params);
+  }
+  s->pcm_close(pcm);
+  return channels;
+}
+
 /* Appliance ALSA enumeration: one clean entry per real sound card from
  * /proc/asound/cards (e.g. "Scarlett 4i4 USB"), NOT the ALSA PCM-hint namespace
  * (default, sysdefault, plughw, dmix, front, surround40, samplerate, speex, ...)
@@ -272,6 +382,10 @@ static int le_alsa_enumerate_cards(le_device_info* out, int32_t max,
   *count = 0;
   FILE* f = fopen("/proc/asound/cards", "r");
   if (f == NULL) return 0;
+
+  /* Resolved once for the whole card list, not per card. */
+  le_alsa_syms alsa;
+  le_alsa_syms_open(&alsa);
 
   char line[512];
   int32_t n = 0;
@@ -311,9 +425,18 @@ static int le_alsa_enumerate_cards(le_device_info* out, int32_t max,
     snprintf(d->id, sizeof(d->id), ":%d,%d", card, dev);
     strncpy(d->name, name, sizeof(d->name) - 1);
     d->name[sizeof(d->name) - 1] = '\0';
+    /* Only the direction being enumerated — this card was listed because it has
+     * a PCM in that direction, and it says nothing about the other one here.
+     * Mirrors what the portable miniaudio path fills in device_info_copy. */
+    if (capture) {
+      d->input_channels = le_alsa_pcm_channels_max(&alsa, card, dev, capture);
+    } else {
+      d->output_channels = le_alsa_pcm_channels_max(&alsa, card, dev, capture);
+    }
     ++n;
   }
 
+  le_alsa_syms_close(&alsa);
   fclose(f);
   *count = n;
   return n > 0 ? 1 : 0;
@@ -353,7 +476,10 @@ static int le_jack_enumerate_devices(le_device_info* out, int32_t max,
   /* One entry per real interface. capture wants the device's OUTPUT ports (it
    * produces audio into the graph), playback its INPUT ports; physical-only
    * keeps it to hardware, not app/monitor nodes. Group ports by their
-   * "<node>:" prefix — that prefix is the id le_jack_pin_to_device pins by. */
+   * "<node>:" prefix — that prefix is the id le_jack_pin_to_device pins by.
+   * Grouping also yields the channel count for free: one physical port IS one
+   * channel, so the size of each group is the device's width in this direction,
+   * which is why the loop below counts as well as names. */
   const unsigned long flags =
       (capture ? LE_JACK_OUTPUT : LE_JACK_INPUT) | LE_JACK_PHYSICAL;
   const char** ports = get_ports(client, NULL, NULL, flags);
