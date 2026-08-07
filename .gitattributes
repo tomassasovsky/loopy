@@ -1,0 +1,11 @@
+# `segno-ui.pen` is an ENCRYPTED design file. Without this, git treats it as
+# text: every design edit renders as thousands of changed lines (67% of the
+# Loop slice diff was this one file), and — far worse — a merge or rebase
+# will attempt a LINE-WISE merge of ciphertext and produce a file that
+# decrypts to nothing. `binary` is `-diff -merge -text`, so git refuses the
+# text merge and asks for a real resolution instead.
+*.pen binary
+
+# Goldens are compared byte-for-byte by the screenshot suite; never let a
+# checkout rewrite their line endings.
+*.png binary
