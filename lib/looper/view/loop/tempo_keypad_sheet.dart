@@ -54,6 +54,14 @@ class _TempoKeypadSheetState extends State<_TempoKeypadSheet> {
   /// seeded with `120.0` would make the first `9` read `120.09`.
   String? _typed;
 
+  /// The most characters the field will hold — `300.0` is the longest tempo
+  /// the engine accepts, so anything past this cannot become a valid value.
+  ///
+  /// A cap and not just a validator: `_onKey` handles `KeyRepeatEvent`, so a
+  /// held digit on an attached USB keyboard would otherwise grow the buffer
+  /// without bound until the field's text overflowed its row.
+  static const int _maxDigits = 5;
+
   /// The width the mockups give the pad. Centred rather than stretched: keys
   /// 600px wide on a 1920px console are a worse target than close ones.
   static const double _padWidth = 504;
@@ -63,11 +71,15 @@ class _TempoKeypadSheetState extends State<_TempoKeypadSheet> {
   String _shown(double bpm) =>
       _typed ?? (bpm > 0 ? bpm.toStringAsFixed(1) : '');
 
-  void _digit(String key) => setState(() => _typed = (_typed ?? '') + key);
+  void _digit(String key) {
+    final buffer = _typed ?? '';
+    if (buffer.length >= _maxDigits) return;
+    setState(() => _typed = buffer + key);
+  }
 
   void _dot() {
     final buffer = _typed ?? '';
-    if (buffer.contains('.')) return;
+    if (buffer.contains('.') || buffer.length >= _maxDigits) return;
     setState(() => _typed = '$buffer.');
   }
 
@@ -91,9 +103,20 @@ class _TempoKeypadSheetState extends State<_TempoKeypadSheet> {
     setState(() => _typed = null);
   }
 
+  /// Submits the typed tempo, clamped to what the engine will accept.
+  ///
+  /// The engine clamps `setTempo` to `kTempoRange` itself and says nothing, so
+  /// submitting 999 would close the sheet and quietly leave the rig at 300.
+  /// Clamping here means the value the sheet sends is the value the rig takes.
   void _set() {
     final value = double.tryParse(_typed?.trim() ?? '');
-    if (value != null && value > 0) unawaited(widget.tempo.setTempo(value));
+    if (value != null && value > 0) {
+      unawaited(
+        widget.tempo.setTempo(
+          value.clamp(kTempoRange.$1, kTempoRange.$2),
+        ),
+      );
+    }
     Navigator.of(context).pop();
   }
 
@@ -307,15 +330,22 @@ class _Field extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Text(
-            text,
-            key: const Key('tempo_keypad_field'),
-            style: TextStyle(
-              color: surface.textPrimary,
-              fontFamily: SurfaceTheme.monoFont,
-              fontSize: 18,
-              height: 1.17,
-              leadingDistribution: TextLeadingDistribution.even,
+          // Flexible, so a long buffer ellipsises instead of overflowing the
+          // row — the field is 18px mono on a 1920px sheet, but nothing about
+          // the layout should depend on that staying true.
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              key: const Key('tempo_keypad_field'),
+              style: TextStyle(
+                color: surface.textPrimary,
+                fontFamily: SurfaceTheme.monoFont,
+                fontSize: 18,
+                height: 1.17,
+                leadingDistribution: TextLeadingDistribution.even,
+              ),
             ),
           ),
           const SizedBox(width: 2),

@@ -48,6 +48,10 @@ Map<LooperMode, ({String label, String sub})> looperModeLabels(
 /// the console tray would be a second chance to get the silent no-op subtly
 /// wrong, so `LooperModeSection` and the Loop face both call this.
 ///
+/// Filed beside the Settings section rather than under `view/loop/`: a
+/// non-console screen imports it, so a folder named after one consumer would
+/// misstate who owns it.
+///
 /// Resolves **true** when the change was dispatched, so a caller can shut its
 /// chooser on the way through and leave it open when the confirm was declined
 /// — which is what `LOOP / settings-mode-confirm` draws: the mode list is
@@ -71,7 +75,6 @@ Future<bool> requestLooperModeChange(
     title: l10n.modeChangeConfirmTitle,
     body: l10n.modeChangeConfirmBody,
     confirmLabel: l10n.modeChangeConfirmConfirm,
-    cancelLabel: l10n.modeChangeConfirmCancel,
   );
   if (!confirmed) return false;
   if (!context.mounted) return false;

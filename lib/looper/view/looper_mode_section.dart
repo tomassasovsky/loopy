@@ -6,7 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
-import 'package:segno/looper/view/loop/looper_mode_change.dart';
+import 'package:segno/looper/view/looper_mode_change.dart';
 import 'package:segno/setup/setup_surface.dart';
 import 'package:segno/theme/surface_theme.dart';
 

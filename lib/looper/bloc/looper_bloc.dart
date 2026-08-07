@@ -444,6 +444,11 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         oneShot: event.oneShot,
       ),
     );
+    on<LooperAllOneShotToggled>((event, _) {
+      for (final track in _repository.state.tracks) {
+        _repository.setOneShot(channel: track.channel, oneShot: event.oneShot);
+      }
+    });
     on<LooperCrownPrimaryPressed>(
       (event, _) => _repository.crownPrimary(channel: event.channel),
     );

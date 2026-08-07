@@ -11,6 +11,30 @@ import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/view/loop/tempo_keypad_sheet.dart';
 import 'package:segno/theme/theme.dart';
 
+/// Exactly the transport fields the Tempo face draws.
+///
+/// A record, so `context.select` can compare it structurally: `TransportState`
+/// also carries `masterPositionFrames` and `currentBeat`, which move on every
+/// poll tick, and selecting the whole thing would rebuild the face at frame
+/// rate for values it never shows.
+typedef _TempoValues = ({
+  double tempoBpm,
+  int tsNum,
+  int tsDen,
+  GridDivision quantizeDiv,
+  int countInBars,
+  bool syncTempo,
+});
+
+_TempoValues _tempoValues(TransportState t) => (
+  tempoBpm: t.tempoBpm,
+  tsNum: t.tsNum,
+  tsDen: t.tsDen,
+  quantizeDiv: t.quantizeDiv,
+  countInBars: t.countInBars,
+  syncTempo: t.syncTempo,
+);
+
 /// Which row of the Tempo face has its chooser open. At most one — an
 /// accordion across the whole face, not one per card: two drawers open at once
 /// would push the second past the sheet the face has to fit in.
@@ -74,31 +98,29 @@ class _TempoLoopTabState extends State<TempoLoopTab> {
     required List<ConsoleSegment<T>> options,
     required T current,
     required ValueChanged<T> onPick,
-  }) => ConsoleChooser(
+  }) => ConsoleChooser.grid(
     key: Key(slot),
     open: open,
-    children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(
-          ConsoleRow.indentedInset,
-          kConsoleBlockGap,
-          kConsoleRowInset,
-          kConsoleBlockGap,
-        ),
-        child: ConsoleChipGrid<T>(
-          options: options,
-          selected: {current},
-          onTap: (value) => _pick(() => onPick(value)),
-        ),
-      ),
-    ],
+    grid: ConsoleChipGrid<T>(
+      options: options,
+      selected: {current},
+      onTap: (value) => _pick(() => onPick(value)),
+    ),
   );
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final transport = context.watch<LooperBloc>().state.transport;
-    final multiple = context.watch<RecordOptionsCubit>().state.defaultMultiple;
+    // `select`, not `watch`: TransportState carries masterPositionFrames and
+    // currentBeat, which move on every ~16 ms poll — watching the whole bloc
+    // rebuilds this face, chip grids and LayoutBuilder included, at poll rate
+    // while the rig runs.
+    final transport = context.select<LooperBloc, _TempoValues>(
+      (bloc) => _tempoValues(bloc.state.transport),
+    );
+    final multiple = context.select<RecordOptionsCubit, int>(
+      (cubit) => cubit.state.defaultMultiple,
+    );
     final tempo = context.read<TempoCubit>();
     final options = context.read<RecordOptionsCubit>();
 
@@ -148,7 +170,7 @@ class _TempoLoopTabState extends State<TempoLoopTab> {
   /// The tempo row. Opens the keypad sheet rather than a drawer: a tempo is
   /// typed, not chosen, and the console's number entry is a sheet
   /// (`NETWORK / wifi-password` draws the same shape for a passphrase).
-  Widget _tempoRow(BuildContext context, TransportState transport) {
+  Widget _tempoRow(BuildContext context, _TempoValues transport) {
     final l10n = context.l10n;
     return ConsoleRow(
       key: const Key('loop_tempo_row'),
@@ -168,7 +190,7 @@ class _TempoLoopTabState extends State<TempoLoopTab> {
 
   List<Widget> _signatureRow(
     BuildContext context,
-    TransportState transport,
+    _TempoValues transport,
     TempoCubit tempo,
   ) {
     final l10n = context.l10n;
@@ -197,12 +219,7 @@ class _TempoLoopTabState extends State<TempoLoopTab> {
           ]) ...[
             ConsoleDrawerLabel(caption),
             Padding(
-              padding: const EdgeInsets.fromLTRB(
-                ConsoleRow.indentedInset,
-                0,
-                kConsoleRowInset,
-                kConsoleBlockGap,
-              ),
+              padding: ConsoleChooser.gridInset.copyWith(top: 0),
               child: ConsoleChipGrid<(int, int)>(
                 selected: {(transport.tsNum, transport.tsDen)},
                 options: [
@@ -276,19 +293,12 @@ class _TempoLoopTabState extends State<TempoLoopTab> {
 
   List<Widget> _quantiseRow(
     BuildContext context,
-    TransportState transport,
+    _TempoValues transport,
     TempoCubit tempo,
   ) {
     final l10n = context.l10n;
     final open = _open == _TempoRow.quantise;
-    final labels = {
-      GridDivision.off: l10n.quantizeDivOffLabel,
-      GridDivision.bar: l10n.quantizeDivBarLabel,
-      GridDivision.half: l10n.quantizeDivHalfLabel,
-      GridDivision.quarter: l10n.quantizeDivQuarterLabel,
-      GridDivision.eighth: l10n.quantizeDivEighthLabel,
-      GridDivision.sixteenth: l10n.quantizeDivSixteenthLabel,
-    };
+    final labels = quantizeDivisionLabels(l10n);
     return [
       ConsoleRow(
         key: const Key('loop_quantise_row'),
@@ -318,23 +328,14 @@ class _TempoLoopTabState extends State<TempoLoopTab> {
 
   // -------------------------------------------------------------- count-in
 
-  /// Count-in lengths in measures, `0` being off — the set the Settings
-  /// picker already offers.
-  static const List<int> _countIns = [0, 1, 2, 4];
-
   List<Widget> _countInRow(
     BuildContext context,
-    TransportState transport,
+    _TempoValues transport,
     TempoCubit tempo,
   ) {
     final l10n = context.l10n;
     final open = _open == _TempoRow.countIn;
-    final labels = {
-      0: l10n.countInOffLabel,
-      1: l10n.countInBarsLabel1,
-      2: l10n.countInBarsLabel2,
-      4: l10n.countInBarsLabel4,
-    };
+    final labels = countInLabels(l10n);
     return [
       ConsoleRow(
         key: const Key('loop_count_in_row'),
@@ -350,7 +351,7 @@ class _TempoLoopTabState extends State<TempoLoopTab> {
         open: open,
         current: transport.countInBars,
         options: [
-          for (final bars in _countIns)
+          for (final bars in kCountInBarOptions)
             ConsoleSegment(
               value: bars,
               label: labels[bars]!,

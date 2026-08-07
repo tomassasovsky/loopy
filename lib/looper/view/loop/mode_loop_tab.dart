@@ -8,8 +8,22 @@ import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
-import 'package:segno/looper/view/loop/looper_mode_change.dart';
+import 'package:segno/looper/view/looper_mode_change.dart';
 import 'package:segno/theme/theme.dart';
+
+/// Exactly what the Mode face draws. See `TempoLoopTab` for why this is a
+/// record fed to `context.select` rather than the whole `LooperState`.
+typedef _ModeValues = ({
+  LooperMode mode,
+  bool allOneShot,
+  bool hasTracks,
+});
+
+_ModeValues _modeValues(LooperState state) => (
+  mode: state.transport.looperMode,
+  allOneShot: state.allOneShot,
+  hasTracks: state.tracks.isNotEmpty,
+);
 
 /// Which row of the Mode face has its chooser open. See `TempoLoopTab` for
 /// why at most one.
@@ -45,7 +59,9 @@ class _ModeLoopTabState extends State<ModeLoopTab> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final looper = context.watch<LooperBloc>().state;
+    final looper = context.select<LooperBloc, _ModeValues>(
+      (bloc) => _modeValues(bloc.state),
+    );
     final defaultMode = context.select<ControlCubit, InteractionMode>(
       (cubit) => cubit.state.defaultMode,
     );
@@ -77,10 +93,10 @@ class _ModeLoopTabState extends State<ModeLoopTab> {
 
   // ------------------------------------------------------------ looper mode
 
-  List<Widget> _looperModeRow(BuildContext context, LooperState looper) {
+  List<Widget> _looperModeRow(BuildContext context, _ModeValues looper) {
     final l10n = context.l10n;
     final labels = looperModeLabels(l10n);
-    final mode = looper.transport.looperMode;
+    final mode = looper.mode;
     final open = _open == _ModeRow.looper;
     return [
       ConsoleRow(
@@ -127,13 +143,14 @@ class _ModeLoopTabState extends State<ModeLoopTab> {
 
   /// The rig-wide one-shot switch.
   ///
-  /// `every` on an empty list is true, so an empty session would otherwise
-  /// show this on — the vacuous-truth answer is not the one the row means.
-  /// Guarded, and inert while there is nothing to apply it to.
-  Widget _oneShotRow(BuildContext context, LooperState looper) {
+  /// Both the read and the write are the bloc's: [LooperState.allOneShot]
+  /// carries the vacuous-truth guard (`every` on an empty list is true, which
+  /// is never what the row means) and [LooperAllOneShotToggled] applies the
+  /// sweep in one event, so the rule is testable without a widget and a
+  /// half-applied sweep cannot be observed. Inert while there is nothing to
+  /// apply it to.
+  Widget _oneShotRow(BuildContext context, _ModeValues looper) {
     final l10n = context.l10n;
-    final tracks = looper.tracks;
-    final all = tracks.isNotEmpty && tracks.every((track) => track.oneShot);
     final bloc = context.read<LooperBloc>();
     return ConsoleRow(
       key: const Key('loop_one_shot_row'),
@@ -142,15 +159,11 @@ class _ModeLoopTabState extends State<ModeLoopTab> {
       showDivider: false,
       trailing: ConsoleSwitch(
         key: const Key('loop_one_shot_switch'),
-        value: all,
+        value: looper.allOneShot,
         semanticLabel: l10n.loopOneShotRow,
-        onChanged: tracks.isEmpty
-            ? null
-            : (on) {
-                for (final track in tracks) {
-                  bloc.add(LooperOneShotToggled(track.channel, oneShot: on));
-                }
-              },
+        onChanged: looper.hasTracks
+            ? (on) => bloc.add(LooperAllOneShotToggled(oneShot: on))
+            : null,
       ),
     );
   }

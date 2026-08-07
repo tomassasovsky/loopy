@@ -15,9 +15,11 @@ import 'package:segno/theme/theme.dart';
 /// The tray's contents once open — near-fullscreen frosted sheet, split into
 /// a persistent [TrayNavigationRail] and the face it selects.
 ///
-/// The face swap is an animated destination switch inside the sheet, never a
-/// full-screen route: config is an overlay you drop out of with one gesture,
-/// so it never routes the performer away from the stage view.
+/// The face swap is a plain switch inside the sheet, never a full-screen
+/// route: config is an overlay you drop out of with one gesture, so it never
+/// routes the performer away from the stage view. The `KeyedSubtree` on the
+/// destination is what makes the swap discard the outgoing face's state
+/// rather than let Flutter reuse its element for the incoming one.
 class TrayPanel extends StatelessWidget {
   /// Creates a [TrayPanel].
   const TrayPanel({super.key});

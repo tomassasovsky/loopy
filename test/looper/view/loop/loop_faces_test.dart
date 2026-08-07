@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -17,7 +18,8 @@ import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/loop_tab.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/loop/loop_tray_panel.dart';
-import 'package:segno/looper/view/loop/looper_mode_change.dart';
+import 'package:segno/looper/view/looper_mode_change.dart';
+import 'package:segno/looper/view/tray/tray.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -172,6 +174,44 @@ void main() {
   AppLocalizations l10nOf(WidgetTester tester) =>
       AppLocalizations.of(tester.element(find.byType(LoopTrayPanel)));
 
+  /// Mounts the real tray — rail included — rather than the face alone.
+  ///
+  /// Every Loop golden self-skips off an absolute font path, so without this
+  /// nothing on CI proves the rail entry reaches [LoopTrayPanel] or that the
+  /// providers it needs sit above the tray. Starts on the Tuner face, which
+  /// is a stub with no dependencies of its own, so the tap under test is the
+  /// only thing that builds a domain.
+  Future<void> pumpTray(WidgetTester tester) async {
+    await pump(tester);
+    tray.showDestination(SettingsTrayDestination.tuner);
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: ThemeData(
+          extensions: [
+            SurfaceTheme.dark,
+            routingGraphThemeFromSurface(SurfaceTheme.dark),
+          ],
+        ),
+        home: RepositoryProvider<LooperRepository>.value(
+          value: repository,
+          child: MultiBlocProvider(
+            providers: [
+              BlocProvider<LooperBloc>.value(value: bloc),
+              BlocProvider.value(value: tempo),
+              BlocProvider.value(value: options),
+              BlocProvider.value(value: control),
+              BlocProvider.value(value: tray),
+            ],
+            child: const Scaffold(body: TrayPanel()),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
   group('ConsoleChipGrid columns', () {
     /// The width that fits [columns] cells at the grid's target size.
     double widthFor(int columns) =>
@@ -231,6 +271,23 @@ void main() {
       await pump(tester);
       expect(find.text(l10nOf(tester).trayLoopLabel), findsOneWidget);
     });
+
+    testWidgets(
+      'the rail entry reaches the face — the only CI-visible proof of the '
+      'wiring, since every Loop golden is author-machine only',
+      (tester) async {
+        seed(const LooperState());
+        await pumpTray(tester);
+        expect(find.byKey(const Key('loop_tray_panel')), findsNothing);
+
+        await tester.tap(find.byKey(const Key('settingsTrayRail_loop')));
+        await tester.pumpAndSettle();
+
+        expect(tray.state.destination, SettingsTrayDestination.loop);
+        expect(find.byKey(const Key('loop_tray_panel')), findsOneWidget);
+        expect(find.byKey(const Key('loop_tempo_tab')), findsOneWidget);
+      },
+    );
 
     testWidgets('the tab survives navigating away and back', (tester) async {
       seed(const LooperState());
@@ -390,8 +447,29 @@ void main() {
             reason: '$div has no row',
           );
         }
+
+        // And picking one reaches the engine — rendering the options is a
+        // different claim from wiring them.
+        await tester.tap(find.byKey(const Key('loop_quantise_eighth')));
+        await tester.pumpAndSettle();
+        verify(
+          () => repository.setQuantizeDiv(GridDivision.eighth),
+        ).called(1);
       },
     );
+
+    testWidgets('picking a count-in length writes it through', (tester) async {
+      seed(const LooperState());
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('loop_count_in_row')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('loop_count_in_2')));
+      await tester.pumpAndSettle();
+
+      verify(() => repository.setCountIn(2)).called(1);
+      expect(find.byKey(const Key('loop_count_in_2')), findsNothing);
+    });
 
     testWidgets(
       'loop length is a multiple, and keeps "first take sets it" only while '
@@ -561,6 +639,38 @@ void main() {
       },
     );
 
+    testWidgets('a fully-routed click says "all outputs", not every name', (
+      tester,
+    ) async {
+      seed(
+        const LooperState(
+          transport: TransportState(clickMask: 0xF),
+          status: EngineStatus(sampleRate: 48000, outputChannels: 4),
+        ),
+      );
+      await pump(tester, tab: LoopTab.click);
+      expect(find.text(l10nOf(tester).loopClickOutputAll), findsOne);
+    });
+
+    testWidgets('a partly-routed click names the outputs it uses', (
+      tester,
+    ) async {
+      seed(
+        const LooperState(
+          transport: TransportState(clickMask: 0x5),
+          status: EngineStatus(sampleRate: 48000, outputChannels: 4),
+        ),
+      );
+      await pump(tester, tab: LoopTab.click);
+      final strings = l10nOf(tester);
+      expect(
+        find.text(
+          '${strings.outputChannelLabel(1)} · ${strings.outputChannelLabel(3)}',
+        ),
+        findsOne,
+      );
+    });
+
     testWidgets('an unrouted click says so instead of listing nothing', (
       tester,
     ) async {
@@ -708,11 +818,10 @@ void main() {
 
       await tester.tap(find.byKey(const Key('loop_one_shot_switch')));
       await tester.pumpAndSettle();
+      // ONE event for the whole rig, not one per track: a sweep dispatched
+      // per channel can be observed half-applied.
       verify(
-        () => bloc.add(const LooperOneShotToggled(0, oneShot: false)),
-      ).called(1);
-      verify(
-        () => bloc.add(const LooperOneShotToggled(1, oneShot: false)),
+        () => bloc.add(const LooperAllOneShotToggled(oneShot: false)),
       ).called(1);
     });
 
@@ -756,6 +865,9 @@ void main() {
   });
 
   group('Tempo keypad sheet', () {
+    String? fieldText(WidgetTester tester) =>
+        tester.widget<Text>(find.byKey(const Key('tempo_keypad_field'))).data;
+
     Future<void> openSheet(WidgetTester tester) async {
       await tester.tap(find.byKey(const Key('loop_tempo_row')));
       await tester.pumpAndSettle();
@@ -768,19 +880,13 @@ void main() {
       await pump(tester);
       await openSheet(tester);
 
-      expect(
-        tester.widget<Text>(find.byKey(const Key('tempo_keypad_field'))).data,
-        '120.0',
-      );
+      expect(fieldText(tester), '120.0');
 
       // The first keypress replaces the shown tempo rather than appending —
       // a buffer seeded with 120.0 would make this read 120.09.
       await tester.tap(find.byKey(const Key('tempo_keypad_9')));
       await tester.pump();
-      expect(
-        tester.widget<Text>(find.byKey(const Key('tempo_keypad_field'))).data,
-        '9',
-      );
+      expect(fieldText(tester), '9');
     });
 
     testWidgets('Set submits what was typed and closes', (tester) async {
@@ -834,6 +940,98 @@ void main() {
         );
       },
     );
+
+    testWidgets(
+      'the physical keyboard drives the pad — digits, the decimal point, '
+      'backspace and Enter, on a console built to take a USB keyboard',
+      (tester) async {
+        seed(const LooperState(transport: TransportState(tempoBpm: 120)));
+        await pump(tester);
+        await openSheet(tester);
+
+        for (final key in [
+          LogicalKeyboardKey.digit9,
+          LogicalKeyboardKey.digit4,
+          LogicalKeyboardKey.period,
+          LogicalKeyboardKey.digit5,
+          LogicalKeyboardKey.digit1,
+        ]) {
+          await tester.sendKeyEvent(key);
+          await tester.pump();
+        }
+        expect(fieldText(tester), '94.51');
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+        await tester.pump();
+        expect(fieldText(tester), '94.5');
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        verify(() => repository.setTempo(94.5)).called(1);
+        expect(find.byKey(const Key('tempo_keypad_sheet')), findsNothing);
+      },
+    );
+
+    testWidgets('Escape closes the sheet without writing', (tester) async {
+      seed(const LooperState(transport: TransportState(tempoBpm: 120)));
+      await pump(tester);
+      await openSheet(tester);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit8);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      verifyNever(() => repository.setTempo(any()));
+      expect(find.byKey(const Key('tempo_keypad_sheet')), findsNothing);
+    });
+
+    testWidgets('a second decimal point is refused', (tester) async {
+      seed(const LooperState());
+      await pump(tester);
+      await openSheet(tester);
+
+      for (final key in ['1', 'dot', '2', 'dot', '5']) {
+        await tester.tap(find.byKey(Key('tempo_keypad_$key')));
+        await tester.pump();
+      }
+      expect(fieldText(tester), '1.25');
+    });
+
+    testWidgets(
+      'the buffer is capped, so a held key cannot overflow the field or '
+      'submit a value the engine would silently clamp',
+      (tester) async {
+        seed(const LooperState());
+        await pump(tester);
+        await openSheet(tester);
+
+        for (var i = 0; i < 20; i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.digit9);
+          await tester.pump();
+        }
+        expect(fieldText(tester)!.length, lessThanOrEqualTo(5));
+        expect(tester.takeException(), isNull);
+
+        await tester.tap(find.byKey(const Key('tempo_keypad_set')));
+        await tester.pumpAndSettle();
+        // 99999 clamps to the engine's ceiling rather than being sent whole.
+        verify(() => repository.setTempo(kTempoRange.$2)).called(1);
+      },
+    );
+
+    testWidgets('the on-screen backspace key edits the mirrored value', (
+      tester,
+    ) async {
+      seed(const LooperState(transport: TransportState(tempoBpm: 120)));
+      await pump(tester);
+      await openSheet(tester);
+
+      await tester.tap(find.byKey(const Key('tempo_keypad_backspace')));
+      await tester.pump();
+      // Seeded from what was on screen, not ignored.
+      expect(fieldText(tester), '120.');
+    });
 
     testWidgets('Cancel writes nothing', (tester) async {
       seed(const LooperState(transport: TransportState(tempoBpm: 120)));

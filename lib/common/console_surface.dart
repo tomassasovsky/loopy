@@ -24,6 +24,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/common/pill_tabs.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -693,6 +694,79 @@ class ConsoleActionChip extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A domain's whole face: its name, its tab strip, and the tab's body.
+///
+/// **The title sits above the strip.** A tab that carries a per-tab control (a
+/// radio's power switch, a rescan) needs a title row to hang it on and puts
+/// its tabs first; a domain whose tabs carry no such control says its name
+/// once, at the top. That is the mockups' own distinction, and Control and
+/// Loop are both on the second side of it — which is why they were the same
+/// widget written twice before this existed.
+class ConsoleDomainPanel<T> extends StatelessWidget {
+  /// Creates a [ConsoleDomainPanel].
+  const ConsoleDomainPanel({
+    required this.title,
+    required this.tabs,
+    required this.selected,
+    required this.onChanged,
+    required this.body,
+    this.tabsKey,
+    super.key,
+  });
+
+  /// The domain's name.
+  final String title;
+
+  /// The tabs, in display order.
+  final List<PillTab<T>> tabs;
+
+  /// The showing tab.
+  final T selected;
+
+  /// Called with the newly chosen tab.
+  final ValueChanged<T> onChanged;
+
+  /// The showing tab's body; fills the rest of the sheet.
+  final Widget body;
+
+  /// Key for the strip, so a test can find one domain's tabs.
+  final Key? tabsKey;
+
+  /// Gap between the title and the strip, as the mockups set it.
+  static const double titleGap = 14;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            color: surface.textPrimary,
+            fontSize: 20,
+            height: 1.15,
+            leadingDistribution: TextLeadingDistribution.even,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: titleGap),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: PillTabs<T>(
+            key: tabsKey,
+            selected: selected,
+            onChanged: onChanged,
+            tabs: tabs,
+          ),
+        ),
+        Expanded(child: body),
+      ],
     );
   }
 }
@@ -1727,11 +1801,38 @@ class ConsoleChooser extends StatelessWidget {
     super.key,
   });
 
+  /// A chooser holding one [ConsoleChipGrid], inset the way a drawer's
+  /// contents always are.
+  ///
+  /// The inset was being re-stated by every face that opened a grid; it
+  /// belongs to the drawer, which is the thing that knows how far in its
+  /// contents sit.
+  factory ConsoleChooser.grid({
+    required bool open,
+    required Widget grid,
+    Key? key,
+  }) => ConsoleChooser(
+    key: key,
+    open: open,
+    children: [Padding(padding: gridInset, child: grid)],
+  );
+
   /// Whether the chooser is showing.
   final bool open;
 
   /// The alternatives, in display order.
   final List<Widget> children;
+
+  /// What a grid inside a drawer is inset by — the 40px an opened row's
+  /// children take on the leading edge, a row's own inset on the trailing
+  /// one. Public so a chooser holding several captioned grids can apply it
+  /// per group.
+  static const EdgeInsets gridInset = EdgeInsets.fromLTRB(
+    ConsoleRow.indentedInset,
+    kConsoleBlockGap,
+    kConsoleRowInset,
+    kConsoleBlockGap,
+  );
 
   @override
   Widget build(BuildContext context) => ConsoleExpansion(
@@ -1899,43 +2000,42 @@ class _ConsoleChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    return Semantics(
-      button: true,
+    // No outer Semantics: FocusableTapTarget already emits a merged
+    // button/selected/label node, and wrapping a second one round it gives a
+    // screen reader two nested labelled buttons for one chip. ConsolePickRow
+    // makes the same call.
+    return FocusableTapTarget(
+      onTap: onTap,
       selected: selected,
-      label: label,
-      child: FocusableTapTarget(
+      borderRadius: 11,
+      semanticLabel: label,
+      child: InkWell(
         onTap: onTap,
-        selected: selected,
-        borderRadius: 11,
-        semanticLabel: label,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(11),
-          child: AnimatedContainer(
-            duration: consoleMotion(context),
-            curve: Curves.easeOut,
-            height: ConsoleChipGrid.cellHeight,
-            alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: BoxDecoration(
-              color: selected ? surface.accentSurface : surface.cardHigh,
-              borderRadius: BorderRadius.circular(11),
-              border: Border.all(
-                color: selected ? surface.accent : surface.line,
-              ),
+        borderRadius: BorderRadius.circular(11),
+        child: AnimatedContainer(
+          duration: consoleMotion(context),
+          curve: Curves.easeOut,
+          height: ConsoleChipGrid.cellHeight,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: selected ? surface.accentSurface : surface.cardHigh,
+            borderRadius: BorderRadius.circular(11),
+            border: Border.all(
+              color: selected ? surface.accent : surface.line,
             ),
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: selected ? surface.accent : surface.textPrimary,
-                fontSize: 16,
-                height: 1.13,
-                leadingDistribution: TextLeadingDistribution.even,
-                // One weight for both states, as everywhere on this surface.
-              ),
+          ),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: selected ? surface.accent : surface.textPrimary,
+              fontSize: 16,
+              height: 1.13,
+              leadingDistribution: TextLeadingDistribution.even,
+              // One weight for both states, as everywhere on this surface.
             ),
           ),
         ),
@@ -1981,12 +2081,15 @@ class ConsoleCheck extends StatelessWidget {
 ///
 /// Drawn to `NETWORK / wifi-forget` and `LOOP / settings-mode-confirm`, which
 /// are the same 528px dialog with different words.
+///
+/// The dismissive label is fixed rather than a parameter: "keep it" is the
+/// same answer on every one of these, and a per-caller override only invited
+/// each surface to invent its own word for "no".
 Future<bool> showConsoleConfirmDialog(
   BuildContext context, {
   required String title,
   required String body,
   required String confirmLabel,
-  String? cancelLabel,
 }) async {
   final l10n = context.l10n;
   final surface = context.surface;
@@ -2032,7 +2135,7 @@ Future<bool> showConsoleConfirmDialog(
                 children: [
                   _DialogButton(
                     key: const Key('console_confirm_cancel'),
-                    label: cancelLabel ?? l10n.networkKeepIt,
+                    label: l10n.consoleKeepIt,
                     onPressed: () => Navigator.of(dialogContext).pop(false),
                   ),
                   const SizedBox(width: 10),

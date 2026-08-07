@@ -1312,7 +1312,6 @@
     "modeChangeConfirmTitle": "Switch mode?",
     "modeChangeConfirmBody": "Changing mode clears every track — there's no way to keep the current loops. Clear all tracks and switch?",
     "modeChangeConfirmConfirm": "Clear & Switch",
-    "modeChangeConfirmCancel": "Keep it",
     "modeChangeTimedOut": "Mode switch timed out — the clear is still finishing. Try again in a moment.",
     "oneShotGroupLabel": "ONE SHOT",
     "oneShotIntro": "A one-shot track plays once and stops instead of looping (active in Free and Song modes).",
@@ -1964,9 +1963,9 @@
     "@networkTryAgain": {
         "description": "Action on a Network failure banner: retries the join or pairing that failed."
     },
-    "networkKeepIt": "Keep it",
-    "@networkKeepIt": {
-        "description": "Dismissive action on a Network forget confirmation — leaves the credential or pairing alone."
+    "consoleKeepIt": "Keep it",
+    "@consoleKeepIt": {
+        "description": "The dismissive answer on any console confirm dialog — forgetting a network, switching looper mode. Leaves the thing alone."
     },
     "wifiNotInRange": "not in range",
     "@wifiNotInRange": {

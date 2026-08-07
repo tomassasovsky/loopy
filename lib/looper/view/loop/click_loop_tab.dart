@@ -9,6 +9,25 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/theme/theme.dart';
 
+/// Exactly what the Click face draws. See `TempoLoopTab` for why this is a
+/// record fed to `context.select` rather than the whole `TransportState`.
+typedef _ClickValues = ({
+  ClickMode clickMode,
+  int clickMask,
+  double clickVolume,
+  int outputs,
+});
+
+_ClickValues _clickValues(LooperState state) => (
+  clickMode: state.transport.clickMode,
+  clickMask: state.transport.clickMask,
+  clickVolume: state.transport.clickVolume,
+  // The engine reports 0 outputs before the device is open; 2 is what every
+  // other surface assumes then, and a click with nowhere to go is not a
+  // useful thing to draw.
+  outputs: state.status.outputChannels > 0 ? state.status.outputChannels : 2,
+);
+
 /// Which row of the Click face has its chooser open. See `TempoLoopTab` for
 /// why at most one.
 enum _ClickRow {
@@ -42,15 +61,11 @@ class _ClickLoopTabState extends State<ClickLoopTab> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final looper = context.watch<LooperBloc>().state;
-    final transport = looper.transport;
+    final transport = context.select<LooperBloc, _ClickValues>(
+      (bloc) => _clickValues(bloc.state),
+    );
     final cubit = context.read<TempoCubit>();
-    // The engine reports 0 outputs before the device is open; 2 is what every
-    // other surface assumes then, and a click with nowhere to go is not a
-    // useful thing to draw.
-    final outputs = looper.status.outputChannels > 0
-        ? looper.status.outputChannels
-        : 2;
+    final outputs = transport.outputs;
 
     return KeyedSubtree(
       key: const Key('loop_click_tab'),
@@ -79,17 +94,12 @@ class _ClickLoopTabState extends State<ClickLoopTab> {
 
   List<Widget> _whenRow(
     BuildContext context,
-    TransportState transport,
+    _ClickValues transport,
     TempoCubit cubit,
   ) {
     final l10n = context.l10n;
     final open = _open == _ClickRow.when;
-    final labels = {
-      ClickMode.off: l10n.clickModeOffLabel,
-      ClickMode.rec: l10n.clickModeRecLabel,
-      ClickMode.recFirst: l10n.clickModeRecFirstLabel,
-      ClickMode.playRec: l10n.clickModePlayRecLabel,
-    };
+    final labels = clickModeLabels(l10n);
     return [
       ConsoleRow(
         key: const Key('loop_click_when_row'),
@@ -103,8 +113,9 @@ class _ClickLoopTabState extends State<ClickLoopTab> {
         key: const Key('loop_click_when_slot'),
         open: open,
         children: [
-          _gridPad(
-            ConsoleChipGrid<ClickMode>(
+          Padding(
+            padding: ConsoleChooser.gridInset,
+            child: ConsoleChipGrid<ClickMode>(
               selected: {transport.clickMode},
               options: [
                 for (final mode in ClickMode.values)
@@ -139,7 +150,7 @@ class _ClickLoopTabState extends State<ClickLoopTab> {
   /// question.
   List<Widget> _outputRow(
     BuildContext context,
-    TransportState transport,
+    _ClickValues transport,
     TempoCubit cubit,
     int outputs,
   ) {
@@ -174,8 +185,9 @@ class _ClickLoopTabState extends State<ClickLoopTab> {
         key: const Key('loop_click_output_slot'),
         open: open,
         children: [
-          _gridPad(
-            ConsoleChipGrid<int>(
+          Padding(
+            padding: ConsoleChooser.gridInset,
+            child: ConsoleChipGrid<int>(
               // A set, not a single value: this is the bitmask case the grid
               // exists to serve, and several cells are lit at once.
               selected: chosen.toSet(),
@@ -197,18 +209,6 @@ class _ClickLoopTabState extends State<ClickLoopTab> {
     ];
   }
 
-  /// The inset a grid takes inside a drawer: the pick rows' own, so a grid
-  /// and a list of rows start on the same line.
-  Widget _gridPad(Widget child) => Padding(
-    padding: const EdgeInsets.fromLTRB(
-      ConsoleRow.indentedInset,
-      kConsoleBlockGap,
-      kConsoleRowInset,
-      kConsoleBlockGap,
-    ),
-    child: child,
-  );
-
   // ---------------------------------------------------------------- volume
 
   /// The click's own level, over the whole gain stage.
@@ -220,7 +220,7 @@ class _ClickLoopTabState extends State<ClickLoopTab> {
   /// instead of only from Settings. Double-tap snaps back to unity.
   Widget _volumeCard(
     BuildContext context,
-    TransportState transport,
+    _ClickValues transport,
     TempoCubit cubit,
   ) {
     final l10n = context.l10n;

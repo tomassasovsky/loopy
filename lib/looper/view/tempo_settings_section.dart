@@ -331,14 +331,7 @@ class _QuantizeDivisionPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final labels = {
-      GridDivision.off: l10n.quantizeDivOffLabel,
-      GridDivision.bar: l10n.quantizeDivBarLabel,
-      GridDivision.half: l10n.quantizeDivHalfLabel,
-      GridDivision.quarter: l10n.quantizeDivQuarterLabel,
-      GridDivision.eighth: l10n.quantizeDivEighthLabel,
-      GridDivision.sixteenth: l10n.quantizeDivSixteenthLabel,
-    };
+    final labels = quantizeDivisionLabels(l10n);
     return SetupOptionRow<GridDivision>(
       selected: selected,
       onSelected: onSelected,
@@ -379,12 +372,7 @@ class _ClickSettingsGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final labels = {
-      ClickMode.off: l10n.clickModeOffLabel,
-      ClickMode.rec: l10n.clickModeRecLabel,
-      ClickMode.recFirst: l10n.clickModeRecFirstLabel,
-      ClickMode.playRec: l10n.clickModePlayRecLabel,
-    };
+    final labels = clickModeLabels(l10n);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -478,30 +466,17 @@ class _CountInPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final labels = countInLabels(l10n);
     return SetupOptionRow<int>(
       selected: bars,
       onSelected: onSelected,
       options: [
-        SetupOption(
-          value: 0,
-          label: l10n.countInOffLabel,
-          optionKey: const Key('tempoSettings_countIn_0'),
-        ),
-        SetupOption(
-          value: 1,
-          label: l10n.countInBarsLabel1,
-          optionKey: const Key('tempoSettings_countIn_1'),
-        ),
-        SetupOption(
-          value: 2,
-          label: l10n.countInBarsLabel2,
-          optionKey: const Key('tempoSettings_countIn_2'),
-        ),
-        SetupOption(
-          value: 4,
-          label: l10n.countInBarsLabel4,
-          optionKey: const Key('tempoSettings_countIn_4'),
-        ),
+        for (final bars in kCountInBarOptions)
+          SetupOption(
+            value: bars,
+            label: labels[bars]!,
+            optionKey: Key('tempoSettings_countIn_$bars'),
+          ),
       ],
     );
   }
