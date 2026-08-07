@@ -194,12 +194,19 @@ static int32_t device_channels(ma_context* ctx, const ma_device_id* id,
  * THREAD OWNERSHIP: control thread, like everything else in this file. The
  * table is plain static state with no locking because enumeration has exactly
  * one caller thread; it is never touched from the audio thread. */
-#define LE_CHANNEL_CACHE_CAP 64
+/* Both directions share one table, so the cap must cover BOTH at the caller's
+ * own capacity or the tail silently stops being cached — and a silent revert to
+ * the per-tick cost this cache exists to remove is the worst way to lose it.
+ * The FFI caller (native_audio_engine.dart, _maxDevices) asks for up to 64 per
+ * direction, so a playback+capture pair can legitimately hand back 128; a rig
+ * with a Dante virtual soundcard plus aggregates reaches that. Sized to match,
+ * not to the device count of whatever machine the bench happened to run on. */
+#define LE_CHANNEL_CACHE_CAP 128
 
 typedef struct le_channel_cache_entry {
   char id[256];
   int capture;      /* the direction this count was taken in */
-  int32_t channels; /* 0 = the device could not answer; cached as such */
+  int32_t channels; /* always > 0; a device that cannot answer is not cached */
   int seen;         /* mark bit for the sweep at the end of an enumeration */
 } le_channel_cache_entry;
 
@@ -245,7 +252,18 @@ static int32_t device_channels_cached(ma_context* ctx, const ma_device_id* raw,
     }
   }
   const int32_t channels = device_channels(ctx, raw, capture);
-  if (g_channel_cache_count < LE_CHANNEL_CACHE_CAP) {
+  /* Only a POSITIVE answer is cacheable. device_channels returns 0 both for "no
+   * advertised formats" and for "the query failed", and caching that would make
+   * a momentary failure permanent: the miss happens on a device's FIRST
+   * sighting, which is exactly when a just-appeared device is least able to
+   * answer — a USB interface still initializing, or one another app holds
+   * exclusively. The reconnect poll (LooperRepository._attemptReconnect) walks
+   * straight into that window every time it waits for a pinned device to come
+   * back. Uncached, 0 costs one tick and the next second gets it right, which
+   * is the behaviour that existed before this cache. A device that genuinely
+   * advertises nothing is re-queried each tick; that is the rare case, and
+   * paying for it beats showing a wrong readout until the next unplug. */
+  if (channels > 0 && g_channel_cache_count < LE_CHANNEL_CACHE_CAP) {
     le_channel_cache_entry* e = &g_channel_cache[g_channel_cache_count++];
     strncpy(e->id, id, sizeof(e->id) - 1);
     e->id[sizeof(e->id) - 1] = '\0';
