@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -27,6 +28,10 @@ class RoutingTracksTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final names = context.watch<TracksCubit>().state.names;
+    // A named input reads by its name HERE too, not only on the Audio face
+    // that gives it one: an input is called what the player calls it on every
+    // surface that shows one.
+    final inputs = context.watch<InputsCubit>().state.names;
 
     return KeyedSubtree(
       key: const Key('tracks_routing_tab'),
@@ -43,7 +48,15 @@ class RoutingTracksTab extends StatelessWidget {
             footnote: l10n.tracksRoutingFootnote,
             rows: [
               for (final (channel, track) in tracks.indexed)
-                _row(context, l10n, names, channel, track, tracks.length),
+                _row(
+                  context,
+                  l10n,
+                  names,
+                  inputs,
+                  channel,
+                  track,
+                  tracks.length,
+                ),
             ],
           );
         },
@@ -55,6 +68,7 @@ class RoutingTracksTab extends StatelessWidget {
     BuildContext context,
     AppLocalizations l10n,
     List<String> names,
+    Map<int, String> inputs,
     int channel,
     Track track,
     int count,
@@ -65,7 +79,7 @@ class RoutingTracksTab extends StatelessWidget {
     return ConsoleRow(
       key: Key('tracks_routing_row_$channel'),
       title: l10n.trackName(names, channel),
-      subtitle: _subtitle(l10n, track),
+      subtitle: _subtitle(l10n, inputs, track),
       state: routed
           ? outputMaskLabel(l10n, outputs)
           // A track no lane of which reaches an output records and is never
@@ -81,16 +95,20 @@ class RoutingTracksTab extends StatelessWidget {
     );
   }
 
-  /// `In 1 · In 2 · quantize on` — what the track records, then its override
+  /// `guitar · In 2 · quantize on` — what the track records, then its override
   /// on the global quantize setting when it has one.
-  String _subtitle(AppLocalizations l10n, Track track) {
+  String _subtitle(
+    AppLocalizations l10n,
+    Map<int, String> names,
+    Track track,
+  ) {
     final inputs = recordedInputs(track);
     final override = track.quantizeOverride;
     return [
       if (inputs.isEmpty)
         l10n.tracksNoInputs
       else
-        for (final input in inputs) l10n.inputChannelLabel(input + 1),
+        for (final input in inputs) l10n.inputName(names, input),
       if (override != null)
         override ? l10n.tracksQuantizeOn : l10n.tracksQuantizeOff,
     ].join(' · ');

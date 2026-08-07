@@ -98,6 +98,21 @@ extension EngineLocalizations on AppLocalizations {
     channel,
   );
 
+  /// What to CALL hardware input [input], given the rig's [names] — the
+  /// input-side twin of [trackName], and for the same reason: two surfaces
+  /// disagreeing about what an input is called is exactly the bug track names
+  /// already had (#526).
+  ///
+  /// An unnamed socket falls back to its ordinal (`In 2`), which is what every
+  /// surface said before names existed. A socket with no entry falls back
+  /// rather than throwing — a session saved on an eight-in rig still routes
+  /// In 6 when it is reopened on a two-in one, and that lane's row has to say
+  /// something.
+  String inputName(Map<int, String> names, int input) {
+    final given = names[input] ?? '';
+    return given.isNotEmpty ? given : inputChannelLabel(input + 1);
+  }
+
   String sampleRateKhzLabel(int rate) {
     final khz = rate / 1000;
     final text = khz == khz.roundToDouble()

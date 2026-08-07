@@ -7,6 +7,28 @@ enum AudioSetupError {
   openDeviceFailed,
 }
 
+/// How the last requested config turned out.
+///
+/// The Audio face has no Status tab: a figure shown both beside the setting
+/// that decides it and on a page of its own is a figure that can disagree with
+/// itself. So the Device tab reports the config's own outcome instead.
+///
+/// **There is no in-flight member, because there is no in-flight state.**
+/// `LooperRepository.startEngine` is a synchronous FFI call — the device is
+/// open, or it has failed, by the time it returns, and a slow driver blocks the
+/// isolate rather than yielding a frame to draw a banner in. A "reopening…"
+/// state would be unreachable UI.
+enum ConfigPhase {
+  /// The rig is running what the rows say.
+  settled,
+
+  /// The device is not running what was asked for — it either refused the
+  /// config outright, or opened and negotiated something else. The selection
+  /// has already moved to what it IS running; this is what says the request
+  /// did not survive.
+  refused,
+}
+
 /// Whether the audio device is currently open.
 enum AudioSetupStatus {
   /// The engine is stopped; the device is closed.
@@ -54,6 +76,9 @@ class AudioSetupState extends Equatable {
     this.asioOnly = false,
     this.deviceConnectivity = DeviceConnectivity.none,
     this.connectivityDeviceName = '',
+    this.phase = ConfigPhase.settled,
+    this.requestedRate = 0,
+    this.requestedBuffer = 0,
     this.error,
     this.errorDetail,
   });
@@ -109,6 +134,20 @@ class AudioSetupState extends Equatable {
   /// hardwired to ASIO, there is no backend selector or device picker, and the
   /// no-driver / ASIO4ALL affordances apply. `false` on macOS/Linux.
   final bool asioOnly;
+
+  /// What the last requested config is doing — the Device tab's own banner.
+  final ConfigPhase phase;
+
+  /// The rate that was ASKED for, kept only while [phase] is not settled.
+  ///
+  /// The banner names it: "reopening at 96 kHz", and on a refusal "could not
+  /// open at 96 kHz". The SELECTION does not hold it — that snaps to whatever
+  /// the device gave, so the rows never report a setting the rig is not
+  /// running.
+  final int requestedRate;
+
+  /// The buffer that was asked for, on the same terms as [requestedRate].
+  final int requestedBuffer;
 
   /// The most recent pinned-device connectivity transition (drives the banner).
   final DeviceConnectivity deviceConnectivity;
@@ -170,7 +209,22 @@ class AudioSetupState extends Equatable {
   static const bufferSizes = [64, 128, 256, 512];
 
   /// Selectable max-loop-length options, in minutes. `0` is the engine default.
-  static const maxLoopMinuteOptions = [0, 2, 5, 10];
+  static const maxLoopMinuteOptions = [0, 1, 2, 5, 10];
+
+  /// The round-trip latency [bufferFrames] costs at [sampleRate], in ms.
+  ///
+  /// **An estimate, and said to be one**: two buffer periods, one in and one
+  /// out. It cannot include the converter's own delay, which no host reports —
+  /// the MEASURED figure lives on the Status tab, where a loopback actually
+  /// measures it.
+  ///
+  /// It exists because `AUDIO / settings-rate` gives **every** buffer option
+  /// its own cost, not only the chosen one: a list where the current pick is
+  /// the only annotated row cannot be used to choose.
+  static double estimatedRoundTripMs(int bufferFrames, int sampleRate) =>
+      sampleRate <= 0 || bufferFrames <= 0
+      ? 0
+      : bufferFrames * 2 * 1000 / sampleRate;
 
   /// Returns a copy with the given fields replaced.
   AudioSetupState copyWith({
@@ -190,6 +244,9 @@ class AudioSetupState extends Equatable {
     bool? asioOnly,
     DeviceConnectivity? deviceConnectivity,
     String? connectivityDeviceName,
+    ConfigPhase? phase,
+    int? requestedRate,
+    int? requestedBuffer,
     AudioSetupError? error,
     String? errorDetail,
     bool clearError = false,
@@ -212,6 +269,9 @@ class AudioSetupState extends Equatable {
       deviceConnectivity: deviceConnectivity ?? this.deviceConnectivity,
       connectivityDeviceName:
           connectivityDeviceName ?? this.connectivityDeviceName,
+      phase: phase ?? this.phase,
+      requestedRate: requestedRate ?? this.requestedRate,
+      requestedBuffer: requestedBuffer ?? this.requestedBuffer,
       // [clearError] resets the error on a successful (re)start, since nullable
       // fields cannot otherwise be cleared through `?? this`.
       error: clearError ? null : (error ?? this.error),
@@ -237,6 +297,9 @@ class AudioSetupState extends Equatable {
     asioOnly,
     deviceConnectivity,
     connectivityDeviceName,
+    phase,
+    requestedRate,
+    requestedBuffer,
     error,
     errorDetail,
   ];

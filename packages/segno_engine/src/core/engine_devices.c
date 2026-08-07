@@ -141,16 +141,49 @@ static void device_id_to_str(const ma_device_id* id, char* out, size_t cap) {
   le_platform_device_id_to_str(id, out, cap);
 }
 
-static void device_info_copy(le_device_info* dst, const ma_device_info* src) {
+/* The channel count `id` can carry in `capture`'s direction, or 0 when the
+ * device cannot answer.
+ *
+ * ma_context_get_devices returns the CHEAP list — id, name, default flag — and
+ * nothing else; the counts live behind ma_context_get_device_info, one query
+ * per device. They were never unobtainable here, only unasked-for.
+ *
+ * Takes the WIDEST advertised format rather than the first: a device that
+ * advertises both a 2ch stereo and an 18ch multitrack format is an 18-in
+ * interface, and reading nativeDataFormats[0] would call it a stereo one. */
+static int32_t device_channels(ma_context* ctx, const ma_device_id* id,
+                               int capture) {
+  ma_device_info info;
+  const ma_device_type type = capture ? ma_device_type_capture
+                                      : ma_device_type_playback;
+  if (ma_context_get_device_info(ctx, type, id, &info) != MA_SUCCESS) return 0;
+  ma_uint32 widest = 0;
+  for (ma_uint32 i = 0; i < info.nativeDataFormatCount; ++i) {
+    if (info.nativeDataFormats[i].channels > widest) {
+      widest = info.nativeDataFormats[i].channels;
+    }
+  }
+  return (int32_t)widest;
+}
+
+static void device_info_copy(le_device_info* dst, const ma_device_info* src,
+                             ma_context* ctx, int capture) {
   /* Zero everything first so the miniaudio path never surfaces stack garbage for
-   * fields it does not fill (channel counts, the ASIO-only buffer/rate sets). */
+   * fields it does not fill (the ASIO-only buffer/rate sets). */
   memset(dst, 0, sizeof(*dst));
   device_id_to_str(&src->id, dst->id, sizeof(dst->id));
   strncpy(dst->name, src->name, sizeof(dst->name) - 1);
   dst->name[sizeof(dst->name) - 1] = '\0';
   dst->is_default = src->isDefault ? 1 : 0;
-  /* miniaudio enumeration reports no per-device channel count / ASIO option sets
-   * here; they stay 0 (unknown), filled only by the ASIO driver probe. */
+  /* Only the direction being enumerated: a playback device reports what it can
+   * PLAY and never the other way round, so the opposite field stays 0. A device
+   * that cannot answer keeps 0 too, which still means UNKNOWN — the UI omits
+   * the readout rather than printing a zero count. */
+  if (capture) {
+    dst->input_channels = device_channels(ctx, &src->id, /*capture=*/1);
+  } else {
+    dst->output_channels = device_channels(ctx, &src->id, /*capture=*/0);
+  }
 }
 
 /* Fills `out` (room for `max`) with the host's playback or capture devices and
@@ -183,7 +216,7 @@ int32_t enumerate_devices(le_device_info* out, int32_t max, int32_t* count,
   ma_uint32 n = capture ? cap_count : playback_count;
   int32_t written = 0;
   for (ma_uint32 i = 0; i < n && written < max; ++i) {
-    device_info_copy(&out[written++], &list[i]);
+    device_info_copy(&out[written++], &list[i], &ctx, capture);
   }
   *count = written;
   ma_context_uninit(&ctx);

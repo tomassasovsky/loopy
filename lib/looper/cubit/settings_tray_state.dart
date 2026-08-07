@@ -49,6 +49,20 @@ enum SettingsTrayDestination {
   /// have none of them.
   tracks,
 
+  /// In-tray Audio domain — the device, what recording does, and what the
+  /// rig is currently doing, as tabs of one entry.
+  ///
+  /// One destination, not three: all three tabs answer the same question three
+  /// ways — what the rig plays through, what pressing record does, and what it
+  /// is actually doing right now (#528). They had been one group of the
+  /// Settings scroll, `SettingsSection.audio`.
+  ///
+  /// Status is the tab that makes the split worth having: everything on it is
+  /// read-only, because the settings that decide those figures live on Device,
+  /// and a figure editable in two places is a figure that disagrees with
+  /// itself.
+  audio,
+
   /// In-tray tuner panel. Placement only — the tuner itself is not
   /// implemented, and this face says so.
   tuner,
@@ -74,6 +88,7 @@ class SettingsTrayState extends Equatable {
     this.controlTab = ControlTab.pedal,
     this.loopTab = LoopTab.tempo,
     this.tracksTab = TracksTab.names,
+    this.audioTab = AudioTab.device,
   });
 
   /// Live drag/settle progress in `0..1` — `0` fully closed, `1` fully open.
@@ -113,6 +128,9 @@ class SettingsTrayState extends Equatable {
   /// Which tab the Tracks domain shows. Same rule as [networkTab].
   final TracksTab tracksTab;
 
+  /// Which tab the Audio domain shows. Same rule as [networkTab].
+  final AudioTab audioTab;
+
   /// Returns a copy with the given fields replaced.
   SettingsTrayState copyWith({
     double? dragProgress,
@@ -123,6 +141,7 @@ class SettingsTrayState extends Equatable {
     ControlTab? controlTab,
     LoopTab? loopTab,
     TracksTab? tracksTab,
+    AudioTab? audioTab,
   }) => SettingsTrayState(
     dragProgress: dragProgress ?? this.dragProgress,
     isNavigating: isNavigating ?? this.isNavigating,
@@ -132,6 +151,7 @@ class SettingsTrayState extends Equatable {
     controlTab: controlTab ?? this.controlTab,
     loopTab: loopTab ?? this.loopTab,
     tracksTab: tracksTab ?? this.tracksTab,
+    audioTab: audioTab ?? this.audioTab,
   );
 
   @override
@@ -144,5 +164,6 @@ class SettingsTrayState extends Equatable {
     controlTab,
     loopTab,
     tracksTab,
+    audioTab,
   ];
 }

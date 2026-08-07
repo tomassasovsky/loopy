@@ -597,8 +597,25 @@ class LooperRepository {
       fxAddedLatencyFrames: s.fxAddedLatencyFrames,
       activeBackend: audioBackendFromEngine(s.activeBackend),
     ),
-    outputEnabledMask: s.outputEnabledMask,
+    // From the repository's own re-apply CACHE, not `s.outputEnabledMask`, on
+    // the same reasoning as the quantize override above: the gate is re-applied
+    // at every start, so while the engine is STOPPED its snapshot still reports
+    // every output on. A session that loaded with outputs gated would then read
+    // as audible until the device opened — and the Audio face's silence banner
+    // is drawn straight off this mask.
+    outputEnabledMask: _outputEnabledMask,
   );
+
+  /// The gate as a mask: default-on, with a bit cleared per remembered off
+  /// entry. Bits past the mask's own width stay set — a stored off-state for
+  /// an output this rig has not got gates nothing.
+  int get _outputEnabledMask {
+    var mask = 0xFFFFFFFF;
+    _outputEnabled.forEach((output, enabled) {
+      if (!enabled && output >= 0 && output < 32) mask &= ~(1 << output);
+    });
+    return mask;
+  }
 
   /// Enumerates the host's audio devices (playback + capture) for the picker.
   List<AudioDevice> devices() =>
@@ -1906,12 +1923,18 @@ class LooperRepository {
   /// gate). A disabled output is removed from the mix while its lane/monitor
   /// route masks are preserved — re-enabling restores them. Default-on: only
   /// off entries are remembered, and they are re-applied on every (re)start.
+  ///
+  /// Re-projects, for the reason [setTrackQuantize] does: the gate lives in the
+  /// map below and a stopped engine's snapshot cannot report it, so nothing
+  /// else would tell a surface it had changed. A session load writes these with
+  /// no user gesture to hang a re-read off.
   EngineResult setOutputEnabled({required int output, required bool enabled}) {
     if (enabled) {
       _outputEnabled.remove(output); // absence == enabled (default-on)
     } else {
       _outputEnabled[output] = false;
     }
+    _reproject();
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setOutputEnabled(output: output, enabled: enabled);
   }

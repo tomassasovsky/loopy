@@ -467,8 +467,14 @@ typedef struct le_device_info {
   char id[256];
   char name[256];
   int32_t is_default;      /* 0/1 */
-  int32_t input_channels;  /* 0 = unknown (miniaudio); an ASIO probe fills it */
-  int32_t output_channels; /* 0 = unknown */
+  /* The device's channel count in the direction it was enumerated in: a
+   * capture device fills input_channels, a playback device output_channels,
+   * and the other stays 0 — a playback device reports what it can play and
+   * never the other way round. An ASIO driver is duplex and fills both.
+   * 0 = UNKNOWN, not "no channels": a device that cannot answer keeps it, and
+   * a count is omitted rather than printed as a zero. */
+  int32_t input_channels;
+  int32_t output_channels;
   /* ASIO-only: the driver's selectable buffer sizes and supported sample rates,
    * probed by le_enumerate_asio_drivers so the UI can offer the driver's real
    * options instead of a generic list. Count 0 for non-ASIO devices (the UI

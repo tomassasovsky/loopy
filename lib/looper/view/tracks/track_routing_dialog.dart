@@ -3,6 +3,7 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -25,6 +26,7 @@ Future<void> showTrackRoutingDialog(
   final looper = context.read<LooperBloc>();
   final tracks = context.read<TracksCubit>();
   final quantize = context.read<QuantizeCubit>();
+  final inputs = context.read<InputsCubit>();
   final repository = context.read<LooperRepository>();
   return showDialog<void>(
     context: context,
@@ -34,6 +36,7 @@ Future<void> showTrackRoutingDialog(
         BlocProvider.value(value: looper),
         BlocProvider.value(value: tracks),
         BlocProvider.value(value: quantize),
+        BlocProvider.value(value: inputs),
       ],
       child: RepositoryProvider.value(
         value: repository,
@@ -92,10 +95,10 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
   ///
   /// Fixed because the QUESTION is: a track's override on the global setting
   /// has exactly three answers, and a fourth would be a different control.
-  /// [_StickyGroups] needs it to know when the real caption has risen far
-  /// enough to take the preview's place.
+  /// [ConsoleStickyGroups] needs it to know when the real caption has
+  /// risen far enough to take the preview's place.
   static const double _quantizeExtent =
-      _PinnedGroupLabel.extent + kConsoleRowHeight * 3 + 2;
+      ConsolePinnedGroupLabel.extent + kConsoleRowHeight * 3 + 2;
 
   /// Recording [input], or freeing the lane that already does.
   ///
@@ -226,11 +229,14 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
                       // its content the way the mockup draws it, and nothing
                       // scrolls until the content runs out of room.
                       Flexible(
-                        child: _StickyGroups(
+                        child: ConsoleStickyGroups(
                           // What the caption at the bottom edge says, and what
                           // it hands over to.
                           upcoming: l10n.trackQuantizeGroup,
                           upcomingExtent: _quantizeExtent,
+                          previewKey: const Key(
+                            'track_routing_upcoming_group',
+                          ),
                           slivers: [
                             // A group per caption, so a caption pins only
                             // while its OWN section is passing: plain pinned
@@ -239,7 +245,7 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
                             // attached to what is under it.
                             SliverMainAxisGroup(
                               slivers: [
-                                _PinnedGroupLabel(l10n.trackLanesGroup),
+                                ConsolePinnedGroupLabel(l10n.trackLanesGroup),
                                 SliverToBoxAdapter(
                                   child: _lanes(context, state, track),
                                 ),
@@ -250,7 +256,9 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
                             ),
                             SliverMainAxisGroup(
                               slivers: [
-                                _PinnedGroupLabel(l10n.trackQuantizeGroup),
+                                ConsolePinnedGroupLabel(
+                                  l10n.trackQuantizeGroup,
+                                ),
                                 SliverToBoxAdapter(
                                   child: _quantizeGroup(context, track),
                                 ),
@@ -354,7 +362,12 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
     final recorded = lane >= 0;
     final open = recorded && _openLane == lane;
     final mask = recorded ? lanes[lane].outputMask : 0;
-    final label = l10n.inputChannelLabel(input + 1);
+    // By the name the player gave the socket, the same one the Audio face and
+    // the Routing summary show — never the ordinal once there is a name.
+    final label = l10n.inputName(
+      context.watch<InputsCubit>().state.names,
+      input,
+    );
     // The device's own outputs, plus any bit this lane ALREADY reaches that
     // the device has not got — same rule as the rows themselves, and for the
     // same reason: a mask bit carried in from a wider rig needs a cell or the
@@ -593,150 +606,4 @@ class _LaneCheck extends StatelessWidget {
       ),
     );
   }
-}
-
-/// A group caption that stays overhead while its own list scrolls under it.
-///
-/// Pinned rather than scrolling away, because on this panel the caption is the
-/// only thing that says which of the two questions a row answers. It carries
-/// the panel's own fill so the rows pass *behind* it rather than through it,
-/// and it reserves [kConsoleLabelGap] under itself — a caption belongs to what
-/// is beneath it, so that gap travels with the caption rather than staying
-/// behind with the list.
-class _PinnedGroupLabel extends StatelessWidget {
-  const _PinnedGroupLabel(this.label);
-
-  final String label;
-
-  /// The caption's own line, at [ConsoleGroupLabel]'s 13px × 1.23.
-  static const double _lineHeight = 16;
-
-  /// What one caption occupies: its line, plus the gap it carries with it.
-  static const double extent = _lineHeight + kConsoleLabelGap;
-
-  @override
-  Widget build(BuildContext context) => SliverPersistentHeader(
-    pinned: true,
-    delegate: _PinnedGroupLabelDelegate(
-      label: label,
-      fill: context.surface.card,
-    ),
-  );
-}
-
-class _PinnedGroupLabelDelegate extends SliverPersistentHeaderDelegate {
-  const _PinnedGroupLabelDelegate({required this.label, required this.fill});
-
-  final String label;
-  final Color fill;
-
-  @override
-  double get minExtent => _PinnedGroupLabel.extent;
-
-  @override
-  double get maxExtent => _PinnedGroupLabel.extent;
-
-  @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) => Container(
-    color: fill,
-    alignment: Alignment.topLeft,
-    child: ConsoleGroupLabel(label),
-  );
-
-  @override
-  bool shouldRebuild(_PinnedGroupLabelDelegate oldDelegate) =>
-      oldDelegate.label != label || oldDelegate.fill != fill;
-}
-
-/// The panel's scrolling middle: sticky group captions, plus a preview of the
-/// group you have not reached yet, pinned to the bottom edge.
-///
-/// Two captions and one viewport is the problem this solves. Pinning both at
-/// the top stacks them, which says nothing — a caption belongs to what is
-/// under it, and two of them overhead belong to nothing. Pinning only the
-/// current one is honest but leaves the panel's second question invisible
-/// until you have scrolled the whole lane list to find out it exists.
-///
-/// So the *current* caption pins overhead (each group is its own
-/// [SliverMainAxisGroup], so it is pushed out by the next rather than stacking
-/// under it), and the *next* one waits at the bottom edge. It is dropped the
-/// moment the real one rises into view, so the two are never on screen at
-/// once and the handover has no seam.
-class _StickyGroups extends StatefulWidget {
-  const _StickyGroups({
-    required this.slivers,
-    required this.upcoming,
-    required this.upcomingExtent,
-  });
-
-  /// The groups, in display order.
-  final List<Widget> slivers;
-
-  /// The last group's caption — the one previewed at the bottom.
-  final String upcoming;
-
-  /// How tall the last group is, caption included.
-  final double upcomingExtent;
-
-  @override
-  State<_StickyGroups> createState() => _StickyGroupsState();
-}
-
-class _StickyGroupsState extends State<_StickyGroups> {
-  /// Whether the last group's real caption is still below the bottom edge.
-  bool _upcomingBelow = false;
-
-  /// True while the last caption is still below the bottom edge.
-  ///
-  /// The last group ends the content, so what remains to scroll is the
-  /// distance from the bottom edge to the end of that group. Its caption is
-  /// exactly [_StickyGroups.upcomingExtent] above that end — so the caption is
-  /// still off the bottom while the remaining scroll exceeds the group's own
-  /// height, and reaches the edge precisely when it does not.
-  bool _below(ScrollMetrics m) =>
-      m.hasContentDimensions &&
-      (m.maxScrollExtent - m.pixels) > widget.upcomingExtent;
-
-  bool _update(ScrollMetrics metrics) {
-    final below = _below(metrics);
-    if (below != _upcomingBelow) setState(() => _upcomingBelow = below);
-    return false;
-  }
-
-  @override
-  Widget build(BuildContext context) => Stack(
-    children: [
-      NotificationListener<ScrollMetricsNotification>(
-        onNotification: (n) => _update(n.metrics),
-        child: NotificationListener<ScrollNotification>(
-          onNotification: (n) => _update(n.metrics),
-          child: CustomScrollView(shrinkWrap: true, slivers: widget.slivers),
-        ),
-      ),
-      // Ignores pointers: it is a label, and the list under it must stay
-      // draggable through the strip it occupies.
-      Positioned(
-        left: 0,
-        right: 0,
-        bottom: 0,
-        child: IgnorePointer(
-          child: AnimatedOpacity(
-            key: const Key('track_routing_upcoming_group'),
-            duration: kConsoleMotion,
-            curve: Curves.easeOut,
-            opacity: _upcomingBelow ? 1 : 0,
-            child: Container(
-              color: context.surface.card,
-              padding: const EdgeInsets.only(top: kConsoleLabelGap),
-              child: ConsoleGroupLabel(widget.upcoming),
-            ),
-          ),
-        ),
-      ),
-    ],
-  );
 }

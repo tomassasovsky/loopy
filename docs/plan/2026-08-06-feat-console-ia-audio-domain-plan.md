@@ -1,11 +1,12 @@
 ---
-title: "feat(console): Audio domain — Device, Recording and Status under one rail entry"
+title: "feat(console): Audio domain — Device and Recording under one rail entry"
 type: feat
 date: 2026-08-06
 issue: 528
 parent-plan: 2026-08-05-feat-console-ia-plan.md
 retrofitted: 2026-08-06
-shipped: "PR #534 (replaces #529)"
+shipped: "PR #554 (rebuilt on the trunk; #534/#529 superseded)"
+reshaped: 2026-08-07
 ---
 
 > **Retrofit note.** Written on 2026-08-06, after the slice had merged, from
@@ -16,12 +17,21 @@ shipped: "PR #534 (replaces #529)"
 > like a plan, that is the decision as it was actually taken, and the section
 > that matters most is **What the build discovered**, because this slice had
 > more of it than any of its siblings.
+>
+> **Reshape note, 2026-08-07.** The trunk was rebuilt from the pre-IA baseline
+> and this slice was rebuilt from this document (PR #554). Reviewing the
+> rebuilt face changed the design: the domain is now **two** tabs, not three.
+> Everything below the line describes the THREE-tab build and is kept as the
+> record of what was decided first — read **The reshape** at the end for what
+> the domain actually is, and take that as authoritative wherever the two
+> disagree.
 
 ## Overview
 
 Slice 5 of the console IA (#498): `SettingsSection.audio` becomes one rail
-destination with three tabs — **Device**, **Recording**, **Status** — built to
-the twelve `AUDIO / *` screens in `segno-ui.pen`.
+destination with two tabs — **Device** and **Recording** — built to the
+`AUDIO / *` screens in `segno-ui.pen`. It was three tabs when this was
+written; see **The reshape**.
 
 The split is the same question asked three ways. Device is what the rig plays
 through and how fast it runs. Recording is what pressing record does. Status
@@ -320,3 +330,76 @@ throughout — say what is not known rather than draw a zero:
 - No monitor tri-state. The mockups draw ON / AUTO / OFF and `InputMonitor`
   holds a boolean; that gap belongs to the Signal slice (#533).
 - No retirement of `audio_settings_section.dart` in this slice.
+
+## The reshape (2026-08-07, PR #554, design PR #560)
+
+The slice was rebuilt from this document onto the rebuilt trunk, and reviewing
+the rebuilt face changed the design. Fifteen `AUDIO / *` screens now, not
+twelve: `audio-status` deleted, four added.
+
+### Status is not a tab, it is the Device tab being honest
+
+Everything the Status tab reported was either already the value of a Device row
+or belonged beside the setting that decides it — and a figure shown in two
+places is a figure that can disagree with itself. So Device carries a fourth
+row: the round-trip figure, an explicit **Measure** button, and the record
+offset as that row's subtitle, the offset being a consequence of the
+measurement rather than a setting of its own.
+
+What a status table genuinely could not show is a config **in flight**, so that
+became a banner instead. `AudioSetupCubit` gained `ConfigPhase`: a requested
+rate or buffer raises `opening` and names what was asked for; the selection then
+**snaps to what the device actually negotiated**, and says so when the two
+differ.
+
+That reverses a rule this cubit previously stated outright — never pull the
+engine-reported value back into the selection, because changes persist and the
+saved config drifts. It was reversed deliberately and the price is documented on
+`_snapToNegotiated`: what was ASKED for stops being recoverable, and the next
+boot asks for what the device gave. A config the rig could not open is not one
+worth restoring — but it IS a behaviour change, and the two failure modes it
+covers are different: the open refused outright, and the open that succeeds
+while the device quietly runs something else. The second is the one the Status
+tab existed to expose.
+
+### The estimate is gone
+
+`estimatedRoundTripMs` was two buffer periods and could not include converter
+latency, so it read as authoritative and was not. The measured figure is the
+only one drawn, on the row that measures it. The drawn per-option costs went
+with it, which is what turned every buffer option into a bare token — and
+therefore what justified the next change.
+
+### Pick-ones are chip grids
+
+Maximum loop length, sample rate, buffer and inputs. A bare token has nothing to
+put in a row's width: eighteen inputs as 70px rows is 1,260px, five times the
+height of the card they open inside; as a grid they are two runs and about
+106px. `ConsoleSegment` gained a `sublabel` so one grid renders both `128` and
+`guitar` over `input 1` — no input-specific chip was invented.
+
+Devices and ASIO drivers stayed pick rows: a device carries its channel counts
+and a long name, so it is not a token.
+
+One thing lost and not replaced: as rows, `96 kHz` carried "halves the buffer
+headroom". A chip has nowhere to put it, so that caveat is currently unstated.
+
+### Input names are per device, and uncapped
+
+Two corrections to what this document describes.
+
+**Per DEVICE, not per socket.** `input_name.$i` meant input 1 was "guitar" on
+every interface plugged in, which describes whichever rig was patched last. Now
+`input_name.$device.$input`, keyed off the engine's reported device name — the
+shape `latency_offset.$device.$rate.$buffer` already used — with `InputsCubit`
+following the repository's stream. No migration: the key never shipped, since
+only the design had landed.
+
+**No ceiling.** This document's "per socket up to the engine's input ceiling
+(`LE_MAX_INPUTS`)" was a misreading, and it was a real defect: that constant
+caps how many lanes ONE TRACK may have and which inputs can be MONITORED, not
+which input a lane may record. The engine's own header says a higher-numbered
+channel "can still be RECORDED into a lane". So on an 18-in interface, sockets
+9–18 are routable — and the cap would have silently made them un-nameable. The
+list follows the device now, and the constant that caused the misreading is
+being renamed in #558.

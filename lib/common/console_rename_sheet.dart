@@ -5,8 +5,8 @@ import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 
-/// Asks for track [channel]'s new name, starting from [current]; resolves to
-/// the trimmed name, or null if it was cancelled or left empty.
+/// Asks for a new name, starting from [current]; resolves to the trimmed name,
+/// or null if it was cancelled.
 ///
 /// The console has **one keyboard**, and it is built into this sheet — the
 /// same reason `showWifiJoinSheet` is a sheet rather than a dialog. The
@@ -16,10 +16,19 @@ import 'package:segno/theme/theme.dart';
 ///
 /// The stage keeps its own `showRenameTrackDialog`: that surface has a
 /// physical keyboard behind it and no room for a full-width one.
-Future<String?> showTrackRenameSheet(
+///
+/// Built for track names, generalised the moment a second thing needed naming.
+/// The parameters are exactly what the two callers actually differ on —
+/// [title], the [subtitle] that says WHICH thing this is, the announced
+/// [fieldLabel], and [allowEmpty]. Everything else is the sheet, and a fork
+/// would have been two sheets drifting apart.
+Future<String?> showConsoleRenameSheet(
   BuildContext context, {
-  required int channel,
+  required String title,
+  required String subtitle,
   required String current,
+  required String fieldLabel,
+  bool allowEmpty = false,
 }) {
   final surface = context.surface;
   return showModalBottomSheet<String>(
@@ -30,21 +39,36 @@ Future<String?> showTrackRenameSheet(
     // keyboard on a 1920px console. Same override the join sheet takes.
     constraints: const BoxConstraints(),
     isScrollControlled: true,
-    builder: (_) => _TrackRenameSheet(channel: channel, current: current),
+    builder: (_) => _ConsoleRenameSheet(
+      title: title,
+      subtitle: subtitle,
+      current: current,
+      fieldLabel: fieldLabel,
+      allowEmpty: allowEmpty,
+    ),
   );
 }
 
-class _TrackRenameSheet extends StatefulWidget {
-  const _TrackRenameSheet({required this.channel, required this.current});
+class _ConsoleRenameSheet extends StatefulWidget {
+  const _ConsoleRenameSheet({
+    required this.title,
+    required this.subtitle,
+    required this.current,
+    required this.fieldLabel,
+    required this.allowEmpty,
+  });
 
-  final int channel;
+  final String title;
+  final String subtitle;
   final String current;
+  final String fieldLabel;
+  final bool allowEmpty;
 
   @override
-  State<_TrackRenameSheet> createState() => _TrackRenameSheetState();
+  State<_ConsoleRenameSheet> createState() => _ConsoleRenameSheetState();
 }
 
-class _TrackRenameSheetState extends State<_TrackRenameSheet> {
+class _ConsoleRenameSheetState extends State<_ConsoleRenameSheet> {
   /// The sheet holds its own text — there is no [TextField] to hold it.
   late String _name = widget.current;
 
@@ -55,12 +79,17 @@ class _TrackRenameSheetState extends State<_TrackRenameSheet> {
     setState(() => _name = _name.substring(0, _name.length - 1));
   }
 
-  /// An empty name is not a rename, so Save does nothing rather than closing:
-  /// `TracksCubit.rename` drops an empty name anyway, and a sheet that shut on
-  /// one would look like it had renamed the track to nothing.
+  /// Saves, or refuses when an empty name is not an answer.
+  ///
+  /// `AUDIO / settings-rename` has no Clear button — only a backspace and Save
+  /// — so for a hardware input, emptying the field IS how it is un-named, and
+  /// that caller passes [_ConsoleRenameSheet.allowEmpty]. A track is never
+  /// nameless: its fallback IS a name, `TracksCubit.rename` drops an empty one
+  /// anyway, and a sheet that shut on one would look like it had renamed the
+  /// track to nothing.
   void _submit() {
     final trimmed = _name.trim();
-    if (trimmed.isEmpty) return;
+    if (trimmed.isEmpty && !widget.allowEmpty) return;
     Navigator.of(context).pop(trimmed);
   }
 
@@ -99,7 +128,7 @@ class _TrackRenameSheetState extends State<_TrackRenameSheet> {
       autofocus: true,
       onKeyEvent: _onKey,
       child: Container(
-        key: const Key('track_rename_sheet'),
+        key: const Key('console_rename_sheet'),
         decoration: BoxDecoration(
           color: surface.card,
           border: Border.all(color: surface.borderStrong),
@@ -112,7 +141,7 @@ class _TrackRenameSheetState extends State<_TrackRenameSheet> {
             Row(
               children: [
                 Text(
-                  l10n.tracksRenameSheetTitle,
+                  widget.title,
                   style: TextStyle(
                     color: surface.textPrimary,
                     fontSize: 18,
@@ -124,7 +153,7 @@ class _TrackRenameSheetState extends State<_TrackRenameSheet> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    l10n.tracksOrdinal(widget.channel + 1),
+                    widget.subtitle,
                     style: TextStyle(
                       color: surface.textMuted,
                       fontSize: 14,
@@ -134,14 +163,14 @@ class _TrackRenameSheetState extends State<_TrackRenameSheet> {
                   ),
                 ),
                 ConsoleDialogButton(
-                  key: const Key('track_rename_cancel'),
+                  key: const Key('console_rename_cancel'),
                   label: l10n.cancel,
                   onPressed: () => Navigator.of(context).pop(),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            _NameField(text: _name),
+            _NameField(text: _name, label: widget.fieldLabel),
             const SizedBox(height: 13),
             OnScreenKeyboard(
               layout: OnScreenKeyboardLayout.text,
@@ -165,16 +194,17 @@ class _TrackRenameSheetState extends State<_TrackRenameSheet> {
 /// face the console uses for literal machine values rather than the one it
 /// uses for prose.
 class _NameField extends StatelessWidget {
-  const _NameField({required this.text});
+  const _NameField({required this.text, required this.label});
 
   final String text;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
     return Semantics(
       textField: true,
-      label: context.l10n.a11yTracksRenameField,
+      label: label,
       value: text,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
@@ -188,7 +218,7 @@ class _NameField extends StatelessWidget {
             Flexible(
               child: Text(
                 text,
-                key: const Key('track_rename_field'),
+                key: const Key('console_rename_field'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(

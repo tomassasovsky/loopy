@@ -1548,6 +1548,7 @@ class ConsoleSegment<T> {
   const ConsoleSegment({
     required this.value,
     required this.label,
+    this.sublabel,
     this.optionKey,
   });
 
@@ -1555,7 +1556,24 @@ class ConsoleSegment<T> {
   final T value;
 
   /// The visible caption.
+  ///
+  /// May be **empty**, which promotes [sublabel] to the primary tone — see
+  /// there for the one case that needs it.
   final String label;
+
+  /// A second line under [label], in the mono face: the thing's own machine
+  /// fact, where [label] is what a person calls it. `guitar` over `input 1`.
+  ///
+  /// Ignored by [ConsoleSegmented] and [ConsoleMiniToggle], which are single
+  /// short words by construction.
+  ///
+  /// **An empty [label] promotes this line to the primary tone.** The Audio
+  /// face's input chips are why: a named socket reads `guitar` over a grey
+  /// `input 1`, and an unnamed one is the bare ordinal — which must not stay
+  /// grey, because a rig where nothing is named would be a grid of entirely
+  /// grey chips, reading as disabled rather than as nothing having been said
+  /// about them yet.
+  final String? sublabel;
 
   /// The cell's own key, for a grid whose cells are otherwise identified only
   /// by a two-character label.
@@ -2025,8 +2043,12 @@ class ConsoleChipGrid<T> extends StatelessWidget {
   /// Gap between cells, both ways.
   static const double gutter = 10;
 
-  /// Cell height.
+  /// Cell height, for a grid of single-line cells.
   static const double cellHeight = 48;
+
+  /// Cell height once any option carries a [ConsoleSegment.sublabel]. Uniform
+  /// across the grid — cells of two heights in one run read as two controls.
+  static const double twoLineCellHeight = 56;
 
   /// How many cells to put across, given the room and how many there are.
   ///
@@ -2063,6 +2085,7 @@ class ConsoleChipGrid<T> extends StatelessWidget {
       final width = constraints.maxWidth;
       final columns = columnsFor(width, options.length);
       final cell = (width - gutter * (columns - 1)) / columns;
+      final twoLine = options.any((option) => option.sublabel != null);
       return Wrap(
         spacing: gutter,
         runSpacing: gutter,
@@ -2073,6 +2096,8 @@ class ConsoleChipGrid<T> extends StatelessWidget {
               child: _ConsoleChip(
                 key: option.optionKey,
                 label: option.label,
+                sublabel: option.sublabel,
+                height: twoLine ? twoLineCellHeight : cellHeight,
                 selected: selected.contains(option.value),
                 onTap: () => onTap(option.value),
               ),
@@ -2088,10 +2113,14 @@ class _ConsoleChip extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.sublabel,
+    this.height = ConsoleChipGrid.cellHeight,
     super.key,
   });
 
   final String label;
+  final String? sublabel;
+  final double height;
   final bool selected;
   final VoidCallback onTap;
 
@@ -2102,18 +2131,25 @@ class _ConsoleChip extends StatelessWidget {
     // button/selected/label node, and wrapping a second one round it gives a
     // screen reader two nested labelled buttons for one chip. ConsolePickRow
     // makes the same call.
+    final sub = sublabel;
+    // An empty label leaves the second line as the chip's only content, so it
+    // takes the primary ink; under a label it is the muted secondary fact.
+    final subTint = label.isEmpty ? surface.textPrimary : surface.textMuted;
     return FocusableTapTarget(
       onTap: onTap,
       selected: selected,
       borderRadius: 11,
-      semanticLabel: label,
+      semanticLabel: [
+        label,
+        ?sub,
+      ].where((text) => text.isNotEmpty).join(', '),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(11),
         child: AnimatedContainer(
           duration: consoleMotion(context),
           curve: Curves.easeOut,
-          height: ConsoleChipGrid.cellHeight,
+          height: height,
           alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(horizontal: 10),
           decoration: BoxDecoration(
@@ -2123,18 +2159,40 @@ class _ConsoleChip extends StatelessWidget {
               color: selected ? surface.accent : surface.line,
             ),
           ),
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: selected ? surface.accent : surface.textPrimary,
-              fontSize: 16,
-              height: 1.13,
-              leadingDistribution: TextLeadingDistribution.even,
-              // One weight for both states, as everywhere on this surface.
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (label.isNotEmpty)
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: selected ? surface.accent : surface.textPrimary,
+                    fontSize: 16,
+                    height: 1.13,
+                    leadingDistribution: TextLeadingDistribution.even,
+                    // One weight for both states, as everywhere here.
+                  ),
+                ),
+              if (sub != null) ...[
+                if (label.isNotEmpty) const SizedBox(height: 2),
+                Text(
+                  sub,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: selected ? surface.accent : subTint,
+                    fontFamily: SurfaceTheme.monoFont,
+                    fontSize: 14,
+                    height: 1.14,
+                    leadingDistribution: TextLeadingDistribution.even,
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ),
@@ -2252,6 +2310,182 @@ Future<bool> showConsoleConfirmDialog(
     ),
   );
   return confirmed ?? false;
+}
+
+/// A group caption that stays overhead while its own list scrolls under it.
+///
+/// Pinned rather than scrolling away, because on a surface long enough to
+/// scroll the caption is the only thing that says which question a row answers.
+/// It carries its container's own [fill] so the rows pass *behind* it rather
+/// than through it, and it reserves [kConsoleLabelGap] under itself — a caption
+/// belongs to what is beneath it, so that gap travels with the caption rather
+/// than staying behind with the list.
+///
+/// Built for the per-track routing panel and lifted here the moment the Audio
+/// face's device list needed the same shape: a rig with eighteen inputs
+/// outgrows the tray sheet exactly as an eight-input one outgrew the panel.
+class ConsolePinnedGroupLabel extends StatelessWidget {
+  /// Creates a [ConsolePinnedGroupLabel].
+  const ConsolePinnedGroupLabel(this.label, {this.fill, super.key});
+
+  /// The caption. Upper-cased by the caller, as [ConsoleGroupLabel]'s is.
+  final String label;
+
+  /// What the caption paints over; defaults to [SurfaceTheme.card], the
+  /// centred panel's own tone. A face that sits directly on the tray sheet
+  /// passes [SurfaceTheme.background].
+  final Color? fill;
+
+  /// The caption's own line, at [ConsoleGroupLabel]'s 13px × 1.23.
+  static const double lineHeight = 16;
+
+  /// What one caption occupies: its line, plus the gap it carries with it.
+  static const double extent = lineHeight + kConsoleLabelGap;
+
+  @override
+  Widget build(BuildContext context) => SliverPersistentHeader(
+    pinned: true,
+    delegate: _PinnedGroupLabelDelegate(
+      label: label,
+      fill: fill ?? context.surface.card,
+    ),
+  );
+}
+
+class _PinnedGroupLabelDelegate extends SliverPersistentHeaderDelegate {
+  const _PinnedGroupLabelDelegate({required this.label, required this.fill});
+
+  final String label;
+  final Color fill;
+
+  @override
+  double get minExtent => ConsolePinnedGroupLabel.extent;
+
+  @override
+  double get maxExtent => ConsolePinnedGroupLabel.extent;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) => Container(
+    color: fill,
+    alignment: Alignment.topLeft,
+    child: ConsoleGroupLabel(label),
+  );
+
+  @override
+  bool shouldRebuild(_PinnedGroupLabelDelegate oldDelegate) =>
+      oldDelegate.label != label || oldDelegate.fill != fill;
+}
+
+/// A scrolling column of captioned groups: sticky captions, plus an optional
+/// preview of the group you have not reached yet, pinned to the bottom edge.
+///
+/// Two captions and one viewport is the problem this solves. Pinning both at
+/// the top stacks them, which says nothing — a caption belongs to what is
+/// under it, and two of them overhead belong to nothing. Pinning only the
+/// current one is honest but leaves the second question invisible until you
+/// have scrolled the whole first list to find out it exists.
+///
+/// So the *current* caption pins overhead (each group is its own
+/// [SliverMainAxisGroup], so it is pushed out by the next rather than stacking
+/// under it), and the *next* one waits at the bottom edge. It is dropped the
+/// moment the real one rises into view, so the two are never on screen at once
+/// and the handover has no seam.
+///
+/// [upcoming] is null for a surface with only one group — there is nothing to
+/// preview, and a strip previewing the caption already overhead would be a
+/// second copy of it.
+class ConsoleStickyGroups extends StatefulWidget {
+  /// Creates a [ConsoleStickyGroups].
+  const ConsoleStickyGroups({
+    required this.slivers,
+    this.upcoming,
+    this.upcomingExtent = 0,
+    this.fill,
+    this.previewKey,
+    super.key,
+  });
+
+  /// The groups, in display order.
+  final List<Widget> slivers;
+
+  /// The last group's caption — the one previewed at the bottom, or null when
+  /// there is only one group.
+  final String? upcoming;
+
+  /// How tall the last group is, caption included.
+  final double upcomingExtent;
+
+  /// What the preview strip paints over; defaults to [SurfaceTheme.card].
+  final Color? fill;
+
+  /// Key for the preview strip, so a test can find it.
+  final Key? previewKey;
+
+  @override
+  State<ConsoleStickyGroups> createState() => _ConsoleStickyGroupsState();
+}
+
+class _ConsoleStickyGroupsState extends State<ConsoleStickyGroups> {
+  /// Whether the last group's real caption is still below the bottom edge.
+  bool _upcomingBelow = false;
+
+  /// True while the last caption is still below the bottom edge.
+  ///
+  /// The last group ends the content, so what remains to scroll is the
+  /// distance from the bottom edge to the end of that group. Its caption is
+  /// exactly [ConsoleStickyGroups.upcomingExtent] above that end — so the
+  /// caption is still off the bottom while the remaining scroll exceeds the
+  /// group's own height, and reaches the edge precisely when it does not.
+  bool _below(ScrollMetrics m) =>
+      m.hasContentDimensions &&
+      (m.maxScrollExtent - m.pixels) > widget.upcomingExtent;
+
+  bool _update(ScrollMetrics metrics) {
+    final below = _below(metrics);
+    if (below != _upcomingBelow) setState(() => _upcomingBelow = below);
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final preview = widget.upcoming;
+    return Stack(
+      children: [
+        NotificationListener<ScrollMetricsNotification>(
+          onNotification: (n) => _update(n.metrics),
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (n) => _update(n.metrics),
+            child: CustomScrollView(shrinkWrap: true, slivers: widget.slivers),
+          ),
+        ),
+        if (preview != null)
+          // Ignores pointers: it is a label, and the list under it must stay
+          // draggable through the strip it occupies.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: IgnorePointer(
+              child: AnimatedOpacity(
+                key: widget.previewKey,
+                duration: consoleMotion(context),
+                curve: Curves.easeOut,
+                opacity: _upcomingBelow ? 1 : 0,
+                child: Container(
+                  color: widget.fill ?? context.surface.card,
+                  padding: const EdgeInsets.only(top: kConsoleLabelGap),
+                  child: ConsoleGroupLabel(preview),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 /// What a [ConsoleDialogButton] is for.

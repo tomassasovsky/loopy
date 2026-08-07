@@ -106,15 +106,18 @@ void main() {
       ..setSampleRate(96000)
       ..setBufferFrames(64),
     // Each setter also (re)starts the engine from the stopped default (D3), so
-    // a `running` status lands between the two requested-config changes.
+    // each is followed by the reopen's own outcome — which now carries what
+    // was asked for, so the second one is a real emission rather than a
+    // deduplicated repeat of `running`.
     expect: () => [
       isA<AudioSetupState>().having((s) => s.sampleRate, 'sampleRate', 96000),
-      isA<AudioSetupState>().having(
-        (s) => s.status,
-        'status',
-        AudioSetupStatus.running,
-      ),
+      isA<AudioSetupState>()
+          .having((s) => s.status, 'status', AudioSetupStatus.running)
+          .having((s) => s.requestedRate, 'asked rate', 96000),
       isA<AudioSetupState>().having((s) => s.bufferFrames, 'bufferFrames', 64),
+      isA<AudioSetupState>()
+          .having((s) => s.status, 'status', AudioSetupStatus.running)
+          .having((s) => s.requestedBuffer, 'asked buffer', 64),
     ],
   );
 

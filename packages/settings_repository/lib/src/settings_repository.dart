@@ -817,6 +817,36 @@ class SettingsRepository {
   Future<void> saveTrackName(int channel, String name) =>
       _store.setString(_trackNameKey(channel), name);
 
+  /// Keyed per DEVICE and socket, the same shape [saveLatencyOffsetFrames]
+  /// uses. Input 1 on a Scarlett and input 1 on the built-in pair are different
+  /// jacks with different things plugged into them; one name for both would
+  /// describe whichever rig was patched last.
+  String _inputNameKey(String device, int input) => 'input_name.$device.$input';
+
+  /// Loads the given name for [input] on [device], or `null` if it has none.
+  Future<String?> loadInputName({
+    required String device,
+    required int input,
+  }) => _store.getString(_inputNameKey(device, input));
+
+  /// Saves the given [name] for [input] on [device].
+  Future<void> saveInputName({
+    required String device,
+    required int input,
+    required String name,
+  }) => _store.setString(_inputNameKey(device, input), name);
+
+  /// Forgets [input]'s given name on [device], handing the socket back its
+  /// ordinal.
+  ///
+  /// Removed rather than stored as an empty string: an input's fallback is not
+  /// a name it was given, and a stored `''` would be a name the next reader has
+  /// to know to ignore. A track has no equivalent — its fallback IS a name.
+  Future<void> clearInputName({
+    required String device,
+    required int input,
+  }) => _store.remove(_inputNameKey(device, input));
+
   String _trackQuantizeKey(int channel) => 'track_quantize.$channel';
 
   /// Loads track [channel]'s quantize override: `null` (inherit the global

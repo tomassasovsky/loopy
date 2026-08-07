@@ -236,6 +236,21 @@ class App extends StatelessWidget {
               return cubit;
             },
           ),
+          // Beside the track names and for the same reason: an input is called
+          // what the player calls it on every surface that shows one — the
+          // Audio face's input list, the Tracks routing summary, and the
+          // per-track lane list — so the names load once, here.
+          // Eager: the names key off the OPEN DEVICE, so the cubit has to be
+          // listening before the engine reports one — created lazily it would
+          // miss the boot device entirely and show ordinals until the next
+          // reopen.
+          BlocProvider(
+            lazy: false,
+            create: (context) => InputsCubit(
+              settings: context.read<SettingsRepository>(),
+              repository: context.read<LooperRepository>(),
+            ),
+          ),
           BlocProvider(
             create: (context) {
               final cubit = HighContrastCubit(

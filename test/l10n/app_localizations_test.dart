@@ -78,4 +78,36 @@ void main() {
       expect(l10n.trackName(const ['drums'], -1), l10n.defaultTrackName(0));
     });
   });
+
+  group('inputName', () {
+    late AppLocalizations l10n;
+
+    setUpAll(() async {
+      l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    });
+
+    test('is the name the player gave the socket', () {
+      expect(l10n.inputName(const {0: 'guitar', 1: 'mic'}, 1), 'mic');
+    });
+
+    test('an unnamed socket falls back to its ordinal', () {
+      // A socket with no name is ABSENT from the map rather than empty, so
+      // the resolver is the one place that turns "nothing stored" into words.
+      expect(l10n.inputName(const {0: 'guitar'}, 1), l10n.inputChannelLabel(2));
+      expect(l10n.inputName(const {}, 0), l10n.inputChannelLabel(1));
+      // A stored empty string reads the same way, so a half-written value can
+      // never render as a blank name.
+      expect(l10n.inputName(const {1: ''}, 1), l10n.inputChannelLabel(2));
+    });
+
+    test('falls back rather than throwing on an absent socket', () {
+      // A session saved on an eight-in rig still routes In 6 when it is
+      // reopened on a two-in one, and that lane's row has to say something.
+      expect(l10n.inputName(const {0: 'guitar'}, 5), l10n.inputChannelLabel(6));
+      expect(
+        l10n.inputName(const {0: 'guitar'}, -1),
+        l10n.inputChannelLabel(0),
+      );
+    });
+  });
 }

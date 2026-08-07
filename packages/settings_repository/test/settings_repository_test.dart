@@ -116,6 +116,51 @@ void main() {
     });
   });
 
+  group('input names', () {
+    test('round-trips a saved name', () async {
+      await repository.saveInputName(device: 'Scarlett', input: 1, name: 'mic');
+      expect(
+        await repository.loadInputName(device: 'Scarlett', input: 1),
+        'mic',
+      );
+      expect(
+        await repository.loadInputName(device: 'Scarlett', input: 0),
+        isNull,
+      );
+      // A different interface's socket 1 is a different jack.
+      expect(
+        await repository.loadInputName(device: 'Built-in', input: 1),
+        isNull,
+      );
+    });
+
+    test('clearing REMOVES the key, never stores an empty name', () async {
+      // An input's fallback is not a name it was given, so a stored `''` would
+      // be a name every later reader has to know to ignore. A track has no
+      // equivalent — its fallback IS a name.
+      await repository.saveInputName(
+        device: 'Scarlett',
+        input: 2,
+        name: 'guitar',
+      );
+      await repository.clearInputName(device: 'Scarlett', input: 2);
+      expect(
+        await repository.loadInputName(device: 'Scarlett', input: 2),
+        isNull,
+      );
+    });
+
+    test('a name is kept per SOCKET, independent of the track keys', () async {
+      await repository.saveInputName(device: 'Scarlett', input: 0, name: 'mic');
+      await repository.saveTrackName(0, 'DRUMS');
+      expect(
+        await repository.loadInputName(device: 'Scarlett', input: 0),
+        'mic',
+      );
+      expect(await repository.loadTrackName(0), 'DRUMS');
+    });
+  });
+
   group('lane routing', () {
     test('returns sensible defaults when nothing is stored', () async {
       expect(await repository.loadLaneCount(0), 1);

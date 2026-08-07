@@ -87,10 +87,18 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     // pinned-device connectivity watch (see [_detectConnectivity]) only tracks
     // the selected device, not the full list. Enumeration runs on a transient
     // ma_context independent of the streaming device, so it is glitch-free.
-    _deviceRefreshTimer = Timer.periodic(
-      deviceRefreshInterval,
-      (_) => refreshDevices(),
-    );
+    //
+    // A non-positive interval means DO NOT re-enumerate. That is for a
+    // harness whose device list never changes: a widget test verifies its
+    // invariants before any tearDown runs, so a periodic timer left live for
+    // the length of the test body fails it however promptly the cubit is
+    // closed afterwards.
+    if (deviceRefreshInterval > Duration.zero) {
+      _deviceRefreshTimer = Timer.periodic(
+        deviceRefreshInterval,
+        (_) => refreshDevices(),
+      );
+    }
   }
 
   final LooperRepository _repository;
@@ -213,6 +221,30 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   void setCaptureDevice(String deviceId) =>
       _selectDevice(captureDeviceId: deviceId);
 
+  /// Pins both directions of one interface at once.
+  ///
+  /// The console shows ONE Device row, because an interface is one box even
+  /// though the host lists its playback and capture halves separately. Setting
+  /// them through [setPlaybackDevice] and [setCaptureDevice] in turn would
+  /// persist twice and reopen the device twice for a single tap — the second
+  /// reopen tearing down the stream the first had just brought up.
+  void setDevice({
+    required String playbackDeviceId,
+    required String captureDeviceId,
+  }) {
+    if (playbackDeviceId == state.playbackDeviceId &&
+        captureDeviceId == state.captureDeviceId) {
+      return;
+    }
+    emit(
+      state.copyWith(
+        playbackDeviceId: playbackDeviceId,
+        captureDeviceId: captureDeviceId,
+      ),
+    );
+    _persistAndApply();
+  }
+
   void _selectDevice({String? playbackDeviceId, String? captureDeviceId}) {
     assert(
       (playbackDeviceId != null) ^ (captureDeviceId != null),
@@ -242,25 +274,65 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// audio. On a failed open, sets the error status (surfaced by the banner).
   void _persistAndApply() {
     unawaited(_settings.saveAudioConfig(_storedConfig()));
+    // Persisted but never opened, so there is no outcome to report.
     if (!_isStartable) return;
+    // What this reopen is ASKING for — whatever moved, the rig is being opened
+    // at the current selection.
+    final askedRate = state.sampleRate;
+    final askedBuffer = state.bufferFrames;
     if (state.status == AudioSetupStatus.running) {
       _repository.stopEngine();
     }
     final result = _repository.startEngine(_engineConfig());
-    if (result.isOk) {
-      // Clear any prior error: a successful (re)start recovers from a failed
-      // open, so a stale banner must not linger.
-      emit(state.copyWith(status: AudioSetupStatus.running, clearError: true));
-      _autoMeasureIfLoopback();
-    } else {
+    if (!result.isOk) {
+      // Refused outright. Hand the selection back what the engine is still
+      // running, so the rows never report a setting the rig has not got.
+      final live = _repository.state.status;
       emit(
         state.copyWith(
           status: AudioSetupStatus.error,
+          phase: ConfigPhase.refused,
+          requestedRate: askedRate,
+          requestedBuffer: askedBuffer,
+          sampleRate: live.sampleRate > 0 ? live.sampleRate : askedRate,
+          bufferFrames: live.bufferFrames > 0 ? live.bufferFrames : askedBuffer,
           error: AudioSetupError.openDeviceFailed,
           errorDetail: result.name,
         ),
       );
+      return;
     }
+    // Opened. Read what the device NEGOTIATED straight back — `startEngine` is
+    // synchronous, so the snapshot already describes the open device, and
+    // waiting for the stream would never settle: the repository drops a tick
+    // whose projection is unchanged, which is exactly what a device that
+    // silently kept its old clock produces.
+    final live = _repository.state.status;
+    final known = live.sampleRate > 0 && live.bufferFrames > 0;
+    final rate = known ? live.sampleRate : askedRate;
+    final buffer = known ? live.bufferFrames : askedBuffer;
+    final gave = rate == askedRate && buffer == askedBuffer;
+    final settled = state.copyWith(
+      status: AudioSetupStatus.running,
+      clearError: true,
+      // The SELECTION follows what the device gave. A row that keeps saying
+      // 96 kHz while the engine runs 48 is the lie the Status tab existed to
+      // correct.
+      sampleRate: rate,
+      bufferFrames: buffer,
+      phase: gave ? ConfigPhase.settled : ConfigPhase.refused,
+      requestedRate: askedRate,
+      requestedBuffer: askedBuffer,
+    );
+    emit(settled);
+    // The selection moved, so what was written above — the config that was
+    // asked for — no longer describes the rig. Persist what it is actually
+    // running, or the next boot re-asks for the config this device just
+    // declined and the banner returns on every start.
+    if (!gave) {
+      unawaited(_settings.saveAudioConfig(_storedConfig(settled)));
+    }
+    _autoMeasureIfLoopback();
   }
 
   /// Whether the current options form a config the engine can actually open.
@@ -313,17 +385,25 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     asioDriver: state.asioDriver,
   );
 
-  /// The persisted form of the current options + device selection.
-  StoredAudioConfig _storedConfig() => StoredAudioConfig(
-    sampleRate: state.sampleRate,
-    bufferFrames: state.bufferFrames,
-    maxLoopMinutes: state.maxLoopMinutes,
-    playbackDeviceId: state.playbackDeviceId,
-    captureDeviceId: state.captureDeviceId,
-    // Map the domain backend to the settings layer's own enum for persistence.
-    backend: settingsBackendOf(state.backend),
-    asioDriver: state.asioDriver,
-  );
+  /// The persisted form of [from], defaulting to the current options + device
+  /// selection.
+  ///
+  /// Takes a state rather than always reading `state`, because a reopen that
+  /// negotiates something else has to persist the config it is ABOUT to emit,
+  /// not the one still in the field.
+  StoredAudioConfig _storedConfig([AudioSetupState? from]) {
+    final config = from ?? state;
+    return StoredAudioConfig(
+      sampleRate: config.sampleRate,
+      bufferFrames: config.bufferFrames,
+      maxLoopMinutes: config.maxLoopMinutes,
+      playbackDeviceId: config.playbackDeviceId,
+      captureDeviceId: config.captureDeviceId,
+      // Map the domain backend to the settings layer's own enum.
+      backend: settingsBackendOf(config.backend),
+      asioDriver: config.asioDriver,
+    );
+  }
 
   /// Converts a minute cap to engine frames at [sampleRate]; `0` (engine
   /// default) stays `0`. Inverse of [_maxLoopMinutes].
