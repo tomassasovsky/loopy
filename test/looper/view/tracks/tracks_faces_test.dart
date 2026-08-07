@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -616,6 +617,178 @@ void main() {
       ]);
     });
 
+    testWidgets('a rig wider than the lane cap stops offering the tap', (
+      tester,
+    ) async {
+      // A device may report far more inputs than the engine allows lanes
+      // (`kMaxLanes`), and it REJECTS both writes past the cap. With every
+      // lane occupied the extra rows take no tap, so nothing is dispatched —
+      // and so nothing is cached and persisted at a lane that cannot exist.
+      await pump(
+        tester,
+        tab: TracksTab.routing,
+        state: LooperState(
+          tracks: [
+            Track(
+              lanes: [
+                for (var lane = 0; lane < kMaxLanes; lane++)
+                  Lane(inputChannel: lane),
+              ],
+            ),
+          ],
+          status: const EngineStatus(inputChannels: 12, outputChannels: 2),
+        ),
+      );
+      await tester.tap(find.byKey(const Key('tracks_routing_row_0')));
+      await tester.pumpAndSettle();
+
+      ConsoleRow row(int input) =>
+          tester.widget(find.byKey(Key('track_routing_input_$input')));
+      // A recorded input still opens its lane; the ones with nowhere to go do
+      // not pretend they can be checked.
+      expect(row(0).onTap, isNotNull);
+      expect(row(kMaxLanes).onTap, isNull);
+      expect(row(11).onTap, isNull);
+    });
+
+    testWidgets('a lane routed above the device keeps its own row', (
+      tester,
+    ) async {
+      // A session saved on an eight-in rig, reopened on a two-in one: the lane
+      // still records In 6 and the Routing tab still says so, so the panel
+      // still lists it. Dropping the row would leave `None (clean)` — which
+      // clears every lane — as the only way to reach it.
+      await pump(
+        tester,
+        tab: TracksTab.routing,
+        state: const LooperState(
+          tracks: [
+            Track(lanes: [Lane(inputChannel: 5, outputMask: 0x11)]),
+          ],
+          status: EngineStatus(inputChannels: 2, outputChannels: 2),
+        ),
+      );
+      await tester.tap(find.byKey(const Key('tracks_routing_row_0')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('track_routing_check_5')), findsOneWidget);
+      // ONLY the recorded one, though. In 3 and In 4 are neither present nor
+      // in use, and a row for them would offer to record silence off a jack
+      // this interface has not got.
+      expect(find.byKey(const Key('track_routing_input_2')), findsNothing);
+      expect(find.byKey(const Key('track_routing_input_3')), findsNothing);
+
+      // ...and the output bit it carries from the wider rig keeps a chip, so
+      // the readout naming Out 5 is not naming something unreachable — while
+      // the sockets between stay off the grid for the same reason the rows do.
+      await tester.tap(find.byKey(const Key('track_routing_input_5')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('track_routing_out_5_4')), findsOneWidget);
+      expect(find.byKey(const Key('track_routing_out_5_2')), findsNothing);
+      expect(find.byKey(const Key('track_routing_out_5_3')), findsNothing);
+    });
+
+    testWidgets('a lane row announces itself, and how to stop it', (
+      tester,
+    ) async {
+      // `ConsoleRow` hands its label to `FocusableTapTarget`, which EXCLUDES
+      // everything it wraps — so the check gutter's own semantics never reach
+      // the tree. Both sentences and the un-route therefore ride the ROW, and
+      // this is the test that they land on the node a reader actually focuses:
+      // published on a parent instead, the action is never offered, and the
+      // only way left to stop one lane is `None (clean)`, which clears them
+      // all.
+      final handle = tester.ensureSemantics();
+      await openPanel(tester);
+      final l10n = l10nOf(tester);
+
+      final recorded = tester.getSemantics(
+        find.byKey(const Key('track_routing_input_0')),
+      );
+      expect(
+        recorded.label,
+        contains(l10n.a11yTrackLaneRecording(l10n.inputChannelLabel(1))),
+      );
+      expect(
+        recorded.getSemanticsData().customSemanticsActionIds?.map(
+          (id) => CustomSemanticsAction.getAction(id)?.label,
+        ),
+        contains(l10n.a11yTrackLaneStopRecording),
+      );
+
+      // An unchecked row needs no extra action: its OWN tap records the input,
+      // which is what its sentence says.
+      final idle = tester.getSemantics(
+        find.byKey(const Key('track_routing_input_2')),
+      );
+      expect(
+        idle.label,
+        l10n.a11yTrackLaneIdle(l10n.inputChannelLabel(3)),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('a silent lane SAYS it is silent, not "nothing"', (
+      tester,
+    ) async {
+      // The visual readout is a token under a warning tint. Spoken, `nothing`
+      // is a dangling noun that states no problem at all — so the label takes
+      // the sentence instead, which is otherwise only inside the drawer.
+      final handle = tester.ensureSemantics();
+      await pump(
+        tester,
+        tab: TracksTab.routing,
+        state: const LooperState(
+          tracks: [
+            Track(lanes: [Lane(inputChannel: 0, outputMask: 0)]),
+          ],
+          status: EngineStatus(inputChannels: 4, outputChannels: 4),
+        ),
+      );
+      await tester.tap(find.byKey(const Key('tracks_routing_row_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      final row = tester.getSemantics(
+        find.byKey(const Key('track_routing_input_0')),
+      );
+      expect(row.label, contains(l10n.trackLaneUnrouted));
+      expect(row.label, isNot(contains(l10n.trackLaneOutputsNone)));
+      handle.dispose();
+    });
+
+    testWidgets('a capped row promises nothing it cannot do', (tester) async {
+      // Inert rows carry no tap, so the sentence must not say "activate to
+      // record it". The muted ink says as much to the eye; this says it aloud.
+      final handle = tester.ensureSemantics();
+      await pump(
+        tester,
+        tab: TracksTab.routing,
+        state: LooperState(
+          tracks: [
+            Track(
+              lanes: [
+                for (var lane = 0; lane < kMaxLanes; lane++)
+                  Lane(inputChannel: lane),
+              ],
+            ),
+          ],
+          status: const EngineStatus(inputChannels: 12, outputChannels: 2),
+        ),
+      );
+      await tester.tap(find.byKey(const Key('tracks_routing_row_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      final capped = tester.getSemantics(
+        find.byKey(const Key('track_routing_input_8')),
+      );
+      final name = l10n.inputChannelLabel(9);
+      expect(capped.label, l10n.a11yTrackLaneNoLane(name));
+      expect(capped.label, isNot(contains(l10n.a11yTrackLaneIdle(name))));
+      handle.dispose();
+    });
+
     testWidgets('unchecking an input frees its OWN lane, in place', (
       tester,
     ) async {
@@ -906,23 +1079,30 @@ void main() {
       expect(panel.height, lessThanOrEqualTo(1080));
       expect(find.byKey(const Key('track_routing_done')), findsOneWidget);
 
-      // The last input is reachable by scrolling the lane list.
-      await tester.scrollUntilVisible(
-        find.byKey(const Key('track_routing_input_7')),
-        200,
-        scrollable: find.byType(Scrollable).first,
+      // The panel's OWN scroll view, not `Scrollable.first` — that one is the
+      // face behind the scrim, and dragging it only reaches this list by
+      // accident of where its centre lands.
+      final laneList = find.descendant(
+        of: find.byKey(const Key('track_routing_dialog_0')),
+        matching: find.byType(Scrollable),
       );
-      expect(find.byKey(const Key('track_routing_input_7')), findsOneWidget);
-      // ...and the quantize group is reachable in the same scroll.
-      await tester.scrollUntilVisible(
-        find.byKey(const Key('track_routing_quantize_never')),
-        200,
-        scrollable: find.byType(Scrollable).first,
-      );
-      expect(
-        find.byKey(const Key('track_routing_quantize_never')),
-        findsOneWidget,
-      );
+      final lastInput = find.byKey(const Key('track_routing_input_7'));
+      final quantize = find.byKey(const Key('track_routing_quantize_never'));
+
+      // The content is taller than the panel can draw: the quantize group is
+      // off the bottom, and its sliver does not resolve at all yet. THIS is
+      // the finder that tests visibility — a lane row's does not, because
+      // every lane row lives in one sliver, so `findsOneWidget` on one would
+      // pass even if the list had stopped scrolling entirely.
+      expect(quantize, findsNothing);
+      final lastInputTop = tester.getRect(lastInput).top;
+
+      // Scrolling brings it in...
+      await tester.scrollUntilVisible(quantize, 200, scrollable: laneList);
+      expect(quantize, findsOneWidget);
+
+      // ...and carries the lane list with it, asserted by POSITION.
+      expect(tester.getRect(lastInput).top, lessThan(lastInputTop));
     });
 
     testWidgets('Done dismisses; it does not commit', (tester) async {
