@@ -429,6 +429,11 @@ Octaver, Echo, Reverb. #498 already ruled any other set wrong; the grid draws
 
 **Does not exist:** a recents list for plugins; the "already in chain" tone.
 
+**[R] The 66-tall recent cells are not `twoLineCellHeight`.** That constant
+(56) is a label over a **single-line sublabel**; the pen draws one label
+*wrapping*, which `ConsoleChipGrid` cannot do (`maxLines: 1`). D4 and D7 fix
+this together by making the plugin's format the sublabel.
+
 ### `SIGNAL / fx-browse` — the plugin search sheet
 
 Bottom sheet **1918x580** at y=498, scrim `#08080a9e`, fill `#161618`, top
@@ -566,10 +571,11 @@ against `git rev-parse HEAD:segno-ui.pen`.
 | D1 | **new** `SIGNAL / signal-track` | The strip draws four tabs; three have frames. Draw the track face per the derivation above. Add `t/`, `g/`, `c/signal-track`. |
 | D2 | `fx-browse` | The keyboard's accent action key reads **`Cancel`**, duplicating the header's Cancel and painting a dismiss in the affirmative slot. Make it a neutral `⏎`/`Done`, or drop the accent. |
 | D3 | `signal-master` | The four output rows carry **stale layer names copied from `SYSTEM / display`** — `Output waveform window`, `High contrast`, `Track indicators` ×2, plus three sublabel names. Visible text is correct; names are not. Rename to `Out 1`…`Out 4`. |
-| D4 | `fx-plugin` | The chain chip reads **`TDR NovaVST3`** — name and format concatenated, while the same card's summary reads `TDR Nova`. Split into name + a VST3 mark, or drop the format. |
+| D4 | `fx-plugin`, `fx-add`, `fx-browse` | The chain chip reads **`TDR NovaVST3`** — name and format concatenated, while the same card's summary reads `TDR Nova`. **The format is a real fact, in the wrong place.** In the chain strip, drop it (the chip is narrow and the summary already reads `TDR Nova`). In `fx-add`'s recent shelf and `fx-browse`'s results, make it the chip's **sublabel** — which is precisely what `ConsoleSegment.sublabel` documents itself as: *"the thing's own machine fact, where label is what a person calls it."* Resolves D7 as a side effect. |
 | D5 | `c/signal-loop` | The note says "the vacant **dashed** card"; the geometry gives it the same solid `#2a2a2e` stroke as a loaded one. **Keep the geometry** — no dashed border exists anywhere in the vocabulary, and the vacant card is already distinguished by `no rack` + `tap to load one` + the omitted monitor row. Fix the note. |
 | D6 | `signal-input` | `Vocal air` reports **`partially clipped`** — a 68x19 text in an 18-tall row with no `lineHeight`. Set `lh1.13` like every sibling. |
-| D7 | `fx-add` | Recent-plugin cells are **166x66**; `ConsoleChipGrid.twoLineCellHeight` is **56**. Move the pen to 56 — the constant is shared and changing it reflows shipped faces. |
+| D7 | `fx-add` | Recent-plugin cells are **166x66** and `ConsoleChipGrid.twoLineCellHeight` is **56** — but these are **different cells**, not a rounding disagreement. The constant is a label + single-line sublabel (fs16 + fs14, both `maxLines: 1`, gap 2 → 56). The pen draws one label *wrapping* to two lines (`Airwindows Console`, 146x38), which the grid cannot express at all — its label is `maxLines: 1`. **Give the plugin chips the format as a sublabel (D4) and they become 56 exactly.** Otherwise the vocabulary needs a wrapping-label variant it does not have and should not grow. |
+| D10 | `fx-browse` | Result cells are **305x48** across 6 columns of 1880. `ConsoleChipGrid.cellWidth` is a fixed **166** and `columnsFor` packs to it, so the sheet's results are a *stretched* grid the vocabulary has no mode for. Either the pen adopts 166-wide cells (11 across 1880, which `columnsFor` would pack as 6+5) or `ConsoleChipGrid` gains a stretch mode. **Prefer the pen change** — a second stretch flag on top of `ConsoleSegmented.stretch` is the shared file growing to fit one screen. |
 | D8 | *all six shipped domains* | The pen draws selected tabs w600 / unselected normal; `pill_tabs.dart:127` is a constant `FontWeight.w500`. **Pre-existing debt, not this slice's** — flagged so it is a known deviation, not a Signal regression. Sweep it in only if you say so. |
 
 **Note-only (D9).** `in the mix` is a boolean drawn as a 2-up segmented
