@@ -182,19 +182,45 @@ class _TempoLoopTabState extends State<TempoLoopTab> {
         fill: open ? context.surface.control : null,
         onTap: () => _toggle(_TempoRow.signature),
       ),
-      _grid<(int, int)>(
-        slot: 'loop_signature_slot',
+      // Two groups, not one list of seventeen. The note value is what you
+      // narrow by first, and it is the split the Settings picker and the
+      // engine's own `kValidTimeSignatures` already carry — six over a
+      // quarter note, eleven over an eighth. `AUDIO / settings-rate` draws
+      // exactly this shape: one drawer, two captioned sub-groups.
+      ConsoleChooser(
+        key: const Key('loop_signature_slot'),
         open: open,
-        current: (transport.tsNum, transport.tsDen),
-        options: [
-          for (final ts in kValidTimeSignatures)
-            ConsoleSegment(
-              value: ts,
-              label: l10n.timeSignatureOption(ts.$1, ts.$2),
-              optionKey: Key('loop_signature_${ts.$1}_${ts.$2}'),
+        children: [
+          for (final (caption, den) in [
+            (l10n.loopSignatureQuarterGroup, 4),
+            (l10n.loopSignatureEighthGroup, 8),
+          ]) ...[
+            ConsoleDrawerLabel(caption),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                ConsoleRow.indentedInset,
+                0,
+                kConsoleRowInset,
+                kConsoleBlockGap,
+              ),
+              child: ConsoleChipGrid<(int, int)>(
+                selected: {(transport.tsNum, transport.tsDen)},
+                options: [
+                  for (final ts in kValidTimeSignatures)
+                    if (ts.$2 == den)
+                      ConsoleSegment(
+                        value: ts,
+                        label: l10n.timeSignatureOption(ts.$1, ts.$2),
+                        optionKey: Key('loop_signature_${ts.$1}_${ts.$2}'),
+                      ),
+                ],
+                onTap: (ts) => _pick(
+                  () => unawaited(tempo.setTimeSignature(ts.$1, ts.$2)),
+                ),
+              ),
             ),
+          ],
         ],
-        onPick: (ts) => unawaited(tempo.setTimeSignature(ts.$1, ts.$2)),
       ),
     ];
   }

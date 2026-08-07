@@ -172,6 +172,42 @@ void main() {
   AppLocalizations l10nOf(WidgetTester tester) =>
       AppLocalizations.of(tester.element(find.byType(LoopTrayPanel)));
 
+  group('ConsoleChipGrid columns', () {
+    /// The width that fits [columns] cells at the grid's target size.
+    double widthFor(int columns) =>
+        columns * ConsoleChipGrid.cellWidth +
+        (columns - 1) * ConsoleChipGrid.gutter;
+
+    test('fills one flush row when everything fits', () {
+      expect(ConsoleChipGrid.columnsFor(widthFor(9), 6), 6);
+    });
+
+    test('takes the widest fit when the last row is nearly full', () {
+      // 17 across a nine-wide measure is 9 + 8 — one gap, two rows.
+      expect(ConsoleChipGrid.columnsFor(widthFor(9), 17), 9);
+    });
+
+    test(
+      'narrows rather than stranding a single cell on the last row — 17 at '
+      'four across is 4+4+4+4+1, which reads as a mistake',
+      () {
+        expect(ConsoleChipGrid.columnsFor(widthFor(4), 17), 3);
+      },
+    );
+
+    test(
+      'never narrows past half the fitting width to chase a clean divide',
+      () {
+        // 17 divides perfectly only at 17 and 1; one column would be 17 rows of
+        // one absurdly wide cell.
+        expect(
+          ConsoleChipGrid.columnsFor(widthFor(9), 17),
+          greaterThanOrEqualTo(5),
+        );
+      },
+    );
+  });
+
   group('Loop domain', () {
     testWidgets('the tab strip swaps the body', (tester) async {
       seed(const LooperState());
@@ -313,13 +349,20 @@ void main() {
           );
         }
 
+        // Split by note value, as the Settings picker and the engine's own
+        // valid set already are — six over a quarter, eleven over an eighth.
+        final l10n = l10nOf(tester);
+        expect(find.text(l10n.loopSignatureQuarterGroup), findsOne);
+        expect(find.text(l10n.loopSignatureEighthGroup), findsOne);
+
         final chooser = tester.getSize(
           find.byKey(const Key('loop_signature_slot')),
         );
-        // Comfortably under what even a quarter of them would cost as rows.
+        // Seventeen rows would be 1,190px. Both captions, both grids and
+        // their gaps come to a fraction of that.
         expect(
           chooser.height,
-          lessThan(kConsoleRowHeight * 4),
+          lessThan(kConsoleRowHeight * 6),
           reason: 'the chooser fell back to one row per option',
         );
         // And the cells share the width rather than each taking all of it.

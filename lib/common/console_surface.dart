@@ -1746,6 +1746,35 @@ class ConsoleChooser extends StatelessWidget {
   );
 }
 
+/// A caption that splits one drawer into named sub-groups.
+///
+/// `AUDIO / settings-rate` draws it: one chooser holding SAMPLE RATE and
+/// BUFFER, because those are two questions the row asks at once. The Loop
+/// face's time signatures use it for the same reason — seventeen of them are
+/// two families, not one list, and the note value is the thing you narrow by
+/// first.
+///
+/// Stepped in to the 40px inset an opened row's children take, so it lines up
+/// with the choices under it rather than with the list outside.
+class ConsoleDrawerLabel extends StatelessWidget {
+  /// Creates a [ConsoleDrawerLabel].
+  const ConsoleDrawerLabel(this.label, {super.key});
+
+  /// The caption. Upper-cased by the caller, as [ConsoleGroupLabel]'s is.
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(
+      ConsoleRow.indentedInset,
+      14,
+      kConsoleRowInset,
+      7,
+    ),
+    child: ConsoleGroupLabel(label),
+  );
+}
+
 /// A wrapping grid of equal cells — the console's pick-one for options that
 /// are **bare tokens**: `3/4`, `1/8`, `x2`, `Out 3`.
 ///
@@ -1800,14 +1829,40 @@ class ConsoleChipGrid<T> extends StatelessWidget {
   /// Cell height.
   static const double cellHeight = 48;
 
+  /// How many cells to put across, given the room and how many there are.
+  ///
+  /// Not simply "as many as fit": seventeen options across a nine-wide measure
+  /// is 9 + 8, which is fine, but the same rule on a narrower sheet gives
+  /// 4 + 4 + 4 + 4 + **1**, and a last row holding one cell reads as a
+  /// mistake. So it takes the widest count that fits, then tries narrower ones
+  /// and keeps whichever strands the fewest cells on the last row — ties going
+  /// to the wider one, since fewer rows is better when the raggedness is the
+  /// same.
+  ///
+  /// The search stops at half the fitting width. Below that a perfect division
+  /// is always reachable (one column divides everything) and the cells would
+  /// grow to absurd widths to reach it — the cure being worse than the ragged
+  /// row it fixes.
+  static int columnsFor(double width, int count) {
+    final fits = math.max(1, ((width + gutter) / (cellWidth + gutter)).floor());
+    if (count <= fits) return count;
+    var best = fits;
+    var least = fits * (count / fits).ceil() - count;
+    for (var columns = fits - 1; columns >= (fits / 2).ceil(); columns--) {
+      final stranded = columns * (count / columns).ceil() - count;
+      if (stranded < least) {
+        best = columns;
+        least = stranded;
+      }
+    }
+    return best;
+  }
+
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       final width = constraints.maxWidth;
-      final columns = math.max(
-        1,
-        ((width + gutter) / (cellWidth + gutter)).floor(),
-      );
+      final columns = columnsFor(width, options.length);
       final cell = (width - gutter * (columns - 1)) / columns;
       return Wrap(
         spacing: gutter,

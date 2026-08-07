@@ -1353,6 +1353,14 @@
             }
         }
     },
+    "loopSignatureQuarterGroup": "QUARTER NOTE",
+    "@loopSignatureQuarterGroup": {
+        "description": "Caption over the time signatures whose denominator is 4."
+    },
+    "loopSignatureEighthGroup": "EIGHTH NOTE",
+    "@loopSignatureEighthGroup": {
+        "description": "Caption over the time signatures whose denominator is 8."
+    },
     "loopQuantiseRow": "Quantise",
     "loopQuantiseHint": "when a switch takes effect",
     "loopCountInRow": "Count-in",

@@ -1044,6 +1044,8 @@
     "loopLengthHint": "la primera toma lo define",
     "loopLengthAuto": "Auto",
     "loopLengthMultiple": "x{multiple}",
+    "loopSignatureQuarterGroup": "NEGRA",
+    "loopSignatureEighthGroup": "CORCHEA",
     "loopQuantiseRow": "Cuantizar",
     "loopQuantiseHint": "cuándo surte efecto un cambio",
     "loopCountInRow": "Conteo previo",
