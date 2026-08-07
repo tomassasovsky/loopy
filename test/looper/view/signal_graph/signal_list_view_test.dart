@@ -137,7 +137,7 @@ void main() {
       // Track 1 routes to Out 2 (mask 0x2); also monitor input 0 to Out 2 so
       // the card has both kinds of feeder (an input only feeds when live).
       seed(stateWith());
-      await monitor.setEnabled(0, enabled: true);
+      await monitor.setMode(0, MonitorMode.on);
       await monitor.setOutputMask(0, 0x2);
       await pump(tester);
 
@@ -184,7 +184,7 @@ void main() {
     ) async {
       seed(stateWith());
       await pump(tester);
-      expect(monitor.state.forInput(0).enabled, isFalse);
+      expect(monitor.state.forInput(0).mode, MonitorMode.off);
 
       bool anyDimmed() => tester
           .widgetList<AnimatedOpacity>(find.byType(AnimatedOpacity))
@@ -196,7 +196,7 @@ void main() {
 
       // Traced (unrelated rows dim) but monitoring is untouched.
       expect(anyDimmed(), isTrue);
-      expect(monitor.state.forInput(0).enabled, isFalse);
+      expect(monitor.state.forInput(0).mode, MonitorMode.off);
     });
 
     testWidgets('the input FX summary opens the dock for that input', (
@@ -663,15 +663,15 @@ void main() {
     testWidgets('the gate dot toggles monitoring on and off', (tester) async {
       seed(stateWith());
       await pump(tester);
-      expect(monitor.state.forInput(0).enabled, isFalse);
+      expect(monitor.state.forInput(0).mode, MonitorMode.off);
 
       await tester.tap(find.byKey(const Key('signalInGate_0')));
       await tester.pumpAndSettle();
-      expect(monitor.state.forInput(0).enabled, isTrue);
+      expect(monitor.state.forInput(0).mode, MonitorMode.on);
 
       await tester.tap(find.byKey(const Key('signalInGate_0')));
       await tester.pumpAndSettle();
-      expect(monitor.state.forInput(0).enabled, isFalse);
+      expect(monitor.state.forInput(0).mode, MonitorMode.off);
     });
 
     testWidgets('the input gate names its on/off state for a11y', (
@@ -805,7 +805,7 @@ void main() {
         warnIfMissed: false,
       );
       await tester.pumpAndSettle();
-      expect(monitor.state.forInput(2).enabled, isFalse);
+      expect(monitor.state.forInput(2).mode, MonitorMode.off);
     });
 
     testWidgets('an off input names its off state for a11y', (tester) async {

@@ -3,10 +3,10 @@ import 'package:looper_repository/looper_repository.dart';
 
 void main() {
   group('InputMonitor', () {
-    test('defaults to a disabled monitor with a clean single chain', () {
+    test('defaults to an off monitor with a clean single chain', () {
       const monitor = InputMonitor(input: 0);
       expect(monitor.input, 0);
-      expect(monitor.enabled, isFalse);
+      expect(monitor.mode, MonitorMode.off);
       expect(monitor.outputMask, 0x3);
       expect(monitor.volume, 1.0);
       expect(monitor.muted, isFalse);
@@ -16,14 +16,14 @@ void main() {
     test('copyWith replaces only the given fields and keeps the input', () {
       const base = InputMonitor(input: 2);
       final updated = base.copyWith(
-        enabled: true,
+        mode: MonitorMode.on,
         outputMask: 0x1,
         volume: 0.5,
         muted: true,
         effects: [BuiltInEffect(type: TrackEffectType.delay)],
       );
       expect(updated.input, 2);
-      expect(updated.enabled, isTrue);
+      expect(updated.mode, MonitorMode.on);
       expect(updated.outputMask, 0x1);
       expect(updated.volume, 0.5);
       expect(updated.muted, isTrue);
@@ -33,7 +33,7 @@ void main() {
       );
 
       // Omitted fields are preserved.
-      final onlyEnabled = base.copyWith(enabled: true);
+      final onlyEnabled = base.copyWith(mode: MonitorMode.on);
       expect(onlyEnabled.outputMask, 0x3);
       expect(onlyEnabled.volume, 1.0);
       expect(onlyEnabled.muted, isFalse);
@@ -43,24 +43,30 @@ void main() {
     test('equality is value-based over all fields', () {
       const a = InputMonitor(
         input: 0,
-        enabled: true,
+        mode: MonitorMode.on,
         outputMask: 0x1,
         volume: 0.5,
         muted: true,
       );
       const b = InputMonitor(
         input: 0,
-        enabled: true,
+        mode: MonitorMode.on,
         outputMask: 0x1,
         volume: 0.5,
         muted: true,
       );
       expect(a, b);
       expect(a.hashCode, b.hashCode);
-      expect(a, isNot(const InputMonitor(input: 1, enabled: true)));
+      expect(a, isNot(const InputMonitor(input: 1, mode: MonitorMode.on)));
       expect(
         a,
-        isNot(const InputMonitor(input: 0, enabled: true, outputMask: 0x2)),
+        isNot(
+          const InputMonitor(
+            input: 0,
+            mode: MonitorMode.on,
+            outputMask: 0x2,
+          ),
+        ),
       );
     });
 

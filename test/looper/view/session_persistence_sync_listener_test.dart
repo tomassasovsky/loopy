@@ -64,7 +64,7 @@ void main() {
       bloc = LooperBloc(repository: looper, settings: settings);
       session = _MockSessionCubit();
       looper
-        ..setMonitorInputEnabled(input: 1, enabled: true)
+        ..setMonitorInputMode(input: 1, mode: MonitorMode.on)
         ..setMonitorOutput(input: 1, mask: 0x2);
     });
 
@@ -103,7 +103,7 @@ void main() {
       await tester.pump(); // deliver the streamed state to the listener
       await tester.pump(); // let the awaited syncFromRepository settle
 
-      expect(monitor.state.forInput(1).enabled, isTrue);
+      expect(monitor.state.forInput(1).mode, MonitorMode.on);
       expect(monitor.state.forInput(1).outputMask, 0x2);
     });
 

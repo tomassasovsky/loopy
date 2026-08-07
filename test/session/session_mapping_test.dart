@@ -30,7 +30,7 @@ void main() {
       // The regression: a monitor with no FX chain was dropped on save. It must
       // still be persisted so it round-trips instead of being disabled on load.
       when(looper.allMonitors).thenReturn(const {
-        1: InputMonitor(input: 1, enabled: true, outputMask: 0x2),
+        1: InputMonitor(input: 1, mode: MonitorMode.on, outputMask: 0x2),
       });
 
       final chains = chainsFromLooper(looper);
@@ -50,7 +50,7 @@ void main() {
       when(looper.allMonitors).thenReturn({
         0: InputMonitor(
           input: 0,
-          enabled: true,
+          mode: MonitorMode.on,
           effects: [BuiltInEffect(type: TrackEffectType.reverb)],
         ),
       });
@@ -81,7 +81,7 @@ void main() {
         ),
       });
       when(looper.allMonitors).thenReturn(const {
-        0: InputMonitor(input: 0, enabled: true, chainEnabled: false),
+        0: InputMonitor(input: 0, mode: MonitorMode.on, chainEnabled: false),
       });
 
       final chains = chainsFromLooper(looper);
@@ -227,7 +227,7 @@ void main() {
       when(looper.allMonitors).thenReturn({
         1: InputMonitor(
           input: 1,
-          enabled: true,
+          mode: MonitorMode.on,
           outputMask: 0x2,
           volume: 0.75,
           muted: true,
@@ -252,7 +252,7 @@ void main() {
       // Same rule as the session save: the capture documents every configured
       // monitor, not just the ones carrying an FX chain.
       when(looper.allMonitors).thenReturn(const {
-        0: InputMonitor(input: 0, enabled: true),
+        0: InputMonitor(input: 0, mode: MonitorMode.on),
       });
 
       final monitor = performanceChainsFromLooper(looper).monitors.single;
@@ -284,7 +284,7 @@ void main() {
         ),
       );
       when(looper.allMonitors).thenReturn(const {
-        0: InputMonitor(input: 0, enabled: true, chainEnabled: false),
+        0: InputMonitor(input: 0, mode: MonitorMode.on, chainEnabled: false),
       });
 
       final chains = performanceChainsFromLooper(looper);

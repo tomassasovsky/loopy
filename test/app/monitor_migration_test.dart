@@ -30,7 +30,7 @@ void main() {
 
           // v1 seeded input 0 → main out; v2 made it lane 0; v3 folded it to a
           // single clean chain and cleared the intermediate keys.
-          expect(await settings.loadMonitorInputEnabled(0), isTrue);
+          expect(await settings.loadMonitorInputMode(0), 'on');
           expect(await settings.loadMonitorOutput(0), 0x3);
           expect(await settings.loadMonitorEffects(0), isNull);
           expect(await settings.loadMonitorLaneCount(0), isNull); // cleared
@@ -46,14 +46,14 @@ void main() {
 
         await runMonitorMigration(settings);
 
-        expect(await settings.loadMonitorInputEnabled(0), isNull);
+        expect(await settings.loadMonitorInputMode(0), isNull);
         expect(await settings.loadMonitorMigratedV3(), isTrue);
       });
 
       test('a fresh install marks all three migrations done', () async {
         await runMonitorMigration(settings);
 
-        expect(await settings.loadMonitorInputEnabled(0), isNull);
+        expect(await settings.loadMonitorInputMode(0), isNull);
         expect(await settings.loadMonitorMigratedV1(), isTrue);
         expect(await settings.loadMonitorMigratedV2(), isTrue);
         expect(await settings.loadMonitorMigratedV3(), isTrue);
@@ -69,7 +69,7 @@ void main() {
 
         await runMonitorMigration(settings);
 
-        expect(await settings.loadMonitorInputEnabled(1), isTrue);
+        expect(await settings.loadMonitorInputMode(1), 'on');
         expect(await settings.loadMonitorOutput(1), 0x2);
         expect(await settings.loadMonitorVolume(1), 0.4);
         expect(
@@ -116,7 +116,7 @@ void main() {
 
           await runMonitorMigration(settings);
 
-          expect(await settings.loadMonitorInputEnabled(0), isTrue);
+          expect(await settings.loadMonitorInputMode(0), 'on');
           expect(await settings.loadMonitorOutput(0), 0x3); // 0x1 | 0x2
           expect(await settings.loadMonitorVolume(0), 0.6);
           expect(
@@ -139,7 +139,7 @@ void main() {
 
         await runMonitorMigration(settings);
 
-        expect(await settings.loadMonitorInputEnabled(kMaxInputs - 1), isTrue);
+        expect(await settings.loadMonitorInputMode(kMaxInputs - 1), 'on');
         expect(await settings.loadMonitorOutput(kMaxInputs - 1), 0x1);
       });
     });

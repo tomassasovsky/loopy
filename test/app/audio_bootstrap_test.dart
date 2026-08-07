@@ -1011,7 +1011,7 @@ void main() {
             BuiltInEffect(type: TrackEffectType.drive),
           ]),
         );
-      await monitor.setEnabled(0, enabled: true);
+      await monitor.setMode(0, MonitorMode.on);
       monitor.addEffect(0);
       await pumpEventQueue();
     }
@@ -1091,7 +1091,7 @@ void main() {
           monitors: [
             SessionRigMonitor(
               input: 0,
-              enabled: true,
+              mode: MonitorMode.on,
               outputMask: 0x3,
               volume: 1,
               muted: false,

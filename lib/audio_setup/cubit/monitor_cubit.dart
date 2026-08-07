@@ -96,11 +96,21 @@ class MonitorCubit extends Cubit<MonitorState> {
     }
   }
 
+  /// Maps a persisted mode name back to the enum. An unrecognised name reads
+  /// as `null` — "nothing saved" — rather than silently becoming `off`, so a
+  /// key written by a future build is not mistaken for a deliberate disable.
+  static MonitorMode? _modeFromName(String? name) {
+    for (final mode in MonitorMode.values) {
+      if (mode.name == name) return mode;
+    }
+    return null;
+  }
+
   /// Reads hardware [input]'s persisted single-chain monitor, or null if none
   /// was saved. The chain key holds the envelope (R15) — the chain-enabled
   /// flag rides inside it; a legacy bare-array chain decodes chain-enabled.
   Future<InputMonitor?> _restoreInput(int input) async {
-    final enabled = await _settings.loadMonitorInputEnabled(input);
+    final mode = _modeFromName(await _settings.loadMonitorInputMode(input));
     final outputMask = await _settings.loadMonitorOutput(input);
     final volume = await _settings.loadMonitorVolume(input);
     final muted = await _settings.loadMonitorMute(input);
@@ -112,7 +122,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     // the flag to enabled on the next boot — the disable-survives-restart
     // guarantee R15 pins.
     final anySaved =
-        enabled != null ||
+        mode != null ||
         outputMask != null ||
         volume != null ||
         muted != null ||
@@ -121,7 +131,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     if (!anySaved) return null;
     return InputMonitor(
       input: input,
-      enabled: enabled ?? false,
+      mode: mode ?? MonitorMode.off,
       outputMask: outputMask ?? 0x3,
       volume: volume ?? 1.0,
       muted: muted ?? false,
@@ -160,9 +170,9 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// by [syncFromRepository]'s apply + reset paths so they never diverge from
   /// the set of persisted fields.
   Future<void> _persistMonitor(InputMonitor monitor) async {
-    await _settings.saveMonitorInputEnabled(
+    await _settings.saveMonitorInputMode(
       monitor.input,
-      enabled: monitor.enabled,
+      mode: monitor.mode.name,
     );
     await _settings.saveMonitorOutput(monitor.input, monitor.outputMask);
     await _settings.saveMonitorVolume(monitor.input, monitor.volume);
@@ -180,11 +190,11 @@ class MonitorCubit extends Cubit<MonitorState> {
 
   /// Enables or disables monitoring of hardware [input], applying and
   /// persisting the change.
-  Future<void> setEnabled(int input, {required bool enabled}) async {
-    final monitor = state.forInput(input).copyWith(enabled: enabled);
+  Future<void> setMode(int input, MonitorMode mode) async {
+    final monitor = state.forInput(input).copyWith(mode: mode);
     emit(state.withInput(monitor));
-    _repository.setMonitorInputEnabled(input: input, enabled: enabled);
-    await _settings.saveMonitorInputEnabled(input, enabled: enabled);
+    _repository.setMonitorInputMode(input: input, mode: mode);
+    await _settings.saveMonitorInputMode(input, mode: mode.name);
   }
 
   /// Sets and persists monitor [input]'s output bitmask.
@@ -452,12 +462,12 @@ class MonitorCubit extends Cubit<MonitorState> {
     });
   }
 
-  /// Pushes the whole [monitor] to the repository: enable, then the chain's
+  /// Pushes the whole [monitor] to the repository: mode, then the chain's
   /// routing / mix / effects.
   void _applyMonitor(InputMonitor monitor) {
     final input = monitor.input;
     _repository
-      ..setMonitorInputEnabled(input: input, enabled: monitor.enabled)
+      ..setMonitorInputMode(input: input, mode: monitor.mode)
       ..setMonitorOutput(input: input, mask: monitor.outputMask)
       ..setMonitorVolume(input: input, volume: monitor.volume)
       ..setMonitorMute(input: input, muted: monitor.muted)

@@ -32,7 +32,7 @@ class _InputRow extends StatelessWidget {
     final l10n = context.l10n;
     final surface = context.surface;
     final m = row.monitor;
-    final on = m.enabled && !row.excluded;
+    final on = m.mode != MonitorMode.off && !row.excluded;
     if (row.excluded) {
       return _RowCard(
         rowKey: Key('signalIn_${row.input}'),

@@ -613,7 +613,7 @@ class SettingsRepository {
 
   // Per-input single-chain monitor keys (the model the live app uses after the
   // v3 fold). The enable flag is shared with the prior model.
-  String _monitorInputEnabledKey(int input) => 'monitor_input_enabled.$input';
+  String _monitorInputModeKey(int input) => 'monitor_input_mode.$input';
   String _monitorOutKey(int input) => 'monitor_out.$input';
   String _monitorVolKey(int input) => 'monitor_vol.$input';
   String _monitorMuteKey(int input) => 'monitor_mute.$input';
@@ -685,13 +685,18 @@ class SettingsRepository {
     await _store.remove(_monitorInputFxKey(input));
   }
 
-  /// Loads hardware [input]'s monitor enable flag, or `null` if never saved.
-  Future<bool?> loadMonitorInputEnabled(int input) =>
-      _store.getBool(_monitorInputEnabledKey(input));
+  /// Loads hardware [input]'s monitor mode name, or `null` if never saved.
+  ///
+  /// Stored as the enum's name rather than an index so the on-disk value stays
+  /// readable and survives any reordering of the enum. The caller maps an
+  /// absent or unrecognised value to `off`, which is the model's default
+  /// anyway — the same answer the old boolean key gave when it was missing.
+  Future<String?> loadMonitorInputMode(int input) =>
+      _store.getString(_monitorInputModeKey(input));
 
-  /// Saves hardware [input]'s monitor enable flag (the input-level gate).
-  Future<void> saveMonitorInputEnabled(int input, {required bool enabled}) =>
-      _store.setBool(_monitorInputEnabledKey(input), value: enabled);
+  /// Saves hardware [input]'s monitor mode (the input-level gate).
+  Future<void> saveMonitorInputMode(int input, {required String mode}) =>
+      _store.setString(_monitorInputModeKey(input), mode);
 
   // ---- single-chain monitor (the live model after the v3 fold) ----
 
