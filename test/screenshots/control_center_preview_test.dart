@@ -1195,12 +1195,13 @@ void main() {
   }, skip: !hasFonts);
 
   testWidgets('audio domain, a config the device refused', (tester) async {
-    // The selection has snapped back to what the device gave; the banner is
-    // the only place the request is still named.
-    final providers = await pumpAudio(tester, AudioTab.device);
-    when(() => providers.looper.startEngine(any())).thenReturn(
-      EngineResult.device,
-    );
+    // The open SUCCEEDS and the device runs 48 anyway — the negotiation this
+    // banner is for. (A device that will not open at all is a different state
+    // and a different banner: `audio_open_failed_banner`, which names the
+    // engine's error rather than a rate nothing asked to change.) The
+    // selection has snapped back to what the device gave, so the banner is the
+    // only place the request is still named.
+    await pumpAudio(tester, AudioTab.device);
     await tester.tap(find.byKey(const Key('audio_rate_row')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('audio_sample_rate_96000')));

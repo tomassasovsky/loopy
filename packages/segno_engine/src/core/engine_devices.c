@@ -151,8 +151,8 @@ static void device_id_to_str(const ma_device_id* id, char* out, size_t cap) {
  * Takes the WIDEST advertised format rather than the first: a device that
  * advertises both a 2ch stereo and an 18ch multitrack format is an 18-in
  * interface, and reading nativeDataFormats[0] would call it a stereo one. */
-static int32_t device_channels(ma_context* ctx, const ma_device_id* id,
-                               int capture) {
+static int32_t query_device_channels(ma_context* ctx, const ma_device_id* id,
+                                     int capture) {
   ma_device_info info;
   const ma_device_type type = capture ? ma_device_type_capture
                                       : ma_device_type_playback;
@@ -164,6 +164,77 @@ static int32_t device_channels(ma_context* ctx, const ma_device_id* id,
     }
   }
   return (int32_t)widest;
+}
+
+/* Channel counts memoised per (device id, direction), across enumerations.
+ *
+ * query_device_channels is the EXPENSIVE half of enumeration — on CoreAudio a
+ * run of blocking HAL property reads, one call per device — and enumeration is
+ * on a 1 Hz poll so the picker notices an interface being plugged in. Asking
+ * once per device instead of once per second per device keeps that poll costing
+ * what it cost before the counts existed: a box's channel count does not change
+ * while it is plugged in, and an id that comes back is the same box.
+ *
+ * Control thread only, like everything else in this file (see the header
+ * comment), so no lock. A full table is simply a miss, which costs exactly what
+ * the uncached path always cost. */
+#define LE_CHANNEL_CACHE_MAX 64
+
+/* How many sightings an entry is trusted for before it is read again.
+ *
+ * A countdown ON THE ENTRY, deliberately, rather than one cursor walking the
+ * table: the two enumeration passes each visit only their OWN direction's
+ * entries, so a shared cursor spends half its steps parked on entries the
+ * current pass never looks at — and because the passes strictly alternate, an
+ * even entry count locks each index to one direction's parity and leaves every
+ * entry whose direction disagrees with its index parity never re-read at all.
+ * A per-entry countdown is decremented exactly when that entry is sighted, so
+ * every entry refreshes on its own schedule whatever the table looks like.
+ *
+ * At the 1 Hz enumeration poll this is a re-read roughly every half minute per
+ * device — enough to heal a macOS aggregate that gained a member (its UID does
+ * not change) without putting the query back on the hot path. */
+#define LE_CHANNEL_CACHE_TTL 32
+
+typedef struct le_channel_cache_entry {
+  char id[256];
+  int capture;
+  int32_t channels;
+  /* Sightings still to go before this entry is re-read. */
+  int trust;
+} le_channel_cache_entry;
+
+static le_channel_cache_entry g_channel_cache[LE_CHANNEL_CACHE_MAX];
+static int g_channel_cache_count = 0;
+
+static int32_t device_channels(ma_context* ctx, const ma_device_id* id,
+                               const char* key, int capture) {
+  for (int i = 0; i < g_channel_cache_count; ++i) {
+    le_channel_cache_entry* hit = &g_channel_cache[i];
+    if (hit->capture != capture || strcmp(hit->id, key) != 0) continue;
+    if (--hit->trust > 0) return hit->channels;
+    hit->trust = LE_CHANNEL_CACHE_TTL;
+    const int32_t fresh = query_device_channels(ctx, id, capture);
+    /* A failed re-read keeps what was already known: 0 means UNKNOWN, and a
+     * transient failure must not blank a count the device has answered. */
+    if (fresh > 0) hit->channels = fresh;
+    return hit->channels;
+  }
+  const int32_t channels = query_device_channels(ctx, id, capture);
+  /* Only a real answer is remembered — caching a failure would pin the device
+   * at UNKNOWN for the rest of the process. */
+  if (channels > 0 && g_channel_cache_count < LE_CHANNEL_CACHE_MAX) {
+    const int index = g_channel_cache_count++;
+    le_channel_cache_entry* entry = &g_channel_cache[index];
+    strncpy(entry->id, key, sizeof(entry->id) - 1);
+    entry->id[sizeof(entry->id) - 1] = '\0';
+    entry->capture = capture;
+    entry->channels = channels;
+    /* Seeded from the insertion index so entries fall due on different
+     * sightings rather than the whole table re-reading on one poll. */
+    entry->trust = index % LE_CHANNEL_CACHE_TTL + 1;
+  }
+  return channels;
 }
 
 static void device_info_copy(le_device_info* dst, const ma_device_info* src,
@@ -178,11 +249,12 @@ static void device_info_copy(le_device_info* dst, const ma_device_info* src,
   /* Only the direction being enumerated: a playback device reports what it can
    * PLAY and never the other way round, so the opposite field stays 0. A device
    * that cannot answer keeps 0 too, which still means UNKNOWN — the UI omits
-   * the readout rather than printing a zero count. */
+   * the readout rather than printing a zero count. The serialized id is the
+   * cache key, so it has to be written before this. */
   if (capture) {
-    dst->input_channels = device_channels(ctx, &src->id, /*capture=*/1);
+    dst->input_channels = device_channels(ctx, &src->id, dst->id, 1);
   } else {
-    dst->output_channels = device_channels(ctx, &src->id, /*capture=*/0);
+    dst->output_channels = device_channels(ctx, &src->id, dst->id, 0);
   }
 }
 
