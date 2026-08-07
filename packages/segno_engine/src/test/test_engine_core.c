@@ -4925,6 +4925,73 @@ static void test_enumerate_devices_runs(void) {
   CHECK(le_enumerate_capture_devices(NULL, MAXD, &count) == LE_ERR_INVALID);
 }
 
+/* Enumeration caches each device's channel count by id, because
+ * ma_context_get_device_info is a per-device round trip to the audio daemon
+ * (~0.4-1.3 ms each, measured — src/test/bench/bench_devices.c) and the picker
+ * re-enumerates every second on the UI isolate. The cache must be invisible:
+ * the SECOND enumeration has to report exactly what the first one did.
+ *
+ * Device-free like its neighbours, so it asserts the invariants that hold on a
+ * bare CI box as much as on a loaded rig — identical results across calls, and
+ * a table that does not grow without bound. On Linux the platform seam takes
+ * enumeration before the cache is ever reached, so the table legitimately stays
+ * empty there; nothing here assumes otherwise. */
+static void test_enumerate_devices_channel_cache(void) {
+  printf("test_enumerate_devices_channel_cache\n");
+  enum { MAXD = 32 };
+  le_device_info first[MAXD];
+  le_device_info second[MAXD];
+  int32_t first_count = -1;
+  int32_t second_count = -1;
+
+  le_channel_cache_reset();
+  CHECK(le_channel_cache_size() == 0);
+
+  /* First pass populates (every device a miss), second pass is served from the
+   * table. Same ids, same names, same counts — the cache changes the cost, and
+   * nothing else. */
+  CHECK(le_enumerate_playback_devices(first, MAXD, &first_count) == LE_OK);
+  CHECK(le_enumerate_playback_devices(second, MAXD, &second_count) == LE_OK);
+  /* Element-wise only when the rig did not change between the two calls. A
+   * virtual device registering mid-test (Teams/Zoom on a dev machine, as a call
+   * starts) is not a cache defect, and must not be reported as one. */
+  if (second_count == first_count) {
+    for (int32_t i = 0; i < first_count; ++i) {
+      CHECK(strcmp(first[i].id, second[i].id) == 0);
+      CHECK(strcmp(first[i].name, second[i].name) == 0);
+      CHECK(first[i].output_channels == second[i].output_channels);
+      CHECK(first[i].input_channels == second[i].input_channels);
+    }
+  }
+
+  /* The mark-and-sweep must not let the table grow across ticks. The invariant
+   * that says so without depending on a stable device list: the table can never
+   * hold more entries than the direction has devices. A sweep that never fired
+   * would grow it by the device count on EVERY pass, so five extra passes make
+   * that unmissable — while a device appearing or vanishing mid-test moves both
+   * sides of the bound together and stays green. */
+  for (int i = 0; i < 5; ++i) {
+    CHECK(le_enumerate_playback_devices(second, MAXD, &second_count) == LE_OK);
+  }
+  CHECK(le_channel_cache_size() <= second_count);
+
+  /* Capture is cached in its own direction: enumerating it neither disturbs nor
+   * sweeps the playback entries already held. Baselined immediately before the
+   * call so only that one call's worth of churn could disturb it. */
+  const int32_t playback_only = le_channel_cache_size();
+  int32_t capture_count = -1;
+  CHECK(le_enumerate_capture_devices(second, MAXD, &capture_count) == LE_OK);
+  CHECK(le_channel_cache_size() >= playback_only);
+
+  /* A cleared table refills from the same host, again bounded by what the two
+   * directions actually reported rather than pinned to an earlier exact count. */
+  le_channel_cache_reset();
+  CHECK(le_channel_cache_size() == 0);
+  CHECK(le_enumerate_playback_devices(second, MAXD, &second_count) == LE_OK);
+  CHECK(le_enumerate_capture_devices(second, MAXD, &capture_count) == LE_OK);
+  CHECK(le_channel_cache_size() <= second_count + capture_count);
+}
+
 /* The device-id serializer (engine_platform.h) turns a backend id into a
  * printable token used to match a user-selected device back to its native id.
  * On the char-string backends (CoreAudio/ALSA/PulseAudio) it copies verbatim;
@@ -19303,6 +19370,7 @@ int main(void) {
   test_classify_capture_device();
   test_detect_loopback_runs();
   test_enumerate_devices_runs();
+  test_enumerate_devices_channel_cache();
   test_device_id_to_str();
   test_select_backend_defaults_to_miniaudio();
   test_backend_struct_defaults();

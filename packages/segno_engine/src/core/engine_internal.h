@@ -78,6 +78,16 @@ le_loopback_kind le_classify_capture_device(const char* name);
  * loopback. */
 int le_label_is_loopback(const char* label);
 
+/* ---- channel-count cache (engine_devices.c) ---- *
+ *
+ * Enumeration caches each device's channel count by id so the 1 Hz picker
+ * refresh stops re-asking the audio daemon for an answer that cannot have
+ * changed; see the cache notes in engine_devices.c for why and for the
+ * staleness window. These two are for the unit tests only — the shipping paths
+ * never call them, because the mark-and-sweep maintains the table itself. */
+void le_channel_cache_reset(void);
+int32_t le_channel_cache_size(void);
+
 /* YIN pitch detector for the PSOLA octaver (mode >= 0.5). Runs the cumulative-
  * mean-normalized difference function over `n` contiguous samples of `x` at `sr`
  * Hz, searching the vocal band (~60-1000 Hz), and returns a sub-sample period
