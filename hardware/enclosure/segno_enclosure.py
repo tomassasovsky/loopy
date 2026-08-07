@@ -1703,6 +1703,15 @@ def build_mini_console():
     cq.exporters.export(
         cq.Compound.makeCompound([tray.val(), seated.val()]), asm)
     print(f"Mini console assembly (CAD reference, NOT for slicing): {asm}")
+    # Screw schedule. NOT one length: the anchors sit at different heights up
+    # the wedge, so the rear pair spans ~26 mm more air than the front one.
+    # Nothing else states this, and it is not guessable from the model.
+    print("Mini console screws (M3, up through the floor into the lid inserts):")
+    for (bx, byy) in ANCHORS:
+        by = (D - WALL_T - 6.8) if byy is None else byy
+        need = ((C0 + tn*by) - LID_BOSS_H/ncs) - (FLOOR_T + 1.5) + 5.0
+        print(f"  ({bx:6.1f},{by:5.1f})  {need:5.1f} mm engaged "
+              f"-> M3 x {5*round((need + 3)/5):.0f}, plus 3x M3 heat-set inserts")
     outp.append(asm)
     return outp
 
