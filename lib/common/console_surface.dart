@@ -211,6 +211,13 @@ class ConsoleCard extends StatelessWidget {
   /// Corner radius of the card.
   static const double radius = 12;
 
+  /// What the card's own border adds to the height of the rows inside it.
+  ///
+  /// Public because every face that tells [ConsoleFace] how tall its last
+  /// group is has to add it, and four copies of one widget's border width is
+  /// four places to miss when it changes.
+  static const double borderExtent = 2;
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;

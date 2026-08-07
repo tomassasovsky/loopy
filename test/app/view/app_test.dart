@@ -5,6 +5,7 @@ import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
@@ -397,6 +398,51 @@ void main() {
     // event — restoring a persistent surface for it is tracked separately, and
     // the test should be written against whatever that surface turns out to be
     // rather than against the stopgap.
+
+    testWidgets(
+      'a window that never readies is attempted ONCE, and the failure is on '
+      'the cubit the Display face reads',
+      (tester) async {
+        final windowService = _RecordingWindowService(openResult: false);
+        await pumpApp(tester, windowService);
+
+        // The shell both writes the failure and listens for changes, so a
+        // listener that fired on the flag going UP would re-enter the sync
+        // that raised it — two attempts and two toasts for one failure.
+        expect(windowService.openCalls, 1);
+        // No frames streamed to a window that never readied.
+        await tester.pump(const Duration(milliseconds: 40));
+        expect(windowService.pushCalls, 0);
+
+        final waveform = tester
+            .element(find.byType(MaterialApp).first)
+            .read<WaveformWindowCubit>();
+        expect(waveform.state.openFailed, isTrue);
+        expect(waveform.state.enabled, isTrue);
+      },
+    );
+
+    testWidgets(
+      'clearing the failure IS the retry — one more attempt, not two',
+      (tester) async {
+        final windowService = _RecordingWindowService(openResult: false);
+        await pumpApp(tester, windowService);
+        expect(windowService.openCalls, 1);
+
+        tester
+            .element(find.byType(MaterialApp).first)
+            .read<WaveformWindowCubit>()
+            .retryOpen();
+        await tester.pumpAndSettle();
+
+        expect(windowService.openCalls, 2);
+
+        // Drain the failure toasts' own dismiss timers: two failures raise
+        // two, and the binding fails the test on a timer that outlives the
+        // tree rather than on anything this test is about.
+        await tester.pump(const Duration(seconds: 10));
+      },
+    );
 
     testWidgets(
       'shows a banner when the waveform window fails to open',

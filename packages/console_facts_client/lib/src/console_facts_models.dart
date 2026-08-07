@@ -96,13 +96,6 @@ class ConsoleFacts extends Equatable {
   /// The attached panel, e.g. `16″ 1920×1080 · touch`.
   final String panel;
 
-  /// Whether this build is running on a console at all.
-  ///
-  /// Keyed off [serial]: the serial is the one fact only the appliance image
-  /// can produce, so a build that has one is on a console and a build that
-  /// does not is not.
-  bool get isConsole => serial.isNotEmpty;
-
   @override
   List<Object?> get props => [name, serial, systemImage, panel];
 }

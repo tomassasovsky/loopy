@@ -86,12 +86,20 @@ class ConsoleFactsCubit extends Cubit<ConsoleFactsState> {
     final serial = state.facts.serial;
     if (serial.isEmpty) return;
     final trimmed = name.trim();
-    emit(state.copyWith(givenName: trimmed));
-    if (trimmed.isEmpty) {
-      await _settings.clearConsoleName(serial);
-    } else {
-      await _settings.saveConsoleName(serial, trimmed);
+    // The store first, the screen second. Emitting optimistically and then
+    // awaiting would leave a face showing a name the store refused — the one
+    // failure mode a rename has, and the one this face has nowhere to report.
+    // A write that throws leaves the old name up, which is the truth.
+    try {
+      if (trimmed.isEmpty) {
+        await _settings.clearConsoleName(serial);
+      } else {
+        await _settings.saveConsoleName(serial, trimmed);
+      }
+    } on Object {
+      return;
     }
+    if (!isClosed) emit(state.copyWith(givenName: trimmed));
   }
 
   /// Copies everything to the mounted export volume. No-op when there is

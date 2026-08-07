@@ -25,7 +25,7 @@ class UpdatesSystemTab extends StatelessWidget {
   const UpdatesSystemTab({super.key});
 
   /// A card wrapping one row, plus its border.
-  static const double _rowCard = kConsoleRowHeight + 2;
+  static const double _rowCard = kConsoleRowHeight + ConsoleCard.borderExtent;
 
   @override
   Widget build(BuildContext context) {
@@ -255,7 +255,7 @@ class UpdatesSystemTab extends StatelessWidget {
   }
 
   static ({Widget widget, double height}) _wrap(Widget widget, double height) =>
-      (widget: widget, height: height + 2);
+      (widget: widget, height: height + ConsoleCard.borderExtent);
 
   /// A banner that is only a sentence.
   static const double _bareHeight = 46;

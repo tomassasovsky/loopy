@@ -274,7 +274,6 @@ class App extends StatelessWidget {
           // create; the Storage face re-reads on open, because a USB stick may
           // have arrived since.
           BlocProvider(
-            lazy: false,
             create: (context) {
               final cubit = ConsoleFactsCubit(
                 client: context.read<ConsoleFactsClient>(),
@@ -771,10 +770,17 @@ class _AppViewState extends State<_AppView> {
     return MultiBlocListener(
       listeners: [
         BlocListener<WaveformWindowCubit, WaveformWindowState>(
-          // Any change re-syncs, the cleared failure flag included: that is
-          // what makes the Display face's "Try again" a retry rather than a
+          // Two changes re-sync, and deliberately not a third. The preference
+          // flipping opens or closes the window; the failure being CLEARED is
+          // the Display face's "Try again", which is why that button needs no
           // second control the shell would have to know about.
-          listenWhen: (previous, current) => previous != current,
+          //
+          // The failure being RAISED must not, and that is not a nicety:
+          // `_syncWindow` is what raises it, so re-entering on it would make
+          // every failed open cost two attempts and two toasts.
+          listenWhen: (previous, current) =>
+              previous.enabled != current.enabled ||
+              (previous.openFailed && !current.openFailed),
           listener: (_, _) => unawaited(_syncWindow()),
         ),
         BlocListener<AudioSetupCubit, AudioSetupState>(

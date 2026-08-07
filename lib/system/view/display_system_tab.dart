@@ -47,7 +47,10 @@ class _DisplaySystemTabState extends State<DisplaySystemTab> {
       child: ConsoleFace(
         previewKey: const Key('system_display_upcoming'),
         // HELP is one 70px card under a caption.
-        lastGroupExtent: ConsolePinnedGroupLabel.extent + kConsoleRowHeight + 2,
+        lastGroupExtent:
+            ConsolePinnedGroupLabel.extent +
+            kConsoleRowHeight +
+            ConsoleCard.borderExtent,
         groups: [
           ConsoleGroup(
             caption: l10n.viewGroupLabel,

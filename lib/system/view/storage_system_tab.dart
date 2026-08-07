@@ -67,7 +67,9 @@ class _StorageSystemTabState extends State<StorageSystemTab> {
       child: ConsoleFace(
         previewKey: const Key('system_storage_upcoming'),
         lastGroupExtent:
-            ConsolePinnedGroupLabel.extent + kConsoleRowHeight * 2 + 2,
+            ConsolePinnedGroupLabel.extent +
+            kConsoleRowHeight * 2 +
+            ConsoleCard.borderExtent,
         groups: [
           ConsoleGroup(
             caption: l10n.systemThisConsoleGroup,

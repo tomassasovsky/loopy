@@ -88,12 +88,12 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
           key: const Key('system_about_name'),
           title: l10n.aboutNameRow,
           value: facts.consoleName,
-          expanded: false,
-          // The one tappable row of this card, so it takes the marker — and
-          // the readouts beside it keep the gutter rather than each ending at
-          // a different edge. The mockup draws no gutter here at all, which
-          // leaves a rename you can only find by tapping a row that looks
-          // exactly like the readouts around it.
+          // No marker, and no gutter anywhere in this card — as
+          // `SYSTEM / about` draws it. Reserving one for this row alone
+          // pushed every readout in the card 25px off the edge HARDWARE's sit
+          // on, which is a worse fault than the one it fixed. The rename is
+          // found by tapping the row.
+          showDisclosure: false,
           showDivider: !last,
           onTap: () => unawaited(_rename(facts.consoleName)),
         ),
@@ -102,6 +102,7 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
           key: const Key('system_about_serial'),
           title: l10n.aboutSerialRow,
           value: facts.facts.serial,
+          showDisclosure: false,
           showDivider: !last,
         ),
       // Dropped whole when the build knows neither its version nor the channel
@@ -116,6 +117,7 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
           value: update.currentVersion == null
               ? null
               : l10n.updatesVersionValue('${update.currentVersion}'),
+          showDisclosure: false,
           showDivider: !last,
         ),
       if (facts.facts.systemImage.isNotEmpty)
@@ -123,6 +125,7 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
           key: const Key('system_about_image'),
           title: l10n.aboutSystemImageRow,
           value: facts.facts.systemImage,
+          showDisclosure: false,
           showDivider: !last,
         ),
     ]);
@@ -168,12 +171,15 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
       ({required last}) => ConsoleRow(
         key: const Key('system_about_licence'),
         title: l10n.aboutLicenceRow,
-        // A readout, not a destination: the licence this build ships under is
-        // a fact, and there is no licence document inside the app to open.
-        // The notices row below is the one that goes somewhere, which is why
-        // this one keeps the gutter without claiming the marker.
+        // Both LEGAL rows carry the marker, as the mockup draws them, so both
+        // have to go somewhere. There is one page — Flutter's licence page —
+        // and these are two ways of asking for it: what am I allowed to do
+        // with this, and what is inside it. Thin, and deliberately not fixed
+        // by taking a marker off a row the design gives one.
         value: l10n.aboutLicenceValue,
+        expanded: false,
         showDivider: !last,
+        onTap: () => _showLicences(context, update),
       ),
       ({required last}) => ConsoleRow(
         key: const Key('system_about_notices'),
@@ -183,11 +189,7 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
         value: (packages ?? 0) == 0 ? null : l10n.aboutNoticesCount(packages!),
         expanded: false,
         showDivider: !last,
-        onTap: () => showLicensePage(
-          context: context,
-          applicationName: l10n.appMenuLabel,
-          applicationVersion: '${update.currentVersion ?? ''}',
-        ),
+        onTap: () => _showLicences(context, update),
       ),
     ]);
 
@@ -196,7 +198,9 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
       child: ConsoleFace(
         previewKey: const Key('system_about_upcoming'),
         lastGroupExtent:
-            ConsolePinnedGroupLabel.extent + kConsoleRowHeight * 2 + 2,
+            ConsolePinnedGroupLabel.extent +
+            kConsoleRowHeight * 2 +
+            ConsoleCard.borderExtent,
         groups: [
           if (thisConsole != null)
             ConsoleGroup(
@@ -214,6 +218,14 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
       ),
     );
   }
+
+  /// The one legal destination this build has.
+  static void _showLicences(BuildContext context, UpdateState update) =>
+      showLicensePage(
+        context: context,
+        applicationName: context.l10n.appMenuLabel,
+        applicationVersion: '${update.currentVersion ?? ''}',
+      );
 
   /// Builds a card from the rows that survived, and tells the LAST survivor
   /// that it is last.

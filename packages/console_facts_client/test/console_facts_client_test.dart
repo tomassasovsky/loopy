@@ -24,14 +24,6 @@ void main() {
     });
   });
 
-  group('ConsoleFacts', () {
-    test('an empty serial means this build is not a console', () {
-      expect(ConsoleFacts.unknown.isConsole, isFalse);
-      expect(const ConsoleFacts(name: 'VAMP 16').isConsole, isFalse);
-      expect(const ConsoleFacts(serial: 'VMP-16-0042').isConsole, isTrue);
-    });
-  });
-
   group('UnsupportedConsoleFactsClient', () {
     const client = UnsupportedConsoleFactsClient();
 
@@ -114,7 +106,7 @@ void main() {
         latency: Duration.zero,
       ).facts();
       expect(facts.serial, 'VMP-16-0042');
-      expect(facts.isConsole, isTrue);
+      expect(facts.name, 'VAMP 16');
     });
   });
 

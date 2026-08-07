@@ -32,6 +32,37 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 
 class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit {}
 
+/// The fake, plus a record of what the face asked it to export.
+class _RecordingFactsClient implements ConsoleFactsClient {
+  _RecordingFactsClient({this.failExport = false});
+
+  final bool failExport;
+  final _inner = FakeConsoleFactsClient(latency: Duration.zero);
+  final exportedTo = <String>[];
+
+  @override
+  bool get isSupported => true;
+
+  @override
+  Future<StorageUsage> storage() => _inner.storage();
+
+  @override
+  Future<ConsoleFacts> facts() => _inner.facts();
+
+  @override
+  Future<int> deleteCapturesOlderThan(int days) =>
+      _inner.deleteCapturesOlderThan(days);
+
+  @override
+  Future<String> exportDestination() => _inner.exportDestination();
+
+  @override
+  Future<void> exportEverything(String destination) async {
+    exportedTo.add(destination);
+    if (failExport) throw StateError('the stick went away');
+  }
+}
+
 /// A client that throws every read, for the "cannot read the disk" face.
 class _FailingFactsClient implements ConsoleFactsClient {
   @override
@@ -295,6 +326,15 @@ void main() {
       expect(opening.height, greaterThan(0));
     });
 
+    testWidgets('the shortcuts row opens the legend', (tester) async {
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('system_shortcuts_row')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Dialog), findsOneWidget);
+    });
+
     testWidgets('a window that did not open says so where the setting is, '
         'in the words the toast uses, and offers a retry', (tester) async {
       await pump(tester);
@@ -430,6 +470,58 @@ void main() {
       expect(find.byKey(const Key('system_update_action')), findsOneWidget);
     });
 
+    testWidgets('a staged build restarts only after the confirm — the one '
+        'action on this console that throws away the take', (tester) async {
+      await pump(
+        tester,
+        tab: SystemTab.updates,
+        updateState: _running.copyWith(
+          phase: UpdatePhase.staged,
+          available: UpdateManifest(
+            version: Version.parse('0.1.1'),
+            bundle: 'b',
+            channel: 'experimental',
+          ),
+        ),
+      );
+      final l10n = l10nOf(tester);
+
+      // The prose warning rides under the banner, ahead of the tap.
+      expect(find.text(l10n.updatesRestartBusySubtitle), findsWidgets);
+
+      await tester.tap(find.byKey(const Key('system_update_action')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('console_confirm_cancel')));
+      await tester.pumpAndSettle();
+
+      verifyNever(update.applyAndRestart);
+
+      await tester.tap(find.byKey(const Key('system_update_action')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('console_confirm_confirm')));
+      await tester.pumpAndSettle();
+
+      verify(update.applyAndRestart).called(1);
+    });
+
+    testWidgets('a check in flight is amber and offers nothing to press', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        tab: SystemTab.updates,
+        updateState: _running.copyWith(phase: UpdatePhase.checking),
+      );
+      final l10n = l10nOf(tester);
+
+      final banner = tester.widget<ConsoleBanner>(
+        find.byKey(const Key('system_update_banner')),
+      );
+      expect(banner.tone, ConsoleBannerTone.pending);
+      expect(find.text(l10n.updatesCheckingLabel), findsOneWidget);
+      expect(find.byKey(const Key('system_update_action')), findsNothing);
+    });
+
     testWidgets('an unsupported platform offers nothing at all', (
       tester,
     ) async {
@@ -494,6 +586,54 @@ void main() {
         find.byKey(const Key('system_storage_export')),
       );
       expect(row.onTap, isNull);
+    });
+
+    testWidgets('exporting reaches the client with the mounted volume', (
+      tester,
+    ) async {
+      final client = _RecordingFactsClient();
+      await pump(tester, tab: SystemTab.storage, client: client);
+
+      await tester.tap(find.byKey(const Key('system_storage_export')));
+      await tester.pumpAndSettle();
+
+      expect(client.exportedTo, ['/media/usb0']);
+      expect(facts.state.busy, isFalse);
+    });
+
+    testWidgets('an export that throws leaves the face saying it cannot read '
+        'the disk, not silently pretending it worked', (tester) async {
+      final client = _RecordingFactsClient(failExport: true);
+      await pump(tester, tab: SystemTab.storage, client: client);
+
+      await tester.tap(find.byKey(const Key('system_storage_export')));
+      await tester.pumpAndSettle();
+
+      expect(facts.state.status, ConsoleFactsStatus.failed);
+      expect(facts.state.busy, isFalse);
+      expect(find.text(l10nOf(tester).storageUnknown), findsOneWidget);
+    });
+
+    testWidgets('every readout of the breakdown is drawn, not just the two '
+        'the golden happens to frame', (tester) async {
+      await pump(tester, tab: SystemTab.storage);
+      final l10n = l10nOf(tester);
+
+      for (final (key, figure) in const [
+        (Key('system_storage_sessions'), '41.6'),
+        (Key('system_storage_captures'), '6.2'),
+        (Key('system_storage_plugins'), '1.1'),
+        (Key('system_storage_system'), '4.7'),
+        (Key('system_storage_free'), '12.4'),
+      ]) {
+        expect(find.byKey(key), findsOneWidget, reason: '$key');
+        expect(
+          find.text(l10n.storageGigabytes(figure)),
+          findsOneWidget,
+          reason: '$key reads $figure GB',
+        );
+      }
+      expect(find.text(l10n.storagePluginsSubtitle(103)), findsOneWidget);
     });
 
     testWidgets('a build that cannot read the disk says so and draws no '
@@ -574,6 +714,41 @@ void main() {
       expect(image.showDivider, isFalse);
     });
 
+    testWidgets('a bound pedal names its firmware; an unbound one draws no '
+        'row for it', (tester) async {
+      await pump(tester, tab: SystemTab.about);
+      expect(find.byKey(const Key('system_about_pedal')), findsNothing);
+
+      await pedal.selectFirmwareVersion(3);
+      await tester.pumpAndSettle();
+
+      final l10n = l10nOf(tester);
+      expect(find.byKey(const Key('system_about_pedal')), findsOneWidget);
+      expect(find.text(l10n.aboutProtocolVersion(3)), findsOneWidget);
+      expect(find.text(l10n.aboutPedalFirmwareSubtitle), findsOneWidget);
+    });
+
+    testWidgets('the notices row counts what it opens, and opens it', (
+      tester,
+    ) async {
+      await pump(tester, tab: SystemTab.about);
+
+      await tester.tap(find.byKey(const Key('system_about_notices')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LicensePage), findsOneWidget);
+    });
+
+    testWidgets('the name row opens the console rename sheet', (tester) async {
+      await pump(tester, tab: SystemTab.about);
+      final l10n = l10nOf(tester);
+
+      await tester.tap(find.byKey(const Key('system_about_name')));
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.aboutRenameTitle), findsOneWidget);
+    });
+
     testWidgets('renaming the console keys off the serial', (tester) async {
       await pump(tester, tab: SystemTab.about);
 
@@ -596,6 +771,26 @@ void main() {
           findsOneWidget,
           reason: '${tab.name} opened onto nothing',
         );
+      }
+    });
+
+    testWidgets('tapping a pill moves the face, and the move is remembered '
+        'across leaving the domain', (tester) async {
+      await pump(tester);
+      final l10n = l10nOf(tester);
+
+      for (final (tab, label) in [
+        (SystemTab.updates, l10n.systemUpdatesTab),
+        (SystemTab.storage, l10n.systemStorageTab),
+        (SystemTab.about, l10n.systemAboutTab),
+        (SystemTab.display, l10n.systemDisplayTab),
+      ]) {
+        await tester.tap(find.text(label));
+        await tester.pumpAndSettle();
+        expect(find.byKey(Key('system_${tab.name}_tab')), findsOneWidget);
+        // Held on the tray cubit, not in the panel's own State, so the domain
+        // lands where it was left.
+        expect(tray.state.systemTab, tab);
       }
     });
   });
