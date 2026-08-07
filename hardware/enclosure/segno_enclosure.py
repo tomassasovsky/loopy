@@ -206,6 +206,10 @@ SMALL_DEPTH = 12.0           # 7" panel body 9 mm + connectors (APROTII sheet)
 LED_SLOT_H = 6.0          # diffuser-slot height (v); corner r = H/2 -> full round ends
 LED_SLOT_W = 60.0         # pill window per indicator pedal (one 5050 diffused behind it)
 LED_INS_CLR   = 0.2       # diffuser-insert lateral clearance in the slot (total)
+LED_INS_CLR_FDM = 0.5     # ...but into a PRINTED lid, not a laser-cut sheet. A cut
+                          # sheet holds the slot to about +/-0.1; an FDM slot comes
+                          # out undersize by roughly an extrusion width once flow
+                          # and elephant foot are in, so 0.1 a side will not enter.
 LED_INS_PROUD = 0.4       # lens stands this far above the outer skin
 LED_INS_FLANGE = 3.0      # shoulder overhang past the slot, all around (seats on the
                           # faceplate UNDERSIDE -- the insert pushes in from INSIDE)
@@ -1632,7 +1636,14 @@ def build_mini_console():
     # geometry without re-checking what the lid drops into it (#539): the left
     # filler under the rear anchor bosses, a centre rib under the middle one,
     # and the front tabs after the tub grew. Cheap to just ask.
-    seated = lid.rotate((0, 0, 0), (1, 0, 0), SLOPE_ANGLE).translate((0, 0, C0))
+    # the two pill diffusers ride in the lid, so they belong in the gate too:
+    # the right one's flange passes the right anchor boss with 0.7 mm to spare
+    lid_asm = lid
+    for u in PEDS:
+        vcp = PEDAL_ROW1_V + FSW_SLOT_D/2 + LED_GAP
+        lid_asm = lid_asm.union(
+            _diffuser_solid(cq, LED_INS_CLR_FDM).translate((u - U0, vcp, 0)))
+    seated = lid_asm.rotate((0, 0, 0), (1, 0, 0), SLOPE_ANGLE).translate((0, 0, C0))
     clash = tray.val().intersect(seated.val())
     clash_v = clash.Volume() if clash is not None else 0.0
     assert clash_v < 0.5, (
@@ -1672,16 +1683,10 @@ def build_mini_console():
     outp.append(asm)
     return outp
 
-def build_diffuser_step():
-    """LED pill diffuser INSERT (3D-print in WHITE PLA, x10 per console):
-    a stadium lens that pushes into the faceplate slot FROM THE INSIDE until its
-    shoulder flange seats on the sheet's underside; the lens stands LED_INS_PROUD
-    above the outer skin. The single-LED module (hardware/led_strip/ puck or an
-    off-the-shelf WS2812B breakout) nests in a shallow pocket on the back and is
-    VHB-taped over the flange, which also retains the insert."""
-    import cadquery as cq
-    lens_l = LED_SLOT_W - LED_INS_CLR
-    lens_w = LED_SLOT_H - LED_INS_CLR
+def _diffuser_solid(cq, clr):
+    """The pill diffuser insert itself, at a given slot clearance."""
+    lens_l = LED_SLOT_W - clr
+    lens_w = LED_SLOT_H - clr
     lens_h = T + LED_INS_PROUD
     fl_l = LED_SLOT_W + 2 * LED_INS_FLANGE
     fl_w = LED_SLOT_H + 2 * LED_INS_FLANGE
@@ -1689,13 +1694,39 @@ def build_diffuser_step():
     lens = lens.edges(">Z").chamfer(0.3)             # soft glow edge on the proud lip
     ins = lens.union(cq.Workplane("XY").slot2D(fl_l, fl_w).extrude(-LED_INS_FL_T))
     px, py, pd = LED_INS_POCKET                       # LED nest, back face
+    # The nest is cut into the flange's BACK face, which is the face this part
+    # prints on -- so a straight pocket puts a 6 mm flat ceiling four layers up.
+    # Taper it at 45 deg instead: self-supporting, and the mouth still locates
+    # the module (which the VHB over the flange retains anyway, not the depth).
     ins = ins.cut(cq.Workplane("XY").workplane(offset=-LED_INS_FL_T)
-                  .rect(px, py).extrude(pd))
-    step = os.path.join(OUT, "segno_led_diffuser.step")
-    stl = os.path.join(OUT, "segno_led_diffuser.stl")
-    cq.exporters.export(ins.val(), step)
-    cq.exporters.export(ins.val(), stl)
-    return step
+                  .rect(px, py)
+                  .workplane(offset=pd).rect(px - 2*pd, py - 2*pd)
+                  .loft())
+    return ins
+
+
+def build_diffuser_step():
+    """LED pill diffuser INSERT (3D-print in WHITE PLA): a stadium lens that
+    pushes into the faceplate slot FROM THE INSIDE until its shoulder flange
+    seats on the panel's underside; the lens stands LED_INS_PROUD above the
+    outer skin. The single-LED module (hardware/led_strip/ puck or an
+    off-the-shelf WS2812B breakout) nests in a shallow pocket on the back and is
+    VHB-taped over the flange, which also retains the insert.
+
+    Two builds, identical except for slot clearance. x10 for the big console's
+    CUT-SHEET faceplate, and x2 for the mini console, whose lid is PRINTED --
+    same nominal 60 x 6 pill, but a printed slot needs a printed part's
+    clearance to enter it."""
+    import cadquery as cq
+    out = []
+    for tag, clr in (("segno_led_diffuser", LED_INS_CLR),
+                     ("segno_mini_console_diffuser", LED_INS_CLR_FDM)):
+        ins = _diffuser_solid(cq, clr)
+        step = os.path.join(OUT, tag + ".step")
+        cq.exporters.export(ins.val(), step)
+        cq.exporters.export(ins.val(), os.path.join(OUT, tag + ".stl"))
+        out.append(step)
+    return out[0]
 
 
 def build_ring_diffuser_step():
@@ -2310,8 +2341,11 @@ def main(argv):
             print(f"\n(paint quote skipped: {e})")
     if "--no-step" not in argv:
         try:
-            d = build_diffuser_step()
-            print("\nLED diffuser insert (3D print, x10): out/" + os.path.basename(d) + " (+ .stl)")
+            build_diffuser_step()
+            print("\nLED diffuser insert (3D print, WHITE PLA, flange-down):")
+            print("  big console x10: out/segno_led_diffuser.step (+ .stl)")
+            print("  mini console x2: out/segno_mini_console_diffuser.step (+ .stl)"
+                  "  -- same pill, printed-lid clearance")
             r = build_ring_diffuser_step()
             print("Ring diffuser insert (3D print, x1): out/" + os.path.basename(r) + " (+ .stl)")
             s = build_post_step()
