@@ -676,12 +676,13 @@ void main() {
       expect(midway.height, greaterThan(0));
     });
 
-    testWidgets('the quantize group stays on screen behind a long lane list', (
+    testWidgets('a caption is overhead at every scroll position', (
       tester,
     ) async {
-      // Only the LANES list scrolls: the quantize override is one of the two
-      // questions this panel asks, so it stays on screen however long the
-      // lane list is, and the LANES caption stays pinned over its own list.
+      // Sticky section headers: LANES holds the top of a long lane list, and
+      // scrolled far enough QUANTIZE RECORDING pushes it out and takes over —
+      // so the panel never stops saying which of its two questions a row
+      // answers.
       await pump(
         tester,
         tab: TracksTab.routing,
@@ -696,27 +697,52 @@ void main() {
       await tester.pumpAndSettle();
       final l10n = l10nOf(tester);
 
-      expect(find.text(l10n.trackLanesGroup), findsOneWidget);
-      expect(find.text(l10n.trackQuantizeGroup), findsOneWidget);
-      final quantizeBefore = tester.getRect(
-        find.byKey(const Key('track_routing_quantize_never')),
+      final panel = tester.getRect(
+        find.byKey(const Key('track_routing_dialog_0')),
       );
+      final lanesTop = tester.getRect(find.text(l10n.trackLanesGroup)).top;
+      final quantizeTop = tester
+          .getRect(
+            find.text(l10n.trackQuantizeGroup),
+          )
+          .top;
+      final firstRow = tester.getRect(
+        find.byKey(const Key('track_routing_input_0')),
+      );
+      // Pinned, not merely present: the caption sits ABOVE its own first row
+      // and stays there as the list runs under it.
+      expect(lanesTop, lessThan(firstRow.top));
 
       await tester.drag(
         find.byKey(const Key('track_routing_input_3')),
-        const Offset(0, -400),
+        const Offset(0, -260),
       );
       await tester.pumpAndSettle();
 
-      // The lane list moved; neither group's caption nor the quantize rows
-      // did.
       expect(find.text(l10n.trackLanesGroup), findsOneWidget);
-      expect(find.text(l10n.trackQuantizeGroup), findsOneWidget);
       expect(
-        tester.getRect(find.byKey(const Key('track_routing_quantize_never'))),
-        quantizeBefore,
+        tester.getRect(find.text(l10n.trackLanesGroup)).top,
+        lanesTop,
+        reason: 'the caption floats — it does not travel with its list',
       );
-      expect(find.byKey(const Key('track_routing_input_7')), findsOneWidget);
+
+      // The second caption is NOT pinned in place — it travels with the list
+      // until it would reach the top, which is how section headers hand over.
+      expect(
+        tester.getRect(find.text(l10n.trackQuantizeGroup)).top,
+        lessThan(quantizeTop),
+      );
+      // Both are still inside the panel: the list scrolls, the panel does not.
+      expect(
+        panel.contains(tester.getRect(find.text(l10n.trackLanesGroup)).topLeft),
+        isTrue,
+      );
+      expect(
+        panel.contains(
+          tester.getRect(find.text(l10n.trackQuantizeGroup)).topLeft,
+        ),
+        isTrue,
+      );
     });
 
     testWidgets('the output grid stays open — no single tap answers it', (

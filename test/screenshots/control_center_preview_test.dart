@@ -948,6 +948,18 @@ void main() {
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/control_center_track_routing_tall.png'),
     );
+
+    // Scrolled into the middle of the lane list: the LANES caption is still
+    // overhead, and QUANTIZE RECORDING has not moved.
+    await tester.drag(
+      find.byKey(const Key('track_routing_input_2')),
+      const Offset(0, -260),
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/control_center_track_routing_scrolled.png'),
+    );
   }, skip: !hasFonts);
 
   testWidgets("tracks domain, a track's own routing panel", (tester) async {
