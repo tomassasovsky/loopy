@@ -266,17 +266,37 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
 
   // ------------------------------------------------------------ the banner
 
-  /// What the last requested config turned out to be, or null when it is
-  /// simply what the rows say.
+  /// What the last reopen turned out to be, or null when it is simply what the
+  /// rows say.
   ///
   /// A banner rather than a row, per the console's own rule: anything just
   /// failed sits at the top of the list the setting lives in. There is no
   /// in-flight banner — see [ConfigPhase] for why one would be unreachable.
   Widget? _phaseBanner(BuildContext context, AudioSetupState state) {
-    if (state.phase == ConfigPhase.settled) return null;
     final l10n = context.l10n;
-    // The selection has ALREADY moved to what the device gave, so this is the
-    // only place the request is still named.
+    // The open FAILED, so the device never came up. Rate and buffer describe
+    // none of that — a device pick moves neither, which would leave the config
+    // banner naming the same figures on both sides and claiming the rig is
+    // "running at" them while nothing is running. This says what happened, and
+    // it takes precedence: the console has no other place for the error, and a
+    // rig that will not open is the one thing a player has to be told.
+    final error = state.error;
+    if (error != null) {
+      return ConsoleBanner(
+        key: const Key('audio_open_failed_banner'),
+        message: switch (error) {
+          AudioSetupError.openDeviceFailed => l10n.failedToOpenDevice(
+            state.errorDetail ?? '',
+          ),
+        },
+        tone: ConsoleBannerTone.failure,
+      );
+    }
+    if (state.phase == ConfigPhase.settled) return null;
+    // Both sides come from the phase fields, not from the selection: the
+    // selection holds what the CHOOSER can offer, which is the request itself
+    // whenever the device negotiated something the option lists do not carry.
+    // This is the only place either figure is still named.
     return ConsoleBanner(
       key: const Key('audio_refused_banner'),
       message: l10n.audioRefusedConfig(
@@ -285,8 +305,8 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
           state.requestedBuffer,
         ),
         l10n.audioRateBufferValue(
-          l10n.sampleRateKhzLabel(state.sampleRate),
-          state.bufferFrames,
+          l10n.sampleRateKhzLabel(state.actualRate),
+          state.actualBuffer,
         ),
       ),
       tone: ConsoleBannerTone.failure,
@@ -509,8 +529,16 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
   List<_Interface> _interfaces(AudioSetupState state) {
     final paired = <String, _Interface>{};
     for (final device in state.playbackDevices) {
-      final existing = paired[device.name];
-      paired[device.name] = _Interface(
+      // By NAME, which is what makes one interface one row. But a name whose
+      // playback slot is already filled belongs to another BOX rather than to
+      // this one's other half — two identical interfaces answer to one name —
+      // so it is keyed apart instead of overwriting the entry already listed,
+      // which would drop the first one out of the list entirely.
+      final key = (paired[device.name]?.playbackId.isNotEmpty ?? false)
+          ? '${device.name} ${device.id}'
+          : device.name;
+      final existing = paired[key];
+      paired[key] = _Interface(
         name: device.name,
         playbackId: device.id,
         captureId: existing?.captureId ?? '',
@@ -519,8 +547,14 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
       );
     }
     for (final device in state.captureDevices) {
-      final existing = paired[device.name];
-      paired[device.name] = _Interface(
+      // Same rule on the capture side: an entry whose capture slot is free is
+      // this device's playback half waiting to be paired; one already holding
+      // a capture id is a different box.
+      final key = (paired[device.name]?.captureId.isNotEmpty ?? false)
+          ? '${device.name} ${device.id}'
+          : device.name;
+      final existing = paired[key];
+      paired[key] = _Interface(
         name: device.name,
         playbackId: existing?.playbackId ?? '',
         captureId: device.id,
@@ -531,9 +565,9 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
     final devices = paired.values.toList();
     final pinnedPlayback = state.playbackDeviceId;
     final pinnedCapture = state.captureDeviceId;
-    // Against the host's RAW list rather than the paired one: two interfaces
-    // answering to the same name collapse into one entry, and asking the
-    // collapsed list would call a device that is plugged in "unplugged".
+    // Against the host's RAW list rather than the paired one: the pairing
+    // above re-keys and re-shapes entries, and asking it whether an id is
+    // still there would call a device that is plugged in "unplugged".
     final present = state.devices.any(
       (device) => device.id == pinnedPlayback || device.id == pinnedCapture,
     );
@@ -617,15 +651,22 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
     if (current != null && current.inputChannels > 0) {
       return math.min(current.inputChannels, InputsState.probeCeiling);
     }
-    // A device the host lists only as playback is a real ZERO, not an unknown
-    // one — and it outranks the engine's report, which still describes the
-    // interface this one is replacing until the device is reopened.
+    // Then what the engine has open — but only while it is open on THIS
+    // interface, since its report otherwise still describes the one this is
+    // replacing. It outranks the pairing below, because an empty capture id is
+    // the SYSTEM DEFAULT and not "no capture": pinning a playback-only half
+    // (the built-in speakers, whose capture half answers to a different name)
+    // leaves recording on the default microphone, and the engine is the only
+    // thing that knows how wide that is.
+    final status = state.engineStatus;
+    final onThisDevice = current == null || status.deviceName == current.name;
+    if (onThisDevice && status.inputChannels > 0) {
+      return math.min(status.inputChannels, InputsState.probeCeiling);
+    }
+    // A device the host lists only as playback, with no capture reported for
+    // it either: a real ZERO rather than an unknown one.
     if (current != null && !current.absent && current.captureId.isEmpty) {
       return 0;
-    }
-    final reported = state.engineStatus.inputChannels;
-    if (reported > 0) {
-      return math.min(reported, InputsState.probeCeiling);
     }
     return 2;
   }
