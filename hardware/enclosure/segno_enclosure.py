@@ -1589,8 +1589,23 @@ def build_mini_console():
     # corners hung over the tray's R6 by ~1.8 mm diagonally at all four (#539).
     # Tilted, a circular fillet here projects to an ellipse 6.0 x 5.86 -- wholly
     # inside the tray's R6 circle, so it insets by <=0.14 mm and never proud.
-    lid = (cq.Workplane("XY").box(Wt, V1S, T, centered=False)
-           .edges("|Z").fillet(CORNER_R))
+    # ...and a perimeter that is VERTICAL once seated, exactly like the tray's.
+    # A flat slab tilted 12.5 deg tilts its edge faces with it: the ends met the
+    # tray's vertical walls at a 12.5 deg kink (0.43 mm proud at the front,
+    # short at the rear) and the corner fillets became LEANING cylinders against
+    # the tray's upright ones. Sides were always fine -- tilting about X leaves
+    # their normals horizontal.
+    #   So do not shape the lid in its own frame at all. Take the tray's own
+    # vertical envelope, pull it back through the seating transform, and cut the
+    # blank with it. Outline, ends and corners then match the tray by
+    # construction rather than by three separate corrections that each need
+    # their own trigonometry.
+    V1S_EXT = V1S + T * tn                    # reach the rear face after trimming
+    env_lid = (cq.Workplane("XY").box(Wt, D, 400.0, centered=False)
+               .edges("|Z").fillet(CORNER_R)
+               .translate((0, 0, -200.0 - C0))
+               .rotate((0, 0, 0), (1, 0, 0), -SLOPE_ANGLE))
+    lid = cq.Workplane("XY").box(Wt, V1S_EXT, T, centered=False).intersect(env_lid)
     for u in PEDS:
         x = u - U0
         lid = lid.cut(cq.Workplane("XY").box(FSW_SLOT_W, FSW_SLOT_D, 3*T, centered=(True, True, False))
@@ -1660,10 +1675,10 @@ def build_mini_console():
            .edges("|Z").fillet(CORNER_R).translate((0, 0, -100.0)))
     over = seated.cut(env).val()
     over_v = over.Volume()
-    lip_v = 0.5 * (T * sn) * (T / cs) * Wt
-    assert over_v <= lip_v * 1.3, (
-        f"MINI_FIT: {over_v:.1f} mm3 of lid hangs past the tray "
-        f"(only the {lip_v:.1f} mm3 tilt lip should) -- "
+    # the ends are trimmed vertical now, so NOTHING may hang past the tray --
+    # the old allowance forgave a lip that no longer exists
+    assert over_v <= 2.0, (
+        f"MINI_FIT: {over_v:.1f} mm3 of lid hangs past the tray -- "
         + "; ".join(f"{c.Volume():.1f}mm3 at x{c.BoundingBox().xmin:.0f} "
                     f"y{c.BoundingBox().ymin:.0f}" for c in over.Solids()))
 
