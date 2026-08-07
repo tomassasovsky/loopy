@@ -240,7 +240,7 @@ class _BluetoothTrayBodyState extends State<BluetoothTrayBody> {
       actions: [
         if (address case final failed?)
           ConsoleSmallButton(
-            label: l10n.networkTryAgain,
+            label: l10n.consoleTryAgain,
             onPressed: () => unawaited(cubit.pair(failed)),
           ),
       ],

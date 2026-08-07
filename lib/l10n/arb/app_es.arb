@@ -1430,10 +1430,6 @@
     "@networkStatePaired": {
         "description": "State word for a Bluetooth device this console holds a pairing for."
     },
-    "networkTryAgain": "Reintentar",
-    "@networkTryAgain": {
-        "description": "Action on a Network failure banner: retries the join or pairing that failed."
-    },
     "consoleKeepIt": "Conservar",
     "@consoleKeepIt": {
         "description": "Dismissive action on a Network forget confirmation — leaves the credential or pairing alone."
@@ -1849,5 +1845,141 @@
     "a11yAudioMeasureLatency": "Medir la latencia de ida y vuelta. No hace nada mientras ya hay una medición en curso.",
     "audioMeasure": "Medir",
     "audioRecordOffsetSub": "desfase de grabación {frames} frames",
-    "audioRefusedConfig": "El dispositivo no pudo abrirse a {asked}. Funcionando a {actual}."
+    "audioRefusedConfig": "El dispositivo no pudo abrirse a {asked}. Funcionando a {actual}.",
+    "traySystemLabel": "Sistema",
+    "systemDisplayTab": "Pantalla",
+    "systemUpdatesTab": "Actualizaciones",
+    "systemStorageTab": "Almacenamiento",
+    "systemAboutTab": "Acerca de",
+    "systemPerformanceGroup": "RENDIMIENTO",
+    "systemHelpGroup": "AYUDA",
+    "systemAutomaticGroup": "AUTOMÁTICO",
+    "systemThisConsoleGroup": "ESTA CONSOLA",
+    "systemHousekeepingGroup": "MANTENIMIENTO",
+    "systemHardwareGroup": "HARDWARE",
+    "systemLegalGroup": "LEGAL",
+    "systemRefreshRateTitle": "Frecuencia de refresco",
+    "systemRefreshRateSubtitle": "Cada cuánto se actualizan las ondas y los medidores. Más alto es más fluido pero usa más CPU.",
+    "consoleTryAgain": "Reintentar",
+    "updatesUnsupportedBanner": "Las actualizaciones desde la app solo están disponibles en la consola Segno.",
+    "updatesAvailableBanner": "v{version} está disponible.",
+    "@updatesAvailableBanner": {
+        "placeholders": {
+            "version": {
+                "type": "String"
+            }
+        }
+    },
+    "updatesStagingBanner": "Preparando v{version} en el sistema de reserva — {percent} %",
+    "@updatesStagingBanner": {
+        "placeholders": {
+            "version": {
+                "type": "String"
+            },
+            "percent": {
+                "type": "int"
+            }
+        }
+    },
+    "updatesCheckFailedBanner": "Falló la comprobación de actualizaciones — {reason}",
+    "@updatesCheckFailedBanner": {
+        "placeholders": {
+            "reason": {
+                "type": "String"
+            }
+        }
+    },
+    "updatesCheckFailedReason": "no se pudo contactar con el servidor de actualizaciones.",
+    "updatesRestartNow": "Reiniciar ahora",
+    "storageSessionsTitle": "Sesiones y tomas",
+    "storageCapturesTitle": "Capturas",
+    "storageCapturesSubtitle": "exportaciones y pistas",
+    "storagePluginsTitle": "Plugins",
+    "storagePluginsSubtitle": "{count} instalados",
+    "@storagePluginsSubtitle": {
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "storageSystemTitle": "Sistema y actualizaciones",
+    "storageSystemSubtitle": "incluye el sistema de reserva",
+    "storageFreeTitle": "Libre",
+    "storageGigabytes": "{value} GB",
+    "@storageGigabytes": {
+        "placeholders": {
+            "value": {
+                "type": "String"
+            }
+        }
+    },
+    "storageUnknown": "Esta versión no puede leer el disco de la consola.",
+    "storageDeleteCapturesTitle": "Borrar capturas antiguas",
+    "storageDeleteCapturesSubtitle": "Capturas de más de {days} días",
+    "@storageDeleteCapturesSubtitle": {
+        "placeholders": {
+            "days": {
+                "type": "int"
+            }
+        }
+    },
+    "storageDeleteCapturesConfirmBody": "Se borran permanentemente todas las capturas de más de {days} días. Las sesiones y tomas no se tocan.",
+    "@storageDeleteCapturesConfirmBody": {
+        "placeholders": {
+            "days": {
+                "type": "int"
+            }
+        }
+    },
+    "storageDeleteCapturesConfirm": "Borrarlas",
+    "storageExportTitle": "Exportar todo a USB",
+    "storageNoUsb": "sin volumen USB",
+    "aboutNameRow": "Nombre",
+    "aboutRenameTitle": "Renombrar consola",
+    "aboutSerialRow": "Número de serie",
+    "aboutChannelSubtitle": "canal {channel}",
+    "@aboutChannelSubtitle": {
+        "placeholders": {
+            "channel": {
+                "type": "String"
+            }
+        }
+    },
+    "aboutSystemImageRow": "Imagen del sistema",
+    "aboutPedalFirmwareRow": "Firmware del pedal",
+    "aboutPedalFirmwareSubtitle": "4 pulsadores · 2 bancos",
+    "aboutProtocolVersion": "v{version}",
+    "@aboutProtocolVersion": {
+        "placeholders": {
+            "version": {
+                "type": "int"
+            }
+        }
+    },
+    "aboutAudioInterfaceRow": "Interfaz de audio",
+    "aboutAudioInterfaceSubtitle": "{rate} kHz · {frames} frames",
+    "@aboutAudioInterfaceSubtitle": {
+        "placeholders": {
+            "rate": {
+                "type": "double",
+                "format": "decimalPattern"
+            },
+            "frames": {
+                "type": "int"
+            }
+        }
+    },
+    "aboutPanelRow": "Panel",
+    "aboutLicenceRow": "Licencia",
+    "aboutLicenceValue": "GPLv3",
+    "aboutNoticesRow": "Avisos de código abierto",
+    "aboutNoticesCount": "{count} componentes",
+    "@aboutNoticesCount": {
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    }
 }

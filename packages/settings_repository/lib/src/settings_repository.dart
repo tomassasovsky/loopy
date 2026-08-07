@@ -807,6 +807,25 @@ class SettingsRepository {
     }
   }
 
+  /// Keyed per SERIAL, the same shape [saveInputName] and
+  /// [saveLatencyOffsetFrames] use. The name is a name for *this box*, and a
+  /// profile carried to a second console would otherwise arrive claiming to
+  /// be the first one.
+  String _consoleNameKey(String serial) => 'console_name.$serial';
+
+  /// Loads the name given to the console with [serial], or `null` when it
+  /// still answers to the name the appliance shipped with.
+  Future<String?> loadConsoleName(String serial) =>
+      _store.getString(_consoleNameKey(serial));
+
+  /// Saves the given [name] for the console with [serial].
+  Future<void> saveConsoleName(String serial, String name) =>
+      _store.setString(_consoleNameKey(serial), name);
+
+  /// Forgets the given name, handing the box back the one it shipped with.
+  Future<void> clearConsoleName(String serial) =>
+      _store.remove(_consoleNameKey(serial));
+
   String _trackNameKey(int channel) => 'track_name.$channel';
 
   /// Loads the custom display name for track [channel], or `null` if unset.

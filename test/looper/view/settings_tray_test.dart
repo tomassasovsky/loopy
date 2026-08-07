@@ -514,8 +514,14 @@ void main() {
       // last 21px, so a tap there hits the handle and closes the tray for a
       // completely different (correct) reason.
       final rail = tester.getRect(find.byType(TrayNavigationRail));
+      // The LAST rail item, whichever destination that is — a hard-coded
+      // name here silently starts testing the second-to-last one the next
+      // time a domain is added, and the tap lands on a real item instead of
+      // the background this test is about.
       final lastItem = tester.getRect(
-        find.byKey(const Key('settingsTrayRail_network')),
+        find.byKey(
+          Key('settingsTrayRail_${SettingsTrayDestination.values.last.name}'),
+        ),
       );
       final tapPoint = Offset(rail.center.dx, lastItem.bottom + 40);
       // Assert the point really is rail background before tapping, so a

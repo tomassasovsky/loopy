@@ -14,6 +14,8 @@ dependencies:
     path: packages/bluetooth_repository
   brightness_client:
     path: packages/brightness_client
+  console_facts_client:
+    path: packages/console_facts_client
   controller_repository:
     path: packages/controller_repository
   daw_export:

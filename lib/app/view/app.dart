@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
+import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -25,6 +26,7 @@ import 'package:segno/looper/looper.dart';
 import 'package:segno/pedal/flashed_firmware.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
+import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/update/cubit/pedal_firmware_cubit.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
@@ -70,6 +72,7 @@ class App extends StatelessWidget {
       client: UnsupportedBluetoothClient(),
     ),
     this.brightness = const UnsupportedBrightnessClient(),
+    this.consoleFacts = const UnsupportedConsoleFactsClient(),
     super.key,
   });
 
@@ -86,6 +89,11 @@ class App extends StatelessWidget {
 
   /// Appliance brightness client (Control Center slider). Defaults unsupported.
   final BrightnessClient brightness;
+
+  /// Reads what the appliance knows about itself — the disk, the box, and
+  /// where it can export to. Defaults to the client that answers "unknown",
+  /// which is what every non-appliance build gets.
+  final ConsoleFactsClient consoleFacts;
 
   /// The shared looper repository (owns the audio engine).
   final LooperRepository repository;
@@ -164,6 +172,7 @@ class App extends StatelessWidget {
         RepositoryProvider.value(value: wifi),
         RepositoryProvider.value(value: bluetooth),
         RepositoryProvider.value(value: brightness),
+        RepositoryProvider.value(value: consoleFacts),
       ],
       child: MultiBlocProvider(
         providers: [
@@ -254,6 +263,21 @@ class App extends StatelessWidget {
           BlocProvider(
             create: (context) {
               final cubit = HighContrastCubit(
+                settings: context.read<SettingsRepository>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
+          // App-wide, not the face's: the facts are about the BOX, and the
+          // About tab must not be the only thing that can ask. Loads on
+          // create; the Storage face re-reads on open, because a USB stick may
+          // have arrived since.
+          BlocProvider(
+            lazy: false,
+            create: (context) {
+              final cubit = ConsoleFactsCubit(
+                client: context.read<ConsoleFactsClient>(),
                 settings: context.read<SettingsRepository>(),
               );
               unawaited(cubit.load());
@@ -508,8 +532,8 @@ class _AppViewState extends State<_AppView> {
   /// otherwise.
   Future<void> _syncWindow() async {
     if (!mounted) return;
-    final shouldOpen = context.read<WaveformWindowCubit>().state;
-    if (shouldOpen) {
+    final waveform = context.read<WaveformWindowCubit>();
+    if (waveform.state.enabled) {
       // On a single-display console the waveform has nowhere to land: skip the
       // second window and show a notice rather than a half-blank setup.
       if (_isSingleDisplay) {
@@ -524,6 +548,12 @@ class _AppViewState extends State<_AppView> {
         // The window never readied: surface it and don't stream frames to a
         // dead window (the real service has already set its controller, so
         // pushWaveform would otherwise not no-op).
+        //
+        // Recorded on the cubit as well as toasted, because the toast is the
+        // wrong surface once the tray is open: `SYSTEM / display` puts the
+        // failure at the top of the list the setting lives in, with a retry.
+        // Both read the one flag, so the two can never disagree.
+        waveform.reportOpenFailed();
         _showWaveformWindowFailedBanner();
         return;
       }
@@ -740,7 +770,10 @@ class _AppViewState extends State<_AppView> {
   Widget build(BuildContext context) {
     return MultiBlocListener(
       listeners: [
-        BlocListener<WaveformWindowCubit, bool>(
+        BlocListener<WaveformWindowCubit, WaveformWindowState>(
+          // Any change re-syncs, the cleared failure flag included: that is
+          // what makes the Display face's "Try again" a retry rather than a
+          // second control the shell would have to know about.
           listenWhen: (previous, current) => previous != current,
           listener: (_, _) => unawaited(_syncWindow()),
         ),

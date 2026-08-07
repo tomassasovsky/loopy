@@ -223,7 +223,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(waveformWindow.state, isFalse);
+    expect(waveformWindow.state.enabled, isFalse);
     expect(await settings.loadShowWaveformWindow(), isFalse);
   });
 

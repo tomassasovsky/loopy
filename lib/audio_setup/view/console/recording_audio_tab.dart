@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
-import 'package:segno/audio_setup/view/console/audio_face.dart';
+
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/quantize_cubit.dart';
@@ -56,9 +56,10 @@ class _RecordingAudioTabState extends State<RecordingAudioTab> {
 
     return KeyedSubtree(
       key: const Key('audio_recording_tab'),
-      child: AudioFace(
+      child: ConsoleFace(
+        previewKey: const Key('audio_upcoming_group'),
         groups: [
-          AudioGroup(
+          ConsoleGroup(
             caption: l10n.recordingGroupLabel,
             blocks: [
               ConsoleCard(

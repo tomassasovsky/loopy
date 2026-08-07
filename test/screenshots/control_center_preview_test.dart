@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:bluetooth_repository/bluetooth_repository.dart';
+import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -29,8 +30,14 @@ import 'package:segno/looper/loop_tab.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/tracks_tab.dart';
 import 'package:segno/looper/view/settings_tray.dart';
+import 'package:segno/pedal/cubit/pedal_cubit.dart';
+import 'package:segno/system/cubit/console_facts_cubit.dart';
+import 'package:segno/system/system_tab.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/update/cubit/update_cubit.dart';
+import 'package:segno/visualizer/cubit/waveform_window_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:update_repository/update_repository.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -41,6 +48,18 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
 
 class _MockMidiDevices extends Mock implements MidiDeviceRepository {}
+
+class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit {}
+
+/// What the appliance reports about its own build. A real [UpdateCubit] over
+/// the unsupported backend knows neither its version nor its channel, and the
+/// About face correctly drops the row that would have said so — which makes
+/// for a golden of the empty case rather than of the face.
+final _consoleBuild = UpdateState(
+  supported: true,
+  channel: 'experimental',
+  currentVersion: Version.parse('0.1.0'),
+);
 
 /// What the host reports for `AUDIO / settings-device`: an 18-in interface
 /// listed in both directions, and the built-in pair. Both sides carry their
@@ -459,11 +478,76 @@ void main() {
     );
   }
 
+  /// The System face's own providers. The real tray inherits these from
+  /// `App`; a preview showing the System destination has to stand them up too.
+  ///
+  /// The facts client is the FAKE at zero latency — that is the whole point of
+  /// the seam: Storage and About are drivable, and photographable, from a
+  /// desktop. Zero rather than the fake's own pretend latency because even a
+  /// zero-duration delay schedules a timer a `testWidgets` body would wait on
+  /// forever.
+  ({
+    WaveformWindowCubit waveform,
+    HighContrastCubit contrast,
+    RefreshRateCubit refresh,
+    ConsoleFactsCubit facts,
+    PedalCubit pedal,
+    UpdateCubit update,
+  })
+  systemProviders(
+    WidgetTester tester, {
+    required LooperRepository looper,
+    required SettingsRepository settings,
+    ConsoleFactsClient? client,
+    UpdateState? updateState,
+  }) {
+    final waveform = WaveformWindowCubit(settings: settings);
+    final contrast = HighContrastCubit(settings: settings);
+    final refresh = RefreshRateCubit(repository: looper, settings: settings);
+    final facts = ConsoleFactsCubit(
+      client: client ?? FakeConsoleFactsClient(latency: Duration.zero),
+      settings: settings,
+    );
+    final pedal = PedalCubit(
+      pedal: PedalRepository(const NoopPedalTransport()),
+      settings: settings,
+      pollInterval: Duration.zero,
+    );
+    final update = _MockUpdateCubit();
+    whenListen(
+      update,
+      const Stream<UpdateState>.empty(),
+      initialState: updateState ?? _consoleBuild,
+    );
+    addTearDown(() => unawaited(waveform.close()));
+    addTearDown(() => unawaited(contrast.close()));
+    addTearDown(() => unawaited(refresh.close()));
+    addTearDown(() => unawaited(facts.close()));
+    addTearDown(() => unawaited(pedal.close()));
+    return (
+      waveform: waveform,
+      contrast: contrast,
+      refresh: refresh,
+      facts: facts,
+      pedal: pedal,
+      update: update,
+    );
+  }
+
   Future<void> pumpTray(
     WidgetTester tester, {
     required SettingsTrayCubit cubit,
     WifiRepository? wifi,
     BluetoothRepository? bluetooth,
+    ({
+      WaveformWindowCubit waveform,
+      HighContrastCubit contrast,
+      RefreshRateCubit refresh,
+      ConsoleFactsCubit facts,
+      PedalCubit pedal,
+      UpdateCubit update,
+    })?
+    system,
     ({
       ControlCubit control,
       MidiSetupCubit midi,
@@ -512,6 +596,14 @@ void main() {
               BlocProvider.value(value: rig.quantize),
               BlocProvider.value(value: rig.inputs),
               BlocProvider.value(value: rig.audio),
+              if (system case final s?) ...[
+                BlocProvider.value(value: s.waveform),
+                BlocProvider.value(value: s.contrast),
+                BlocProvider.value(value: s.refresh),
+                BlocProvider.value(value: s.facts),
+                BlocProvider.value(value: s.pedal),
+                BlocProvider.value(value: s.update),
+              ],
             ],
             child: Scaffold(
               body: Stack(
@@ -1210,6 +1302,156 @@ void main() {
     await expectLater(
       find.byType(Scaffold),
       matchesGoldenFile('goldens/control_center_audio_refused.png'),
+    );
+  }, skip: !hasFonts);
+
+  /// Mounts the System face on [tab].
+  Future<ConsoleFactsCubit> pumpSystem(
+    WidgetTester tester,
+    SystemTab tab, {
+    ConsoleFactsClient? client,
+    UpdateState? updateState,
+  }) async {
+    await size(tester);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.system)
+      ..showSystemTab(tab);
+    addTearDown(cubit.close);
+
+    final rig = controlProviders(tester, looperState: audioRig);
+    final system = systemProviders(
+      tester,
+      looper: rig.looper,
+      settings: settings,
+      client: client,
+      updateState: updateState,
+    );
+    await pumpTray(tester, cubit: cubit, control: rig, system: system);
+    await tester.pumpAndSettle();
+    return system.facts;
+  }
+
+  testWidgets('system domain, display tab', (tester) async {
+    await pumpSystem(tester, SystemTab.display);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_system_display.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('system domain, the second window did not open', (tester) async {
+    await pumpSystem(tester, SystemTab.display);
+    // The failure the app shell reports, at the top of the list the setting
+    // lives in — never a toast once this face is open.
+    tester
+        .element(find.byKey(const Key('system_display_tab')))
+        .read<WaveformWindowCubit>()
+        .reportOpenFailed();
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_system_waveform_failed.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('system domain, updates tab', (tester) async {
+    await pumpSystem(tester, SystemTab.updates);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_system_updates.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('system domain, an update on offer', (tester) async {
+    await pumpSystem(
+      tester,
+      SystemTab.updates,
+      updateState: _consoleBuild.copyWith(
+        phase: UpdatePhase.available,
+        available: UpdateManifest(
+          version: Version.parse('0.1.1'),
+          bundle: 'b',
+          channel: 'experimental',
+        ),
+      ),
+    );
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_system_update_available.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('system domain, staging to the standby system', (tester) async {
+    await pumpSystem(
+      tester,
+      SystemTab.updates,
+      updateState: _consoleBuild.copyWith(
+        phase: UpdatePhase.downloading,
+        progress: 0.42,
+        available: UpdateManifest(
+          version: Version.parse('0.1.1'),
+          bundle: 'b',
+          channel: 'experimental',
+        ),
+      ),
+    );
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_system_update_downloading.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('system domain, staged and waiting for a restart', (
+    tester,
+  ) async {
+    await pumpSystem(
+      tester,
+      SystemTab.updates,
+      updateState: _consoleBuild.copyWith(
+        phase: UpdatePhase.staged,
+        available: UpdateManifest(
+          version: Version.parse('0.1.1'),
+          bundle: 'b',
+          channel: 'experimental',
+        ),
+      ),
+    );
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_system_update_staged.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('system domain, the check failed', (tester) async {
+    await pumpSystem(
+      tester,
+      SystemTab.updates,
+      updateState: _consoleBuild.copyWith(
+        phase: UpdatePhase.error,
+        errorMessage: 'could not reach the update server.',
+      ),
+    );
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_system_update_error.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('system domain, storage tab', (tester) async {
+    await pumpSystem(tester, SystemTab.storage);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_system_storage.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('system domain, about tab', (tester) async {
+    await pumpSystem(tester, SystemTab.about);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_system_about.png'),
     );
   }, skip: !hasFonts);
 }

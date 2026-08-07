@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:segno/audio_setup/view/console/audio_tray_panel.dart';
@@ -9,9 +7,11 @@ import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/view/loop/loop_tray_panel.dart';
 import 'package:segno/looper/view/tracks/tracks_tray_panel.dart';
 import 'package:segno/looper/view/tray/tray_home.dart';
+import 'package:segno/looper/view/tray/tray_metrics.dart';
 import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
 import 'package:segno/looper/view/tray/tuner_tray_panel.dart';
 import 'package:segno/network/network_tray_panel.dart';
+import 'package:segno/system/view/system_tray_panel.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The tray's contents once open — near-fullscreen frosted sheet, split into
@@ -35,14 +35,36 @@ class TrayPanel extends StatelessWidget {
 
     return Material(
       color: Colors.transparent,
-      child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: surface.background.withValues(alpha: 0.78),
+      child: DecoratedBox(
+        // Opaque, and the CARD tone rather than the page's — measured off the
+        // mockups' tray layer. It was a frosted 78% page fill behind a 24px
+        // blur, which was not only the wrong colour: a translucent sheet let
+        // the stage's waveforms move behind the settings being read.
+        //
+        // The shadow lifts the sheet off the tracks grid, and the hairline
+        // along the bottom edge is the seam the drag handle rides on.
+        decoration: BoxDecoration(
+          color: surface.card,
+          borderRadius: const BorderRadius.vertical(
+            bottom: Radius.circular(kTraySheetRadius),
+          ),
+          border: Border(bottom: BorderSide(color: surface.borderStrong)),
+          boxShadow: [
+            BoxShadow(
+              color: surface.dropShadow,
+              offset: const Offset(0, 19),
+              blurRadius: 48,
             ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: const BorderRadius.vertical(
+            bottom: Radius.circular(kTraySheetRadius),
+          ),
+          child: Padding(
+            // Inside the hairline, so the rail's own right-hand rule stops at
+            // the seam instead of crossing it.
+            padding: const EdgeInsets.only(bottom: 1),
             child: Stack(
               children: [
                 Positioned.fill(
@@ -98,6 +120,10 @@ class TrayPanel extends StatelessWidget {
                               SettingsTrayDestination.network =>
                                 const _TrayFaceFrame(
                                   child: NetworkTrayPanel(),
+                                ),
+                              SettingsTrayDestination.system =>
+                                const _TrayFaceFrame(
+                                  child: SystemTrayPanel(),
                                 ),
                             },
                           ),

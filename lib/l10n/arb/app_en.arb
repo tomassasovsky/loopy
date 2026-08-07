@@ -1958,10 +1958,6 @@
     "@networkStatePaired": {
         "description": "State word for a Bluetooth device this console holds a pairing for."
     },
-    "networkTryAgain": "Try again",
-    "@networkTryAgain": {
-        "description": "Action on a Network failure banner: retries the join or pairing that failed."
-    },
     "consoleKeepIt": "Keep it",
     "@consoleKeepIt": {
         "description": "The dismissive answer on any console confirm dialog — forgetting a network, switching looper mode. Leaves the thing alone."
@@ -2502,6 +2498,160 @@
             },
             "actual": {
                 "type": "String"
+            }
+        }
+    },
+    "traySystemLabel": "System",
+    "@traySystemLabel": {
+        "description": "Rail entry for the System domain — what this console is and how it behaves."
+    },
+    "systemDisplayTab": "Display",
+    "systemUpdatesTab": "Updates",
+    "systemStorageTab": "Storage",
+    "systemAboutTab": "About",
+    "systemPerformanceGroup": "PERFORMANCE",
+    "systemHelpGroup": "HELP",
+    "systemAutomaticGroup": "AUTOMATIC",
+    "systemThisConsoleGroup": "THIS CONSOLE",
+    "systemHousekeepingGroup": "HOUSEKEEPING",
+    "systemHardwareGroup": "HARDWARE",
+    "systemLegalGroup": "LEGAL",
+    "systemRefreshRateTitle": "UI refresh rate",
+    "systemRefreshRateSubtitle": "How often waveforms and meters update. Higher is smoother but uses more CPU.",
+    "consoleTryAgain": "Try again",
+    "@consoleTryAgain": {
+        "description": "Retry on any console banner. Was networkTryAgain until a second domain needed it — a primitive keeps no domain in its name."
+    },
+    "updatesUnsupportedBanner": "In-app updates are only available on the Segno console appliance.",
+    "@updatesUnsupportedBanner": {
+        "description": "Update banner on a platform with no update flow at all. No action: a dead check button is worse than none."
+    },
+    "updatesAvailableBanner": "v{version} is available.",
+    "@updatesAvailableBanner": {
+        "placeholders": {
+            "version": {
+                "type": "String"
+            }
+        }
+    },
+    "updatesStagingBanner": "Staging v{version} to the standby system — {percent}%",
+    "@updatesStagingBanner": {
+        "placeholders": {
+            "version": {
+                "type": "String"
+            },
+            "percent": {
+                "type": "int"
+            }
+        }
+    },
+    "updatesCheckFailedBanner": "Update check failed — {reason}",
+    "@updatesCheckFailedBanner": {
+        "placeholders": {
+            "reason": {
+                "type": "String"
+            }
+        }
+    },
+    "updatesCheckFailedReason": "could not reach the update server.",
+    "@updatesCheckFailedReason": {
+        "description": "Fallback reason when the failure carried no message of its own."
+    },
+    "updatesRestartNow": "Restart now",
+    "storageSessionsTitle": "Sessions and takes",
+    "storageCapturesTitle": "Captures",
+    "storageCapturesSubtitle": "exports and stems",
+    "storagePluginsTitle": "Plugins",
+    "storagePluginsSubtitle": "{count} installed",
+    "@storagePluginsSubtitle": {
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "storageSystemTitle": "System and updates",
+    "storageSystemSubtitle": "includes the standby system",
+    "storageFreeTitle": "Free",
+    "storageGigabytes": "{value} GB",
+    "@storageGigabytes": {
+        "placeholders": {
+            "value": {
+                "type": "String"
+            }
+        }
+    },
+    "storageUnknown": "This build can't read the console's disk.",
+    "@storageUnknown": {
+        "description": "Replaces the whole breakdown when the disk cannot be read. Zeroes drawn as facts would be worse than saying nothing."
+    },
+    "storageDeleteCapturesTitle": "Delete old captures",
+    "storageDeleteCapturesSubtitle": "Captures older than {days} days",
+    "@storageDeleteCapturesSubtitle": {
+        "placeholders": {
+            "days": {
+                "type": "int"
+            }
+        }
+    },
+    "storageDeleteCapturesConfirmBody": "Every capture older than {days} days is permanently deleted. Sessions and takes are untouched.",
+    "@storageDeleteCapturesConfirmBody": {
+        "placeholders": {
+            "days": {
+                "type": "int"
+            }
+        }
+    },
+    "storageDeleteCapturesConfirm": "Delete them",
+    "storageExportTitle": "Export everything to USB",
+    "storageNoUsb": "no USB volume",
+    "@storageNoUsb": {
+        "description": "Trailing readout when there is nowhere to export. A fact about the rig, not a failure — the row simply stops being tappable."
+    },
+    "aboutNameRow": "Name",
+    "aboutRenameTitle": "Rename console",
+    "aboutSerialRow": "Serial",
+    "aboutChannelSubtitle": "{channel} channel",
+    "@aboutChannelSubtitle": {
+        "placeholders": {
+            "channel": {
+                "type": "String"
+            }
+        }
+    },
+    "aboutSystemImageRow": "System image",
+    "aboutPedalFirmwareRow": "Pedal firmware",
+    "aboutPedalFirmwareSubtitle": "4 switches · 2 banks",
+    "aboutProtocolVersion": "v{version}",
+    "@aboutProtocolVersion": {
+        "placeholders": {
+            "version": {
+                "type": "int"
+            }
+        }
+    },
+    "aboutAudioInterfaceRow": "Audio interface",
+    "aboutAudioInterfaceSubtitle": "{rate} kHz · {frames} frames",
+    "@aboutAudioInterfaceSubtitle": {
+        "placeholders": {
+            "rate": {
+                "type": "double",
+                "format": "decimalPattern"
+            },
+            "frames": {
+                "type": "int"
+            }
+        }
+    },
+    "aboutPanelRow": "Panel",
+    "aboutLicenceRow": "Licence",
+    "aboutLicenceValue": "GPLv3",
+    "aboutNoticesRow": "Open-source notices",
+    "aboutNoticesCount": "{count} components",
+    "@aboutNoticesCount": {
+        "placeholders": {
+            "count": {
+                "type": "int"
             }
         }
     }

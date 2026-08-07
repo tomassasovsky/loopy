@@ -73,6 +73,16 @@ enum SettingsTrayDestination {
   /// waste as one Settings bucket for twelve groups (#498). Which radio is
   /// showing is [SettingsTrayState.networkTab], not a destination of its own.
   network,
+
+  /// In-tray System domain — what the screens do, what build is running, what
+  /// is on the disk, and what this box is, as tabs of one entry.
+  ///
+  /// One destination, not four: all four answer the same question — *what is
+  /// this console, and how does it behave?* Two of them were groups of the
+  /// Settings scroll (`SettingsSection.view` and `.updates`); the other two
+  /// had nowhere to live at all, because nothing in the app knew what the
+  /// disk held or what the box was called (#530).
+  system,
 }
 
 /// State for [SettingsTrayCubit]: tray open/drag is ephemeral; brightness is
@@ -89,6 +99,7 @@ class SettingsTrayState extends Equatable {
     this.loopTab = LoopTab.tempo,
     this.tracksTab = TracksTab.names,
     this.audioTab = AudioTab.device,
+    this.systemTab = SystemTab.display,
   });
 
   /// Live drag/settle progress in `0..1` — `0` fully closed, `1` fully open.
@@ -131,6 +142,9 @@ class SettingsTrayState extends Equatable {
   /// Which tab the Audio domain shows. Same rule as [networkTab].
   final AudioTab audioTab;
 
+  /// Which tab the System domain shows. Same rule as [networkTab].
+  final SystemTab systemTab;
+
   /// Returns a copy with the given fields replaced.
   SettingsTrayState copyWith({
     double? dragProgress,
@@ -142,6 +156,7 @@ class SettingsTrayState extends Equatable {
     LoopTab? loopTab,
     TracksTab? tracksTab,
     AudioTab? audioTab,
+    SystemTab? systemTab,
   }) => SettingsTrayState(
     dragProgress: dragProgress ?? this.dragProgress,
     isNavigating: isNavigating ?? this.isNavigating,
@@ -152,6 +167,7 @@ class SettingsTrayState extends Equatable {
     loopTab: loopTab ?? this.loopTab,
     tracksTab: tracksTab ?? this.tracksTab,
     audioTab: audioTab ?? this.audioTab,
+    systemTab: systemTab ?? this.systemTab,
   );
 
   @override
@@ -165,5 +181,6 @@ class SettingsTrayState extends Equatable {
     loopTab,
     tracksTab,
     audioTab,
+    systemTab,
   ];
 }
