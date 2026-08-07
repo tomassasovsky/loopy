@@ -1350,10 +1350,19 @@ def _platform_printed(cq, ph, v_c, standalone=True, baffle_t=None):
             SKIRT_BOSS_CH_W, abs(y1 - y0), 60.0,
             centered=(True, False, False)).translate(
                 (SKIRT_BOSS_CH_X, min(y0, y1), h)))
-    # cable notch: full-height slot centred in the REAR wall (+X = cable end)
+    # cable notch: full-height slot centred in the REAR wall (+X = cable end).
+    # Referenced to the RING's outer face, not to sd -- when baffle_t grows the
+    # ring outward, a notch positioned off sd stops short and seals the slot
+    # the pedal's cable leaves through (#539). The asserts below say so.
+    NOTCH_L = 4.0
+    notch_c = ring_od/2.0 - 1.5
+    assert notch_c + NOTCH_L/2.0 >= ring_od/2.0 + 0.2, \
+        "SKIRT: cable notch stops short of the ring's outer face -- slot sealed"
+    assert notch_c - NOTCH_L/2.0 <= SKIRT_IN_D/2.0 - 0.2, \
+        "SKIRT: cable notch does not reach the ring bore -- slot blind"
     ring = ring.cut(cq.Workplane("XY").box(
-        4.0, SKIRT_NOTCH_W, 60.0,
-        centered=(True, True, False)).translate((sd/2 - 1.5, 0, h)))
+        NOTCH_L, SKIRT_NOTCH_W, 60.0,
+        centered=(True, True, False)).translate((notch_c, 0, h)))
     body = body.union(ring)
     # PERIMETER RELIEF (#373): the tub footprint overhangs the slot opening
     # (1.25 mm front/rear, ~5.2 mm per side), so those strips lie UNDER the
