@@ -19,6 +19,10 @@ prints:
   GAP       slots narrower than the nozzle: the slicer either fuses them or
             leaves a crack.
   BRIDGE    material that starts in mid-air with nothing underneath.
+  ISLAND    a layer piece with NO support beneath it anywhere -- unlike a
+            bridge there is nothing in its own layer to span to, so the head
+            draws it into thin air and it drops.
+  BODIES    solids that are not connected to each other at all.
   SUPPORT   down-facing surfaces shallower than the slicer's overhang limit,
             each sized by how far the extruder must reach unsupported. A face
             with a short reach bridges and wants no support however flat it
@@ -62,6 +66,22 @@ NOISE_MM2 = 12.0          # a hit smaller than this is a cell or two at a corner
 
 
 # --- mesh -> occupancy grid ------------------------------------------------
+def load_shape(path, tol=0.05):
+    """Triangles from an STL *or* a STEP.
+
+    STEP matters: slicers import it, so "I checked the STL" is no guarantee
+    about the file that actually gets sliced. Check whichever one you are
+    about to load into the slicer.
+    """
+    if os.path.splitext(path)[1].lower() in (".step", ".stp"):
+        import cadquery as cq                      # only needed for STEP
+        shape = cq.importers.importStep(path).val()
+        vs, ts = shape.tessellate(tol)
+        v = np.array([[p.x, p.y, p.z] for p in vs], dtype=np.float64)
+        return v[np.array(ts, dtype=np.int64)]
+    return load_stl(path)
+
+
 def load_stl(path):
     """Return an (n, 3, 3) float array of triangles (binary or ASCII STL)."""
     with open(path, "rb") as fh:
@@ -323,6 +343,35 @@ def analyse(occ, lo, res, dz, nozzle):
     r["bridge_area"] = fresh.reshape(nz, -1).sum(1) * cell
     j = int(np.argmax(r["bridge_area"]))
     r["bridge_worst"] = (r["bridge_area"][j], j * dz + lo[2])
+
+    # --- islands: layer pieces with NOTHING under them ----------------------
+    # Distinct from BRIDGE. A bridge is anchored somewhere in its own layer and
+    # the extruder can span to it; an island is a closed loop of perimeter with
+    # no support anywhere beneath, so the head draws it into thin air and it
+    # falls. Anything sitting on the bed is not an island.
+    islands = []
+    for z in range(1, nz):
+        if not occ[z].any():
+            continue
+        lab, n = ndimage.label(occ[z])
+        if n == 0:
+            continue
+        # a piece is supported if ANY of its cells has material directly below
+        holds = ndimage.sum(occ[z - 1], lab, np.arange(1, n + 1))
+        sizes = ndimage.sum(occ[z], lab, np.arange(1, n + 1))
+        for i in np.nonzero(holds == 0)[0]:
+            comp = lab == (i + 1)
+            ys, xs = np.nonzero(comp)
+            islands.append((float(sizes[i]) * cell, z * dz + lo[2],
+                            lo[0] + xs.mean() * res, lo[1] + ys.mean() * res))
+    r["islands"] = sorted(islands, key=lambda t: t[0], reverse=True)
+
+    # --- separate bodies ----------------------------------------------------
+    lab3, n3 = ndimage.label(occ)
+    r["bodies"] = n3
+    if n3 > 1:
+        vols = ndimage.sum(occ, lab3, np.arange(1, n3 + 1)) * cell * dz
+        r["body_vols"] = np.sort(vols)[::-1]
     r["overhangs"] = []
     return r
 
@@ -434,6 +483,16 @@ def report(name, r, res, dz, nozzle, support_angle=SUPPORT_ANGLE):
     print(f"[{verdict(ba, 200, 800)}] BRIDGE  worst unsupported start "
           f"{ba:.0f} mm2 at z={bz:.2f}")
 
+    isl = [i for i in r["islands"] if i[0] >= NOISE_MM2]
+    print(f"[{'OK  ' if not isl else 'FAIL'}] ISLAND  {len(isl)} layer piece(s) "
+          f"with nothing at all underneath")
+    for a, z, x, y in isl[:6]:
+        print(f"          {a:6.1f} mm2 floating at x={x:6.1f} y={y:6.1f} z={z:5.1f}")
+    if r["bodies"] > 1:
+        v = ", ".join(f"{x:.0f}" for x in r["body_vols"][:5])
+        print(f"[FAIL] BODIES  {r['bodies']} separate solids in one file "
+              f"(mm3: {v}) -- loose pieces, not one part")
+
     ov = r["overhangs"]
     need = [o for o in ov if o["reach"] > BRIDGE_REACH and o["area"] >= NOISE_MM2]
     tot = sum(o["area"] for o in ov)
@@ -481,7 +540,7 @@ def draw(path, r, lo, res):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("stl", nargs="+")
+    ap.add_argument("stl", nargs="+", help="STL or STEP files")
     ap.add_argument("--res", type=float, default=0.6, help="xy grid (mm)")
     ap.add_argument("--dz", type=float, default=0.4, help="z grid (mm)")
     ap.add_argument("--nozzle", type=float, default=0.4)
@@ -492,7 +551,7 @@ def main(argv=None):
 
     worst = 0
     for i, p in enumerate(a.stl):
-        tris = load_stl(p)
+        tris = load_shape(p)
         occ, lo = voxelise(tris, a.res, a.dz)
         r = analyse(occ, lo, a.res, a.dz, a.nozzle)
         r["overhangs"] = overhangs(tris, a.res, lo[2], a.support_angle)

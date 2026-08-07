@@ -1607,26 +1607,36 @@ def build_mini_console():
         lid = lid.union(cq.Workplane("XY").box(10.0, 10.0, 5.0, centered=False)
                         .translate((tx, (D - WALL_T)/cs - 12.0, -5.0)))
 
+    # EVERY per-part file ships in PRINT orientation -- STEP and STL alike.
+    # Shipping the STL flipped and the STEP in the assembly frame was a trap:
+    # slicers import STEP, and the lid sliced from its assembly frame stands on
+    # the tips of seven bosses with the whole 12,400 mm2 faceplate floating
+    # 8 mm up (#539). The assembled relationship lives in ONE file instead,
+    # which is more use than two parts that happen to share a frame.
+    lid_print = lid.rotate((0, 0, 0), (1, 0, 0), 180)
+    bb = lid_print.val().BoundingBox()
+    lid_print = lid_print.translate((0, -bb.ymin, -bb.zmin))
+
     outp = []
-    for tag, sol in (("tray", tray), ("lid", lid)):
+    for tag, sol in (("tray", tray), ("lid", lid_print)):
         base = os.path.join(OUT, f"segno_mini_console_{tag}")
-        cq.exporters.export(sol.val(), base + ".step")   # STEP: assembly frame
-        # STL: PRINT frame. The tray already lies on its floor, but the lid is
-        # authored bosses-down -- slice it that way and it prints on the tips of
-        # seven studs (1.9% of its footprint). Flipped, the plate is the bed
-        # contact, the visible face gets the bed finish, and every boss and tab
-        # points up with nothing to support.
-        pr = sol
-        if tag == "lid":
-            pr = pr.rotate((0, 0, 0), (1, 0, 0), 180)
-            pr = pr.translate((0, -pr.val().BoundingBox().ymin,
-                               -pr.val().BoundingBox().zmin))
-        cq.exporters.export(pr, base + ".stl", tolerance=0.05)
+        cq.exporters.export(sol.val(), base + ".step")
+        cq.exporters.export(sol, base + ".stl", tolerance=0.05)
         bb = sol.val().BoundingBox()
         print(f"Mini console {tag}: {base}.step/.stl  footprint "
               f"{bb.xmax-bb.xmin:.1f} x {bb.ymax-bb.ymin:.1f} x {bb.zmax-bb.zmin:.1f} mm"
-              + ("  (STL flipped plate-down for printing)" if tag == "lid" else ""))
+              f"  (as printed: lay it down exactly as the file sits)")
         outp.append(base + ".step")
+
+    # ...and the assembly, lid seated on the wall tops at the real slope: a
+    # point (x, y_l, 0) on the lid maps to z = C0 + y_l*sin(slope), which is
+    # the wall-top plane z = C0 + tan(slope)*y at y = y_l*cos(slope).
+    seated = lid.rotate((0, 0, 0), (1, 0, 0), SLOPE_ANGLE).translate((0, 0, C0))
+    asm = os.path.join(OUT, "segno_mini_console_assembly.step")
+    cq.exporters.export(
+        cq.Compound.makeCompound([tray.val(), seated.val()]), asm)
+    print(f"Mini console assembly (CAD reference, NOT for slicing): {asm}")
+    outp.append(asm)
     return outp
 
 def build_diffuser_step():
