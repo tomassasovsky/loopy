@@ -1288,6 +1288,12 @@ def _platform_printed(cq, ph, v_c, standalone=True, baffle_t=None):
     pedal mounts TOE-FORWARD (back/cable end at +X)."""
     sw = SKIRT_OUT_W
     sd = SKIRT_OUT_D
+    # A grown baffle ring takes the BODY with it. Sizing the ring alone left it
+    # standing 0.75 mm proud of the pedestal face all round -- a lip, both a
+    # down-facing ledge and simply wrong to look at (#539). Resolved here so
+    # body, ring, notch and relief all read the same number.
+    ring_od = sd if baffle_t is None else max(sd, SKIRT_IN_D + 2*baffle_t)
+    sd = ring_od
     h = ph - T
     # cap the pilot depth in the LOW front pedestal (keeps a solid mid web and
     # clears the pad pocket above) and fit SHORT inserts (M3 x 3) instead of 5.7s
@@ -1330,7 +1336,6 @@ def _platform_printed(cq, ph, v_c, standalone=True, baffle_t=None):
     # already only SKIRT_SETBACK behind the slot cut line), so a caller that
     # wants a printable baffle grows the ring OUTWARD instead; the 0.75 mm
     # ledge that leaves on the pedestal face is a trivial overhang. (#539)
-    ring_od = sd if baffle_t is None else max(sd, SKIRT_IN_D + 2*baffle_t)
     ring = (cq.Workplane("XY").box(ring_od, sw, 60.0, centered=(True, True, False))
             .cut(cq.Workplane("XY").box(SKIRT_IN_D, SKIRT_IN_W, 60.0,
                                         centered=(True, True, False)))
@@ -1373,7 +1378,7 @@ def _platform_printed(cq, ph, v_c, standalone=True, baffle_t=None):
     # REAL plate (drift-calibrated per row). Deck inside the opening keeps
     # full height; the pedal (76.35 x 109.87) never sits on the shaved strips.
     opening_d = FSW_SLOT_D * math.cos(math.radians(SLOPE_ANGLE))
-    ring_region = (cq.Workplane("XY").box(max(sd, ring_od), sw, 200.0,
+    ring_region = (cq.Workplane("XY").box(ring_od, sw, 200.0,
                                           centered=(True, True, False))
                    .cut(cq.Workplane("XY").box(opening_d, FSW_SLOT_W, 200.0,
                                                centered=(True, True, False))))
@@ -1522,15 +1527,19 @@ def build_mini_console():
     # BRACING. The tall thin side walls have to lean on something, and the bare
     # floor between and behind the tubs is where the warp map peaked.
     tub_x = [(u - U0 - SKIRT_OUT_W/2.0, u - U0 + SKIRT_OUT_W/2.0) for u in PEDS]
-    tub_od = max(SKIRT_OUT_D, SKIRT_IN_D + 2*MINI_BAFFLE_T)   # grown baffle ring
-    tub_y = (yc - tub_od/2.0, yc + tub_od/2.0)                # ring, above the deck
-    body_y = (yc - SKIRT_OUT_D/2.0, yc + SKIRT_OUT_D/2.0)     # pedestal body, below it
+    tub_od = max(SKIRT_OUT_D, SKIRT_IN_D + 2*MINI_BAFFLE_T)   # body AND ring
+    tub_y = (yc - tub_od/2.0, yc + tub_od/2.0)
     gap_l = tub_x[0][0] - WALL_T           # left wall stood in a 3 mm canyon
     if gap_l > 0.05:                       # fill it: the wall becomes tub-braced
+        # front end at the wall (kills the sliver the cavity's corner radius
+        # leaves), rear end at the tub -- running it full depth put it under the
+        # rear anchor bosses, which drop 8 mm below the lid plane (#539)
         tray = tray.union(slope_cut(cq.Workplane("XY").box(
-            gap_l + 0.2, D - 2*WALL_T, 80.0, centered=False)
+            gap_l + 0.2, tub_y[1] - WALL_T, 80.0, centered=False)
             .translate((WALL_T, WALL_T, FLOOR_T)), C0))
-    for ry in (25.0, 66.0, 108.0):         # ties the two tubs to each other
+    for ry in (35.0, 66.0, 108.0):         # ties the two tubs to each other
+        # (clear of the centre anchor at y=20: its pillar spans y 14..26 and the
+        # lid's boss drops onto the pillar TOP, not onto a rib)
         tray = tray.union(cq.Workplane("XY").box(
             tub_x[1][0] - tub_x[0][1] + 0.4, 5.0, 8.0, centered=False)
             .translate((tub_x[0][1] - 0.2, ry - 2.5, FLOOR_T)))
@@ -1538,8 +1547,8 @@ def build_mini_console():
         # (kept off the Pro Micro boss's x 80.0..122.2: a rib landing just
         # beside it leaves a 0.8 mm slot the nozzle cannot resolve)
         tray = tray.union(cq.Workplane("XY").box(
-            4.0, (D - WALL_T) - body_y[1] + 0.4, 8.0, centered=False)
-            .translate((rx - 2.0, body_y[1] - 0.2, FLOOR_T)))
+            4.0, (D - WALL_T) - tub_y[1] + 0.4, 8.0, centered=False)
+            .translate((rx - 2.0, tub_y[1] - 0.2, FLOOR_T)))
     # Pro Micro bay: raised boss against the rear wall, open-top pocket, and a
     # USB cutout through the rear wall (board slides in from above; the USB
     # lead + pocket friction retain it -- PROVISIONAL, fine for the mini)
@@ -1600,12 +1609,37 @@ def build_mini_console():
                       .translate((bx, y_pl - 2.0*sn, -LID_BOSS_H - 2.0*cs)))
     # registration tabs (pure locators; the anchors do the clamping).
     # FRONT pair: shallow, inside the y<8.5 strip before the tub front walls.
+    # FRONT pair: they live in the strip between the front wall and the tub, and
+    # that strip is now 4.56 mm wide (the baffle ring took the tub face out to
+    # y=7.76). A tab hangs BELOW the lid plane, and the lid is tilted, so its
+    # bottom edge lands tan(slope) further REARWARD than its top -- 5 mm of tab
+    # walked 1.08 mm into the tub. Sized against the swept envelope, not the
+    # footprint, with the two asserts spelling the strip out.
+    FT_D, FT_H = 2.8, 3.0
+    ft_y = (WALL_T + 0.3) / cs
+    assert ft_y * cs >= WALL_T + 0.25, \
+        "MINI_TAB: front tab overhangs the front wall top"
+    assert (ft_y + FT_D) * cs + FT_H * sn <= tub_y[0] - 0.4, \
+        "MINI_TAB: front tab sweeps into the pedestal tub"
     for tx in (40.0, 165.0):
-        lid = lid.union(cq.Workplane("XY").box(10.0, 3.5, 5.0, centered=False)
-                        .translate((tx - 5.0, WALL_T/cs + 0.8, -5.0)))
+        lid = lid.union(cq.Workplane("XY").box(10.0, FT_D, FT_H, centered=False)
+                        .translate((tx - 5.0, ft_y, -FT_H)))
     for tx in (60.0, 168.0):
         lid = lid.union(cq.Workplane("XY").box(10.0, 10.0, 5.0, centered=False)
                         .translate((tx, (D - WALL_T)/cs - 12.0, -5.0)))
+
+    # ASSEMBLY GATE. Three separate clashes got into this part by moving tray
+    # geometry without re-checking what the lid drops into it (#539): the left
+    # filler under the rear anchor bosses, a centre rib under the middle one,
+    # and the front tabs after the tub grew. Cheap to just ask.
+    seated = lid.rotate((0, 0, 0), (1, 0, 0), SLOPE_ANGLE).translate((0, 0, C0))
+    clash = tray.val().intersect(seated.val())
+    clash_v = clash.Volume() if clash is not None else 0.0
+    assert clash_v < 0.5, (
+        f"MINI_FIT: tray and lid overlap by {clash_v:.1f} mm3 -- "
+        + "; ".join(f"{c.Volume():.1f}mm3 near "
+                    f"x{c.BoundingBox().xmin:.0f} y{c.BoundingBox().ymin:.0f} "
+                    f"z{c.BoundingBox().zmin:.0f}" for c in clash.Solids()))
 
     # EVERY per-part file ships in PRINT orientation -- STEP and STL alike.
     # Shipping the STL flipped and the STEP in the assembly frame was a trap:
@@ -1631,7 +1665,6 @@ def build_mini_console():
     # ...and the assembly, lid seated on the wall tops at the real slope: a
     # point (x, y_l, 0) on the lid maps to z = C0 + y_l*sin(slope), which is
     # the wall-top plane z = C0 + tan(slope)*y at y = y_l*cos(slope).
-    seated = lid.rotate((0, 0, 0), (1, 0, 0), SLOPE_ANGLE).translate((0, 0, C0))
     asm = os.path.join(OUT, "segno_mini_console_assembly.step")
     cq.exporters.export(
         cq.Compound.makeCompound([tray.val(), seated.val()]), asm)
