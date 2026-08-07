@@ -1813,7 +1813,9 @@
     "trackQuantizeNever": "No cuantizar nunca",
     "trackQuantizeGlobalOn": "activada",
     "trackQuantizeGlobalOff": "desactivada",
-    "a11yTrackLaneRecording": "{input}, grabando en su propio carril. Activa para dejar de grabarla.",
+    "a11yTrackLaneRecording": "{input}, grabando en su propio carril. Activa para ver a dónde va el carril.",
     "a11yTrackLaneIdle": "{input}, sin grabar. Activa para grabarla.",
+    "a11yTrackLaneNoLane": "{input}, sin grabar. Esta pista no tiene ningún carril libre para ella.",
+    "a11yTrackLaneStopRecording": "Dejar de grabar esta entrada",
     "a11yTracksRenameField": "Nombre de la pista"
 }

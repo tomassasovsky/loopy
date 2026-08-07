@@ -22,6 +22,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/common/pill_tabs.dart';
@@ -300,6 +301,7 @@ class ConsoleRow extends StatelessWidget {
     this.onTap,
     this.showDivider = true,
     this.semanticLabel,
+    this.customSemanticsActions,
     super.key,
   });
 
@@ -365,6 +367,15 @@ class ConsoleRow extends StatelessWidget {
   /// Overrides the announced label; defaults to title + subtitle + readouts.
   final String? semanticLabel;
 
+  /// Extra actions announced on the row's own node — what a [leading] or
+  /// [trailing] control does, when the row holds one.
+  ///
+  /// The row announces itself as ONE labelled control, which means the widgets
+  /// it holds are excluded from semantics: their text would otherwise repeat
+  /// the label. That is right for a glyph and wrong for a tap target, which
+  /// disappears with it. A row that hands out a second action names it here.
+  final Map<CustomSemanticsAction, VoidCallback>? customSemanticsActions;
+
   /// Left inset of an [indented] row.
   static const double indentedInset = 40;
 
@@ -375,6 +386,14 @@ class ConsoleRow extends StatelessWidget {
         semanticLabel ??
         [title, subtitle, state, value].whereType<String>().join(', ');
     final readout = valueColor ?? surface.textSecondary;
+    // [label] already SAYS the row's text, so announcing the visible words
+    // again would read every one of them twice. On the tappable path
+    // [FocusableTapTarget] silences the whole subtree for us; here it is done
+    // PIECE BY PIECE, and never to [leading] or [trailing] — a row with no tap
+    // of its own is exactly the row whose only control is one of those two,
+    // and silencing it would take the control away rather than the echo.
+    Widget quiet(Widget child) =>
+        onTap == null ? ExcludeSemantics(child: child) : child;
 
     final row = AnimatedContainer(
       duration: consoleMotion(context),
@@ -404,36 +423,38 @@ class ConsoleRow extends StatelessWidget {
             const SizedBox(width: kConsoleRowGap),
           ],
           Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: titleColor ?? surface.textPrimary,
-                    fontSize: 17,
-                    height: 1.18,
-                    leadingDistribution: TextLeadingDistribution.even,
-                  ),
-                ),
-                if (subtitle case final sub?) ...[
-                  const SizedBox(height: 2),
+            child: quiet(
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    sub,
+                    title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: surface.textMuted,
-                      fontSize: 14,
-                      height: 1.21,
+                      color: titleColor ?? surface.textPrimary,
+                      fontSize: 17,
+                      height: 1.18,
                       leadingDistribution: TextLeadingDistribution.even,
                     ),
                   ),
+                  if (subtitle case final sub?) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      sub,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: surface.textMuted,
+                        fontSize: 14,
+                        height: 1.21,
+                        leadingDistribution: TextLeadingDistribution.even,
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
           if (trailing case final control?) ...[
@@ -442,42 +463,46 @@ class ConsoleRow extends StatelessWidget {
           ] else ...[
             if (state case final word?) ...[
               const SizedBox(width: kConsoleRowGap),
-              Text(
-                word,
-                textAlign: TextAlign.right,
-                style: TextStyle(
-                  color: readout,
-                  fontFamily: SurfaceTheme.monoFont,
-                  fontSize: 14,
-                  height: 1.14,
-                  leadingDistribution: TextLeadingDistribution.even,
+              quiet(
+                Text(
+                  word,
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    color: readout,
+                    fontFamily: SurfaceTheme.monoFont,
+                    fontSize: 14,
+                    height: 1.14,
+                    leadingDistribution: TextLeadingDistribution.even,
+                  ),
                 ),
               ),
             ],
             if (value case final name?) ...[
               const SizedBox(width: kConsoleRowGap),
-              Flexible(
-                child: Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.right,
-                  style: TextStyle(
-                    color: readout,
-                    fontSize: 14,
-                    height: 1.21,
-                    leadingDistribution: TextLeadingDistribution.even,
+              Expanded(
+                child: quiet(
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      color: readout,
+                      fontSize: 14,
+                      height: 1.21,
+                      leadingDistribution: TextLeadingDistribution.even,
+                    ),
                   ),
                 ),
               ),
             ],
             if (mark case final glyph?) ...[
               const SizedBox(width: kConsoleRowGap),
-              glyph,
+              quiet(glyph),
             ],
             if (showDisclosure) ...[
               const SizedBox(width: kConsoleRowGap),
-              ConsoleDisclosure(expanded: expanded),
+              quiet(ConsoleDisclosure(expanded: expanded)),
             ],
           ],
         ],
@@ -485,11 +510,24 @@ class ConsoleRow extends StatelessWidget {
     );
 
     if (onTap == null) {
-      return Semantics(label: label, child: row);
+      // The actions come along here too: a row whose ONLY interactive part is
+      // its [leading] or [trailing] control is exactly the row that has no tap
+      // of its own, so dropping them on this path would strand them in the
+      // case the parameter exists for.
+      //
+      // The row goes in as it is: `quiet` has already silenced the text that
+      // would echo [label], and what is left is the controls this path exists
+      // to carry.
+      return Semantics(
+        label: label,
+        customSemanticsActions: customSemanticsActions,
+        child: row,
+      );
     }
     return FocusableTapTarget(
       onTap: onTap,
       semanticLabel: label,
+      customSemanticsActions: customSemanticsActions,
       child: InkWell(onTap: onTap, child: row),
     );
   }

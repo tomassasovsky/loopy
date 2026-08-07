@@ -2354,8 +2354,9 @@
     "trackQuantizeNever": "Never quantize",
     "trackQuantizeGlobalOn": "on",
     "trackQuantizeGlobalOff": "off",
-    "a11yTrackLaneRecording": "{input}, recording into its own lane. Activate to stop recording it.",
+    "a11yTrackLaneRecording": "{input}, recording into its own lane. Activate to show where the lane goes.",
     "@a11yTrackLaneRecording": {
+        "description": "Announced label of a lane row. States the lane and what the row's own tap does — which is open the lane, NOT stop it: stopping is offered as a11yTrackLaneStopRecording, a custom action on the same node.",
         "placeholders": {
             "input": {
                 "type": "String"
@@ -2369,6 +2370,19 @@
                 "type": "String"
             }
         }
+    },
+    "a11yTrackLaneNoLane": "{input}, not recorded. This track has no lane left for it.",
+    "@a11yTrackLaneNoLane": {
+        "description": "Announced label of a lane row the engine's lane cap has closed off. Says what the muted ink says to the eye: the row is listed, but the track has run out of lanes, so it offers no action.",
+        "placeholders": {
+            "input": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yTrackLaneStopRecording": "Stop recording this input",
+    "@a11yTrackLaneStopRecording": {
+        "description": "The lane row's custom action: what the check gutter does. Published on the row because the gutter's own semantics sit inside the row's ExcludeSemantics, and without it a screen reader can only reach `None (clean)`, which clears every lane on the track."
     },
     "a11yTracksRenameField": "Track name"
 }
