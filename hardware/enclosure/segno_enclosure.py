@@ -1430,7 +1430,6 @@ def build_mini_console():
     import cadquery as cq
     cs = math.cos(math.radians(SLOPE_ANGLE))
     tn = math.tan(math.radians(SLOPE_ANGLE))
-    U0 = 625.3
     PEDS = [_row1_u(6), _row1_u(7)]  # the TRACK3/TRACK4 pair, pitch preserved
     V1S = 160.0                      # depth on-slope (pedals + pills + board bay)
     D = V1S * cs
@@ -1445,10 +1444,18 @@ def build_mini_console():
                                       # 12 mm flat ceiling -> slicer adds support)
     MINI_BAFFLE_T = 1.6               # 4 beads on the tub's light-baffle ring
     ZLIFT = FLOOR_T - T               # everything above the floor rises with it
-    # the right wall OVERLAPS TRACK4's tub by 0.5 so the two fuse into one
-    # braced section -- the old +0.5 left them a 0.5 mm slot the nozzle cannot
-    # resolve, running 115 mm up a 44 mm wall
-    Wt = (PEDS[1] - U0) + SKIRT_OUT_W/2.0 - 0.5 + WALL_T
+    # SYMMETRY (v2). The width used to be derived from the RIGHT tub alone and
+    # the origin was a hardcoded U0=625.3 carried over from the big console, so
+    # the pedal pair sat 1.74 mm right of the tray's centreline: 11.38 mm of
+    # margin one side, 7.90 the other, on a face you look at. Size the tray from
+    # the tub SPAN instead and put the origin where the pair lands centred --
+    # then BOTH side walls overlap their tub by WALL_OVER and neither side needs
+    # a filler strip. 3.48 mm narrower, and the strip that caused two of the
+    # earlier lid clashes stops existing.
+    WALL_OVER = 0.5                              # wall into tub, so the two fuse
+    tub_span = (PEDS[1] - PEDS[0]) + SKIRT_OUT_W
+    Wt = tub_span + 2.0*(WALL_T - WALL_OVER)
+    U0 = (PEDS[0] + PEDS[1])/2.0 - Wt/2.0        # centres the pair, by construction
     C0 = (lid_top_z(PEDAL_ROW1_V) + SKIRT_DRIFT_ROW1 - T) - tn * (PEDAL_ROW1_V * cs) + ZLIFT
     # under-base lid anchors: triangle clamp, nothing on top. The screws lean
     # REARWARD going down (they follow the lid normal), so each bottom exit
@@ -1456,7 +1463,7 @@ def build_mini_console():
     # therefore sits at y=140 in the side strips (x 8.5 / 190.4, clear of the
     # diffuser flanges and the board bay) so the exits stay in open floor
     # instead of breaking through the rear wall footprint.
-    ANCHORS = ((8.5, 139.0), (190.4, 139.0), (101.13, 20.0))
+    ANCHORS = ((8.5, 139.0), (Wt - 8.5, 139.0), (Wt/2.0, 20.0))
     BOARD_W, BOARD_D = 34.2, 18.8    # Pro Micro pocket (33 x 18 board + clearance)
     BOARD_XC = (PEDS[0] + PEDS[1])/2.0 - U0   # centred between the tubs
 
@@ -1517,7 +1524,7 @@ def build_mini_console():
     # 12 mm ceiling 0.5 mm off the bed, which every slicer supports; the groove
     # only ever has to bridge its own 1.2 mm width.
     for (fx, fy) in ((15.0, 15.0), (Wt - 15.0, 15.0),
-                     (30.0, D - 14.0), (155.0, D - 14.0)):
+                     (30.0, D - 14.0), (Wt - 30.0, D - 14.0)):
         tray = tray.cut(cq.Workplane("XY")
                         .circle(FOOT_D/2.0).circle(FOOT_D/2.0 - FOOT_RING_W)
                         .extrude(FOOT_REC).translate((fx, fy, 0.0)))
@@ -1547,7 +1554,7 @@ def build_mini_console():
         tray = tray.union(cq.Workplane("XY").box(
             tub_x[1][0] - tub_x[0][1] + 0.4, 5.0, 8.0, centered=False)
             .translate((tub_x[0][1] - 0.2, ry - 2.5, FLOOR_T)))
-    for rx in (30.0, 70.0, 135.0, 170.0):  # stiffens the open rear bay
+    for rx in (30.0, 70.0, Wt - 70.0, Wt - 30.0):  # stiffens the open rear bay
         # (kept off the Pro Micro boss's x 80.0..122.2: a rib landing just
         # beside it leaves a 0.8 mm slot the nozzle cannot resolve)
         tray = tray.union(cq.Workplane("XY").box(
@@ -1646,12 +1653,30 @@ def build_mini_console():
         "MINI_TAB: front tab overhangs the front wall top"
     assert (ft_y + FT_D) * cs + FT_H * sn <= tub_y[0] - 0.4, \
         "MINI_TAB: front tab sweeps into the pedestal tub"
-    for tx in (40.0, 165.0):
+    for tx in (40.0, Wt - 40.0):
         lid = lid.union(cq.Workplane("XY").box(10.0, FT_D, FT_H, centered=False)
                         .translate((tx - 5.0, ft_y, -FT_H)))
-    for tx in (60.0, 168.0):
+    # centred on tx like the front pair -- these used to be placed by their
+    # CORNER, so mirroring the x value put the second one 10 mm off station
+    for tx in (65.0, Wt - 65.0):
         lid = lid.union(cq.Workplane("XY").box(10.0, 10.0, 5.0, centered=False)
-                        .translate((tx, (D - WALL_T)/cs - 12.0, -5.0)))
+                        .translate((tx - 5.0, (D - WALL_T)/cs - 12.0, -5.0)))
+
+    # SYMMETRY GATE. This part shipped 1.74 mm off-centre through six rounds of
+    # printability and fit checking, because every gate asked "does it build and
+    # assemble" and none asked "is it right". Mirror each solid about its own
+    # centreline and diff: anything left over is material that exists on one
+    # side and not the other.
+    for _nm, _sol in (("tray", tray), ("lid", lid)):
+        _mir = _sol.mirror("YZ").translate((Wt, 0, 0))
+        _odd = _sol.val().cut(_mir.val())
+        _v = _odd.Volume()
+        assert _v < 1.0, (
+            f"MINI_SYM: {_nm} has {_v:.1f} mm3 on one side only -- "
+            + "; ".join(f"{c.Volume():.1f}mm3 at x{c.BoundingBox().xmin:.0f} "
+                        f"y{c.BoundingBox().ymin:.0f}"
+                        for c in sorted(_odd.Solids(),
+                                        key=lambda q: q.Volume(), reverse=True)[:4]))
 
     # ASSEMBLY GATE. Three separate clashes got into this part by moving tray
     # geometry without re-checking what the lid drops into it (#539): the left
