@@ -1422,7 +1422,9 @@ def build_mini_console():
     CORNER_R = 6.0      # plan corner radius: square corners peel first
     BOT_CHAM = 0.6      # bottom edge: kills elephant foot and the lifting knife edge
     GUSSET   = 2.5      # 45deg ramp along the wall/floor junction
-    FOOT_D, FOOT_REC = 12.0, 0.6      # stick-on rubber feet, located in recesses
+    FOOT_D, FOOT_REC = 12.0, 0.5      # stick-on rubber feet, located by a groove
+    FOOT_RING_W = 1.2                 # groove width (a solid recess would be a
+                                      # 12 mm flat ceiling -> slicer adds support)
     MINI_BAFFLE_T = 1.6               # 4 beads on the tub's light-baffle ring
     ZLIFT = FLOOR_T - T               # everything above the floor rises with it
     # the right wall OVERLAPS TRACK4's tub by 0.5 so the two fuse into one
@@ -1493,10 +1495,14 @@ def build_mini_console():
     # 784 mm2 of bed contact -- the warp that killed the first tray (#539).
     # Stick-on rubber feet drop into these recesses instead, which a floor unit
     # wants anyway, and the floor itself is what grips the bed.
+    # ...located by an engraved RING, not a solid recess. A recess is a flat
+    # 12 mm ceiling 0.5 mm off the bed, which every slicer supports; the groove
+    # only ever has to bridge its own 1.2 mm width.
     for (fx, fy) in ((15.0, 15.0), (Wt - 15.0, 15.0),
                      (30.0, D - 14.0), (155.0, D - 14.0)):
-        tray = tray.cut(cq.Workplane("XY").circle(FOOT_D/2.0).extrude(FOOT_REC)
-                        .translate((fx, fy, 0.0)))
+        tray = tray.cut(cq.Workplane("XY")
+                        .circle(FOOT_D/2.0).circle(FOOT_D/2.0 - FOOT_RING_W)
+                        .extrude(FOOT_REC).translate((fx, fy, 0.0)))
     yc = PEDAL_ROW1_V * cs
     for u in PEDS:
         ped = (_platform_printed(cq, platform_h(PEDAL_ROW1_V), PEDAL_ROW1_V,
@@ -1533,9 +1539,27 @@ def build_mini_console():
     pocket = cq.Workplane("XY").box(BOARD_W, BOARD_D, 3.0, centered=False)\
         .translate((BOARD_XC - BOARD_W/2.0, D - WALL_T - BOARD_D, FLOOR_T + 1.8))
     tray = tray.union(boss).cut(pocket)
-    usb = cq.Workplane("XY").box(12.0, WALL_T + 2.0, 5.0, centered=False)\
-        .translate((BOARD_XC - 6.0, D - WALL_T - 1.0, FLOOR_T + 2.6))
-    tray = tray.cut(usb)
+    # USB pass-through, with a 45deg GABLE over it. A plain rectangle leaves a
+    # 12 mm flat ceiling inside the wall -- bridgeable, but slicers support it.
+    usb_w, usb_h, usb_x0 = 12.0, 5.0, BOARD_XC - 6.0
+    usb_y0, usb_z0 = D - WALL_T - 1.0, FLOOR_T + 2.6
+    usb_t = WALL_T + 2.0
+    usb = cq.Workplane("XY").box(usb_w, usb_t, usb_h, centered=False)\
+        .translate((usb_x0, usb_y0, usb_z0))
+    # 50 deg flanks (margin over the 45 deg self-supporting limit) narrowing to
+    # a 4 mm flat -- the extruder never reaches more than 4 mm unsupported, and
+    # the opening stays short instead of growing a full gable's worth of height
+    roof_top, roof_a = 4.0, 50.0
+    roof_rise = (usb_w - roof_top)/2.0 * math.tan(math.radians(roof_a))
+    roof = (cq.Workplane("XZ")
+            .polyline([(usb_x0, usb_z0 + usb_h),
+                       (usb_x0 + usb_w, usb_z0 + usb_h),
+                       (usb_x0 + (usb_w + roof_top)/2.0, usb_z0 + usb_h + roof_rise),
+                       (usb_x0 + (usb_w - roof_top)/2.0, usb_z0 + usb_h + roof_rise)])
+            .close().extrude(usb_t))
+    bb = roof.val().BoundingBox()
+    roof = roof.translate((0, usb_y0 - bb.ymin, 0))   # land it in the rear wall
+    tray = tray.cut(usb).cut(roof)
 
     # --- lid (prints FLAT; seats on the wall tops at the real slope) ------
     lid = cq.Workplane("XY").box(Wt, V1S, T, centered=False)

@@ -19,6 +19,10 @@ prints:
   GAP       slots narrower than the nozzle: the slicer either fuses them or
             leaves a crack.
   BRIDGE    material that starts in mid-air with nothing underneath.
+  SUPPORT   down-facing surfaces shallower than the slicer's overhang limit,
+            each sized by how far the extruder must reach unsupported. A face
+            with a short reach bridges and wants no support however flat it
+            is; the number to shrink is the reach, not the angle.
 
 The WARP number is a calibrated heuristic against printing rules of thumb, not
 a thermal-stress simulation. Treat the ranking as "look here first", not as a
@@ -46,6 +50,11 @@ STACK_REF = 20.0          # material height above that doubles the pull
 EDGE_BAND = 2.5           # how far in from a free edge still counts as an edge
 WARP_WARN, WARP_BAD = 1.5, 3.0
 ASPECT_WARN, ASPECT_BAD = 20.0, 40.0
+SUPPORT_ANGLE = 45.0      # slicer overhang limit, degrees from vertical
+BRIDGE_REACH = 5.0        # unsupported reach a slicer bridges without help.
+                          # Measured as the largest inscribed disc in the
+                          # overhanging patch: an annular counterbore ceiling
+                          # 2.5 mm wide bridges; a solid 12 mm disc does not.
 NOISE_MM2 = 12.0          # a hit smaller than this is a cell or two at a corner
                           # -- grid dust, not a wall. Still listed, but it does
                           # not decide the verdict. Re-run at a finer --res to
@@ -147,6 +156,63 @@ def voxelise(tris, res, dz):
         if k1 >= k0:
             flat[max(0, k0):min(nz, k1 + 1), cc] = True
     return occ, lo
+
+
+def overhangs(tris, res, zfloor, angle=SUPPORT_ANGLE):
+    """Down-facing patches shallower than `angle`, sized by unsupported reach.
+
+    Angle alone is a bad predictor: the flat annular ceiling of a counterbore
+    is a 0 deg overhang that every slicer bridges, while a broad shallow face
+    needs help. So each patch is measured by the largest inscribed disc it
+    contains -- how far the extruder must reach with nothing under it.
+
+    Faces sitting on the build plate are bed contact, not overhang, and are
+    dropped.
+    """
+    a, b, c = tris[:, 0], tris[:, 1], tris[:, 2]
+    n = np.cross(b - a, c - a)
+    area = np.linalg.norm(n, axis=1) / 2.0
+    with np.errstate(invalid="ignore", divide="ignore"):
+        down = -n[:, 2] / np.maximum(np.linalg.norm(n, axis=1), 1e-12)
+    zc = tris[:, :, 2].mean(1)
+    # strictly shallower: a face AT the limit is the self-supporting boundary by
+    # convention, and exact-45 geometry is common on purpose. The epsilon is
+    # float slack (~0.1 deg), not a fudge factor.
+    sel = (down > math.cos(math.radians(angle)) + 1e-3) & (zc > zfloor + 0.5)
+    if not sel.any():
+        return []
+
+    lo2 = tris.reshape(-1, 3).min(0)
+    hi2 = tris.reshape(-1, 3).max(0)
+    nx = max(1, int(math.ceil((hi2[0] - lo2[0]) / res)))
+    ny = max(1, int(math.ceil((hi2[1] - lo2[1]) / res)))
+    out = []
+    idx = np.nonzero(sel)[0]
+    zb = np.round(zc[idx] / 1.0).astype(int)          # group by 1 mm of height
+    for band in np.unique(zb):
+        grp = idx[zb == band]
+        mask = np.zeros((ny, nx), dtype=bool)
+        for t in grp:                                  # rasterise the facet
+            p = tris[t]
+            x0 = max(0, int((p[:, 0].min() - lo2[0]) / res))
+            x1 = min(nx, int((p[:, 0].max() - lo2[0]) / res) + 1)
+            y0 = max(0, int((p[:, 1].min() - lo2[1]) / res))
+            y1 = min(ny, int((p[:, 1].max() - lo2[1]) / res) + 1)
+            mask[y0:y1 + 1, x0:x1 + 1] = True
+        lab, k = ndimage.label(mask)
+        for i in range(1, k + 1):
+            comp = lab == i
+            reach = float(ndimage.distance_transform_edt(
+                comp, sampling=(res, res)).max())
+            ys, xs = np.nonzero(comp)
+            out.append({
+                "area": float(area[grp].sum() * comp.sum() / max(mask.sum(), 1)),
+                "reach": 2.0 * reach,
+                "z": float(zc[grp].mean()),
+                "x": lo2[0] + xs.mean() * res,
+                "y": lo2[1] + ys.mean() * res,
+            })
+    return sorted(out, key=lambda d: d["reach"], reverse=True)
 
 
 # --- checks ----------------------------------------------------------------
@@ -257,6 +323,7 @@ def analyse(occ, lo, res, dz, nozzle):
     r["bridge_area"] = fresh.reshape(nz, -1).sum(1) * cell
     j = int(np.argmax(r["bridge_area"]))
     r["bridge_worst"] = (r["bridge_area"][j], j * dz + lo[2])
+    r["overhangs"] = []
     return r
 
 
@@ -306,7 +373,7 @@ def verdict(v, warn, bad, invert=False):
     return "OK  " if v < warn else ("WARN" if v < bad else "FAIL")
 
 
-def report(name, r, res, dz, nozzle):
+def report(name, r, res, dz, nozzle, support_angle=SUPPORT_ANGLE):
     W, D, H = r["shape"]
     print(f"\n=== printability: {name} ===")
     print(f"    envelope {W:.1f} x {D:.1f} x {H:.1f} mm   "
@@ -367,6 +434,20 @@ def report(name, r, res, dz, nozzle):
     print(f"[{verdict(ba, 200, 800)}] BRIDGE  worst unsupported start "
           f"{ba:.0f} mm2 at z={bz:.2f}")
 
+    ov = r["overhangs"]
+    need = [o for o in ov if o["reach"] > BRIDGE_REACH and o["area"] >= NOISE_MM2]
+    tot = sum(o["area"] for o in ov)
+    print(f"[{'OK  ' if not need else 'FAIL'}] SUPPORT {tot:.0f} mm2 faces "
+          f"shallower than {support_angle:.0f} deg above the bed; "
+          f"{len(need)} patch(es) reach further than {BRIDGE_REACH:.0f} mm "
+          f"and would want support")
+    for o in ov[:6]:
+        if o["area"] < NOISE_MM2:
+            continue
+        tag = "NEEDS SUPPORT" if o["reach"] > BRIDGE_REACH else "bridges"
+        print(f"          {o['area']:6.0f} mm2, reach {o['reach']:5.1f} mm "
+              f"at x={o['x']:6.1f} y={o['y']:6.1f} z={o['z']:5.1f}   {tag}")
+
 
 def draw(path, r, lo, res):
     import matplotlib
@@ -404,6 +485,8 @@ def main(argv=None):
     ap.add_argument("--res", type=float, default=0.6, help="xy grid (mm)")
     ap.add_argument("--dz", type=float, default=0.4, help="z grid (mm)")
     ap.add_argument("--nozzle", type=float, default=0.4)
+    ap.add_argument("--support-angle", type=float, default=SUPPORT_ANGLE,
+                    dest="support_angle", help="slicer overhang limit (deg)")
     ap.add_argument("--png", default=None, help="write a map for the FIRST stl")
     a = ap.parse_args(argv)
 
@@ -412,7 +495,8 @@ def main(argv=None):
         tris = load_stl(p)
         occ, lo = voxelise(tris, a.res, a.dz)
         r = analyse(occ, lo, a.res, a.dz, a.nozzle)
-        report(os.path.basename(p), r, a.res, a.dz, a.nozzle)
+        r["overhangs"] = overhangs(tris, a.res, lo[2], a.support_angle)
+        report(os.path.basename(p), r, a.res, a.dz, a.nozzle, a.support_angle)
         if r["adhesion"] < ADHESION_BAD or any(h[0] >= WARP_BAD for h in r["hot"]):
             worst = 1
         if a.png and i == 0:
