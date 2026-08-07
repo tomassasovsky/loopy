@@ -241,12 +241,29 @@ fifth row wraps within its 166px content width — not two card sizes.
 | 5 | chain summary — **`tap to load one` in this slice** | fs14 lh1.35 `#9a9aa2`, wraps at 166 |
 | 6 | monitor — `MONITOR: ON` / `AUTO` / `OFF` | fs13 ls0.78 lh1.23; ON/AUTO `#3b82f6`, OFF `#6b6b73` |
 
-**Row 6 is omitted entirely on a card with no rack** — the `bass` card has five
-children where `rhythm` has six. *Absence is modelled, not defaulted*, drawn
-correctly. It survives into this slice: an input card still has a monitor (the
-gate is real), but a **loop / track / master card has no monitor row at all**,
-because a monitor tri-state on a stage that is `MONITOR ONLY` by construction
-says nothing.
+**Row 6 is omitted on a card with no rack** — the `bass` card has five children
+where `rhythm` has six, at the same 215px height, so it is a deliberate
+omission and not a space constraint. *Absence is modelled, not defaulted*,
+drawn correctly.
+
+**[R] The first draft then got the rule backwards**, claiming a
+loop / track / master card has no monitor row at all. It does:
+`signal-loop` draws `MONITOR: AUTO` and `MONITOR: OFF` on its cards and
+`signal-master` draws `MONITOR: ON`. The rule keys off the **rack**, not the
+stage.
+
+That has a consequence worth stating plainly, because racks are out of scope:
+**every card in this slice is rackless, so no card on the loop, track or
+master tab shows a monitor row.** The tri-state still ships and is still
+editable — but only inside the detail panel. Those three faces say nothing
+about monitoring until #535 lands.
+
+**Inputs are the exception, and it is a decided one.** An input's monitor gate
+is a fact about the jack, not about the chain on it — it is true or false
+whether or not a rack is loaded, so an input card **always** carries its
+monitor line. The design never drew a rackless input card; `SIGNAL /
+signal-input` now does (the `aux` card, D11), so the contrast against
+`signal-loop`'s vacant `bass` card is on record rather than inferred.
 
 Master's card is the same card at full width: 1700x196.
 
@@ -559,12 +576,29 @@ document, as a styling hook it is not.
 Signal lands, when the vocabulary has stopped moving. Inside this slice it
 would put a whole-file reorganisation in the same diff as a twelve-screen face.
 
-## Design departures → `chore(design):` PR, merged first
+## Design departures → **shipped as #571 + #573**, merged first
+
+> **[R] Done.** Two `chore(design):` PRs, stacked, both ahead of any code:
+>
+> - **#571** — the design work that existed only in Pencil's memory (the
+>   per-output switches on `signal-master`, the level and mix rows on
+>   `signal-detail`) committed as its own baseline. `.pen` is encrypted and
+>   cannot be diffed, so commit boundaries are the only record of which
+>   geometry came from where — and this plan measures geometry that until
+>   #571 existed nowhere in git.
+> - **#573** — the eleven departures below. Based on #571, **not** master:
+>   retarget it onto master before squash-merging #571, and delete branches
+>   last.
+>
+> Verified after the edits: **459 top-level frames** (455 + `signal-track` and
+> its `t/` `g/` `c/` companions), all **thirteen** SIGNAL screens laying out
+> clean. Two clipping reports remain and neither is a defect — `fx-reorder`'s
+> dragged chip is deliberately offset −2,−5 and scaled 1.0135, so overflowing
+> its slot *is* the drag state, and `rack-new`'s `Cancel` sits flush at
+> 1803+77=1880.
 
 Geometry **and** the `c/<screen>` note, its own PR, `chore(design):` in both
-title and commit subject, merged **before** any code. Pencil does not write to
-disk — I will ask you to save, then confirm `git hash-object segno-ui.pen`
-against `git rev-parse HEAD:segno-ui.pen`.
+title and commit subject, merged **before** any code.
 
 | # | Screen | Departure |
 |---|---|---|
@@ -575,7 +609,8 @@ against `git rev-parse HEAD:segno-ui.pen`.
 | D5 | `c/signal-loop` | The note says "the vacant **dashed** card"; the geometry gives it the same solid `#2a2a2e` stroke as a loaded one. **Keep the geometry** — no dashed border exists anywhere in the vocabulary, and the vacant card is already distinguished by `no rack` + `tap to load one` + the omitted monitor row. Fix the note. |
 | D6 | `signal-input` | `Vocal air` reports **`partially clipped`** — a 68x19 text in an 18-tall row with no `lineHeight`. Set `lh1.13` like every sibling. |
 | D7 | `fx-add` | Recent-plugin cells are **166x66** and `ConsoleChipGrid.twoLineCellHeight` is **56** — but these are **different cells**, not a rounding disagreement. The constant is a label + single-line sublabel (fs16 + fs14, both `maxLines: 1`, gap 2 → 56). The pen draws one label *wrapping* to two lines (`Airwindows Console`, 146x38), which the grid cannot express at all — its label is `maxLines: 1`. **Give the plugin chips the format as a sublabel (D4) and they become 56 exactly.** Otherwise the vocabulary needs a wrapping-label variant it does not have and should not grow. |
-| D10 | `fx-browse` | Result cells are **305x48** across 6 columns of 1880. `ConsoleChipGrid.cellWidth` is a fixed **166** and `columnsFor` packs to it, so the sheet's results are a *stretched* grid the vocabulary has no mode for. Either the pen adopts 166-wide cells (11 across 1880, which `columnsFor` would pack as 6+5) or `ConsoleChipGrid` gains a stretch mode. **Prefer the pen change** — a second stretch flag on top of `ConsoleSegmented.stretch` is the shared file growing to fit one screen. |
+| D10 | `fx-browse` | **[R] Reversed while doing the work — the design is right and this recommendation was wrong.** Result cells are **305x48** across 6 columns of 1880, where `ConsoleChipGrid.cellWidth` is a fixed **166**. The draft said the pen should adopt 166. Computing it out: 11 chips at 166 packs to 6+5 columns using **1,046 of 1,880px**, stranding two thirds of the sheet. `ConsoleChipGrid` gains a **stretch mode** instead — the same idea as `ConsoleSegmented.stretch`, which makes it one concept appearing twice rather than scope creep. **No pen change**; `c/fx-browse` records the reasoning. |
+| D11 | `signal-input` | **new** `aux` card — an input with no rack that **still carries its monitor line**. Decided by the user: whether you hear yourself is a fact about the jack, not the chain on it. Drawn inline the way `signal-loop` draws its own vacant card, so the two read against each other. Without it, every card in this slice would be rackless and the face would say nothing about monitoring at all. |
 | D8 | *all six shipped domains* | The pen draws selected tabs w600 / unselected normal; `pill_tabs.dart:127` is a constant `FontWeight.w500`. **Pre-existing debt, not this slice's** — flagged so it is a known deviation, not a Signal regression. Sweep it in only if you say so. |
 
 **Note-only (D9).** `in the mix` is a boolean drawn as a 2-up segmented
