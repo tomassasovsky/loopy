@@ -97,6 +97,7 @@ class _PedalFaceplateState extends State<PedalFaceplate> {
                 (cubit) => cubit.state.mode,
               ),
               l10n: context.l10n,
+              trackNames: context.watch<TracksCubit>().state.names,
               mainScreen: mainScreen,
               waveformScreen: widget.waveformScreen ?? const _ScreenWaveform(),
               onClose: () => context.read<PedalCubit>().selectNone(),

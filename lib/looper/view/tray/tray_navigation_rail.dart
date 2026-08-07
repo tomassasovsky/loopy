@@ -49,6 +49,9 @@ class TrayNavigationRail extends StatelessWidget {
         // A repeat arrow, as the mockups draw it: this domain is about what
         // the loop goes round to, not about any one of tempo/click/mode.
         SettingsTrayDestination.loop => Icons.repeat,
+        // Three upright bars, as the mockups draw it: a track is a lane of
+        // the rig, and this domain is about the set of them.
+        SettingsTrayDestination.tracks => Icons.view_week_outlined,
         SettingsTrayDestination.tuner => Icons.graphic_eq,
         // An antenna, not a WiFi fan or a Bluetooth rune: either radio's own
         // glyph on a shared entry would read as only that one radio.
@@ -64,6 +67,7 @@ class TrayNavigationRail extends StatelessWidget {
     SettingsTrayDestination.home => l10n.trayHomeLabel,
     SettingsTrayDestination.control => l10n.trayControlLabel,
     SettingsTrayDestination.loop => l10n.trayLoopLabel,
+    SettingsTrayDestination.tracks => l10n.trayTracksLabel,
     SettingsTrayDestination.tuner => l10n.trayTunerLabel,
     SettingsTrayDestination.network => l10n.trayNetworkLabel,
   };

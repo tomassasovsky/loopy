@@ -404,11 +404,12 @@
             }
         }
     },
-    "renameTrackTitle": "Rename track {trackNumber}",
+    "renameTrackTitle": "Rename {trackName}",
     "@renameTrackTitle": {
+        "description": "Title of the stage's rename dialog. Names the track it is about to rename rather than numbering it (#526).",
         "placeholders": {
-            "trackNumber": {
-                "type": "int"
+            "trackName": {
+                "type": "String"
             }
         }
     },
@@ -431,11 +432,12 @@
         }
     },
     "trackSettingsTooltip": "Track settings",
-    "trackSettingsDialogTitle": "Track {trackNumber} settings",
+    "trackSettingsDialogTitle": "{trackName} settings",
     "@trackSettingsDialogTitle": {
+        "description": "Title of the console's per-track routing dialog. The ordinal sits underneath it, where it says which pad on the pedal this is.",
         "placeholders": {
-            "trackNumber": {
-                "type": "int"
+            "trackName": {
+                "type": "String"
             }
         }
     },
@@ -714,11 +716,11 @@
     },
     "fxEditorInputConsequence": "prints into new takes",
     "fxEditorLaneConsequence": "shapes playback, non-destructive",
-    "fxEditorTrackTitle": "Track {number} bus",
+    "fxEditorTrackTitle": "{trackName} bus",
     "@fxEditorTrackTitle": {
         "placeholders": {
-            "number": {
-                "type": "int"
+            "trackName": {
+                "type": "String"
             }
         }
     },
@@ -1086,12 +1088,12 @@
             }
         }
     },
-    "pedalSimTrackSemantics": "Track {number}, {state}",
+    "pedalSimTrackSemantics": "{trackName}, {state}",
     "@pedalSimTrackSemantics": {
         "description": "Accessibility label for an on-screen pedal track LED and its lit state.",
         "placeholders": {
-            "number": {
-                "type": "int"
+            "trackName": {
+                "type": "String"
             },
             "state": {
                 "type": "String"
@@ -1548,22 +1550,23 @@
             }
         }
     },
-    "pedalAssignStageLoop": "Track {number} lane {lane}",
+    "pedalAssignStageLoop": "{trackName} lane {lane}",
     "@pedalAssignStageLoop": {
         "placeholders": {
-            "number": {
-                "type": "int"
+            "trackName": {
+                "type": "String"
             },
             "lane": {
                 "type": "int"
             }
         }
     },
-    "pedalAssignStageTrack": "Track {number}",
+    "pedalAssignStageTrack": "{trackName}",
     "@pedalAssignStageTrack": {
+        "description": "A whole track as a pedal-assignment target. Just the name — the surrounding list is already a list of targets.",
         "placeholders": {
-            "number": {
-                "type": "int"
+            "trackName": {
+                "type": "String"
             }
         }
     },
@@ -1661,11 +1664,11 @@
             }
         }
     },
-    "midiLearnTargetVolume": "Track {number} volume",
+    "midiLearnTargetVolume": "{trackName} volume",
     "@midiLearnTargetVolume": {
         "placeholders": {
-            "number": {
-                "type": "int"
+            "trackName": {
+                "type": "String"
             }
         }
     },
@@ -2315,5 +2318,65 @@
                 "type": "int"
             }
         }
-    }
+    },
+    "trayTracksLabel": "Tracks",
+    "@trayTracksLabel": {
+        "description": "Navigation-rail caption for the console's Tracks domain — names, lengths and routing as three tabs of one destination."
+    },
+    "tracksNamesTab": "Names",
+    "tracksLengthsTab": "Lengths",
+    "tracksRoutingTab": "Routing",
+    "tracksOrdinal": "track {number}",
+    "@tracksOrdinal": {
+        "description": "The mono readout beside a track's name, and the line under the routing dialog's title: which pad on the pedal this track is. Lower case, like every other mono readout on this surface.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "tracksNamesFootnote": "Rename tracks. The name is what the stage, the pedal targets and the 7-inch readout all show.",
+    "tracksLengthsFootnote": "Auto takes its length from the first take; a preset records that many bars.",
+    "tracksRoutingFootnote": "A track records any set of inputs — one dry lane each, sharing the loop — and is sent to any set of outputs. Quantize follows the global setting unless a track overrides it.",
+    "tracksEmpty": "No tracks — the engine is not running.",
+    "tracksLengthAuto": "auto",
+    "tracksNoInputs": "None (clean)",
+    "@tracksNoInputs": {
+        "description": "A track whose lanes record nothing, and the row that puts it in that state."
+    },
+    "tracksQuantizeOn": "quantize on",
+    "tracksQuantizeOff": "quantize off",
+    "tracksNotRouted": "not routed",
+    "@tracksNotRouted": {
+        "description": "Routing-tab readout for a track no lane of which reaches any output. In the warning tone: it records and is never heard."
+    },
+    "tracksRenameSheetTitle": "Rename track",
+    "trackLanesGroup": "LANES",
+    "trackLaneOutputsGroup": "OUTPUTS FOR THIS LANE",
+    "trackLaneOutputsNone": "nothing",
+    "trackLaneFxNote": "Effects for this lane live on the Signal page.",
+    "trackLaneUnrouted": "Nothing routed here — this lane will not be heard.",
+    "trackQuantizeGroup": "QUANTIZE RECORDING",
+    "trackQuantizeFollow": "Follow the global setting",
+    "trackQuantizeAlways": "Always quantize",
+    "trackQuantizeNever": "Never quantize",
+    "trackQuantizeGlobalOn": "on",
+    "trackQuantizeGlobalOff": "off",
+    "a11yTrackLaneRecording": "{input}, recording into its own lane. Activate to stop recording it.",
+    "@a11yTrackLaneRecording": {
+        "placeholders": {
+            "input": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yTrackLaneIdle": "{input}, not recorded. Activate to record it.",
+    "@a11yTrackLaneIdle": {
+        "placeholders": {
+            "input": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yTracksRenameField": "Track name"
 }

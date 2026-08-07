@@ -120,11 +120,11 @@ void main() {
       seed(stateWith());
       await pump(tester);
       // The track's own row reads as the track (a feeder chip on an output card
-      // may also say "Track 1", so scope to the take row itself).
+      // may also say "TRACK 1", so scope to the take row itself).
       expect(
         find.descendant(
           of: find.byKey(const Key('signalTake_0_0')),
-          matching: find.text('Track 1'),
+          matching: find.text('TRACK 1'),
         ),
         findsOneWidget,
       );
@@ -147,7 +147,7 @@ void main() {
       expect(find.descendant(of: out, matching: find.text('TRK')), findsOne);
       expect(find.descendant(of: out, matching: find.text('In 1')), findsOne);
       expect(
-        find.descendant(of: out, matching: find.text('Track 1')),
+        find.descendant(of: out, matching: find.text('TRACK 1')),
         findsOne,
       );
     });
@@ -236,7 +236,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('fx_dock')), findsOneWidget);
-      expect(find.text('Track 1 bus'), findsOneWidget);
+      expect(find.text('TRACK 1 bus'), findsOneWidget);
     });
 
     testWidgets('the master strip opens the dock on the Master insert', (

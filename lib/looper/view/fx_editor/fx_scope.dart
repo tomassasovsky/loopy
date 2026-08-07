@@ -389,7 +389,11 @@ class StageFxScope extends FxScope {
   /// `address.stage`, which is not a potentially-constant expression — and the
   /// guard THROWS rather than asserts, so an input/loop address cannot slip
   /// through a release build and silently edit a track's chain instead.
-  StageFxScope({required this.looper, required this.address}) {
+  StageFxScope({
+    required this.looper,
+    required this.address,
+    this.trackNames = const [],
+  }) {
     if (address.stage != FxStage.track && address.stage != FxStage.master) {
       throw ArgumentError.value(
         address.stage,
@@ -401,6 +405,11 @@ class StageFxScope extends FxScope {
 
   /// The looper state + edit surface for the bus chains.
   final LooperBloc looper;
+
+  /// The rig's track names, so a track's bus is titled by what the track is
+  /// called rather than by its ordinal (#526). Empty falls back to the
+  /// ordinal, which is what a caller with no `TracksCubit` in reach gets.
+  final List<String> trackNames;
 
   @override
   final FxAddress address;
@@ -414,7 +423,7 @@ class StageFxScope extends FxScope {
   @override
   String label(AppLocalizations l10n) => _isMaster
       ? l10n.fxEditorMasterTitle
-      : l10n.fxEditorTrackTitle(_channel + 1);
+      : l10n.fxEditorTrackTitle(l10n.trackName(trackNames, _channel));
 
   @override
   String consequence(AppLocalizations l10n) => _isMaster

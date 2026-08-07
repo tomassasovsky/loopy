@@ -1936,6 +1936,15 @@ class LooperRepository {
     return _engine.setRecordOffset(_recordOffset);
   }
 
+  /// Track [channel]'s quantize override: `null` when it inherits the global
+  /// default, otherwise the forced value.
+  ///
+  /// The override was write-only until the console's Tracks face had to render
+  /// it. It is not on [Track] or in the engine snapshot — the engine takes the
+  /// value but never reports it back — so this reads the map the repository
+  /// already keeps in order to re-apply the overrides on every (re)start.
+  bool? trackQuantize(int channel) => _trackQuantize[channel];
+
   /// Overrides quantize for track [channel]: `null` inherits the global
   /// default, `false` forces it off, `true` forces it on. Remembered and
   /// re-applied on every (re)start.

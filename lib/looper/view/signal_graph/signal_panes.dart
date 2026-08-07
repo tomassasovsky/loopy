@@ -317,11 +317,6 @@ class _TracksPane extends _Pane {
   int get count => rows.tracks.length;
 
   /// The track's display name (custom or `Track N`).
-  String _trackLabel(AppLocalizations l10n, int track) =>
-      track < trackNames.length
-      ? l10n.displayTrackName(trackNames[track], track)
-      : l10n.trackNumberLabel(track + 1);
-
   @override
   List<Widget> children(BuildContext context) {
     final surface = context.surface;
@@ -344,7 +339,7 @@ class _TracksPane extends _Pane {
         tags: t.tags,
         child: _TakeRow(
           take: t,
-          trackLabel: _trackLabel(l10n, t.track),
+          trackLabel: l10n.trackName(trackNames, t.track),
           asTrack: g.single,
           inputCount: rows.inputCount,
           outputCount: rows.outputCount,
@@ -405,7 +400,7 @@ class _TracksPane extends _Pane {
                   child: Row(
                     children: [
                       Text(
-                        _trackLabel(l10n, g.track),
+                        l10n.trackName(trackNames, g.track),
                         style: signalMono(
                           color: surface.textPrimary,
                           size: 13,

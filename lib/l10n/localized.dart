@@ -81,6 +81,26 @@ extension EngineLocalizations on AppLocalizations {
     return name;
   }
 
+  /// What to CALL track [channel], given the rig's [names] — the one resolver
+  /// every surface that names a track goes through (#526).
+  ///
+  /// [displayTrackName] answers the same question but only once the caller has
+  /// already found the name, which is why half the app was still printing an
+  /// ordinal: the pedal target list, the MIDI-learn labels, the FX bus title
+  /// and the rename dialog all had a channel and no list, so they said "Track
+  /// 3" while the stage beside them said RHYTHM. This takes the channel and
+  /// the list, so having one is enough.
+  ///
+  /// Out-of-range channels fall back rather than throw: a stale binding names
+  /// a track the rig no longer has, and a row that still has to say what it
+  /// used to drive is better than a crash.
+  String trackName(List<String> names, int channel) => displayTrackName(
+    channel >= 0 && channel < names.length
+        ? names[channel]
+        : 'TRACK ${channel + 1}',
+    channel,
+  );
+
   String sampleRateKhzLabel(int rate) {
     final khz = rate / 1000;
     final text = khz == khz.roundToDouble()

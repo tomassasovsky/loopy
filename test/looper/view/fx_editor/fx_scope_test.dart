@@ -231,6 +231,7 @@ void main() {
   group('StageFxScope', () {
     StageFxScope trackScope(int channel) => StageFxScope(
       looper: bloc,
+      trackNames: const ['drums', 'bass', 'rhythm', 'lead'],
       address: FxAddress(stage: FxStage.track, index: channel),
     );
 
@@ -260,7 +261,7 @@ void main() {
       expect(scope.address.stage, FxStage.track);
       expect(scope.effects, hasLength(1));
       expect(scope.chainEnabled, isFalse);
-      expect(scope.label(l10n), l10n.fxEditorTrackTitle(2));
+      expect(scope.label(l10n), l10n.fxEditorTrackTitle('bass'));
       expect(scope.consequence(l10n), l10n.fxEditorTrackConsequence);
       expect(
         scope.chainDisabledConsequence(l10n),

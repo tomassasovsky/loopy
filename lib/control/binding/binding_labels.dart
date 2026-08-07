@@ -14,21 +14,36 @@ import 'package:segno/l10n/l10n.dart';
 /// why they live next to the binding model rather than inside either feature.
 
 /// Names the chain at [address] — its stage and position.
-String fxStageLabel(AppLocalizations l10n, FxAddress address) =>
-    switch (address.stage) {
-      FxStage.input => l10n.pedalAssignStageInput(address.index),
-      FxStage.loop => l10n.pedalAssignStageLoop(
-        address.index,
-        address.lane ?? 0,
-      ),
-      FxStage.track => l10n.pedalAssignStageTrack(address.index),
-      FxStage.master => l10n.pedalAssignStageMaster,
-    };
+///
+/// [trackNames] is the rig's own naming, threaded in so a target list reads
+/// `drums lane 1` rather than `Track 1 lane 1` (#526). It also fixes an
+/// off-by-one these labels carried from the start: they printed the RAW
+/// channel, so a binding on the second track read "Track 1" while every other
+/// surface called it TRACK 2.
+String fxStageLabel(
+  AppLocalizations l10n,
+  List<String> trackNames,
+  FxAddress address,
+) => switch (address.stage) {
+  FxStage.input => l10n.pedalAssignStageInput(address.index),
+  FxStage.loop => l10n.pedalAssignStageLoop(
+    l10n.trackName(trackNames, address.index),
+    address.lane ?? 0,
+  ),
+  FxStage.track => l10n.pedalAssignStageTrack(
+    l10n.trackName(trackNames, address.index),
+  ),
+  FxStage.master => l10n.pedalAssignStageMaster,
+};
 
 /// Names a discrete (`enabled`-flipping) [target] — one whole chain, or one
 /// effect inside it.
-String bindingTargetLabel(AppLocalizations l10n, FxBindingTarget target) {
-  final stage = fxStageLabel(l10n, target.address);
+String bindingTargetLabel(
+  AppLocalizations l10n,
+  List<String> trackNames,
+  FxBindingTarget target,
+) {
+  final stage = fxStageLabel(l10n, trackNames, target.address);
   return switch (target) {
     FxChainTarget() => l10n.pedalAssignChainTarget(stage),
     // The slot id is the only stable name an effect has here — the effect TYPE
@@ -46,14 +61,17 @@ String bindingTargetLabel(AppLocalizations l10n, FxBindingTarget target) {
 /// used to drive.
 String valueTargetLabel(
   AppLocalizations l10n,
+  List<String> trackNames,
   LooperRepository looper,
   ControlValueTarget target,
 ) => switch (target) {
-  TrackVolumeTarget(:final channel) => l10n.midiLearnTargetVolume(channel),
+  TrackVolumeTarget(:final channel) => l10n.midiLearnTargetVolume(
+    l10n.trackName(trackNames, channel),
+  ),
   MasterGainTarget() => l10n.midiLearnTargetMaster,
   FxParamTarget(:final address, :final slotId, :final param) =>
     l10n.midiLearnTargetParam(
-      fxStageLabel(l10n, address),
+      fxStageLabel(l10n, trackNames, address),
       slotId,
       _paramLabel(looper, target) ?? '#$param',
     ),

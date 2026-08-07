@@ -56,6 +56,7 @@ class PedalPlate extends StatelessWidget {
     required this.onTurn,
     required this.mode,
     required this.l10n,
+    required this.trackNames,
     required this.mainScreen,
     required this.waveformScreen,
     required this.onClose,
@@ -65,6 +66,11 @@ class PedalPlate extends StatelessWidget {
 
   /// LEDs, ring, bank — everything the plate renders from the wire frame.
   final PedalStateFrame frame;
+
+  /// The rig's track names, so a track pad ANNOUNCES what it is (#526). The
+  /// visible legend stays positional: it names the switch under your foot,
+  /// whose track depends on the bank.
+  final List<String> trackNames;
 
   /// Fires on footswitch press and release, with the same signature the
   /// simulator transport dispatches today.
@@ -132,6 +138,7 @@ class PedalPlate extends StatelessWidget {
             label: label,
             onPress: onPress,
             l10n: l10n,
+            trackNames: trackNames,
             mode: mode,
             led: channel == null ? null : frame.trackLeds[channel],
             channel: channel,
@@ -530,6 +537,7 @@ class _Footswitch extends StatefulWidget {
     required this.label,
     required this.onPress,
     required this.l10n,
+    required this.trackNames,
     required this.mode,
     required this.selected,
     this.led,
@@ -540,6 +548,9 @@ class _Footswitch extends StatefulWidget {
   final String label;
   final void Function(PedalButton button, {required bool down}) onPress;
   final AppLocalizations l10n;
+
+  /// The rig's track names, for a track pad's announced label.
+  final List<String> trackNames;
 
   /// The LIVE interaction mode — what this switch does, and how its LED
   /// reads, both depend on it. Deliberately not the frame's wire mode: below
@@ -612,7 +623,7 @@ class _FootswitchState extends State<_Footswitch> {
     final surface = context.surface;
     final label = switch (widget.channel) {
       final int channel => widget.l10n.pedalSimTrackSemantics(
-        channel + 1,
+        widget.l10n.trackName(widget.trackNames, channel),
         _ledStateLabel(
           widget.l10n,
           widget.led ?? PedalTrackLed.off,

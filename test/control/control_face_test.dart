@@ -17,6 +17,7 @@ import 'package:segno/control/control_tab.dart';
 import 'package:segno/control/view/control_tray_panel.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -53,6 +54,7 @@ const _master = FxAddress(stage: FxStage.master);
 
 void main() {
   late _MockLooperRepository looper;
+  late TracksCubit tracks;
   late StreamController<LooperState> looperStates;
   late _MockMidiDevices midiDevices;
   late StreamController<MidiConnection> connections;
@@ -64,6 +66,9 @@ void main() {
   late List<TrackEffect> masterChain;
 
   setUp(() {
+    tracks = TracksCubit(
+      settings: SettingsRepository(store: FakeKeyValueStore()),
+    );
     looper = _MockLooperRepository();
     looperStates = StreamController<LooperState>.broadcast();
     masterChain = [
@@ -165,6 +170,7 @@ void main() {
               BlocProvider.value(value: control),
               BlocProvider.value(value: midi),
               BlocProvider.value(value: tray),
+              BlocProvider.value(value: tracks),
             ],
             child: const Scaffold(
               body: Padding(

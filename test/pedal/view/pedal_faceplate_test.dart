@@ -10,6 +10,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/theme/looper_theme.dart';
 import 'package:segno/theme/surface_theme.dart';
@@ -53,9 +54,13 @@ const _onScreenPedal = PedalOutput(
 
 void main() {
   late _MockLooperRepository looper;
+  late TracksCubit tracks;
   late StreamController<LooperState> looperStates;
 
   setUp(() {
+    tracks = TracksCubit(
+      settings: SettingsRepository(store: FakeKeyValueStore()),
+    );
     looper = _MockLooperRepository();
     looperStates = StreamController<LooperState>.broadcast();
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
@@ -137,6 +142,7 @@ void main() {
             providers: [
               BlocProvider.value(value: cubit),
               BlocProvider.value(value: control),
+              BlocProvider.value(value: tracks),
             ],
             child: const Scaffold(
               body: PedalFaceplate(

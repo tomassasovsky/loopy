@@ -193,10 +193,19 @@ class _ConsoleExpansionState extends State<ConsoleExpansion>
 /// rounded corner instead of stopping inside it.
 class ConsoleCard extends StatelessWidget {
   /// Creates a [ConsoleCard].
-  const ConsoleCard({required this.children, super.key});
+  const ConsoleCard({required this.children, this.fill, super.key});
 
   /// The rows, in display order.
   final List<Widget> children;
+
+  /// The card's own fill; defaults to [SurfaceTheme.cardHigh].
+  ///
+  /// Only one caller overrides it, and for one reason: a list inside a panel
+  /// that is *itself* a card has to recede, and a card the same tone as the
+  /// panel behind it reads as no card at all. The per-track routing dialog
+  /// passes [SurfaceTheme.background] so its two lists sit *in* the panel
+  /// rather than beside it, which is how the mockups draw them.
+  final Color? fill;
 
   /// Corner radius of the card.
   static const double radius = 12;
@@ -206,7 +215,7 @@ class ConsoleCard extends StatelessWidget {
     final surface = context.surface;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: surface.cardHigh,
+        color: fill ?? surface.cardHigh,
         borderRadius: BorderRadius.circular(radius),
         border: Border.all(color: surface.line),
       ),
@@ -2184,16 +2193,16 @@ Future<bool> showConsoleConfirmDialog(
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  _DialogButton(
+                  ConsoleDialogButton(
                     key: const Key('console_confirm_cancel'),
                     label: l10n.consoleKeepIt,
                     onPressed: () => Navigator.of(dialogContext).pop(false),
                   ),
                   const SizedBox(width: 10),
-                  _DialogButton(
+                  ConsoleDialogButton(
                     key: const Key('console_confirm_confirm'),
                     label: confirmLabel,
-                    destructive: true,
+                    tone: ConsoleDialogTone.destructive,
                     onPressed: () => Navigator.of(dialogContext).pop(true),
                   ),
                 ],
@@ -2207,21 +2216,69 @@ Future<bool> showConsoleConfirmDialog(
   return confirmed ?? false;
 }
 
-class _DialogButton extends StatelessWidget {
-  const _DialogButton({
+/// What a [ConsoleDialogButton] is for.
+enum ConsoleDialogTone {
+  /// The way out — Cancel, Keep it. Card-toned, quietly outlined.
+  neutral,
+
+  /// The button that ENDS the editor it sits in — Done, Save. Outlined and
+  /// lettered in the accent over its own surface: it is the affirmative
+  /// action, but it commits nothing (everything applied as it was tapped), so
+  /// filling it solid would promise a decision the panel already made.
+  accent,
+
+  /// The one that destroys something. Solid, because it is the only control
+  /// on this console that cannot be undone by tapping again.
+  destructive,
+}
+
+/// A 40px button at the foot of a panel or sheet.
+///
+/// Taller and larger-lettered than [ConsoleSmallButton], which is the *inline*
+/// button — a banner's Cancel, sitting inside a 61px strip. This one closes a
+/// panel, and the mockups draw the two at different sizes because they end
+/// different things.
+class ConsoleDialogButton extends StatelessWidget {
+  /// Creates a [ConsoleDialogButton].
+  const ConsoleDialogButton({
     required this.label,
     required this.onPressed,
-    this.destructive = false,
+    this.tone = ConsoleDialogTone.neutral,
     super.key,
   });
 
+  /// Visible caption, and the announced label.
   final String label;
+
+  /// Tap action.
   final VoidCallback onPressed;
-  final bool destructive;
+
+  /// What this button is for.
+  final ConsoleDialogTone tone;
+
+  /// Height of the button, as every mockup that draws one sets it.
+  static const double height = 40;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
+    final (background, edge, ink) = switch (tone) {
+      ConsoleDialogTone.neutral => (
+        surface.cardHigh,
+        surface.borderStrong,
+        surface.textPrimary,
+      ),
+      ConsoleDialogTone.accent => (
+        surface.accentSurface,
+        surface.accent,
+        surface.accent,
+      ),
+      ConsoleDialogTone.destructive => (
+        surface.rec,
+        surface.rec,
+        surface.onAccent,
+      ),
+    };
     return FocusableTapTarget(
       onTap: onPressed,
       semanticLabel: label,
@@ -2230,22 +2287,24 @@ class _DialogButton extends StatelessWidget {
         onTap: onPressed,
         borderRadius: BorderRadius.circular(10),
         child: Container(
-          height: 40,
+          height: height,
           alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
-            color: destructive ? surface.rec : surface.cardHigh,
+            color: background,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: destructive ? surface.rec : surface.borderStrong,
-            ),
+            border: Border.all(color: edge),
           ),
           child: Text(
             label,
             style: TextStyle(
-              color: destructive ? surface.onAccent : surface.textPrimary,
+              color: ink,
               fontSize: 15,
-              fontWeight: destructive ? FontWeight.w600 : FontWeight.normal,
+              height: 1.2,
+              leadingDistribution: TextLeadingDistribution.even,
+              fontWeight: tone == ConsoleDialogTone.destructive
+                  ? FontWeight.w600
+                  : FontWeight.normal,
             ),
           ),
         ),
