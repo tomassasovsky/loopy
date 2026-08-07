@@ -53,6 +53,7 @@ void main() {
 
   setUpAll(() {
     registerFallbackValue(GridDivision.off);
+    registerFallbackValue(MonitorMode.off);
     registerFallbackValue(ClickMode.off);
     registerFallbackValue(const LooperRecordPressed(0));
   });
@@ -124,9 +125,9 @@ void main() {
       () => repository.setQuantize(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
     when(
-      () => repository.setMonitorInputEnabled(
+      () => repository.setMonitorInputMode(
         input: any(named: 'input'),
-        enabled: any(named: 'enabled'),
+        mode: any(named: 'mode'),
       ),
     ).thenReturn(EngineResult.ok);
     when(

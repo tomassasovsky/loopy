@@ -172,7 +172,7 @@ class SignalRows {
       // An input is only in the signal path when it is live (monitored); a
       // disabled input's mask routes nothing, so it feeds no output and shows
       // no routing chips until enabled.
-      final routes = (excluded || !m.enabled)
+      final routes = (excluded || m.mode == MonitorMode.off)
           ? const <int>[]
           : routesOf(m.outputMask);
       inputs.add(

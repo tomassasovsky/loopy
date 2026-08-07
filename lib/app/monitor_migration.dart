@@ -1,5 +1,5 @@
 import 'package:looper_repository/looper_repository.dart'
-    show decodeFxChain, kMaxInputs, kMaxLanes;
+    show MonitorMode, decodeFxChain, kMaxInputs, kMaxLanes;
 import 'package:settings_repository/settings_repository.dart';
 
 /// One-time courtesy + structural migrations of the persisted monitor settings,
@@ -103,7 +103,12 @@ Future<void> _migrateInputToLanes(
   final gain = volume ?? 1.0;
 
   // lane 0 = the wet/effected route (clean when there are no effects).
-  await settings.saveMonitorInputEnabled(input, enabled: enabled);
+  // The legacy per-input pair only ever meant on or off, so it migrates to
+  // the two ends of the tri-state and never to `auto`.
+  await settings.saveMonitorInputMode(
+    input,
+    mode: enabled ? MonitorMode.on.name : MonitorMode.off.name,
+  );
   await settings.saveMonitorLaneOutput(input, 0, wetMask);
   await settings.saveMonitorLaneVolume(input, 0, gain);
   if (effects != null) {

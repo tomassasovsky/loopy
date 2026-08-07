@@ -93,7 +93,7 @@ void main() {
       // A DRY monitor: enabled + routed, NO FX chain. It carries no entry in
       // the effects map, so it was historically dropped on save (the bug) —
       // assert it survives the round-trip.
-      ..setMonitorInputEnabled(input: 1, enabled: true)
+      ..setMonitorInputMode(input: 1, mode: MonitorMode.on)
       ..setMonitorOutput(input: 1, mask: 0x1);
     engine.pump(frames: 0);
 
@@ -112,7 +112,7 @@ void main() {
     engine.pump(frames: 0);
     expect(looper.laneEffects(0, 0), isEmpty);
     expect(looper.monitorEffects(0), isEmpty);
-    expect(looper.monitorEnabled(1), isFalse); // dry monitor cleared too
+    expect(looper.monitorMode(1), MonitorMode.off); // dry monitor cleared too
 
     // Load the saved bundle back through the one apply path.
     final bundle = await session.read(dir);
@@ -135,7 +135,7 @@ void main() {
     );
     // The dry monitor is restored: enabled + routed, still no FX — the fix for
     // "some inputs stop monitoring after a session change".
-    expect(looper.monitorEnabled(1), isTrue);
+    expect(looper.monitorMode(1), MonitorMode.on);
     expect(looper.monitorOutput(1), 0x1);
     expect(looper.monitorEffects(1), isEmpty);
 

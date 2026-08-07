@@ -395,7 +395,7 @@ void main() {
     );
     addTearDown(monitorRepo.dispose);
     final monitor = MonitorCubit(repository: monitorRepo, settings: settings);
-    await monitor.setEnabled(0, enabled: true);
+    await monitor.setMode(0, MonitorMode.on);
     monitor
       ..addEffect(0)
       ..addEffect(0);
@@ -551,7 +551,7 @@ void main() {
         input: 0,
       ),
       primeMonitor: (m) async {
-        await m.setEnabled(0, enabled: true);
+        await m.setMode(0, MonitorMode.on);
         m
           ..addEffect(0)
           ..addEffect(0);

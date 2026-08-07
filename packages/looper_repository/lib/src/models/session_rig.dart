@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
+import 'package:looper_repository/src/models/input_monitor.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:segno_engine/segno_engine.dart' show LooperMode;
 
@@ -90,7 +91,7 @@ class SessionRigMonitor {
   /// Creates a [SessionRigMonitor].
   const SessionRigMonitor({
     required this.input,
-    required this.enabled,
+    required this.mode,
     required this.outputMask,
     required this.volume,
     required this.muted,
@@ -101,8 +102,8 @@ class SessionRigMonitor {
   /// Hardware input index.
   final int input;
 
-  /// Whether live monitoring of the input is enabled.
-  final bool enabled;
+  /// What the session asks this input's monitor to do.
+  final MonitorMode mode;
 
   /// Bitmask of output channels the monitor plays to.
   final int outputMask;

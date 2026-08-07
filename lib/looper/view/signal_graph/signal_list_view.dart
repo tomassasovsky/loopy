@@ -233,9 +233,14 @@ class _SignalListViewState extends State<SignalListView> {
                         );
                       },
                       onToggleGate: (input) => unawaited(
-                        _monitor.setEnabled(
+                        // This surface predates the tri-state and is deleted
+                        // whole in the Signal slice's demolition (#533): it
+                        // toggles the two ends and never reaches `auto`.
+                        _monitor.setMode(
                           input,
-                          enabled: !monitor.forInput(input).enabled,
+                          monitor.forInput(input).mode == MonitorMode.off
+                              ? MonitorMode.on
+                              : MonitorMode.off,
                         ),
                       ),
                       onEditFx: _editInputFx,

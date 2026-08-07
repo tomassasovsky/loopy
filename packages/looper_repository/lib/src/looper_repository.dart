@@ -287,11 +287,20 @@ class LooperRepository {
   >
   _clearRestore = {};
 
-  /// Per-hardware-input live monitor enable flag (absent => disabled). The
+  /// Per-hardware-input live monitor mode (absent => [MonitorMode.off]). The
   /// input-level gate; per-lane routing / mix / effects live in the maps below.
   /// All re-applied on every successful (re)start so they survive device
   /// changes / reconnects.
-  final Map<int, bool> _monitorInputEnabled = {};
+  ///
+  /// This holds **intent**. What the engine is told is [monitorResolved],
+  /// which collapses [MonitorMode.auto] against the current record arm.
+  final Map<int, MonitorMode> _monitorInputMode = {};
+
+  /// The resolved gate last pushed to the engine, per input. Only inputs whose
+  /// resolved value has actually moved are re-pushed on a poll, so a session
+  /// sitting idle in [MonitorMode.auto] costs one map read per tick and no FFI
+  /// call at all.
+  final Map<int, bool> _monitorResolvedPushed = {};
 
   /// Per-input monitor output mask, volume, mute, and a single effect chain —
   /// each remembered and re-applied on every successful (re)start. An empty
@@ -403,6 +412,10 @@ class LooperRepository {
     final next = _project(snapshot);
     if (next == _last) return;
     _last = next;
+    // Before listeners see it: `auto` monitors resolve against the arm state
+    // this projection just moved, and the gate should open on the same frame
+    // the track arms rather than one behind it.
+    _reconcileAutoMonitors();
     _controller.add(next);
   }
 
@@ -414,6 +427,7 @@ class LooperRepository {
     final next = _project(_engine.snapshot());
     if (next == _last) return;
     _last = next;
+    _reconcileAutoMonitors();
     _controller.add(next);
   }
 
@@ -732,10 +746,11 @@ class LooperRepository {
       );
       // Re-apply per-input live monitors: enable first, then the single chain's
       // routing / mix / effects.
-      _monitorInputEnabled.forEach(
-        (input, enabled) =>
-            _engine.setMonitorInputEnabled(input: input, enabled: enabled),
-      );
+      _monitorInputMode.forEach((input, _) {
+        final resolved = monitorResolved(input);
+        _monitorResolvedPushed[input] = resolved;
+        _engine.setMonitorInputEnabled(input: input, enabled: resolved);
+      });
       _monitorOutput.forEach(
         (input, mask) =>
             _engine.setMonitorInputOutput(input: input, mask: mask),
@@ -1553,7 +1568,7 @@ class LooperRepository {
     final rememberedMonitors = allMonitors().keys.toList();
     for (final input in rememberedMonitors) {
       if (definedMonitors.contains(input)) continue;
-      setMonitorInputEnabled(input: input, enabled: false);
+      setMonitorInputMode(input: input, mode: MonitorMode.off);
       setMonitorOutput(input: input, mask: _defaultMonitorOutputMask);
       setMonitorVolume(input: input, volume: 1);
       setMonitorMute(input: input, muted: false);
@@ -1561,7 +1576,7 @@ class LooperRepository {
       setMonitorChainEnabled(input: input, enabled: true);
     }
     for (final monitor in rig.monitors) {
-      setMonitorInputEnabled(input: monitor.input, enabled: monitor.enabled);
+      setMonitorInputMode(input: monitor.input, mode: monitor.mode);
       setMonitorOutput(input: monitor.input, mask: monitor.outputMask);
       setMonitorVolume(input: monitor.input, volume: monitor.volume);
       setMonitorMute(input: monitor.input, muted: monitor.muted);
@@ -1664,7 +1679,7 @@ class LooperRepository {
   /// its keys.
   Map<int, InputMonitor> allMonitors() {
     final inputs = <int>{
-      ..._monitorInputEnabled.keys,
+      ..._monitorInputMode.keys,
       ..._monitorOutput.keys,
       ..._monitorVolume.keys,
       ..._monitorMute.keys,
@@ -1675,7 +1690,7 @@ class LooperRepository {
     for (final input in inputs) {
       final monitor = InputMonitor(
         input: input,
-        enabled: monitorEnabled(input),
+        mode: monitorMode(input),
         outputMask: monitorOutput(input),
         volume: monitorVolume(input),
         muted: monitorMuted(input),
@@ -1688,8 +1703,63 @@ class LooperRepository {
     return result;
   }
 
-  /// Whether hardware [input]'s live monitor is enabled (remembered intent).
-  bool monitorEnabled(int input) => _monitorInputEnabled[input] ?? false;
+  /// What hardware [input]'s live monitor is asked to do (remembered intent).
+  MonitorMode monitorMode(int input) =>
+      _monitorInputMode[input] ?? MonitorMode.off;
+
+  /// Whether hardware [input] is monitoring **right now** — intent resolved
+  /// against the record arm. This is the boolean the engine is given.
+  ///
+  /// [MonitorMode.auto] is a **fan-in**, not a 1:1: there is no "the input's
+  /// track". A lane records one [Lane.inputChannel], and one input can feed
+  /// lanes on several tracks, so the rule is *any* of them being armed.
+  bool monitorResolved(int input) => switch (monitorMode(input)) {
+    MonitorMode.off => false,
+    MonitorMode.on => true,
+    MonitorMode.auto => _autoArms(input),
+  };
+
+  /// Whether any lane fed by [input] sits on a track that is armed or
+  /// capturing. `pending` is the waiting quantized arm; `isCapturing` is
+  /// recording or overdubbing.
+  ///
+  /// Walks the PROJECTED lanes rather than [_laneInput]. Two reasons: the
+  /// projection has already applied the `?? lane` default, so a lane that was
+  /// never explicitly routed still counts (over half of them, in a default
+  /// rig); and arm state and routing then come off the same object instead of
+  /// being joined across an intent map and a snapshot that could disagree.
+  ///
+  /// No projection yet means nothing can be armed, so `auto` reads closed —
+  /// which is also the right answer while the engine is stopped.
+  bool _autoArms(int input) {
+    final state = _last;
+    if (state == null) return false;
+    for (final track in state.tracks) {
+      if (!track.pending && !track.isCapturing) continue;
+      for (final lane in track.lanes) {
+        if (lane.inputChannel == input) return true;
+      }
+    }
+    return false;
+  }
+
+  /// Re-pushes the resolved gate for every [MonitorMode.auto] input whose
+  /// answer has changed since the last push.
+  ///
+  /// Called where the repository already recomputes on a state change, so
+  /// `auto` needs no subscription and no lifecycle of its own. Only `auto`
+  /// inputs are walked: `off` and `on` do not depend on the arm state, and
+  /// their pushes stay where every other monitor write already is.
+  void _reconcileAutoMonitors() {
+    if (!_intendRunning) return;
+    for (final entry in _monitorInputMode.entries) {
+      if (entry.value != MonitorMode.auto) continue;
+      final resolved = monitorResolved(entry.key);
+      if (_monitorResolvedPushed[entry.key] == resolved) continue;
+      _monitorResolvedPushed[entry.key] = resolved;
+      _engine.setMonitorInputEnabled(input: entry.key, enabled: resolved);
+    }
+  }
 
   /// Monitor [input]'s remembered output mask (the default stereo pair if
   /// never set).
@@ -1884,13 +1954,15 @@ class LooperRepository {
   /// gate; per-lane routing / mix / effects drive each lane. The monitored
   /// signal is never recorded. Remembered and re-applied on every (re)start;
   /// takes effect immediately only while running.
-  EngineResult setMonitorInputEnabled({
+  EngineResult setMonitorInputMode({
     required int input,
-    required bool enabled,
+    required MonitorMode mode,
   }) {
-    _monitorInputEnabled[input] = enabled;
+    _monitorInputMode[input] = mode;
+    final resolved = monitorResolved(input);
+    _monitorResolvedPushed[input] = resolved;
     if (!_intendRunning) return EngineResult.ok;
-    return _engine.setMonitorInputEnabled(input: input, enabled: enabled);
+    return _engine.setMonitorInputEnabled(input: input, enabled: resolved);
   }
 
   /// Routes monitor [input]'s chain to the output channels in [mask].

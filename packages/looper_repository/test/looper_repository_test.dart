@@ -2602,7 +2602,7 @@ void main() {
       'a per-input monitor enable is deferred until running, then applied',
       () {
         final repo = buildRepo()
-          ..setMonitorInputEnabled(input: 1, enabled: true);
+          ..setMonitorInputMode(input: 1, mode: MonitorMode.on);
         expect(engine.monitorInputEnabled, isEmpty); // not running yet
 
         repo.startEngine(const EngineConfig());
@@ -2613,16 +2613,16 @@ void main() {
     test('per-input monitors are independent and survive a restart', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setMonitorInputEnabled(input: 0, enabled: true)
+        ..setMonitorInputMode(input: 0, mode: MonitorMode.on)
         ..setMonitorOutput(input: 0, mask: 0x1)
-        ..setMonitorInputEnabled(input: 1, enabled: true)
+        ..setMonitorInputMode(input: 1, mode: MonitorMode.on)
         ..setMonitorOutput(input: 1, mask: 0x2);
       expect(engine.monitorInputEnabled[0], isTrue);
       expect(engine.monitorOutput[0], 0x1);
       expect(engine.monitorOutput[1], 0x2);
 
       // Disabling one input leaves the other untouched.
-      repo.setMonitorInputEnabled(input: 0, enabled: false);
+      repo.setMonitorInputMode(input: 0, mode: MonitorMode.off);
       expect(engine.monitorInputEnabled[0], isFalse);
       expect(engine.monitorInputEnabled[1], isTrue);
 
@@ -3842,7 +3842,7 @@ void main() {
           monitors: const [
             SessionRigMonitor(
               input: 0,
-              enabled: true,
+              mode: MonitorMode.on,
               outputMask: 0x3,
               volume: 1,
               muted: false,
@@ -3871,7 +3871,7 @@ void main() {
       // Session A left input 1 enabled with custom routing / mix.
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setMonitorInputEnabled(input: 1, enabled: true)
+        ..setMonitorInputMode(input: 1, mode: MonitorMode.on)
         ..setMonitorOutput(input: 1, mask: 0x4)
         ..setMonitorVolume(input: 1, volume: 0.3)
         ..setMonitorMute(input: 1, muted: true);
@@ -3885,7 +3885,7 @@ void main() {
 
       // The leftover monitor is fully reset to disabled defaults — an enabled
       // monitor from A can never keep sounding under B.
-      expect(repo.monitorEnabled(1), isFalse);
+      expect(repo.monitorMode(1), MonitorMode.off);
       expect(repo.monitorOutput(1), 0x3);
       expect(repo.monitorVolume(1), 1);
       expect(repo.monitorMuted(1), isFalse);
@@ -3938,7 +3938,7 @@ void main() {
             monitors: [
               SessionRigMonitor(
                 input: 0,
-                enabled: true,
+                mode: MonitorMode.on,
                 outputMask: 0x1,
                 volume: 0.7,
                 muted: false,
@@ -4224,13 +4224,13 @@ void main() {
       // an empty chain must still be enumerated so it round-trips through a
       // session save/load.
       final repo = buildRepo()
-        ..setMonitorInputEnabled(input: 2, enabled: true)
+        ..setMonitorInputMode(input: 2, mode: MonitorMode.on)
         ..setMonitorOutput(input: 2, mask: 0x2);
       addTearDown(repo.dispose);
 
       final monitors = repo.allMonitors();
       expect(monitors.keys, [2]);
-      expect(monitors[2]!.enabled, isTrue);
+      expect(monitors[2]!.mode, MonitorMode.on);
       expect(monitors[2]!.outputMask, 0x2);
       expect(monitors[2]!.effects, isEmpty);
     });
@@ -4239,8 +4239,8 @@ void main() {
       // Touching a monitor back to the default (or a no-op setter) leaves no
       // meaningful state, so it must not bloat the enumeration / bundle.
       final repo = buildRepo()
-        ..setMonitorInputEnabled(input: 1, enabled: true)
-        ..setMonitorInputEnabled(input: 1, enabled: false)
+        ..setMonitorInputMode(input: 1, mode: MonitorMode.on)
+        ..setMonitorInputMode(input: 1, mode: MonitorMode.off)
         ..setMonitorOutput(input: 1, mask: 0x3) // the default mask
         ..setMonitorVolume(input: 1, volume: 1) // unity (default)
         ..setMonitorMute(input: 1, muted: false); // default
@@ -4269,18 +4269,18 @@ void main() {
         final repo = buildRepo();
         addTearDown(repo.dispose);
 
-        expect(repo.monitorEnabled(0), isFalse);
+        expect(repo.monitorMode(0), MonitorMode.off);
         expect(repo.monitorOutput(0), 0x3);
         expect(repo.monitorVolume(0), 1);
         expect(repo.monitorMuted(0), isFalse);
 
         repo
-          ..setMonitorInputEnabled(input: 0, enabled: true)
+          ..setMonitorInputMode(input: 0, mode: MonitorMode.on)
           ..setMonitorOutput(input: 0, mask: 0x1)
           ..setMonitorVolume(input: 0, volume: 0.4)
           ..setMonitorMute(input: 0, muted: true);
 
-        expect(repo.monitorEnabled(0), isTrue);
+        expect(repo.monitorMode(0), MonitorMode.on);
         expect(repo.monitorOutput(0), 0x1);
         expect(repo.monitorVolume(0), 0.4);
         expect(repo.monitorMuted(0), isTrue);
@@ -4375,7 +4375,7 @@ void main() {
         final repo = buildSupervised()
           ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'))
           // Stage some live rig state: a monitor enable + a lane routing.
-          ..setMonitorInputEnabled(input: 0, enabled: true)
+          ..setMonitorInputMode(input: 0, mode: MonitorMode.on)
           ..setLaneOutput(channel: 0, lane: 0, mask: 0x2);
         final sub = repo.looperState.listen((_) {});
         addTearDown(sub.cancel);
@@ -5523,6 +5523,195 @@ void main() {
       expect(repo.laneEffects(0, 0), isEmpty);
       expect(repo.laneChainEnabled(0, 0), isTrue);
       expect(repo.laneChainInheritedFrom(0, 0), isEmpty);
+    });
+  });
+
+  group('monitor mode (tri-state)', () {
+    EngineSnapshot snapshotWith({
+      required TrackState state,
+      required bool pending,
+      int laneInput = 0,
+    }) => EngineSnapshot(
+      isRunning: true,
+      sampleRate: 48000,
+      bufferFrames: 128,
+      framesProcessed: 0,
+      xrunCount: 0,
+      inputRms: 0,
+      inputPeak: 0,
+      outputRms: 0,
+      latencyState: le.LatencyState.idle,
+      measuredLatencyMs: -1,
+      tracks: [
+        TrackSnapshot(
+          state: state,
+          pending: pending,
+          volume: 1,
+          muted: false,
+          lengthFrames: 0,
+          undoDepth: 0,
+          rms: 0,
+          peak: 0,
+          lanes: [
+            LaneSnapshot(
+              inputChannel: laneInput,
+              outputMask: 0x3,
+              volume: 1,
+              muted: false,
+              lengthFrames: 0,
+              rms: 0,
+              peak: 0,
+            ),
+          ],
+        ),
+      ],
+    );
+
+    int monitorPushes() =>
+        engine.calls.where((c) => c == 'setMonitorInputEnabled').length;
+
+    test('off and on ignore the arm state entirely', () async {
+      engine.nextSnapshot = snapshotWith(
+        state: TrackState.recording,
+        pending: false,
+      );
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      repo.setMonitorInputMode(input: 0, mode: MonitorMode.off);
+      expect(repo.monitorResolved(0), isFalse);
+      repo.setMonitorInputMode(input: 0, mode: MonitorMode.on);
+      expect(repo.monitorResolved(0), isTrue);
+    });
+
+    test('auto is closed while nothing is armed', () async {
+      engine.nextSnapshot = snapshotWith(
+        state: TrackState.playing,
+        pending: false,
+      );
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      repo.setMonitorInputMode(input: 0, mode: MonitorMode.auto);
+      expect(repo.monitorMode(0), MonitorMode.auto);
+      expect(repo.monitorResolved(0), isFalse);
+    });
+
+    test('auto opens while a track fed by the input is capturing', () async {
+      engine.nextSnapshot = snapshotWith(
+        state: TrackState.recording,
+        pending: false,
+      );
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      repo.setMonitorInputMode(input: 0, mode: MonitorMode.auto);
+      expect(repo.monitorResolved(0), isTrue);
+    });
+
+    test('auto opens on a PENDING arm, not only once audio flows', () async {
+      engine.nextSnapshot = snapshotWith(
+        state: TrackState.empty,
+        pending: true,
+      );
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      repo.setMonitorInputMode(input: 0, mode: MonitorMode.auto);
+      expect(repo.monitorResolved(0), isTrue);
+    });
+
+    test("auto is a fan-in: another input's arm does not open it", () async {
+      engine.nextSnapshot = snapshotWith(
+        state: TrackState.recording,
+        pending: false,
+      );
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      // The armed track's lane records input 0, so input 1 stays closed.
+      repo.setMonitorInputMode(input: 1, mode: MonitorMode.auto);
+      expect(repo.monitorResolved(1), isFalse);
+    });
+
+    test('an arm that starts and stops opens then closes the gate', () async {
+      engine.nextSnapshot = snapshotWith(
+        state: TrackState.playing,
+        pending: false,
+      );
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      repo.setMonitorInputMode(input: 0, mode: MonitorMode.auto);
+      expect(repo.monitorResolved(0), isFalse);
+
+      engine.nextSnapshot = snapshotWith(
+        state: TrackState.recording,
+        pending: false,
+      );
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.monitorResolved(0), isTrue);
+
+      engine.nextSnapshot = snapshotWith(
+        state: TrackState.playing,
+        pending: false,
+      );
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.monitorResolved(0), isFalse);
+    });
+
+    test('an idle auto input costs no engine writes per tick', () async {
+      engine.nextSnapshot = snapshotWith(
+        state: TrackState.playing,
+        pending: false,
+      );
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      repo.setMonitorInputMode(input: 0, mode: MonitorMode.auto);
+      final after = monitorPushes();
+
+      // Several projections that do not move the arm state.
+      for (var i = 0; i < 3; i++) {
+        engine.nextSnapshot = snapshotWith(
+          state: TrackState.playing,
+          pending: false,
+        );
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      expect(monitorPushes(), after);
     });
   });
 }

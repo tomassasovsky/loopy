@@ -258,11 +258,16 @@ void main() {
   });
 
   group('monitor (single chain)', () {
-    test('per-input enable flag defaults to null and round-trips', () async {
-      expect(await repository.loadMonitorInputEnabled(0), isNull);
-      await repository.saveMonitorInputEnabled(0, enabled: true);
-      expect(await repository.loadMonitorInputEnabled(0), isTrue);
-      expect(await repository.loadMonitorInputEnabled(1), isNull);
+    test('per-input mode defaults to null and round-trips', () async {
+      expect(await repository.loadMonitorInputMode(0), isNull);
+      await repository.saveMonitorInputMode(0, mode: 'on');
+      expect(await repository.loadMonitorInputMode(0), 'on');
+      expect(await repository.loadMonitorInputMode(1), isNull);
+    });
+
+    test('the middle mode round-trips by name, not by truthiness', () async {
+      await repository.saveMonitorInputMode(3, mode: 'auto');
+      expect(await repository.loadMonitorInputMode(3), 'auto');
     });
 
     test('output mask defaults to null and round-trips per input', () async {

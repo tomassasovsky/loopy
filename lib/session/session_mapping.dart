@@ -33,7 +33,7 @@ SessionChains chainsFromLooper(LooperRepository looper) => SessionChains(
     for (final monitor in looper.allMonitors().values)
       SessionMonitor(
         input: monitor.input,
-        enabled: monitor.enabled,
+        enabled: monitor.mode != MonitorMode.off,
         outputMask: monitor.outputMask,
         volume: monitor.volume,
         muted: monitor.muted,
@@ -98,7 +98,7 @@ PerformanceChains performanceChainsFromLooper(LooperRepository looper) {
       for (final monitor in looper.allMonitors().values)
         PerformanceMonitorState(
           input: monitor.input,
-          enabled: monitor.enabled,
+          enabled: monitor.mode != MonitorMode.off,
           outputMask: monitor.outputMask,
           volume: monitor.volume,
           muted: monitor.muted,
@@ -165,7 +165,11 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
 SessionRigMonitor _rigMonitor(SessionMonitor monitor, FxChainEnvelope chain) =>
     SessionRigMonitor(
       input: monitor.input,
-      enabled: monitor.enabled,
+      // The manifest's monitor gate is still a boolean, so a saved session
+      // restores `on` or `off` and never `auto`. Flattening happens HERE, at
+      // the format boundary, so widening the manifest later is a change to
+      // this line and nothing behind it. Tracked as its own issue.
+      mode: monitor.enabled ? MonitorMode.on : MonitorMode.off,
       outputMask: monitor.outputMask,
       volume: monitor.volume,
       muted: monitor.muted,

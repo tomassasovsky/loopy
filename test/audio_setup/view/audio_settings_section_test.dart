@@ -38,6 +38,7 @@ void main() {
   late TracksCubit tracks;
   late LooperRepository looper;
 
+  setUpAll(() => registerFallbackValue(MonitorMode.off));
   setUp(() {
     tracks = TracksCubit(
       settings: SettingsRepository(store: FakeKeyValueStore()),
@@ -60,9 +61,9 @@ void main() {
     final repository = _MockLooperRepository();
     looper = repository;
     when(
-      () => repository.setMonitorInputEnabled(
+      () => repository.setMonitorInputMode(
         input: any(named: 'input'),
-        enabled: any(named: 'enabled'),
+        mode: any(named: 'mode'),
       ),
     ).thenReturn(EngineResult.ok);
     when(

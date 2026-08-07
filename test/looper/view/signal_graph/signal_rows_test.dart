@@ -14,7 +14,7 @@ void main() {
     test('builds one input row per channel with routed-output tags', () {
       const monitor = MonitorState(
         inputs: {
-          0: InputMonitor(input: 0, enabled: true),
+          0: InputMonitor(input: 0, mode: MonitorMode.on),
         },
       );
       final rows = SignalRows.from(
@@ -114,7 +114,9 @@ void main() {
 
     test('derives feeders for an output (inputs + tracks)', () {
       const monitor = MonitorState(
-        inputs: {0: InputMonitor(input: 0, enabled: true, outputMask: 0x2)},
+        inputs: {
+          0: InputMonitor(input: 0, mode: MonitorMode.on, outputMask: 0x2),
+        },
       );
       final rows = SignalRows.from(
         monitor,

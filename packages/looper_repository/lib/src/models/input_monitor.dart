@@ -1,9 +1,32 @@
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 
+/// What a hardware input's live monitor is asked to do.
+///
+/// Three states rather than two because a looper wants a middle one: you want
+/// to hear yourself *into* a take without hearing the input over the loop
+/// afterwards. [off] and [on] are unconditional; [auto] follows the record
+/// arm, so the monitor opens when a track fed by this input arms and closes
+/// when it stops.
+///
+/// This is **intent**, and it is what persists. The boolean the engine takes
+/// is *reality*, resolved from this per the arm state — see
+/// `LooperRepository.monitorResolved`.
+enum MonitorMode {
+  /// Never monitor this input.
+  off,
+
+  /// Monitor only while a track fed by this input is armed or capturing.
+  auto,
+
+  /// Always monitor this input.
+  on,
+}
+
 /// The live-monitor configuration for one hardware input.
 ///
-/// When [enabled], hardware input [input] is monitored live through a single
+/// When [mode] opens the gate, hardware input [input] is monitored live
+/// through a single
 /// non-destructive [effects] chain, routed to the outputs in [outputMask],
 /// scaled by [volume] and gated by [muted]. An empty [effects] chain is the
 /// clean (dry) path — there is no special-case dry concept. The monitored
@@ -18,7 +41,7 @@ class InputMonitor extends Equatable {
   /// Creates an [InputMonitor].
   const InputMonitor({
     required this.input,
-    this.enabled = false,
+    this.mode = MonitorMode.off,
     this.outputMask = 0x3,
     this.volume = 1,
     this.muted = false,
@@ -29,8 +52,9 @@ class InputMonitor extends Equatable {
   /// The hardware input channel this monitor routes.
   final int input;
 
-  /// Whether live monitoring of [input] is on (the input-level gate).
-  final bool enabled;
+  /// What this input's monitor is asked to do (the input-level gate). Intent,
+  /// not reality: [MonitorMode.auto] resolves against the record arm.
+  final MonitorMode mode;
 
   /// Bitmask of hardware output channels this monitor plays to (bit c => c).
   final int outputMask;
@@ -52,7 +76,7 @@ class InputMonitor extends Equatable {
 
   /// Returns a copy with the given fields replaced.
   InputMonitor copyWith({
-    bool? enabled,
+    MonitorMode? mode,
     int? outputMask,
     double? volume,
     bool? muted,
@@ -60,7 +84,7 @@ class InputMonitor extends Equatable {
     bool? chainEnabled,
   }) => InputMonitor(
     input: input,
-    enabled: enabled ?? this.enabled,
+    mode: mode ?? this.mode,
     outputMask: outputMask ?? this.outputMask,
     volume: volume ?? this.volume,
     muted: muted ?? this.muted,
@@ -71,7 +95,7 @@ class InputMonitor extends Equatable {
   @override
   List<Object?> get props => [
     input,
-    enabled,
+    mode,
     outputMask,
     volume,
     muted,

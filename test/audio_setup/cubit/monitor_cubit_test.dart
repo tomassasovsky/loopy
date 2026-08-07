@@ -13,15 +13,18 @@ void main() {
   late SettingsRepository settings;
   late LooperRepository repository;
 
-  setUpAll(() => registerFallbackValue(<TrackEffect>[]));
+  setUpAll(() {
+    registerFallbackValue(<TrackEffect>[]);
+    registerFallbackValue(MonitorMode.off);
+  });
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
     when(
-      () => repository.setMonitorInputEnabled(
+      () => repository.setMonitorInputMode(
         input: any(named: 'input'),
-        enabled: any(named: 'enabled'),
+        mode: any(named: 'mode'),
       ),
     ).thenReturn(EngineResult.ok);
     when(
@@ -96,28 +99,28 @@ void main() {
     test('defaults to no configured inputs (disabled, clean chain)', () {
       final cubit = build();
       expect(cubit.state.inputs, isEmpty);
-      expect(cubit.state.forInput(0).enabled, isFalse);
+      expect(cubit.state.forInput(0).mode, MonitorMode.off);
       expect(cubit.state.forInput(0).outputMask, 0x3);
       expect(cubit.state.forInput(0).volume, 1.0);
       expect(cubit.state.forInput(0).effects, isEmpty);
     });
 
     blocTest<MonitorCubit, MonitorState>(
-      'setEnabled enables an input, applies it, and persists',
+      'setMode opens an input, applies it, and persists',
       build: build,
-      act: (cubit) => cubit.setEnabled(0, enabled: true),
+      act: (cubit) => cubit.setMode(0, MonitorMode.on),
       expect: () => [
         isA<MonitorState>().having(
-          (s) => s.forInput(0).enabled,
-          'enabled',
-          isTrue,
+          (s) => s.forInput(0).mode,
+          'mode',
+          MonitorMode.on,
         ),
       ],
       verify: (_) async {
         verify(
-          () => repository.setMonitorInputEnabled(input: 0, enabled: true),
+          () => repository.setMonitorInputMode(input: 0, mode: MonitorMode.on),
         ).called(1);
-        expect(await settings.loadMonitorInputEnabled(0), isTrue);
+        expect(await settings.loadMonitorInputMode(0), 'on');
       },
     );
 
@@ -125,7 +128,7 @@ void main() {
       'setOutputMask updates, applies, and persists the chain output mask',
       build: build,
       act: (cubit) async {
-        await cubit.setEnabled(1, enabled: true);
+        await cubit.setMode(1, MonitorMode.on);
         await cubit.setOutputMask(1, 0x2);
       },
       verify: (cubit) async {
@@ -141,7 +144,7 @@ void main() {
       'setVolume updates, applies, and persists the gain',
       build: build,
       act: (cubit) async {
-        await cubit.setEnabled(0, enabled: true);
+        await cubit.setMode(0, MonitorMode.on);
         await cubit.setVolume(0, 0.5);
       },
       verify: (cubit) async {
@@ -157,7 +160,7 @@ void main() {
       'setMute mutes the input chain',
       build: build,
       act: (cubit) async {
-        await cubit.setEnabled(0, enabled: true);
+        await cubit.setMode(0, MonitorMode.on);
         await cubit.setMute(0, muted: true);
       },
       verify: (cubit) async {
@@ -173,13 +176,13 @@ void main() {
       'inputs are independent of one another',
       build: build,
       act: (cubit) async {
-        await cubit.setEnabled(0, enabled: true);
-        await cubit.setEnabled(1, enabled: true);
-        await cubit.setEnabled(0, enabled: false);
+        await cubit.setMode(0, MonitorMode.on);
+        await cubit.setMode(1, MonitorMode.on);
+        await cubit.setMode(0, MonitorMode.off);
       },
       verify: (cubit) {
-        expect(cubit.state.forInput(0).enabled, isFalse);
-        expect(cubit.state.forInput(1).enabled, isTrue);
+        expect(cubit.state.forInput(0).mode, MonitorMode.off);
+        expect(cubit.state.forInput(1).mode, MonitorMode.on);
       },
     );
 
@@ -261,7 +264,7 @@ void main() {
     blocTest<MonitorCubit, MonitorState>(
       'load restores single-chain state from the keys, applying it',
       setUp: () async {
-        await settings.saveMonitorInputEnabled(0, enabled: true);
+        await settings.saveMonitorInputMode(0, mode: 'on');
         await settings.saveMonitorOutput(0, 0x2);
         await settings.saveMonitorVolume(0, 0.4);
         await settings.saveMonitorMute(0, muted: true);
@@ -274,7 +277,7 @@ void main() {
       act: (cubit) => cubit.load(),
       verify: (cubit) {
         final monitor = cubit.state.forInput(0);
-        expect(monitor.enabled, isTrue);
+        expect(monitor.mode, MonitorMode.on);
         expect(monitor.outputMask, 0x2);
         expect(monitor.volume, 0.4);
         expect(monitor.muted, isTrue);
@@ -283,7 +286,7 @@ void main() {
           TrackEffectType.delay,
         );
         verify(
-          () => repository.setMonitorInputEnabled(input: 0, enabled: true),
+          () => repository.setMonitorInputMode(input: 0, mode: MonitorMode.on),
         ).called(1);
         verify(
           () => repository.setMonitorOutput(input: 0, mask: 0x2),
@@ -310,7 +313,7 @@ void main() {
           when(repository.allMonitors).thenReturn({
             2: InputMonitor(
               input: 2,
-              enabled: true,
+              mode: MonitorMode.on,
               outputMask: 0x2,
               volume: 0.4,
               muted: true,
@@ -322,7 +325,7 @@ void main() {
         act: (cubit) => cubit.syncFromRepository(),
         verify: (cubit) async {
           final monitor = cubit.state.forInput(2);
-          expect(monitor.enabled, isTrue);
+          expect(monitor.mode, MonitorMode.on);
           expect(monitor.outputMask, 0x2);
           expect(monitor.volume, 0.4);
           expect(monitor.muted, isTrue);
@@ -331,7 +334,7 @@ void main() {
             TrackEffectType.delay,
           );
           // All five fields are persisted, so the next boot restores THIS set.
-          expect(await settings.loadMonitorInputEnabled(2), isTrue);
+          expect(await settings.loadMonitorInputMode(2), 'on');
           expect(await settings.loadMonitorOutput(2), 0x2);
           expect(await settings.loadMonitorVolume(2), 0.4);
           expect(await settings.loadMonitorMute(2), isTrue);
@@ -339,9 +342,9 @@ void main() {
           // The load already applied to the engine; the re-sync only READS the
           // repository — it must never push back, or it could desync the two.
           verifyNever(
-            () => repository.setMonitorInputEnabled(
+            () => repository.setMonitorInputMode(
               input: any(named: 'input'),
-              enabled: any(named: 'enabled'),
+              mode: any(named: 'mode'),
             ),
           );
           verifyNever(
@@ -376,7 +379,7 @@ void main() {
         setUp: () async {
           // A prior session left input 5 configured (enabled + non-default
           // routing / volume / mute) in settings AND cubit state.
-          await settings.saveMonitorInputEnabled(5, enabled: true);
+          await settings.saveMonitorInputMode(5, mode: 'on');
           await settings.saveMonitorOutput(5, 0x2);
           await settings.saveMonitorVolume(5, 0.3);
           await settings.saveMonitorMute(5, muted: true);
@@ -390,14 +393,14 @@ void main() {
         build: build,
         // Seed input 5 into state so it counts as "previously present".
         act: (cubit) async {
-          await cubit.setEnabled(5, enabled: true);
+          await cubit.setMode(5, MonitorMode.on);
           await cubit.syncFromRepository();
         },
         verify: (cubit) async {
           expect(cubit.state.inputs, isEmpty);
           // Every field is reset to the disabled default — no lingering
           // outputMask / volume / mute to resurrect the monitor on next boot.
-          expect(await settings.loadMonitorInputEnabled(5), isFalse);
+          expect(await settings.loadMonitorInputMode(5), 'off');
           expect(await settings.loadMonitorOutput(5), 0x3);
           expect(await settings.loadMonitorVolume(5), 1.0);
           expect(await settings.loadMonitorMute(5), isFalse);
