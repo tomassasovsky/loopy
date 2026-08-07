@@ -19,7 +19,9 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
@@ -40,6 +42,21 @@ const double kConsoleDisclosureWidth = 11;
 
 /// The gap between a row's content and its trailing marks.
 const double kConsoleRowGap = 14;
+
+/// The gap above a group caption — the space that separates one group from
+/// the last thing of the group before it.
+///
+/// The three gaps below are one rhythm, and the mockups set it the same way on
+/// every face: **a caption belongs to what is under it**, so the gap below one
+/// ([kConsoleLabelGap]) is smaller than the gap above it, and two blocks
+/// inside one group sit at [kConsoleBlockGap] — between the two.
+const double kConsoleGroupGap = 19;
+
+/// The gap between a group caption and the card under it.
+const double kConsoleLabelGap = 9;
+
+/// The gap between two cards of the same group.
+const double kConsoleBlockGap = 14;
 
 /// How long a row takes to open or shut.
 ///
@@ -1146,6 +1163,7 @@ class ConsoleValueBar extends StatefulWidget {
     required this.value,
     required this.readout,
     required this.onChanged,
+    this.resetValue,
     this.semanticLabel,
     super.key,
   });
@@ -1162,6 +1180,17 @@ class ConsoleValueBar extends StatefulWidget {
   /// Called with each new value during and at the end of a drag.
   final ValueChanged<double> onChanged;
 
+  /// What a double tap snaps back to, or null for a bar with no default.
+  ///
+  /// A bar has no numbers to aim at, so landing back on unity by dragging is
+  /// luck. **Not** `GestureDetector.onDoubleTap`: a disambiguating recognizer
+  /// charges its latency to the common path, so every single tap would wait
+  /// out `kDoubleTapTimeout` — a third of a second of nothing on a control
+  /// people drag. The first tap applies immediately and opens a timer; a
+  /// second tap while it is live cancels it and overrides with this value.
+  /// Drags bypass the window entirely.
+  final double? resetValue;
+
   /// The announced label; defaults to [label].
   final String? semanticLabel;
 
@@ -1175,6 +1204,11 @@ class ConsoleValueBar extends StatefulWidget {
   /// Width of the readout column, on the same reasoning.
   static const double readoutWidth = 94;
 
+  /// The filled part of the track. Keyed so a test can measure it against the
+  /// bar: a fill is the one thing here with no text to assert on, and "the
+  /// bar rendered" is not the same claim as "the bar drew a fill".
+  static const Key fillKey = Key('console_value_bar_fill');
+
   @override
   State<ConsoleValueBar> createState() => _ConsoleValueBarState();
 }
@@ -1183,10 +1217,37 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
   /// The value the finger is on, or null when nothing is dragging.
   double? _dragging;
 
+  /// Live between the two taps of a double tap. See
+  /// [ConsoleValueBar.resetValue] for why this is hand-rolled.
+  Timer? _tapWindow;
+
+  @override
+  void dispose() {
+    _tapWindow?.cancel();
+    super.dispose();
+  }
+
   void _report(double width, double dx) {
     final next = (dx / width).clamp(0.0, 1.0);
     setState(() => _dragging = next);
     widget.onChanged(next);
+  }
+
+  /// A tap: applies where it landed, unless it is the second of a pair and
+  /// this bar has a default to snap to.
+  void _tap(double width, double dx) {
+    final reset = widget.resetValue;
+    if (reset != null && _tapWindow != null) {
+      _tapWindow!.cancel();
+      _tapWindow = null;
+      setState(() => _dragging = null);
+      unawaited(HapticFeedback.selectionClick());
+      widget.onChanged(reset.clamp(0.0, 1.0));
+      return;
+    }
+    _report(width, dx);
+    if (reset == null) return;
+    _tapWindow = Timer(kDoubleTapTimeout, () => _tapWindow = null);
   }
 
   /// Hands the bar back to [ConsoleValueBar.value] — what the finger reported
@@ -1194,6 +1255,15 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
   void _release() {
     if (_dragging == null) return;
     setState(() => _dragging = null);
+  }
+
+  /// Cancels a pending double-tap window: a drag is not the first half of a
+  /// double tap, and leaving the window open would let the tap that ends the
+  /// drag get read as one.
+  void _dragStart(double width, double dx) {
+    _tapWindow?.cancel();
+    _tapWindow = null;
+    _report(width, dx);
   }
 
   @override
@@ -1227,7 +1297,7 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
                 final width = constraints.maxWidth;
                 return GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onTapDown: (d) => _report(width, d.localPosition.dx),
+                  onTapDown: (d) => _tap(width, d.localPosition.dx),
                   // A tap ends a touch as much as a drag does. Without these
                   // the bar stayed pinned to the last tapped fraction for the
                   // rest of its life, and stopped redrawing the value it is
@@ -1236,7 +1306,7 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
                   onTapUp: (_) => _release(),
                   onTapCancel: _release,
                   onHorizontalDragStart: (d) =>
-                      _report(width, d.localPosition.dx),
+                      _dragStart(width, d.localPosition.dx),
                   onHorizontalDragUpdate: (d) =>
                       _report(width, d.localPosition.dx),
                   onHorizontalDragEnd: (_) => _release(),
@@ -1255,6 +1325,7 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
                       child: Align(
                         alignment: Alignment.centerLeft,
                         child: AnimatedContainer(
+                          key: ConsoleValueBar.fillKey,
                           duration: _dragging == null
                               ? consoleMotion(context)
                               : Duration.zero,
@@ -1627,6 +1698,45 @@ class ConsolePickRow extends StatelessWidget {
   }
 }
 
+/// A row's chooser: the [ConsolePickRow] list it grows open and shut.
+///
+/// The console's pick-one, and the shape four screens draw for it —
+/// `AUDIO / settings-device`, `settings-rate`, `settings-maxloop` and
+/// `LOOP / settings-mode-confirm`. A row turns its marker, tints, and the
+/// alternatives slide out from under it; the rest of the face stays lit, which
+/// is the whole point — on a console the list is the context for the choice.
+///
+/// Always in the tree, so opening is a transition rather than a swap.
+/// [ConsoleExpansion] mounts nothing while this is shut — so a shut chooser
+/// has nothing tappable — and holds the last children for exactly as long as
+/// the close takes.
+class ConsoleChooser extends StatelessWidget {
+  /// Creates a [ConsoleChooser].
+  const ConsoleChooser({
+    required this.open,
+    required this.children,
+    super.key,
+  });
+
+  /// Whether the chooser is showing.
+  final bool open;
+
+  /// The alternatives, in display order.
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => ConsoleExpansion(
+    expanded: open,
+    child: ConsoleDrawer(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
+    ),
+  );
+}
+
 /// The check that marks the target something is already pointed at.
 class ConsoleCheck extends StatelessWidget {
   /// Creates a [ConsoleCheck].
@@ -1649,18 +1759,27 @@ class ConsoleCheck extends StatelessWidget {
   }
 }
 
-/// Confirms forgetting something named in [title]; resolves true when the
+/// Confirms the destructive thing [title] asks about; resolves true when the
 /// user goes through with it.
 ///
-/// **Destructive confirms; reversible does not.** Forgetting deletes a
-/// credential nothing else holds, so it asks. Disconnecting is undone by
-/// tapping the row again, so it does not — a confirm on a reversible action
-/// teaches people to dismiss confirms.
-Future<bool> showConsoleForgetDialog(
+/// **Destructive confirms; reversible does not.** Forgetting a network deletes
+/// a credential nothing else holds, and switching looper mode clears every
+/// track, so both ask. Disconnecting is undone by tapping the row again, so it
+/// does not — a confirm on a reversible action teaches people to dismiss
+/// confirms.
+///
+/// The one modal on this console that is not an editor. Everything a row can
+/// answer, a row answers in place; this interrupts because the thing behind it
+/// is about to stop existing.
+///
+/// Drawn to `NETWORK / wifi-forget` and `LOOP / settings-mode-confirm`, which
+/// are the same 528px dialog with different words.
+Future<bool> showConsoleConfirmDialog(
   BuildContext context, {
   required String title,
   required String body,
   required String confirmLabel,
+  String? cancelLabel,
 }) async {
   final l10n = context.l10n;
   final surface = context.surface;
@@ -1705,13 +1824,13 @@ Future<bool> showConsoleForgetDialog(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   _DialogButton(
-                    key: const Key('console_forget_cancel'),
-                    label: l10n.networkKeepIt,
+                    key: const Key('console_confirm_cancel'),
+                    label: cancelLabel ?? l10n.networkKeepIt,
                     onPressed: () => Navigator.of(dialogContext).pop(false),
                   ),
                   const SizedBox(width: 10),
                   _DialogButton(
-                    key: const Key('console_forget_confirm'),
+                    key: const Key('console_confirm_confirm'),
                     label: confirmLabel,
                     destructive: true,
                     onPressed: () => Navigator.of(dialogContext).pop(true),

@@ -3,6 +3,16 @@ import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
+/// The click's own gain-stage ceiling — the engine's `LE_MAX_GAIN` (2.0,
+/// +6.02 dB above unity), the same ceiling every other volume control in the
+/// app (lane/monitor) uses.
+///
+/// Beside the cubit that writes the value rather than private to one of the
+/// surfaces that draws it: two click controls now exist — the Settings slider
+/// and the console's own bar — and a ceiling known to only one of them is a
+/// pair of controls with different reach over the same setting.
+const double kMaxClickGain = 2;
+
 /// The 17 Sheeran-verified time signatures (index plan D1): denominator `4`
 /// with numerator `2..7`, denominator `8` with numerator `5..15`. Shared by
 /// [TempoCubit] callers and the settings picker so both agree on the valid

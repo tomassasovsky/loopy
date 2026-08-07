@@ -72,12 +72,6 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
   /// enough that a stopped controller stops claiming to be delivering.
   static const Duration _quietAfter = Duration(milliseconds: 1500);
 
-  /// Group rhythm, as the mockups set it: a caption belongs to what is under
-  /// it, so the gap below one is smaller than the gap above.
-  static const double _groupGap = 19;
-  static const double _labelGap = 9;
-  static const double _blockGap = 14;
-
   @override
   void dispose() {
     _quiet?.cancel();
@@ -176,19 +170,19 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: _groupGap),
+              const SizedBox(height: kConsoleGroupGap),
               ConsoleGroupLabel(l10n.midiDeviceGroup),
-              const SizedBox(height: _labelGap),
+              const SizedBox(height: kConsoleLabelGap),
               _deviceCard(context, connection),
-              const SizedBox(height: _blockGap),
+              const SizedBox(height: kConsoleBlockGap),
               _statusCard(context, connection),
-              const SizedBox(height: _blockGap),
+              const SizedBox(height: kConsoleBlockGap),
               ConsoleProse(l10n.midiTransportMap(_transportMap(l10n))),
-              const SizedBox(height: _groupGap),
+              const SizedBox(height: kConsoleGroupGap),
               ConsoleGroupLabel(l10n.midiLearnGroup),
-              const SizedBox(height: _labelGap),
+              const SizedBox(height: kConsoleLabelGap),
               ConsoleProse(l10n.midiLearnHint),
-              const SizedBox(height: _blockGap),
+              const SizedBox(height: kConsoleBlockGap),
               _mappingsCard(context, connection),
             ],
           ),
@@ -449,7 +443,7 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
     return Padding(
       padding: const EdgeInsets.all(
         kConsoleRowInset,
-      ).copyWith(top: _blockGap, bottom: _blockGap),
+      ).copyWith(top: kConsoleBlockGap, bottom: kConsoleBlockGap),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [

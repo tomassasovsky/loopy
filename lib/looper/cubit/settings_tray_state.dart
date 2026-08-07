@@ -26,6 +26,15 @@ enum SettingsTrayDestination {
   /// [SettingsTrayState.controlTab], not a destination of its own.
   control,
 
+  /// In-tray Loop domain — the tempo grid, the click and the looper mode as
+  /// tabs of one entry.
+  ///
+  /// One destination, not three: all three tabs answer the same question —
+  /// *what governs the loop grid?* — and they had been split between a Loop
+  /// rail entry and two groups of the Settings scroll (#518). Which tab is
+  /// showing is [SettingsTrayState.loopTab], not a destination of its own.
+  loop,
+
   /// In-tray tuner panel. Placement only — the tuner itself is not
   /// implemented, and this face says so.
   tuner,
@@ -49,6 +58,7 @@ class SettingsTrayState extends Equatable {
     this.destination = SettingsTrayDestination.home,
     this.networkTab = NetworkTab.wifi,
     this.controlTab = ControlTab.pedal,
+    this.loopTab = LoopTab.tempo,
   });
 
   /// Live drag/settle progress in `0..1` — `0` fully closed, `1` fully open.
@@ -82,6 +92,9 @@ class SettingsTrayState extends Equatable {
   /// Which tab the Control domain shows. Same rule as [networkTab].
   final ControlTab controlTab;
 
+  /// Which tab the Loop domain shows. Same rule as [networkTab].
+  final LoopTab loopTab;
+
   /// Returns a copy with the given fields replaced.
   SettingsTrayState copyWith({
     double? dragProgress,
@@ -90,6 +103,7 @@ class SettingsTrayState extends Equatable {
     SettingsTrayDestination? destination,
     NetworkTab? networkTab,
     ControlTab? controlTab,
+    LoopTab? loopTab,
   }) => SettingsTrayState(
     dragProgress: dragProgress ?? this.dragProgress,
     isNavigating: isNavigating ?? this.isNavigating,
@@ -97,6 +111,7 @@ class SettingsTrayState extends Equatable {
     destination: destination ?? this.destination,
     networkTab: networkTab ?? this.networkTab,
     controlTab: controlTab ?? this.controlTab,
+    loopTab: loopTab ?? this.loopTab,
   );
 
   @override
@@ -107,5 +122,6 @@ class SettingsTrayState extends Equatable {
     destination,
     networkTab,
     controlTab,
+    loopTab,
   ];
 }

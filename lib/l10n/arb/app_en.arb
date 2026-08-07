@@ -1312,10 +1312,87 @@
     "modeChangeConfirmTitle": "Switch mode?",
     "modeChangeConfirmBody": "Changing mode clears every track — there's no way to keep the current loops. Clear all tracks and switch?",
     "modeChangeConfirmConfirm": "Clear & Switch",
-    "modeChangeConfirmCancel": "Cancel",
+    "modeChangeConfirmCancel": "Keep it",
     "modeChangeTimedOut": "Mode switch timed out — the clear is still finishing. Try again in a moment.",
     "oneShotGroupLabel": "ONE SHOT",
     "oneShotIntro": "A one-shot track plays once and stops instead of looping (active in Free and Song modes).",
+    "trayLoopLabel": "Loop",
+    "@trayLoopLabel": {
+        "description": "Navigation-rail caption for the console's Loop domain."
+    },
+    "loopTempoTab": "Tempo",
+    "loopClickTab": "Click",
+    "loopModeTab": "Mode",
+    "loopTempoGroup": "TEMPO",
+    "loopClickGroup": "CLICK",
+    "loopModeGroup": "MODE",
+    "loopDefaultsGroup": "DEFAULTS",
+    "loopTempoRow": "Tempo",
+    "loopTempoHint": "tap or type",
+    "loopTempoReadout": "{bpm} bpm",
+    "@loopTempoReadout": {
+        "description": "The live tempo at a Loop row's trailing edge.",
+        "placeholders": {
+            "bpm": {
+                "type": "String"
+            }
+        }
+    },
+    "loopTempoUnset": "not set",
+    "@loopTempoUnset": {
+        "description": "Shown where the tempo would be when none has been established. The console never draws an unknown fact as a zero."
+    },
+    "loopLengthHint": "first take sets it",
+    "loopLengthAuto": "Auto",
+    "loopLengthMultiple": "x{multiple}",
+    "@loopLengthMultiple": {
+        "description": "A fixed loop length, as a multiple of the base loop the first take defines.",
+        "placeholders": {
+            "multiple": {
+                "type": "int"
+            }
+        }
+    },
+    "loopQuantiseRow": "Quantise",
+    "loopQuantiseHint": "when a switch takes effect",
+    "loopCountInRow": "Count-in",
+    "loopClickWhenRow": "When it plays",
+    "loopClickOutputRow": "Output",
+    "loopClickOutputNone": "nowhere",
+    "@loopClickOutputNone": {
+        "description": "Click output readout when no hardware output is selected."
+    },
+    "loopClickOutputAll": "all outputs",
+    "loopClickOutputCount": "{count} outputs",
+    "@loopClickOutputCount": {
+        "description": "Click output readout once naming every chosen output would not fit.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "loopClickVolumeLabel": "CLICK VOLUME",
+    "loopClickVolumeReadout": "{percent}%",
+    "@loopClickVolumeReadout": {
+        "description": "Click volume as a percentage of unity gain; the bar reaches 200%.",
+        "placeholders": {
+            "percent": {
+                "type": "int"
+            }
+        }
+    },
+    "loopModeRow": "Looper mode",
+    "loopOneShotRow": "One-shot tracks",
+    "loopDefaultModeRow": "Default mode",
+    "loopDefaultModeRecord": "record",
+    "loopDefaultModeMute": "mute",
+    "loopTempoSheetUnit": "bpm",
+    "loopTempoSheetSet": "Set",
+    "loopTempoSheetBackspace": "Backspace",
+    "loopTempoSheetDecimal": "Decimal point",
+    "a11yLoopClickVolume": "Click volume",
+    "a11yLoopTempoSheet": "Tempo keypad",
     "a11yTrackPrimary": "Primary track",
     "@a11yTrackPrimary": {
         "description": "Accessible label for the crown badge on the currently-crowned Sync/Band primary track (D18); inert, no tap action."
