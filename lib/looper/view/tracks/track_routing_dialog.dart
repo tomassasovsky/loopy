@@ -192,39 +192,35 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
                         ),
                       ),
                       const SizedBox(height: kConsoleGroupGap),
-                      // The GROUPS scroll, not the whole panel: the title says
-                      // which track this is and Done is how you leave, so both
-                      // have to stay reachable however many inputs the rig has.
+                      // **Only the LANES list scrolls.** Both groups are always
+                      // on screen: the quantize override is three fixed rows
+                      // and one of the two questions this panel asks, so
+                      // pushing it below a long lane list would hide half the
+                      // panel behind a scroll nothing announces.
                       //
-                      // Slivers, and both captions PINNED: a caption belongs to
-                      // what is under it, and a lane list long enough to scroll
-                      // is exactly the case where "which group am I in?" stops
-                      // being obvious. Scrolled far enough, LANES is still
-                      // overhead and QUANTIZE RECORDING has already arrived at
-                      // the bottom — so the panel always says what both halves
-                      // of it are.
+                      // The lanes are a sliver list under a PINNED caption, so
+                      // scrolled to the middle of an eight-input rig the list
+                      // still says what it is; QUANTIZE RECORDING and Done sit
+                      // outside the scroll view entirely and never move.
                       //
                       // Flexible, not Expanded — a short panel still shrinks to
-                      // its content the way the mockup draws it.
+                      // its content the way the mockup draws it, and the lane
+                      // list only starts scrolling once it runs out of room.
                       Flexible(
                         child: CustomScrollView(
                           shrinkWrap: true,
-                          
                           slivers: [
                             _PinnedGroupLabel(l10n.trackLanesGroup),
                             SliverToBoxAdapter(
                               child: _lanes(context, state, track),
                             ),
-                            const SliverToBoxAdapter(
-                              child: SizedBox(height: kConsoleGroupGap),
-                            ),
-                            _PinnedGroupLabel(l10n.trackQuantizeGroup),
-                            SliverToBoxAdapter(
-                              child: _quantizeGroup(context, track),
-                            ),
                           ],
                         ),
                       ),
+                      const SizedBox(height: kConsoleGroupGap),
+                      ConsoleGroupLabel(l10n.trackQuantizeGroup),
+                      const SizedBox(height: kConsoleLabelGap),
+                      _quantizeGroup(context, track),
                       const SizedBox(height: kConsoleGroupGap),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,

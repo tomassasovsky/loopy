@@ -909,6 +909,47 @@ void main() {
     );
   }, skip: !hasFonts);
 
+  testWidgets('tracks domain, the routing panel on an 8-input rig', (
+    tester,
+  ) async {
+    // The case the 4-input drawing never showed: the lane list runs past the
+    // panel, so it scrolls under its pinned caption while QUANTIZE RECORDING
+    // and Done stay where they are.
+    await size(tester);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.tracks)
+      ..showTracksTab(TracksTab.routing);
+    addTearDown(cubit.close);
+    final providers = controlProviders(
+      tester,
+      looperState: const LooperState(
+        tracks: [
+          Track(lanes: [Lane(inputChannel: 0)]),
+        ],
+        status: EngineStatus(
+          sampleRate: 48000,
+          inputChannels: 8,
+          outputChannels: 8,
+        ),
+      ),
+    );
+    await providers.tracks.rename(0, 'drums');
+    await pumpTray(tester, cubit: cubit, control: providers);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('tracks_routing_row_0')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('track_routing_input_0')));
+    await tester.pumpAndSettle();
+
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/control_center_track_routing_tall.png'),
+    );
+  }, skip: !hasFonts);
+
   testWidgets("tracks domain, a track's own routing panel", (tester) async {
     await pumpTracks(tester, TracksTab.routing);
     await tester.tap(find.byKey(const Key('tracks_routing_row_0')));

@@ -676,12 +676,12 @@ void main() {
       expect(midway.height, greaterThan(0));
     });
 
-    testWidgets('both group captions stay put while the lists scroll', (
+    testWidgets('the quantize group stays on screen behind a long lane list', (
       tester,
     ) async {
-      // Pinned headers: scrolled far enough into a long lane list, LANES is
-      // still overhead and QUANTIZE RECORDING has already arrived — so the
-      // panel never stops saying which of its two questions a row answers.
+      // Only the LANES list scrolls: the quantize override is one of the two
+      // questions this panel asks, so it stays on screen however long the
+      // lane list is, and the LANES caption stays pinned over its own list.
       await pump(
         tester,
         tab: TracksTab.routing,
@@ -698,6 +698,9 @@ void main() {
 
       expect(find.text(l10n.trackLanesGroup), findsOneWidget);
       expect(find.text(l10n.trackQuantizeGroup), findsOneWidget);
+      final quantizeBefore = tester.getRect(
+        find.byKey(const Key('track_routing_quantize_never')),
+      );
 
       await tester.drag(
         find.byKey(const Key('track_routing_input_3')),
@@ -705,8 +708,15 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      // The lane list moved; neither group's caption nor the quantize rows
+      // did.
       expect(find.text(l10n.trackLanesGroup), findsOneWidget);
       expect(find.text(l10n.trackQuantizeGroup), findsOneWidget);
+      expect(
+        tester.getRect(find.byKey(const Key('track_routing_quantize_never'))),
+        quantizeBefore,
+      );
+      expect(find.byKey(const Key('track_routing_input_7')), findsOneWidget);
     });
 
     testWidgets('the output grid stays open — no single tap answers it', (
@@ -855,13 +865,18 @@ void main() {
       expect(panel.height, lessThanOrEqualTo(1080));
       expect(find.byKey(const Key('track_routing_done')), findsOneWidget);
 
-      // The last input is off-screen until the groups are scrolled to it.
+      // The last input is reachable by scrolling the lane list.
       await tester.scrollUntilVisible(
         find.byKey(const Key('track_routing_input_7')),
         200,
         scrollable: find.byType(Scrollable).first,
       );
       expect(find.byKey(const Key('track_routing_input_7')), findsOneWidget);
+      // ...and the quantize group never went anywhere to reach it.
+      expect(
+        find.byKey(const Key('track_routing_quantize_never')),
+        findsOneWidget,
+      );
     });
 
     testWidgets('Done dismisses; it does not commit', (tester) async {
