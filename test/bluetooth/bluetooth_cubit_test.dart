@@ -127,10 +127,7 @@ void main() {
         ),
       ),
       act: (cubit) => cubit.load(),
-      expect: () => [
-        const BluetoothState(busy: true),
-        const BluetoothState(),
-      ],
+      expect: () => [const BluetoothState(busy: true), const BluetoothState()],
     );
 
     blocTest<BluetoothCubit, BluetoothState>(
@@ -193,10 +190,8 @@ void main() {
 
   group('device actions', () {
     const address = 'AA:BB:CC:DD:EE:FF';
-    BluetoothDevice fresh() => const BluetoothDevice(
-      name: 'Cans',
-      address: address,
-    );
+    BluetoothDevice fresh() =>
+        const BluetoothDevice(name: 'Cans', address: address);
 
     blocTest<BluetoothCubit, BluetoothState>(
       'pair re-reads scan and status rather than trusting the verb — bluez '
@@ -219,10 +214,9 @@ void main() {
     blocTest<BluetoothCubit, BluetoothState>(
       'pairing marks pairingAddress and NOT busy — the list stays live '
       'behind the banner while a human is at the far device',
-      build: () =>
-          BluetoothCubit(repository: _repo(_FakeBluetoothClient(
-            devices: [fresh()],
-          ))),
+      build: () => BluetoothCubit(
+        repository: _repo(_FakeBluetoothClient(devices: [fresh()])),
+      ),
       act: (cubit) async {
         await cubit.load();
         final pairing = cubit.pair(address);
@@ -253,10 +247,9 @@ void main() {
     blocTest<BluetoothCubit, BluetoothState>(
       'cancelPairing drops the marker and claims nothing more — the helper '
       'call cannot be recalled once issued',
-      build: () =>
-          BluetoothCubit(repository: _repo(_FakeBluetoothClient(
-            devices: [fresh()],
-          ))),
+      build: () => BluetoothCubit(
+        repository: _repo(_FakeBluetoothClient(devices: [fresh()])),
+      ),
       act: (cubit) async {
         await cubit.load();
         final pairing = cubit.pair(address);
