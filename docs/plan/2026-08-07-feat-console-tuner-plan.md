@@ -97,23 +97,42 @@ O(maxlag × integ) — roughly 2.4M multiply-adds per detection, on the audio
 thread, in a detector the octaver calls per grain. That trades a tuner for a
 dropout risk in an unrelated effect.
 
-**Decimate instead.** A tuner needs no bandwidth above ~1.5 kHz. Low-pass and
-decimate the tapped channel by 8 to 6 kHz, where the same 30.9 Hz floor is
-maxlag ≈ 194 and a 1 kHz ceiling is minlag 6 — about 38k operations per
-detection, at one detection per ~25 ms.
+**Decimate instead — but the band has to become a parameter.**
 
-`le_psola_detect()` derives its band from the sample rate it is handed, so
-handing it the decimated rate re-bands it with **no change to the function and
-no change to `LE_PSOLA_MAXLAG`, `LE_PSOLA_WIN` or `LE_PSOLA_THRESH`.** The
-decimated maxlag (194) is comfortably inside the existing 800 cap. The octaver
-is untouched, and its tests stay green for the reason that they should — nothing
-moved.
+**[Corrected 2026-08-08, during the build.]** What this section originally
+said was wrong, and wrong in the direction that matters. It claimed that
+handing `le_psola_detect()` a decimated rate "re-bands it for free". The
+function derives *both* ends of its search from `sr` (`sr/1000` … `sr/60`),
+so decimating rescales the whole band with it and the floor stays at 60 Hz
+whatever rate it is handed. Low B was never reachable that way.
 
-Period resolution at 6 kHz is coarser than at 48 kHz, so the plan must include
-parabolic interpolation around the chosen lag to recover cents accuracy. YIN's
-`d'(tau)` curve supports it directly and the detector already walks to a local
-minimum; interpolating between `dp[tau-1]`, `dp[tau]` and `dp[tau+1]` is a few
-lines in the tuner path, not in the shared detector.
+What decimation actually buys is **cost, not reach**. YIN is
+O(lags × integration), so the same 30 Hz floor is 200 lags at 6 kHz against
+1600 at 48 kHz. To reach the floor at all, the band must be explicit:
+
+- `le_psola_detect_band(x, n, sr, min_hz, max_hz, …)` carries the search, and
+  `le_psola_detect()` becomes that function at `(60, 1000)` — so the octaver's
+  lags are bit-identical and `LE_PSOLA_MAXLAG` / `_WIN` / `_THRESH` still
+  never move.
+- The tuner calls it at `(30, 1000)` over a boxcar-decimated signal. A boxcar
+  of exactly the decimation factor nulls at the decimated rate — which is
+  where aliasing would fold in from — so it is its own anti-alias filter.
+
+**Decimation also costs resolution, and that needs a second pass.** A
+fraction-of-a-decimated-sample error is sub-cent at low B (a 200-sample
+period) but **~6 cents at high E** (an 18-sample one), which is a tuner nobody
+trusts. So the coarse decimated pass decides the octave, and a narrow
+plain-difference search at the **device** rate around that lag recovers the
+resolution. It walks ~2× the decimation factor in lags, so it costs a fraction
+of the coarse pass, and it declines to run when the lag is too long for its
+ring — which is the low end, where the coarse answer is already sub-cent.
+
+Measured end to end after this: **within 0.02 cents from 30.87 Hz to
+329.63 Hz**.
+
+Two smaller corrections while here: parabolic interpolation was **already** in
+`le_psola_detect`, so the claim that it had to be added was also wrong; and
+the cadence is one pass per `LE_TUNER_HOP` (256) decimated samples, ~43 ms.
 
 ### Tap point
 

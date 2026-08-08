@@ -397,6 +397,11 @@ typedef enum le_command_code {
   LE_CMD_SET_MASTER_FX_COUNT = 52, /* set the Master insert active chain
                                     * length. fxcount arm: count (channel +
                                     * lane unused). */
+  /* Arm the chromatic tuner on one hardware input, or -1 to disarm. arg_i =
+   * channel. Gating is the contract, not an optimization: detection runs only
+   * while an input is armed, so a console that never opens the Tuner face
+   * pays one atomic load per block. */
+  LE_CMD_SET_TUNER_INPUT = 53,
 
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
@@ -681,6 +686,20 @@ typedef struct le_snapshot {
   int32_t perf_armed;      /* 0/1: the RT taps are live */
   uint64_t perf_frames;    /* frames processed since the most recent arm */
   uint32_t perf_overruns;  /* dropped capture frames (ring full) since arm */
+
+  /* ---- Chromatic tuner (le_engine_set_tuner_input) ----
+   *
+   * Placed with the other metering floats rather than at the struct tail
+   * because the trailing block below documents itself as offset-stable for
+   * readers built against the older layout, and these are new fields on a
+   * struct that is rebuilt from the header on every generation — the Dart
+   * binding is generated, so there is no hand-written reader to keep. */
+  float tuner_hz;         /* detected fundamental; 0 = no pitch this frame */
+  float tuner_confidence; /* 0..1, YIN's voicing score for that frame */
+  /* Echo of the armed channel, -1 when disarmed. Earns its place: without it
+   * the UI cannot tell "armed and silent" from "not armed yet", and those two
+   * need different words on screen. */
+  int32_t tuner_input;
 
   /* Tracks. */
   int32_t track_count; /* number of usable tracks (<= LE_MAX_TRACKS) */
@@ -1458,6 +1477,18 @@ LE_EXPORT int32_t le_engine_set_rec_dub(le_engine* engine, int32_t enabled);
  * default and after every fresh configure; published in le_snapshot.master_gain.
  */
 LE_EXPORT int32_t le_engine_set_master_gain(le_engine* engine, float gain);
+
+/* Arms the chromatic tuner on hardware input `input`, or disarms it with -1.
+ *
+ * The tuner taps the input BEFORE any lane or effect, which is what tuning
+ * wants: the player is tuning the instrument, not the patch. It does not mute,
+ * gate, or otherwise touch the signal — the console keeps playing while you
+ * tune, and the face says so instead.
+ *
+ * Results ride the snapshot as `tuner_hz` / `tuner_confidence` /
+ * `tuner_input`. Detection is gated on the arm, so disarming (or never arming)
+ * costs nothing. */
+LE_EXPORT int32_t le_engine_set_tuner_input(le_engine* engine, int32_t input);
 
 /* Enables/disables the master peak limiter and sets its ceiling (clamped to
  * (0,1], default 0.99). The limiter is applied post master-gain so the summed

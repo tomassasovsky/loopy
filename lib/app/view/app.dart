@@ -28,6 +28,7 @@ import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/tuner/cubit/tuner_cubit.dart';
 import 'package:segno/update/cubit/pedal_firmware_cubit.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:segno/update/view/pedal_firmware_gate.dart';
@@ -259,6 +260,13 @@ class App extends StatelessWidget {
               settings: context.read<SettingsRepository>(),
               repository: context.read<LooperRepository>(),
             ),
+          ),
+          // The tuner is lazy on purpose, unlike its neighbours: it subscribes
+          // to the looper stream and arms the engine, and a console that never
+          // opens the Tuner face should pay for neither.
+          BlocProvider(
+            create: (context) =>
+                TunerCubit(repository: context.read<LooperRepository>()),
           ),
           BlocProvider(
             create: (context) {

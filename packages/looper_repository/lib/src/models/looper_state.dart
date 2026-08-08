@@ -3,6 +3,7 @@ import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/track.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
+import 'package:looper_repository/src/models/tuner_reading.dart';
 
 /// The single source of looper truth: transport, the tracks, and engine status,
 /// projected from one engine snapshot.
@@ -15,6 +16,7 @@ class LooperState extends Equatable {
     this.outputEnabledMask = 0xFFFFFFFF,
     this.masterEffects = const [],
     this.masterChainEnabled = true,
+    this.tuner = const TunerReading(),
   });
 
   /// Master loop transport.
@@ -38,6 +40,10 @@ class LooperState extends Equatable {
 
   /// Whether the Master insert chain is engaged (R15).
   final bool masterChainEnabled;
+
+  /// What the chromatic tuner hears on its armed input. Disarmed by default,
+  /// and disarmed costs nothing — the engine gates detection on the arm.
+  final TunerReading tuner;
 
   /// Whether hardware output [output] is currently enabled (a routing target).
   bool isOutputEnabled(int output) =>
@@ -65,5 +71,6 @@ class LooperState extends Equatable {
     outputEnabledMask,
     masterEffects,
     masterChainEnabled,
+    tuner,
   ];
 }

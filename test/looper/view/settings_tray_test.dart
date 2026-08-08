@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -5,7 +7,9 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/view/settings_tray.dart';
@@ -13,6 +17,7 @@ import 'package:segno/looper/view/tray/tray.dart';
 import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
 import 'package:segno/network/network_tab.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/tuner/cubit/tuner_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
@@ -102,14 +107,25 @@ void main() {
   late SettingsRepository settings;
   late _ToggleWifiClient wifiClient;
   late _ToggleBluetoothClient bluetoothClient;
+  late LooperRepository looper;
+  late TunerCubit tunerCubit;
+  late InputsCubit inputsCubit;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     cubit = SettingsTrayCubit(settings: settings);
     wifiClient = _ToggleWifiClient();
     bluetoothClient = _ToggleBluetoothClient();
+    looper = LooperRepository(engine: FakeAudioEngine());
+    tunerCubit = TunerCubit(repository: looper);
+    inputsCubit = InputsCubit(settings: settings, repository: looper);
   });
-  tearDown(() => cubit.close());
+  tearDown(() async {
+    await cubit.close();
+    await tunerCubit.close();
+    await inputsCubit.close();
+    unawaited(looper.dispose());
+  });
 
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
     MaterialApp(
@@ -124,9 +140,14 @@ void main() {
           RepositoryProvider<BluetoothRepository>.value(
             value: BluetoothRepository(client: bluetoothClient),
           ),
+          RepositoryProvider<LooperRepository>.value(value: looper),
         ],
-        child: BlocProvider<SettingsTrayCubit>.value(
-          value: cubit,
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider<SettingsTrayCubit>.value(value: cubit),
+            BlocProvider<TunerCubit>.value(value: tunerCubit),
+            BlocProvider<InputsCubit>.value(value: inputsCubit),
+          ],
           // A Scaffold + Stack mirrors how TracksView actually mounts the
           // tray: as a Stack sibling over full-screen content, top edge at
           // (0, 0).
@@ -427,7 +448,7 @@ void main() {
     );
 
     testWidgets(
-      'the Tuner is an in-tray face, not a dialog, and says it is not ready',
+      'the Tuner is an in-tray face, not a dialog, and asks for a note',
       (tester) async {
         cubit.open();
         await pump(tester);
@@ -441,10 +462,9 @@ void main() {
         final l10n = await AppLocalizations.delegate.load(const Locale('en'));
         expect(find.byKey(const Key('tuner_tray_panel')), findsOneWidget);
         expect(find.byType(AlertDialog), findsNothing);
-        expect(
-          find.text(l10n.trayComingSoonMessage(l10n.trayTunerLabel)),
-          findsOneWidget,
-        );
+        // No device is open in this harness, so the face says so rather than
+        // drawing a needle for a signal that cannot exist.
+        expect(find.text(l10n.tunerNoDevice), findsOneWidget);
         expect(cubit.state.dragProgress, 1);
 
         await tester.tap(find.byKey(const Key('tuner_back')));

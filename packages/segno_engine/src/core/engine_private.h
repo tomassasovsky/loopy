@@ -814,6 +814,36 @@ typedef struct le_perf_capture {
   struct le_perf_render* render;
 } le_perf_capture;
 
+/* ---- Tuner analysis geometry (independent of the octaver's constants) ----
+ *
+ * Decimate by 8: at a 48 kHz device that is a 6 kHz analysis rate, where the
+ * LE_TUNER_MIN_HZ floor is 200 lags rather than the 1600 it would be at the
+ * device rate. LE_TUNER_WIN must hold at least 2x the longest lag (the
+ * detector clamps maxlag to n/2) with room left for integration.
+ *
+ * The floor is 30 Hz because bass low B is 30.87; the ceiling is the
+ * octaver's, which is already well above any instrument fundamental a tuner
+ * meets. Detect every LE_TUNER_HOP decimated samples — ~43 ms at 6 kHz, far
+ * finer than a needle needs to look continuous. */
+#define LE_TUNER_DECIM 8
+#define LE_TUNER_WIN 768
+#define LE_TUNER_HOP 256
+#define LE_TUNER_MIN_HZ 30
+#define LE_TUNER_MAX_HZ 1000
+
+/* Full-rate refinement ring. The decimated estimate is accurate to a fraction
+ * of a DECIMATED sample, which is sub-cent down at low B (a 200-sample period)
+ * but several cents up at the top of a guitar's range (an 18-sample period) —
+ * decimation buys cost at the price of resolution, and a tuner that is six
+ * cents out is a tuner nobody trusts. A narrow search at the DEVICE rate
+ * around the coarse lag buys the resolution back for a fraction of the coarse
+ * pass, because it only ever walks ~2x LE_TUNER_DECIM lags.
+ *
+ * 2048 frames is ~43 ms at 48 kHz: several periods of anything above ~100 Hz,
+ * which is exactly the range where refinement is needed. Below that the
+ * coarse estimate is already sub-cent and the refinement declines to run. */
+#define LE_TUNER_RAW 2048
+
 struct le_engine {
   /* The device backend driving the lifecycle (le_select_backend's choice),
    * remembered so le_engine_stop / le_engine_destroy release the device through
@@ -860,6 +890,30 @@ struct le_engine {
   _Atomic uint32_t a_in_rms_bits;
   _Atomic uint32_t a_in_peak_bits;
   _Atomic uint32_t a_out_rms_bits;
+
+
+  /* ---- Tuner (LE_CMD_SET_TUNER_INPUT) ----
+   *
+   * Off by default and off whenever a_tuner_input < 0, which is the whole
+   * cost model: a console that never opens the Tuner face runs one atomic
+   * load per block and nothing else.
+   *
+   * The detector is NOT run at the device rate. Pitch needs no bandwidth above
+   * ~1.5 kHz, and YIN costs (lags x integration), so the tapped channel is
+   * boxcar-averaged LE_TUNER_DECIM samples at a time and analysed at
+   * sr/LE_TUNER_DECIM. A boxcar of exactly the decimation factor puts its
+   * first null on the decimated rate, which is where aliasing would fold in
+   * from — cheap and self-anti-aliasing. */
+  _Atomic int32_t a_tuner_input;   /* hardware channel, or -1 = off */
+  _Atomic uint32_t a_tuner_hz_bits;   /* float: 0 = no pitch this frame */
+  _Atomic uint32_t a_tuner_conf_bits; /* float 0..1 */
+  /* RT-only decimation + analysis state; touched on the audio thread alone. */
+  float tuner_win[LE_TUNER_WIN]; /* decimated analysis window */
+  float tuner_raw[LE_TUNER_RAW]; /* device-rate window, for refinement */
+  int tuner_raw_fill;            /* samples written into tuner_raw */
+  int tuner_fill;                /* samples written into tuner_win */
+  float tuner_acc;               /* boxcar accumulator */
+  int tuner_acc_n;               /* samples in the accumulator */
   /* Loop-indexed visualization (float bits): one peak per loop bucket, spanning
    * exactly one master loop and refreshed as the playhead sweeps. a_loop_viz is
    * the mixed output; a_track_viz is each track's own contribution. */
