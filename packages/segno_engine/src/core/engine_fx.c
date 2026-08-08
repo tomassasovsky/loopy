@@ -281,11 +281,19 @@ static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int ca
  * extra cost of YIN's cumulative-mean normalization is worth it here. */
 int le_psola_detect(const float* x, int n, int sr, float* out_period,
                     float* out_voiced) {
+  /* The octaver's band, unchanged. Integer division on the same operands as
+   * before the band became a parameter, so the lags are bit-identical. */
+  return le_psola_detect_band(x, n, sr, 60, 1000, out_period, out_voiced);
+}
+
+int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
+                         float* out_period, float* out_voiced) {
   *out_period = 0.0f;
   *out_voiced = 0.0f;
-  int minlag = sr / 1000; /* ~1000 Hz ceiling */
+  if (min_hz <= 0 || max_hz <= min_hz) return 0;
+  int minlag = sr / max_hz;
   if (minlag < 2) minlag = 2;
-  int maxlag = sr / 60; /* ~60 Hz floor */
+  int maxlag = sr / min_hz;
   if (maxlag > LE_PSOLA_MAXLAG) maxlag = LE_PSOLA_MAXLAG;
   if (maxlag > n / 2) maxlag = n / 2;
   if (maxlag <= minlag) return 0;

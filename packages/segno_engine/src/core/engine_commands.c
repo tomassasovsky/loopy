@@ -1470,6 +1470,14 @@ int32_t le_engine_set_master_gain(le_engine* engine, float gain) {
   return le_push(engine, LE_CMD_SET_MASTER_GAIN, 0, gain);
 }
 
+int32_t le_engine_set_tuner_input(le_engine* engine, int32_t input) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  /* Posted through the ring so arming orders with the rest of the command
+   * stream; the audio thread validates the channel against what the device
+   * actually negotiated and resets the analysis state on every change. */
+  return le_push(engine, LE_CMD_SET_TUNER_INPUT, input, 0.0f);
+}
+
 int32_t le_engine_set_auto_record(le_engine* engine, int32_t enabled) {
   if (engine == NULL) return LE_ERR_INVALID;
   engine->auto_record = enabled ? 1 : 0;

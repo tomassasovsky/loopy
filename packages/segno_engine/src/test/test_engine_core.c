@@ -11824,6 +11824,198 @@ static void oct_run_psola(float shift, const float* in, int total, float* out) {
   le_engine_destroy(e);
 }
 
+
+/* A harmonic tone generated AT a given rate. `oct_harmonic` bakes in OCT_SR,
+ * which is exactly wrong for the tuner: it analyses a DECIMATED signal, so its
+ * test vectors have to be built at the decimated rate too. */
+static void tuner_harmonic(float* buf, int n, float f0, int sr) {
+  for (int i = 0; i < n; ++i) buf[i] = 0.0f;
+  for (int k = 1; (float)k * f0 < (float)sr * 0.45f && k <= 8; ++k) {
+    const float f = (float)k * f0;
+    const float a = 1.0f / (float)k;
+    for (int i = 0; i < n; ++i) {
+      buf[i] += a * sinf(2.0f * LE_FFT_PI * f * (float)i / (float)sr);
+    }
+  }
+  float peak = 0.0f;
+  for (int i = 0; i < n; ++i) {
+    const float m = fabsf(buf[i]);
+    if (m > peak) peak = m;
+  }
+  if (peak > 0.0f) {
+    for (int i = 0; i < n; ++i) buf[i] /= peak;
+  }
+}
+
+/* The tuner's band-parameterised detector. Two separate claims:
+ *
+ * 1. `le_psola_detect` is unchanged. It is now a wrapper over the band form at
+ *    (60, 1000), so this pins that the octaver's band did not move.
+ * 2. The tuner reaches BELOW the octaver's floor. Bass low B is 30.87 Hz, and
+ *    the whole reason the band became a parameter is that it is derived from
+ *    `sr` — decimating rescales both ends and never lowers the floor by
+ *    itself, which the plan originally got backwards.
+ *
+ * The tuner analyses at sr/LE_TUNER_DECIM, so these run at that rate, which is
+ * also what makes the low end affordable: 200 lags rather than 1600. */
+static void test_tuner_detect_band(void) {
+  printf("test_tuner_detect_band\n");
+  enum { W = LE_TUNER_WIN };
+  const int sr_d = OCT_SR / LE_TUNER_DECIM;
+  float* b = (float*)malloc(sizeof(float) * (size_t)W);
+
+  /* The wrapper is exactly the band form at the octaver's own band. */
+  {
+    tuner_harmonic(b, W, 200.0f, sr_d);
+    float pa = 0.0f;
+    float va = 0.0f;
+    float pb = 0.0f;
+    float vb = 0.0f;
+    le_psola_detect(b, W, sr_d, &pa, &va);
+    le_psola_detect_band(b, W, sr_d, 60, 1000, &pb, &vb);
+    CHECK(pa == pb);
+    CHECK(va == vb);
+  }
+
+  /* Reaching BELOW the octaver's floor is this function's job — bass low B is
+   * 30.87 Hz. Accuracy here is the COARSE accuracy: a decimated sample is 8
+   * device samples, so a fraction-of-a-sample error is sub-cent at low B (a
+   * 200-sample period) and several cents at the top (an 18-sample one). The
+   * device-rate refinement in tuner_tap_block is what closes that, and the
+   * end-to-end claim lives in test_tuner_arm_and_detect. What matters here is
+   * that there is no OCTAVE error anywhere in the band. */
+  const float f0s[] = {30.87f, 41.20f, 82.41f, 110.0f, 220.0f, 329.63f};
+  for (int k = 0; k < (int)(sizeof(f0s) / sizeof(f0s[0])); ++k) {
+    tuner_harmonic(b, W, f0s[k], sr_d);
+    float period = 0.0f;
+    float voiced = 0.0f;
+    le_psola_detect_band(b, W, sr_d, LE_TUNER_MIN_HZ, LE_TUNER_MAX_HZ, &period,
+                         &voiced);
+    CHECK(period > 0.0f);
+    const float hz = (float)sr_d / period;
+    const float cents = 1200.0f * log2f(hz / f0s[k]);
+    printf("  f0=%.2f -> %.2f Hz (%.2f cents) voiced=%.2f\n", f0s[k], hz, cents,
+           voiced);
+    CHECK(fabsf(cents) < 10.0f); /* no octave error; refinement does the rest */
+    CHECK(voiced > 0.8f);
+  }
+
+  /* The octaver's band genuinely cannot see low B — otherwise the whole
+   * decimate-and-widen exercise would be pointless. */
+  {
+    tuner_harmonic(b, W, 30.87f, sr_d);
+    float period = 0.0f;
+    float voiced = 0.0f;
+    le_psola_detect_band(b, W, sr_d, 60, 1000, &period, &voiced);
+    const float hz = period > 0.0f ? (float)sr_d / period : 0.0f;
+    printf("  low B through the octaver band -> %.2f Hz\n", hz);
+    CHECK(hz > 45.0f); /* anything but the true 30.87: out of band */
+  }
+
+  /* A nonsense band is rejected rather than read as some default. */
+  {
+    float period = 1.0f;
+    float voiced = 1.0f;
+    CHECK(le_psola_detect_band(b, W, sr_d, 1000, 60, &period, &voiced) == 0);
+    CHECK(period == 0.0f);
+    CHECK(voiced == 0.0f);
+  }
+
+  free(b);
+}
+
+/* The tuner is armed through the command ring, is disarmed by default, and
+ * reports a real pitch on the armed channel only. Detection is gated on the
+ * arm: an engine nobody has armed publishes nothing, which is what makes the
+ * Tuner face free when it is closed. */
+static void test_tuner_arm_and_detect(void) {
+  printf("test_tuner_arm_and_detect\n");
+  le_engine* e = le_engine_create();
+  CHECK(e != NULL);
+  le_engine_configure(e, 48000, 2, 2, 1000); /* stereo in, stereo out */
+
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.tuner_input == -1); /* disarmed by default */
+  CHECK(snap.tuner_hz == 0.0f);
+
+  enum { FRAMES = 256 };
+  float in[FRAMES * 2];
+  float out[FRAMES * 2];
+
+  /* 110 Hz (bass A) on channel 0, silence on channel 1. Pushed for long enough
+   * to fill the decimated window several times over. */
+  int phase = 0;
+  const int blocks = (LE_TUNER_WIN * LE_TUNER_DECIM * 3) / FRAMES;
+
+  /* Unarmed: no pitch is ever published, however much audio goes through. */
+  for (int b = 0; b < blocks; ++b) {
+    for (int f = 0; f < FRAMES; ++f, ++phase) {
+      const float s =
+          sinf(2.0f * LE_FFT_PI * 110.0f * (float)phase / 48000.0f);
+      in[f * 2] = s;
+      in[f * 2 + 1] = 0.0f;
+    }
+    le_engine_process(e, out, in, FRAMES);
+  }
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.tuner_hz == 0.0f);
+
+  /* Armed on channel 0: every note lands within a cent END TO END, which is
+   * the coarse decimated pass plus the device-rate refinement together. Low B
+   * is the floor the octaver's band cannot reach; high E is where decimation
+   * alone would be ~6 cents out. */
+  CHECK(le_engine_set_tuner_input(e, 0) == LE_OK);
+  const float notes[] = {30.87f, 41.20f, 110.0f, 220.0f, 329.63f};
+  for (int k = 0; k < (int)(sizeof(notes) / sizeof(notes[0])); ++k) {
+    for (int b = 0; b < blocks; ++b) {
+      for (int f = 0; f < FRAMES; ++f, ++phase) {
+        const float s =
+            sinf(2.0f * LE_FFT_PI * notes[k] * (float)phase / 48000.0f);
+        in[f * 2] = s;
+        in[f * 2 + 1] = 0.0f;
+      }
+      le_engine_process(e, out, in, FRAMES);
+    }
+    le_engine_get_snapshot(e, &snap);
+    const float cents = 1200.0f * log2f(snap.tuner_hz / notes[k]);
+    printf("  armed ch0 %.2f Hz -> %.2f Hz (%.2f cents) conf=%.2f\n", notes[k],
+           snap.tuner_hz, cents, snap.tuner_confidence);
+    CHECK(snap.tuner_input == 0);
+    CHECK(snap.tuner_hz > 0.0f);
+    CHECK(fabsf(cents) < 1.0f);
+    CHECK(snap.tuner_confidence > 0.8f);
+    phase = 0; /* restart the phase so each note begins cleanly */
+  }
+
+  /* Armed on the SILENT channel: the reading resets and stays absent, so the
+   * face can tell "armed and silent" from "not armed". */
+  CHECK(le_engine_set_tuner_input(e, 1) == LE_OK);
+  for (int b = 0; b < blocks; ++b) {
+    for (int f = 0; f < FRAMES; ++f, ++phase) {
+      const float s =
+          sinf(2.0f * LE_FFT_PI * 110.0f * (float)phase / 48000.0f);
+      in[f * 2] = s;
+      in[f * 2 + 1] = 0.0f;
+    }
+    le_engine_process(e, out, in, FRAMES);
+  }
+  le_engine_get_snapshot(e, &snap);
+  printf("  armed ch1 (silent) -> %.2f Hz input=%d\n", snap.tuner_hz,
+         snap.tuner_input);
+  CHECK(snap.tuner_input == 1);
+  CHECK(snap.tuner_hz == 0.0f);
+
+  /* An out-of-range channel disarms rather than clamping onto a channel the
+   * caller never named. */
+  CHECK(le_engine_set_tuner_input(e, 99) == LE_OK);
+  le_engine_process(e, out, in, FRAMES);
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.tuner_input == -1);
+
+  le_engine_destroy(e);
+}
+
 /* PSOLA pitch detector (YIN): the engine-internal le_psola_detect reports the true
  * period within tolerance across the vocal band with NO octave error (the half/
  * double-period trap that plain autocorrelation falls into), reads noise as
@@ -19344,6 +19536,8 @@ int main(void) {
   test_octaver_lifecycle();
   test_octaver_mode_switch_no_click();
   test_octaver_psola_pitch_detect();
+  test_tuner_detect_band();
+  test_tuner_arm_and_detect();
   test_octaver_psola_voice_and_fallback();
   test_octaver_psola_no_chatter();
   test_octaver_added_latency();
