@@ -55,10 +55,22 @@ class _TunerTrayPanelState extends State<TunerTrayPanel> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final inputs = context.watch<InputsCubit>().state;
-    final channels = context.select<LooperRepository, int>(
-      (r) => r.state.status.inputChannels,
+    final (channels, excluded) = context.select<LooperRepository, (int, int)>(
+      (r) => (r.state.status.inputChannels, r.state.status.excludedInputMask),
     );
     final tuner = context.watch<TunerCubit>().state;
+
+    // Loopback captures carry the console's OWN output back (that is what the
+    // engine excludes them for), and the tuner tap does not filter them — so a
+    // tab for one would arm the tuner on the loop that is playing and report
+    // its pitch as though something were plugged into that socket. A reading
+    // off your own output is worse than no reading, because nothing on the
+    // face would say where it came from.
+    final tabs = [
+      for (var input = 0; input < channels; input++)
+        if (excluded & (1 << input) == 0)
+          PillTab(value: input, label: l10n.inputName(inputs.names, input)),
+    ];
 
     return KeyedSubtree(
       key: const Key('tuner_tray_panel'),
@@ -70,17 +82,11 @@ class _TunerTrayPanelState extends State<TunerTrayPanel> {
             title: l10n.trayTunerLabel,
             onBack: widget.onBack,
           ),
-          if (channels > 0)
+          if (tabs.isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(19, 12, 19, 0),
               child: PillTabs<int>(
-                tabs: [
-                  for (var input = 0; input < channels; input++)
-                    PillTab(
-                      value: input,
-                      label: l10n.inputName(inputs.names, input),
-                    ),
-                ],
+                tabs: tabs,
                 selected: tuner.input,
                 onChanged: context.read<TunerCubit>().selectInput,
               ),
@@ -89,6 +95,11 @@ class _TunerTrayPanelState extends State<TunerTrayPanel> {
             child: Center(
               child: channels == 0
                   ? _TunerMessage(text: l10n.tunerNoDevice)
+                  : tabs.isEmpty
+                  // A device IS open, so "no audio device" would be wrong, and
+                  // "play a note" would be a promise nothing can keep: every
+                  // capture on this rig is a loopback of our own output.
+                  ? _TunerMessage(text: l10n.tunerNoTunableInput)
                   : tuner.hasReading
                   ? _TunerReadout(state: tuner)
                   : _TunerMessage(text: l10n.tunerListening),

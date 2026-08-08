@@ -1490,6 +1490,10 @@
     "@tunerListening": {
       "description": "Shown on the tuner face while it is armed but hearing nothing — distinct from the engine not running at all."
     },
+    "tunerNoTunableInput": "No input to tune",
+    "@tunerNoTunableInput": {
+      "description": "Shown on the tuner face when a device IS open but every one of its captures is a loopback of the console's own output, so there is nothing an instrument could be plugged into."
+    },
     "tunerNoDevice": "No audio device",
     "@tunerNoDevice": {
       "description": "Shown on the tuner face when no audio device is open, so there is no input to listen to."

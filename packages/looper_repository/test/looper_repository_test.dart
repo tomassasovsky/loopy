@@ -756,6 +756,39 @@ void main() {
       expect(engine.lastRecordOffset, 240);
     });
 
+    test('setTunerInput re-arms on restart while armed, and stays disarmed '
+        'once the face has left', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTunerInput(input: 2);
+      expect(engine.tunerInput, 2);
+
+      // A reconnect under an open Tuner face: the engine comes back disarmed,
+      // and the face armed once on the way in and will not do so again.
+      engine.tunerInput = -1;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.tunerInput, 2);
+
+      // Once the face disarms, a restart leaves it disarmed — nothing resumes
+      // analysing behind a face nobody is looking at.
+      repo.setTunerInput(input: -1);
+      engine.tunerInput = 0;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.tunerInput, 0);
+    });
+
+    test('an arm issued while stopped lands on the next start', () {
+      final repo = buildRepo()..setTunerInput(input: 1);
+      expect(engine.tunerInput, -1);
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.tunerInput, 1);
+    });
+
     test('setRecordOffset clamps a negative to zero', () {
       buildRepo()
         ..startEngine(const EngineConfig())

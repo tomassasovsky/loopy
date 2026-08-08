@@ -169,6 +169,12 @@ class LooperRepository {
   /// until set or measured.
   int _recordOffset = 0;
 
+  /// The tuner's armed input, or `-1` when disarmed. Re-applied on every
+  /// (re)start so an arm survives a reconnect under an open Tuner face; `-1`
+  /// is the resting value, since the face disarms on its way out, so nothing
+  /// resumes analysing behind a face nobody is looking at.
+  int _tunerInput = -1;
+
   /// The tempo grid (A1) + click/count-in (A2) desired state, re-applied to
   /// the engine on every successful (re)start. Unlike [_quantize] above, this
   /// re-apply is a narrower safety net than a source of truth: the native
@@ -678,6 +684,11 @@ class LooperRepository {
       // instead of restoring). A device change / reconnect with a real offset
       // still gets it back.
       if (_recordOffset > 0) _engine.setRecordOffset(_recordOffset);
+      // Re-arm the tuner only if it is armed RIGHT NOW — see [_tunerInput].
+      // Without this a device reconnect under an open Tuner face leaves the
+      // engine disarmed, and the face has no way to notice: it armed once, on
+      // the way in, and will not do so again until it is closed and reopened.
+      if (_tunerInput >= 0) _engine.setTunerInput(input: _tunerInput);
       // Re-apply the tempo grid + click/count-in state (A1/A2), plus the
       // looper mode (B2a): a fresh start resets all of it to the tempo-free/
       // Multi defaults, same as quantize/gain above. Only an explicitly-set
@@ -1958,11 +1969,14 @@ class LooperRepository {
 
   /// Arms the chromatic tuner on hardware [input], or disarms it with `-1`.
   ///
-  /// Not remembered across restarts, unlike every other setting on this class:
-  /// the tuner is a thing you open, use and close, and a rig that silently
-  /// resumed analysing an input after a reconnect would be spending CPU on a
-  /// face nobody is looking at.
+  /// Remembered and re-applied on every (re)start, like the rest of this class
+  /// — which does NOT mean a rig resumes analysing behind a closed face. The
+  /// face disarms on its way out, so `-1` IS the remembered value whenever
+  /// nobody is looking; the cache only carries an arm across a restart that
+  /// happens WHILE the tuner is open (a reconnect, a device change), which is
+  /// the one case where dropping it strands the face on a dead engine.
   EngineResult setTunerInput({required int input}) {
+    _tunerInput = input;
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setTunerInput(input: input);
   }
