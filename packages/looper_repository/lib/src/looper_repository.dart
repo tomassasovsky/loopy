@@ -15,6 +15,7 @@ import 'package:looper_repository/src/models/session_rig.dart';
 import 'package:looper_repository/src/models/track.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
+import 'package:looper_repository/src/models/tuner_reading.dart';
 import 'package:looper_repository/src/plugin_catalog.dart';
 import 'package:segno_engine/segno_engine.dart'
     hide
@@ -520,6 +521,11 @@ class LooperRepository {
   }
 
   LooperState _project(EngineSnapshot s) => LooperState(
+    tuner: TunerReading(
+      hz: s.tunerHz,
+      confidence: s.tunerConfidence,
+      input: s.tunerInput,
+    ),
     transport: TransportState(
       isRunning: s.isRunning,
       masterLengthFrames: s.masterLengthFrames,
@@ -1950,7 +1956,18 @@ class LooperRepository {
     return _engine.setLaneMute(muted: muted, channel: channel, lane: lane);
   }
 
-  /// Enables or disables live monitoring of hardware [input]. The input-level
+  /// Arms the chromatic tuner on hardware [input], or disarms it with `-1`.
+  ///
+  /// Not remembered across restarts, unlike every other setting on this class:
+  /// the tuner is a thing you open, use and close, and a rig that silently
+  /// resumed analysing an input after a reconnect would be spending CPU on a
+  /// face nobody is looking at.
+  EngineResult setTunerInput({required int input}) {
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setTunerInput(input: input);
+  }
+
+  /// Sets what hardware [input]'s live monitor is asked to do. The input-level
   /// gate; per-lane routing / mix / effects drive each lane. The monitored
   /// signal is never recorded. Remembered and re-applied on every (re)start;
   /// takes effect immediately only while running.

@@ -1138,22 +1138,29 @@
     "@readoutStateEmpty": {
         "description": "Track cell state on the 7-inch readout: nothing captured yet."
     },
+    "tunerCentsAndHz": "{cents} cents · {hz} Hz",
+    "@tunerCentsAndHz": {
+      "description": "The tuner's readout under the note: how far off, and the measured frequency. The separator is a middle dot; the sign on cents is a real minus (U+2212), not a hyphen.",
+      "placeholders": {
+        "cents": { "type": "String" },
+        "hz": { "type": "String" }
+      }
+    },
+    "tunerListening": "Toca una nota",
+    "@tunerListening": {
+      "description": "Shown on the tuner face while it is armed but hearing nothing — distinct from the engine not running at all."
+    },
+    "tunerNoDevice": "Sin dispositivo de audio",
+    "@tunerNoDevice": {
+      "description": "Shown on the tuner face when no audio device is open, so there is no input to listen to."
+    },
     "trayTunerLabel": "Afinador",
     "@trayTunerLabel": {
-        "description": "Label for the settings tray's Tuner shortcut button (stub — no real functionality yet)."
+        "description": "Label for the settings tray's Tuner rail entry."
     },
     "trayBrightnessLabel": "Brillo",
     "@trayBrightnessLabel": {
         "description": "Label for the settings tray's brightness slider (UI-only this round — not persisted, no real display dimming)."
-    },
-    "trayComingSoonMessage": "{feature} — próximamente",
-    "@trayComingSoonMessage": {
-        "description": "Message shown in the settings tray's shared placeholder dialog for a stub feature (WiFi / Bluetooth / Tuner).",
-        "placeholders": {
-            "feature": {
-                "type": "String"
-            }
-        }
     },
     "pedalAssignTitle": "Asignaciones del pedal",
     "pedalAssignIntro": "Elegí un pedal en la placa y después qué controla en modo FX. Los pedales sin asignar conservan su comportamiento normal.",

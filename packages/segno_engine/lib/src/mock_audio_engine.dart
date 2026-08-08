@@ -28,6 +28,19 @@ class MockAudioEngine implements AudioEngine {
            deviceLabel ??
            'Mock Interface (${inputChannels}i${outputChannels}o)';
 
+  /// The input the tuner is armed on, or `-1`. Mirrors the native gate.
+  int _tunerInput = -1;
+
+  /// The pitch a mock arm reports, in Hz (`0` = no pitch). A test seam: the
+  /// mock analyses nothing, so a test drives the reading directly.
+  double tunerHz = 0;
+
+  @override
+  EngineResult setTunerInput({required int input}) {
+    _tunerInput = input < 0 || input >= inputChannels ? -1 : input;
+    return EngineResult.ok;
+  }
+
   /// Default mock input channel count (Focusrite 18i20 class).
   static const int defaultInputChannels = 18;
 
@@ -185,6 +198,9 @@ class MockAudioEngine implements AudioEngine {
       framesProcessed: _framesProcessed,
       xrunCount: 0,
       inputRms: 0,
+      tunerHz: _tunerInput >= 0 ? tunerHz : 0,
+      tunerConfidence: _tunerInput >= 0 && tunerHz > 0 ? 1 : 0,
+      tunerInput: _tunerInput,
       inputPeak: 0,
       outputRms: 0,
       latencyState: _latencyState,

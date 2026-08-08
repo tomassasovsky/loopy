@@ -11,6 +11,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -21,6 +22,7 @@ import 'package:segno/looper/view/loop/loop_tray_panel.dart';
 import 'package:segno/looper/view/looper_mode_change.dart';
 import 'package:segno/looper/view/tray/tray.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/tuner/cubit/tuner_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../../helpers/helpers.dart';
@@ -43,6 +45,7 @@ void main() {
   late RecordOptionsCubit options;
   late ControlCubit control;
   late SettingsTrayCubit tray;
+  late SettingsRepository settings;
 
   setUpAll(() {
     registerFallbackValue(const LooperRecordPressed(0));
@@ -58,6 +61,9 @@ void main() {
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
     when(() => repository.state).thenReturn(const LooperState());
+    when(
+      () => repository.setTunerInput(input: any(named: 'input')),
+    ).thenReturn(EngineResult.ok);
     when(() => repository.setTempo(any())).thenReturn(EngineResult.ok);
     when(() => repository.tapTempo()).thenReturn(EngineResult.ok);
     when(
@@ -115,7 +121,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final settings = SettingsRepository(store: FakeKeyValueStore());
+    settings = SettingsRepository(store: FakeKeyValueStore());
     final performance = PerformanceRepository(
       engine: FakeAudioEngine(),
       exportsRoot: () async => '.',
@@ -183,6 +189,10 @@ void main() {
   /// only thing that builds a domain.
   Future<void> pumpTray(WidgetTester tester) async {
     await pump(tester);
+    // Start on a face that is not Loop, so the tap below is what puts Loop on
+    // screen. Tuner is still the cheapest such face, but it is no longer free:
+    // it arms the engine, so the harness now carries its cubit and the input
+    // names it labels its tabs with.
     tray.showDestination(SettingsTrayDestination.tuner);
     await tester.pumpWidget(
       MaterialApp(
@@ -203,6 +213,13 @@ void main() {
               BlocProvider.value(value: options),
               BlocProvider.value(value: control),
               BlocProvider.value(value: tray),
+              BlocProvider<TunerCubit>(
+                create: (_) => TunerCubit(repository: repository),
+              ),
+              BlocProvider<InputsCubit>(
+                create: (_) =>
+                    InputsCubit(settings: settings, repository: repository),
+              ),
             ],
             child: const Scaffold(body: TrayPanel()),
           ),
