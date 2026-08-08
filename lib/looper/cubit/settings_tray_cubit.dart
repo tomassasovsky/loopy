@@ -1,6 +1,7 @@
 import 'package:bloc/bloc.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:equatable/equatable.dart';
+import 'package:looper_repository/looper_repository.dart' show FxStage;
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/audio_setup/audio_tab.dart';
@@ -130,6 +131,9 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// while Network is already showing, so writing a destination here would
   /// give a tab a say in which domain is up.
   void showNetworkTab(NetworkTab tab) => emit(state.copyWith(networkTab: tab));
+
+  /// Moves the Signal domain's stage tab. Same rule as [showNetworkTab].
+  void showSignalTab(FxStage tab) => emit(state.copyWith(signalTab: tab));
 
   /// Moves the Control domain's tab. Same rule as [showNetworkTab].
   void showControlTab(ControlTab tab) => emit(state.copyWith(controlTab: tab));

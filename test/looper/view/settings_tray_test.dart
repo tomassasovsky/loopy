@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:bloc_test/bloc_test.dart';
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -9,14 +8,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:mocktail/mocktail.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
-import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
-import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/tray/tray.dart';
 import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
@@ -27,9 +22,6 @@ import 'package:settings_repository/settings_repository.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 import '../../helpers/helpers.dart';
-
-class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
 
 class _ToggleWifiClient implements WifiClient {
   bool enabled = true;
@@ -185,7 +177,10 @@ void main() {
       await tester.pump();
 
       expect(find.byKey(const Key('settingsTray_settings')), findsOneWidget);
-      expect(find.byKey(const Key('settingsTray_signal')), findsOneWidget);
+      // Signal is a RAIL DESTINATION now, not a tile that pushes a route
+      // away from the tray (#533). Asserted as an absence, because the tile
+      // is exactly what a reader would expect to still be here.
+      expect(find.byKey(const Key('settingsTray_signal')), findsNothing);
       expect(find.byKey(const Key('settingsTray_wifi')), findsOneWidget);
       expect(find.byKey(const Key('settingsTray_bluetooth')), findsOneWidget);
       expect(
@@ -699,8 +694,8 @@ void main() {
     });
   });
 
-  group('isNavigating guard on Settings/Signal', () {
-    testWidgets('disables both nav buttons while a push is in flight', (
+  group('isNavigating guard on Settings', () {
+    testWidgets('disables the nav button while a push is in flight', (
       tester,
     ) async {
       cubit
@@ -714,17 +709,6 @@ void main() {
             .widget<FocusableTapTarget>(
               find.descendant(
                 of: find.byKey(const Key('settingsTray_settings')),
-                matching: find.byType(FocusableTapTarget),
-              ),
-            )
-            .onTap,
-        isNull,
-      );
-      expect(
-        tester
-            .widget<FocusableTapTarget>(
-              find.descendant(
-                of: find.byKey(const Key('settingsTray_signal')),
                 matching: find.byType(FocusableTapTarget),
               ),
             )
@@ -746,97 +730,6 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(cubit.state.dragProgress, 0);
-        expect(cubit.state.isNavigating, isFalse);
-      },
-    );
-
-    testWidgets(
-      'tapping Signal closes the tray, pushes the Signal surface once, '
-      'holds isNavigating while the page is open, and clears it once the '
-      "page pops — the guard's actual motivating scenario (showSignalPage "
-      'has no re-entrancy guard of its own, unlike openSegnoSettings)',
-      (tester) async {
-        // Unlike Settings (openSegnoSettings no-ops safely with no navigator
-        // wired), showSignalPage pushes onto THIS test's own Navigator via
-        // Navigator.of(context) — so a real push needs the providers it
-        // reads from context, matching signal_list_view_test.dart's setup.
-        final looperRepository = LooperRepository(
-          engine: FakeAudioEngine(),
-          ticker: const Stream<void>.empty(),
-        );
-        addTearDown(looperRepository.dispose);
-        final settings = SettingsRepository(store: FakeKeyValueStore());
-        final bloc = _MockLooperBloc();
-        when(() => bloc.state).thenReturn(const LooperState());
-        whenListen(
-          bloc,
-          const Stream<LooperState>.empty(),
-          initialState: const LooperState(),
-        );
-        final monitor = MonitorCubit(
-          repository: looperRepository,
-          settings: settings,
-        );
-        addTearDown(monitor.close);
-        final tracks = TracksCubit(settings: settings);
-        addTearDown(tracks.close);
-
-        cubit.open();
-        tester.view
-          ..physicalSize = const Size(1200, 900)
-          ..devicePixelRatio = 1;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: AppTheme.neon,
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
-            home: MultiRepositoryProvider(
-              providers: [
-                RepositoryProvider<WifiRepository>.value(
-                  value: WifiRepository(client: wifiClient),
-                ),
-                RepositoryProvider<BluetoothRepository>.value(
-                  value: BluetoothRepository(client: bluetoothClient),
-                ),
-              ],
-              child: MultiBlocProvider(
-                providers: [
-                  BlocProvider<SettingsTrayCubit>.value(value: cubit),
-                  BlocProvider<LooperBloc>.value(value: bloc),
-                  BlocProvider<MonitorCubit>.value(value: monitor),
-                  BlocProvider<TracksCubit>.value(value: tracks),
-                ],
-                child: const Scaffold(
-                  body: Stack(children: [SizedBox.expand(), SettingsTray()]),
-                ),
-              ),
-            ),
-          ),
-        );
-        await tester.pump();
-
-        await tester.tap(find.byKey(const Key('settingsTray_signal')));
-        await tester.pumpAndSettle();
-
-        expect(tester.takeException(), isNull);
-        // Pushed exactly once — the signal page's own Scaffold is on screen.
-        expect(find.byKey(const Key('signal_page')), findsOneWidget);
-        expect(cubit.state.dragProgress, 0);
-        // `Navigator.push`'s Future only resolves on pop — the guard
-        // legitimately stays engaged (and the nav buttons disabled) for as
-        // long as the Signal page is on screen, since a second tap while
-        // it's up would otherwise double-push (showSignalPage has no guard
-        // of its own).
-        expect(cubit.state.isNavigating, isTrue);
-
-        Navigator.of(
-          tester.element(find.byKey(const Key('signal_page'))),
-        ).pop();
-        await tester.pumpAndSettle();
-
-        expect(find.byKey(const Key('signal_page')), findsNothing);
         expect(cubit.state.isNavigating, isFalse);
       },
     );

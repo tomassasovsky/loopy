@@ -23,6 +23,7 @@ import 'package:segno/audio_setup/audio_tab.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
+import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/control_tab.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -121,8 +122,17 @@ final _masterChain = <TrackEffect>[
   BuiltInEffect(type: TrackEffectType.reverb, slotId: 'slot-reverb'),
 ];
 
+/// The preview's theme — the app's own surface tokens over the app's own
+/// display face.
+///
+/// The face was `Roboto` until #533: the harness loads Flutter's cached Roboto
+/// for `MaterialIcons`' sake, and naming it here meant every console preview
+/// was drawn in a typeface the product does not ship. That cost more than
+/// letterforms — Roboto's cache subset has no `→`, so the Signal cards' routing
+/// lines came out as tofu boxes in a golden whose entire job is to be
+/// eyeballed against the mockups.
 ThemeData _theme() => ThemeData(
-  fontFamily: 'Roboto',
+  fontFamily: SurfaceTheme.displayFont,
   brightness: Brightness.dark,
   extensions: [
     SurfaceTheme.dark,
@@ -317,7 +327,10 @@ class _PreviewBluetoothClient implements BluetoothClient {
 }
 
 void main() {
-  setUpAll(() => registerFallbackValue(const EngineConfig()));
+  setUpAll(() {
+    registerFallbackValue(const EngineConfig());
+    registerFallbackValue(MonitorMode.off);
+  });
   const fontDir =
       '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
   final hasFonts = File('$fontDir/Roboto-Regular.ttf').existsSync();
@@ -338,6 +351,19 @@ void main() {
     await _loadFont(SurfaceTheme.monoFont, [
       'assets/fonts/JetBrainsMono-Regular.ttf',
       'assets/fonts/JetBrainsMono-Medium.ttf',
+    ]);
+    // The same argument for the PROPORTIONAL face, which these previews had
+    // been rendering in Roboto — the harness fallback — rather than in the
+    // Inter the app actually ships. Two costs, and the second is the one that
+    // matters: every letterform in every console golden was the wrong one, and
+    // Roboto's cache subset has no `→`, so Signal's routing lines came out as
+    // tofu boxes. A preview that draws a different typeface than the product
+    // cannot be eyeballed against the mockups, which is its whole job.
+    await _loadFont(SurfaceTheme.displayFont, [
+      'assets/fonts/Inter-Regular.ttf',
+      'assets/fonts/Inter-Medium.ttf',
+      'assets/fonts/Inter-SemiBold.ttf',
+      'assets/fonts/Inter-Bold.ttf',
     ]);
   });
 
@@ -363,6 +389,7 @@ void main() {
     AudioSetupCubit audio,
     TempoCubit tempo,
     RecordOptionsCubit options,
+    MonitorCubit monitor,
   })
   controlProviders(
     WidgetTester tester, {
@@ -380,6 +407,12 @@ void main() {
       ),
     );
     when(looper.allMonitors).thenReturn(const {});
+    when(
+      () => looper.setMonitorInputMode(
+        input: any(named: 'input'),
+        mode: any(named: 'mode'),
+      ),
+    ).thenReturn(EngineResult.ok);
     when(looper.allLaneChains).thenReturn(const {});
     when(looper.allTrackChains).thenReturn(const {});
     when(() => looper.trackEffects(any())).thenReturn(const []);
@@ -449,6 +482,7 @@ void main() {
     final tracks = TracksCubit(settings: settings);
     final inputs = InputsCubit(settings: settings, repository: looper);
     final quantize = QuantizeCubit(repository: looper, settings: settings);
+    final monitor = MonitorCubit(repository: looper, settings: settings);
     final audio = AudioSetupCubit(
       repository: looper,
       settings: settings,
@@ -460,6 +494,7 @@ void main() {
     addTearDown(() => unawaited(tracks.close()));
     addTearDown(() => unawaited(inputs.close()));
     addTearDown(() => unawaited(quantize.close()));
+    addTearDown(() => unawaited(monitor.close()));
     addTearDown(() => unawaited(audio.close()));
     addTearDown(() => unawaited(control.close()));
     addTearDown(() => unawaited(midi.close()));
@@ -476,6 +511,7 @@ void main() {
       quantize: quantize,
       inputs: inputs,
       audio: audio,
+      monitor: monitor,
     );
   }
 
@@ -560,6 +596,7 @@ void main() {
       AudioSetupCubit audio,
       TempoCubit tempo,
       RecordOptionsCubit options,
+      MonitorCubit monitor,
     })?
     control,
   }) {
@@ -597,6 +634,7 @@ void main() {
               BlocProvider.value(value: rig.quantize),
               BlocProvider.value(value: rig.inputs),
               BlocProvider.value(value: rig.audio),
+              BlocProvider.value(value: rig.monitor),
               if (system case final s?) ...[
                 BlocProvider.value(value: s.waveform),
                 BlocProvider.value(value: s.contrast),
@@ -1194,6 +1232,99 @@ void main() {
     );
   }, skip: !hasFonts);
 
+  /// The rig the Signal previews draw, and it is the mockups' own: three
+  /// tracks with one take each, four sockets and four outputs.
+  ///
+  /// The fourth output is OFF, so the `OUTPUTS` group shows both switch states
+  /// rather than a column of identical ones.
+  const signalRig = LooperState(
+    tracks: [
+      Track(lanes: [Lane(inputChannel: 0)]),
+      Track(channel: 1, lanes: [Lane(inputChannel: 1)]),
+      Track(channel: 2, lanes: [Lane(inputChannel: 0)]),
+    ],
+    outputEnabledMask: 0x7,
+    status: EngineStatus(
+      sampleRate: 48000,
+      inputChannels: 4,
+      outputChannels: 4,
+    ),
+  );
+
+  Future<void> pumpSignal(WidgetTester tester, FxStage stage) async {
+    await size(tester);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.signal)
+      ..showSignalTab(stage);
+    addTearDown(cubit.close);
+
+    final providers = controlProviders(tester, looperState: signalRig);
+    for (final (channel, name) in ['drums', 'bass', 'rhythm'].indexed) {
+      await providers.tracks.rename(channel, name);
+    }
+    for (final (input, name) in ['guitar', 'mic', 'aux'].indexed) {
+      await providers.inputs.rename(input, name);
+    }
+    // One socket per mode, so the input face draws all three states of the
+    // tri-state PR 1 landed rather than three copies of the default.
+    await providers.monitor.setMode(0, MonitorMode.on);
+    await providers.monitor.setMode(1, MonitorMode.auto);
+    await providers.monitor.setMode(2, MonitorMode.off);
+    await pumpTray(tester, cubit: cubit, control: providers);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('signal domain, input tab', (tester) async {
+    await pumpSignal(tester, FxStage.input);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_signal_input.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('signal domain, loop tab', (tester) async {
+    await pumpSignal(tester, FxStage.loop);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_signal_loop.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('signal domain, track tab', (tester) async {
+    await pumpSignal(tester, FxStage.track);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_signal_track.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('signal domain, master tab with its outputs', (tester) async {
+    await pumpSignal(tester, FxStage.master);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_signal_master.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('signal domain, a stopped engine has no chains', (tester) async {
+    await size(tester);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.signal)
+      ..showSignalTab(FxStage.loop);
+    addTearDown(cubit.close);
+    await pumpTray(tester, cubit: cubit, control: controlProviders(tester));
+    await tester.pumpAndSettle();
+
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_signal_empty.png'),
+    );
+  }, skip: !hasFonts);
+
   /// The rig the Audio previews draw: an open device on a 48k/128 clock, with
   /// the latency measured and a record offset applied.
   const audioRig = LooperState(tracks: [Track()], status: _previewStatus);
@@ -1210,6 +1341,7 @@ void main() {
       AudioSetupCubit audio,
       TempoCubit tempo,
       RecordOptionsCubit options,
+      MonitorCubit monitor,
     })
   >
   pumpAudio(WidgetTester tester, AudioTab tab) async {
