@@ -143,9 +143,10 @@ class SignalCard extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                // ON and AUTO are both "you will hear this", so both take the
-                // accent; OFF recedes to the muted ink the card's other
-                // secondary facts are set in.
+                // The accent says "you will hear this", so it follows
+                // [SignalMonitorLine.audible] rather than the gate's word —
+                // OFF, and an open gate that reaches nothing, both recede to
+                // the muted ink the card's other secondary facts are set in.
                 color: line.audible ? surface.accent : surface.textMuted,
                 fontSize: 13,
                 height: 1.23,
@@ -167,9 +168,18 @@ class SignalMonitorLine {
   /// `MONITOR: ON` / `AUTO` / `OFF`.
   final String label;
 
-  /// Whether this mode can put the input in the monitor path — true for both
-  /// ON and AUTO, since AUTO's answer depends on the arm rather than on the
-  /// setting, and a line that greyed out while armed would contradict itself.
+  /// Whether the player will actually hear this input — **not** what the gate
+  /// says. An open gate is only half the answer: a monitor that is muted,
+  /// faded to zero, or routed to no output is silent with its mode still
+  /// reading ON, and this drives the accent that promises sound.
+  ///
+  /// AUTO counts as open, since its answer depends on the record arm rather
+  /// than on the setting, and a line that greyed out while armed would
+  /// contradict itself. Everything else that can silence the path is read —
+  /// see `monitorLine` in `signal_cards.dart`, which is the one place this is
+  /// decided. **Do not narrow it back to the mode**: a card drawing
+  /// `MONITOR: ON` in the accent over an input at silence is the regression
+  /// those checks exist to prevent.
   final bool audible;
 }
 

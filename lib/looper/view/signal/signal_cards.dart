@@ -128,11 +128,21 @@ class _InputCards extends StatelessWidget {
             routesTo: l10n.signalRouteRecorder,
             rack: l10n.signalNoRack,
             summary: l10n.signalTapToLoadRack,
-            monitor: monitorLine(l10n, monitors.forInput(input).mode),
+            monitor: monitorLine(l10n, monitors.forInput(input)),
           ),
     ];
 
-    return _CardRun(cards: cards, emptyMessage: l10n.signalNoInputs);
+    return _CardRun(
+      cards: cards,
+      // An empty run has two causes and they are different facts: no sockets
+      // at all is a stopped engine, while sockets that are every one of them
+      // loopback is a RUNNING engine on a device with nothing capturable —
+      // and telling that player to start the engine sends them after a
+      // problem they do not have.
+      emptyMessage: count == 0
+          ? l10n.signalNoInputs
+          : l10n.signalOnlyLoopbackInputs,
+    );
   }
 }
 
@@ -226,6 +236,11 @@ class _MasterStage extends StatelessWidget {
     final l10n = context.l10n;
     // The gate mask and the channel count, not the whole state: this group is
     // four switches, and the roster behind it moves at the meter rate.
+    //
+    // The mask's 32 bits cover every output there can be: the engine clamps
+    // both channel counts to `LE_MAX_CHANNELS` (32) at device open, so a
+    // 64-output interface reports 32 here and `1 << output` never runs off
+    // the end of the default `0xFFFFFFFF`.
     final (outputs, mask) = context.select<LooperBloc, (int, int)>(
       (bloc) => (
         bloc.state.status.outputChannels,
@@ -259,6 +274,7 @@ class _MasterStage extends StatelessWidget {
           )
         else ...[
           ConsoleCard(
+            key: const Key('signal_outputs_card'),
             children: [
               for (final (output, enabled) in live.indexed)
                 _OutputRow(
@@ -287,7 +303,15 @@ class _MasterStage extends StatelessWidget {
   }
 }
 
-/// One hardware output: what it is called, what it is wired to, and its gate.
+/// One hardware output: what it is called, and its gate.
+///
+/// **No sublabel.** An earlier draft named the first two pairs `main` and
+/// `phones`, as the mockups draw a four-output rig — but the app has no source
+/// for that: the engine reports a channel count and no labels, so on the
+/// 20-output interface the previews themselves model those would be sockets
+/// wired to something else entirely. The surface this replaces showed the
+/// ordinal alone, and a wrong name is worse than no name when the row's own
+/// switch silences what it names.
 class _OutputRow extends StatelessWidget {
   const _OutputRow({
     required this.output,
@@ -305,7 +329,6 @@ class _OutputRow extends StatelessWidget {
     final l10n = context.l10n;
     return ConsoleRow(
       title: l10n.outputChannelLabel(output + 1),
-      subtitle: outputSublabel(l10n, output),
       showDivider: showDivider,
       // No row here opens, so the disclosure gutter would be an empty column
       // holding every switch 11px off the card's edge.
@@ -353,33 +376,28 @@ String laneLetter(int index) => index >= 0 && index < 26
     ? String.fromCharCode(0x41 + index)
     : '${index + 1}';
 
-/// The monitor row for [mode].
-SignalMonitorLine monitorLine(AppLocalizations l10n, MonitorMode mode) =>
-    switch (mode) {
-      MonitorMode.off => SignalMonitorLine(
-        label: l10n.signalMonitorOff,
-        audible: false,
-      ),
-      MonitorMode.auto => SignalMonitorLine(
-        label: l10n.signalMonitorAuto,
-        audible: true,
-      ),
-      MonitorMode.on => SignalMonitorLine(
-        label: l10n.signalMonitorOn,
-        audible: true,
-      ),
-    };
-
-/// What hardware output [output] is wired to, or null when the app cannot say.
+/// The monitor row for [monitor].
 ///
-/// The mockups name the first two stereo pairs, which is the layout of every
-/// interface the console is built for. Past the fourth socket there is nothing
-/// to name it from — the engine reports a channel count and no labels — so the
-/// row carries its ordinal alone rather than a guess.
-String? outputSublabel(AppLocalizations l10n, int output) => switch (output) {
-  0 => l10n.signalOutputMainLeft,
-  1 => l10n.signalOutputMainRight,
-  2 => l10n.signalOutputPhonesLeft,
-  3 => l10n.signalOutputPhonesRight,
-  _ => null,
-};
+/// The label is the gate's own word, but **audible is not**: a monitor that is
+/// muted, faded to nothing, or routed to no output at all is silent whatever
+/// its mode reads, and the accent this drives means "you will hear this". All
+/// three are reachable today from the surface PR 6 deletes, so a line that took
+/// the mode at its word would contradict what the player hears.
+SignalMonitorLine monitorLine(AppLocalizations l10n, InputMonitor monitor) {
+  final reaches =
+      !monitor.muted && monitor.outputMask != 0 && monitor.volume > 0;
+  return switch (monitor.mode) {
+    MonitorMode.off => SignalMonitorLine(
+      label: l10n.signalMonitorOff,
+      audible: false,
+    ),
+    MonitorMode.auto => SignalMonitorLine(
+      label: l10n.signalMonitorAuto,
+      audible: reaches,
+    ),
+    MonitorMode.on => SignalMonitorLine(
+      label: l10n.signalMonitorOn,
+      audible: reaches,
+    ),
+  };
+}

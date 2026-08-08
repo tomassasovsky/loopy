@@ -2776,16 +2776,13 @@
     "@signalOutputsGroup": {
         "description": "Caption over the master tab's hardware-output list."
     },
-    "signalOutputMainLeft": "main left",
-    "signalOutputMainRight": "main right",
-    "signalOutputPhonesLeft": "phones left",
-    "signalOutputPhonesRight": "phones right",
-    "@signalOutputPhonesRight": {
-        "description": "Sublabels for the first two stereo pairs of hardware outputs, which is what the mockups name. Outputs past the fourth carry no sublabel: what they are wired to is not something the app knows."
-    },
     "signalNoInputs": "No inputs — the engine is not running.",
     "@signalNoInputs": {
         "description": "Input tab with nothing to draw. Same shape as tracksEmpty, and for the same reason: every card on this face is an object the engine reports."
+    },
+    "signalOnlyLoopbackInputs": "Every input on this device is loopback — none can be monitored or recorded.",
+    "@signalOnlyLoopbackInputs": {
+        "description": "Input tab on a RUNNING engine whose sockets are all excluded. Distinct from signalNoInputs: the engine is up, so saying it is not would send the player after a problem they do not have."
     },
     "signalNoLanes": "No takes yet — record one and its chain shows up here.",
     "@signalNoLanes": {

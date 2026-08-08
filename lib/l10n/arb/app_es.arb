@@ -2057,11 +2057,8 @@
     "signalMonitorOff": "MONITOR: NO",
     "signalMasterCardName": "salida máster",
     "signalOutputsGroup": "SALIDAS",
-    "signalOutputMainLeft": "principal izquierda",
-    "signalOutputMainRight": "principal derecha",
-    "signalOutputPhonesLeft": "auriculares izquierda",
-    "signalOutputPhonesRight": "auriculares derecha",
     "signalNoInputs": "Sin entradas — el motor no está en marcha.",
+    "signalOnlyLoopbackInputs": "Todas las entradas de este dispositivo son de bucle interno — ninguna se puede monitorizar ni grabar.",
     "signalNoLanes": "Aún no hay tomas — graba una y su cadena aparece aquí.",
     "signalNoTracks": "Sin pistas — el motor no está en marcha.",
     "signalNoOutputs": "Sin salidas — el motor no está en marcha."

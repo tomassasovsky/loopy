@@ -76,6 +76,24 @@ void main() {
         mode: any(named: 'mode'),
       ),
     ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setMonitorMute(
+        input: any(named: 'input'),
+        muted: any(named: 'muted'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setMonitorOutput(
+        input: any(named: 'input'),
+        mask: any(named: 'mask'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setMonitorVolume(
+        input: any(named: 'input'),
+        volume: any(named: 'volume'),
+      ),
+    ).thenReturn(EngineResult.ok);
   });
 
   /// Mounts the Signal face at [stage] with the providers the real tray
@@ -83,10 +101,15 @@ void main() {
   ///
   /// 1920x1080, deliberately: this face is drawn for that surface, and the
   /// default 800x600 test view folds a four-card run onto two lines.
+  ///
+  /// [states] feeds the bloc's stream for the tests that need the rig to MOVE
+  /// while the face is up; the default empty stream leaves every other test
+  /// looking at the one state it pumped in.
   Future<void> pump(
     WidgetTester tester, {
     FxStage stage = FxStage.input,
     LooperState state = _rig,
+    Stream<LooperState>? states,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -97,7 +120,7 @@ void main() {
     when(() => bloc.state).thenReturn(state);
     whenListen(
       bloc,
-      const Stream<LooperState>.empty(),
+      states ?? const Stream<LooperState>.empty(),
       initialState: state,
     );
 
@@ -269,6 +292,32 @@ void main() {
       expect(audibleOf('signal_card_input_2'), isFalse);
     });
 
+    testWidgets('a silenced monitor is not audible, whatever its mode says', (
+      tester,
+    ) async {
+      await pump(tester);
+      final l10n = l10nOf(tester);
+      await monitor.setMode(0, MonitorMode.on);
+      await monitor.setMute(0, muted: true);
+      // Routed nowhere, and faded to nothing, are the same silence by two
+      // other roads.
+      await monitor.setMode(1, MonitorMode.on);
+      await monitor.setOutputMask(1, 0);
+      await monitor.setMode(2, MonitorMode.on);
+      await monitor.setVolume(2, 0);
+      await tester.pump();
+
+      SignalMonitorLine lineOf(String key) =>
+          tester.widget<SignalCard>(find.byKey(Key(key))).monitor!;
+
+      // The gate still SAYS on — that is what the player set — but the accent
+      // means "you will hear this", and they will not.
+      expect(lineOf('signal_card_input_0').label, l10n.signalMonitorOn);
+      expect(lineOf('signal_card_input_0').audible, isFalse);
+      expect(lineOf('signal_card_input_1').audible, isFalse);
+      expect(lineOf('signal_card_input_2').audible, isFalse);
+    });
+
     testWidgets('a loopback socket gets no card at all', (tester) async {
       await pump(
         tester,
@@ -293,6 +342,28 @@ void main() {
 
       expect(find.byKey(const Key('signal_empty_card')), findsOneWidget);
       expect(find.text(l10n.signalNoInputs), findsOneWidget);
+    });
+
+    testWidgets('an all-loopback device does not blame the engine', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        state: const LooperState(
+          status: EngineStatus(
+            isConnected: true,
+            // Every socket this device has is loopback.
+            inputChannels: 2,
+            outputChannels: 2,
+            excludedInputMask: 0x3,
+          ),
+        ),
+      );
+      final l10n = l10nOf(tester);
+
+      // The engine IS running; there is simply nothing on it to capture.
+      expect(find.text(l10n.signalOnlyLoopbackInputs), findsOneWidget);
+      expect(find.text(l10n.signalNoInputs), findsNothing);
     });
   });
 
@@ -369,6 +440,88 @@ void main() {
       expect(find.text(l10n.signalNoLanes), findsOneWidget);
     });
 
+    // The face's one piece of reactive logic. Everything else here is
+    // re-derived from the state the test pumps in, so only these two prove the
+    // `buildWhen` is wired the right way round: without them, dropping its `!`
+    // would freeze both list faces on their first roster and every other test
+    // in this file would still pass.
+    testWidgets('a lane recorded while the face is up gets its card', (
+      tester,
+    ) async {
+      final states = StreamController<LooperState>.broadcast();
+      addTearDown(states.close);
+      await pump(
+        tester,
+        stage: FxStage.loop,
+        state: const LooperState(
+          tracks: [
+            Track(lanes: [Lane(inputChannel: 0)]),
+          ],
+          status: EngineStatus(inputChannels: 2, outputChannels: 2),
+        ),
+        states: states.stream,
+      );
+
+      expect(find.byType(SignalCard), findsOneWidget);
+
+      states.add(
+        const LooperState(
+          tracks: [
+            Track(lanes: [Lane(inputChannel: 0), Lane(inputChannel: 1)]),
+          ],
+          status: EngineStatus(inputChannels: 2, outputChannels: 2),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SignalCard), findsNWidgets(2));
+      expect(find.byKey(const Key('signal_card_loop_0_1')), findsOneWidget);
+    });
+
+    testWidgets('a meter tick does not rebuild the run', (tester) async {
+      final states = StreamController<LooperState>.broadcast();
+      addTearDown(states.close);
+      const rig = LooperState(
+        tracks: [
+          Track(lanes: [Lane(inputChannel: 0)]),
+        ],
+        status: EngineStatus(inputChannels: 2, outputChannels: 2),
+      );
+      await pump(
+        tester,
+        stage: FxStage.loop,
+        states: states.stream,
+        state: rig,
+      );
+
+      final before = tester.widget<SignalCard>(find.byType(SignalCard));
+
+      // Same chains, moving levels — what the engine emits at frame rate.
+      states.add(
+        const LooperState(
+          tracks: [
+            Track(rms: 0.7, peak: 0.9, lanes: [Lane(inputChannel: 0)]),
+          ],
+          status: EngineStatus(inputChannels: 2, outputChannels: 2),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The emission REACHED the face first. `whenListen` re-stubs `state` as
+      // each one flows to a subscriber, so this is the proof that the identity
+      // check below is testing a refusal rather than a state that never
+      // arrived — the two look identical to it otherwise, and a mis-wired
+      // `states` stream would leave this test green and vacuous.
+      expect(bloc.state.tracks.first.rms, 0.7);
+
+      // The very same widget instance: `buildWhen` refused the emission, so
+      // the run was never rebuilt. A rebuild would hand back a new one.
+      expect(
+        identical(before, tester.widget<SignalCard>(find.byType(SignalCard))),
+        isTrue,
+      );
+    });
+
     testWidgets('a laneless track contributes no card', (tester) async {
       await pump(
         tester,
@@ -423,6 +576,38 @@ void main() {
       expect(find.text(l10n.signalScopeMonitorOnly), findsOneWidget);
     });
 
+    // The track face carries its own copy of the loop face's `buildWhen`, so
+    // it needs its own proof: two identical predicates are two places to get
+    // the polarity wrong.
+    testWidgets('a track added while the face is up gets its card', (
+      tester,
+    ) async {
+      final states = StreamController<LooperState>.broadcast();
+      addTearDown(states.close);
+      await pump(
+        tester,
+        stage: FxStage.track,
+        state: const LooperState(
+          tracks: [Track()],
+          status: EngineStatus(inputChannels: 2, outputChannels: 2),
+        ),
+        states: states.stream,
+      );
+
+      expect(find.byType(SignalCard), findsOneWidget);
+
+      states.add(
+        const LooperState(
+          tracks: [Track(), Track(channel: 1)],
+          status: EngineStatus(inputChannels: 2, outputChannels: 2),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SignalCard), findsNWidgets(2));
+      expect(find.byKey(const Key('signal_card_track_1')), findsOneWidget);
+    });
+
     testWidgets('a stopped engine reports no tracks', (tester) async {
       await pump(tester, stage: FxStage.track, state: _stopped);
       final l10n = l10nOf(tester);
@@ -452,9 +637,7 @@ void main() {
       );
     });
 
-    testWidgets('one row per hardware output, with what it is wired to', (
-      tester,
-    ) async {
+    testWidgets('one row per hardware output', (tester) async {
       await pump(tester, stage: FxStage.master);
       final l10n = l10nOf(tester);
 
@@ -462,11 +645,9 @@ void main() {
       expect(find.byKey(const Key('signal_output_row_0')), findsOneWidget);
       expect(find.byKey(const Key('signal_output_row_3')), findsOneWidget);
       expect(find.byKey(const Key('signal_output_row_4')), findsNothing);
-      expect(find.text(l10n.signalOutputMainLeft), findsOneWidget);
-      expect(find.text(l10n.signalOutputPhonesRight), findsOneWidget);
     });
 
-    testWidgets('past the fourth socket a row carries its ordinal alone', (
+    testWidgets('every row carries its ordinal alone, never a guessed name', (
       tester,
     ) async {
       await pump(
@@ -479,17 +660,17 @@ void main() {
       final l10n = l10nOf(tester);
 
       expect(find.text(l10n.outputChannelLabel(6)), findsOneWidget);
-      expect(
-        tester
-            .widget<ConsoleRow>(
-              find.descendant(
-                of: find.byKey(const Key('signal_output_row_5')),
-                matching: find.byType(ConsoleRow),
-              ),
-            )
-            .subtitle,
-        isNull,
-      );
+      // Not `main left` / `phones right` on the first two pairs either: the
+      // engine reports a channel count and no labels, so what socket 3 is
+      // wired to is not something this app knows on ANY interface.
+      for (final row in tester.widgetList<ConsoleRow>(
+        find.descendant(
+          of: find.byKey(const Key('signal_outputs_card')),
+          matching: find.byType(ConsoleRow),
+        ),
+      )) {
+        expect(row.subtitle, isNull);
+      }
     });
 
     testWidgets('the switch reflects the rig gate, off included', (
