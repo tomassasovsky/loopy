@@ -15,10 +15,10 @@ import 'package:segno/theme/theme.dart';
 /// config surface becomes "add a [SettingsTrayDestination] and an entry here",
 /// not "push another full-screen route away from the performance view".
 ///
-/// Only destinations that render *inside* the tray belong here. Settings and
-/// the Signal page still push full-screen routes and so stay tiles on the
-/// home face: a rail item that navigated away would lie about what the rail
-/// is.
+/// Only destinations that render *inside* the tray belong here. Settings is
+/// the last surface that still pushes a full-screen route, and so stays a tile
+/// on the home face: a rail item that navigated away would lie about what the
+/// rail is.
 class TrayNavigationRail extends StatelessWidget {
   /// Creates a [TrayNavigationRail].
   const TrayNavigationRail({super.key});
@@ -43,6 +43,11 @@ class TrayNavigationRail extends StatelessWidget {
   static IconData _iconFor(SettingsTrayDestination destination) =>
       switch (destination) {
         SettingsTrayDestination.home => Icons.tune,
+        // A line with stops on it, as the mockups draw it: this domain is the
+        // signal PATH and the four stages along it. The Audio entry gives up
+        // the waveform glyph for exactly this reason — a waveform says
+        // "levels", which is this domain's question and not that one.
+        SettingsTrayDestination.signal => Icons.timeline,
         // A foot controller, not a keyboard: this domain covers the floor
         // pedal and whatever MIDI box is beside it, and neither is a piano.
         SettingsTrayDestination.control => Icons.dialpad,
@@ -73,6 +78,7 @@ class TrayNavigationRail extends StatelessWidget {
     SettingsTrayDestination destination,
   ) => switch (destination) {
     SettingsTrayDestination.home => l10n.trayHomeLabel,
+    SettingsTrayDestination.signal => l10n.traySignalLabel,
     SettingsTrayDestination.control => l10n.trayControlLabel,
     SettingsTrayDestination.loop => l10n.trayLoopLabel,
     SettingsTrayDestination.tracks => l10n.trayTracksLabel,

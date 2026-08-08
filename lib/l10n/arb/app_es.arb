@@ -2003,5 +2003,59 @@
                 "type": "int"
             }
         }
-    }
+    },
+    "traySignalLabel": "Señal",
+    "signalStageInput": "entrada",
+    "signalStageLoop": "bucle",
+    "signalStageTrack": "pista",
+    "signalStageMaster": "máster",
+    "signalScopeMonitorOnly": "SOLO MONITOR",
+    "signalScopePrinted": "SE GRABA EN LA TOMA",
+    "signalCoordInput": "entrada {channel}",
+    "@signalCoordInput": {
+        "placeholders": {
+            "channel": {
+                "type": "int"
+            }
+        }
+    },
+    "signalCoordTrack": "pista {track}",
+    "@signalCoordTrack": {
+        "placeholders": {
+            "track": {
+                "type": "int"
+            }
+        }
+    },
+    "signalCoordTrackLane": "pista {track} · carril {lane}",
+    "@signalCoordTrackLane": {
+        "placeholders": {
+            "track": {
+                "type": "int"
+            },
+            "lane": {
+                "type": "String"
+            }
+        }
+    },
+    "signalCoordMain": "principal",
+    "signalRouteMix": "mezcla",
+    "signalRouteRecorder": "grabadora",
+    "signalRouteMaster": "máster",
+    "signalRouteOutputs": "salidas",
+    "signalNoRack": "sin rack",
+    "signalTapToLoadRack": "toca para cargar uno",
+    "signalMonitorOn": "MONITOR: SÍ",
+    "signalMonitorAuto": "MONITOR: AUTO",
+    "signalMonitorOff": "MONITOR: NO",
+    "signalMasterCardName": "salida máster",
+    "signalOutputsGroup": "SALIDAS",
+    "signalOutputMainLeft": "principal izquierda",
+    "signalOutputMainRight": "principal derecha",
+    "signalOutputPhonesLeft": "auriculares izquierda",
+    "signalOutputPhonesRight": "auriculares derecha",
+    "signalNoInputs": "Sin entradas — el motor no está en marcha.",
+    "signalNoLanes": "Aún no hay tomas — graba una y su cadena aparece aquí.",
+    "signalNoTracks": "Sin pistas — el motor no está en marcha.",
+    "signalNoOutputs": "Sin salidas — el motor no está en marcha."
 }

@@ -2677,5 +2677,119 @@
                 "type": "int"
             }
         }
+    },
+    "traySignalLabel": "Signal",
+    "@traySignalLabel": {
+        "description": "Navigation-rail entry for the Signal domain — the four FX stages of the signal path."
+    },
+    "signalStageInput": "input",
+    "@signalStageInput": {
+        "description": "Signal tab: the hardware inputs' live-monitor chains. Lower case, as the mockups set the whole strip."
+    },
+    "signalStageLoop": "loop",
+    "@signalStageLoop": {
+        "description": "Signal tab: each recorded lane's playback chain. Lower case, like its siblings."
+    },
+    "signalStageTrack": "track",
+    "@signalStageTrack": {
+        "description": "Signal tab: each track's stereo-bus chain, downstream of its lanes. Lower case, like its siblings."
+    },
+    "signalStageMaster": "master",
+    "@signalStageMaster": {
+        "description": "Signal tab: the Master insert on the summed mix. Lower case, like its siblings."
+    },
+    "signalScopeMonitorOnly": "MONITOR ONLY",
+    "@signalScopeMonitorOnly": {
+        "description": "Scope chip on the loop, track and master tabs: editing here changes what you hear and never what is stored. The counterpart of signalScopePrinted."
+    },
+    "signalScopePrinted": "PRINTED INTO THE TAKE",
+    "@signalScopePrinted": {
+        "description": "Scope chip on the input tab, in the record tone: an input's chain is copied onto the lane at record, so editing it changes what NEW takes will store."
+    },
+    "signalCoordInput": "input {channel}",
+    "@signalCoordInput": {
+        "description": "An input card's coordinate line — which socket this chain sits on. Lower case and one-based.",
+        "placeholders": {
+            "channel": {
+                "type": "int"
+            }
+        }
+    },
+    "signalCoordTrack": "track {track}",
+    "@signalCoordTrack": {
+        "description": "A track-stage card's coordinate line. No lane: a track bus sits downstream of all of them.",
+        "placeholders": {
+            "track": {
+                "type": "int"
+            }
+        }
+    },
+    "signalCoordTrackLane": "track {track} · lane {lane}",
+    "@signalCoordTrackLane": {
+        "description": "A loop-stage card's coordinate line — which take this chain belongs to. The lane is a LETTER (A, B, C…), which is the Signal domain's own form; no other surface labels a lane at all.",
+        "placeholders": {
+            "track": {
+                "type": "int"
+            },
+            "lane": {
+                "type": "String"
+            }
+        }
+    },
+    "signalCoordMain": "main",
+    "@signalCoordMain": {
+        "description": "The master card's coordinate line. There is exactly one Master insert, so it has no ordinal to give."
+    },
+    "signalRouteMix": "mix",
+    "signalRouteRecorder": "recorder",
+    "signalRouteMaster": "master",
+    "signalRouteOutputs": "outputs",
+    "@signalRouteOutputs": {
+        "description": "The four card routing labels, each shown after an arrow: where this chain's audio goes next. A lane feeds the mix, an input feeds the recorder, a track bus feeds the master sum, and the master feeds the hardware outputs."
+    },
+    "signalNoRack": "no rack",
+    "@signalNoRack": {
+        "description": "A card with no saved rack loaded. Racks are #535; until they land every card says this, which is the mockups' own empty state."
+    },
+    "signalTapToLoadRack": "tap to load one",
+    "@signalTapToLoadRack": {
+        "description": "Stands where a loaded rack's chain summary goes, on a card with no rack."
+    },
+    "signalMonitorOn": "MONITOR: ON",
+    "signalMonitorAuto": "MONITOR: AUTO",
+    "signalMonitorOff": "MONITOR: OFF",
+    "@signalMonitorOff": {
+        "description": "A card's monitor line, one per MonitorMode. AUTO means monitor while a track fed by this input is armed or capturing."
+    },
+    "signalMasterCardName": "master out",
+    "@signalMasterCardName": {
+        "description": "The name on the master tab's single card — everything is summed into it."
+    },
+    "signalOutputsGroup": "OUTPUTS",
+    "@signalOutputsGroup": {
+        "description": "Caption over the master tab's hardware-output list."
+    },
+    "signalOutputMainLeft": "main left",
+    "signalOutputMainRight": "main right",
+    "signalOutputPhonesLeft": "phones left",
+    "signalOutputPhonesRight": "phones right",
+    "@signalOutputPhonesRight": {
+        "description": "Sublabels for the first two stereo pairs of hardware outputs, which is what the mockups name. Outputs past the fourth carry no sublabel: what they are wired to is not something the app knows."
+    },
+    "signalNoInputs": "No inputs — the engine is not running.",
+    "@signalNoInputs": {
+        "description": "Input tab with nothing to draw. Same shape as tracksEmpty, and for the same reason: every card on this face is an object the engine reports."
+    },
+    "signalNoLanes": "No takes yet — record one and its chain shows up here.",
+    "@signalNoLanes": {
+        "description": "Loop tab with no lanes. Unlike the other empty states this is the normal state of a fresh session, so it says what fills it rather than what is wrong."
+    },
+    "signalNoTracks": "No tracks — the engine is not running.",
+    "@signalNoTracks": {
+        "description": "Track tab with no tracks."
+    },
+    "signalNoOutputs": "No outputs — the engine is not running.",
+    "@signalNoOutputs": {
+        "description": "Master tab with no hardware outputs to list."
     }
 }

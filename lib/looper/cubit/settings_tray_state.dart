@@ -4,9 +4,8 @@ part of 'settings_tray_cubit.dart';
 /// config panels (Control-Center expand, not a full-screen route).
 ///
 /// Every value here is a destination the tray's own navigation rail can
-/// select. Surfaces that still push a full-screen route (Settings, and the
-/// Signal page until the Routing panel lands) deliberately have no value:
-/// a rail item that navigates away would lie about what the rail is.
+/// select. Settings still pushes a full-screen route and so deliberately has
+/// no value: a rail item that navigates away would lie about what the rail is.
 ///
 /// Later parts of the console redesign (#442) each add their own value here
 /// alongside the panel that fills it — the enum is not pre-populated with
@@ -15,6 +14,23 @@ part of 'settings_tray_cubit.dart';
 enum SettingsTrayDestination {
   /// Tile grid + brightness.
   home,
+
+  /// In-tray Signal domain — the four FX stages as tabs of one entry.
+  ///
+  /// **First of the domains**, as the mockups draw the rail: the signal path
+  /// is what the rest of the console configures, so it reads before the things
+  /// that drive it.
+  ///
+  /// One destination, not four: the tabs are [FxStage] itself — the app's own
+  /// FX addressing model, `input · loop · track · master` in signal order — so
+  /// this domain does not own a tab enum of its own the way its six siblings
+  /// do. A tab here selects which STAGE's chains you are looking at, and every
+  /// card on every tab is one chain.
+  ///
+  /// This is the destination that closed the rail's last exception. Signal was
+  /// a tile on the home face pushing a full-screen route, which #533 replaced
+  /// with the face beside the rail.
+  signal,
 
   /// In-tray Control domain — the footswitch plate and the MIDI foot
   /// controller as tabs of one entry.
@@ -94,6 +110,7 @@ class SettingsTrayState extends Equatable {
     this.isNavigating = false,
     this.brightness = 0.8,
     this.destination = SettingsTrayDestination.home,
+    this.signalTab = FxStage.input,
     this.networkTab = NetworkTab.wifi,
     this.controlTab = ControlTab.pedal,
     this.loopTab = LoopTab.tempo,
@@ -111,9 +128,8 @@ class SettingsTrayState extends Equatable {
   final double dragProgress;
 
   /// True from the instant a tray nav button is tapped until the pushed
-  /// route pops — guards against a rapid double-tap double-pushing
-  /// `showSignalPage` (which, unlike `openSegnoSettings`, has no re-entrancy
-  /// guard of its own).
+  /// route pops — so a rapid double-tap cannot push the same route twice, and
+  /// so the tile reads as disabled while its route is on its way up.
   final bool isNavigating;
 
   /// Brightness slider value (`0..1`). Persisted via SettingsRepository;
@@ -122,6 +138,16 @@ class SettingsTrayState extends Equatable {
 
   /// In-tray face: home tiles or one of the rail's domain panels.
   final SettingsTrayDestination destination;
+
+  /// Which FX stage the Signal domain shows.
+  ///
+  /// Typed as [FxStage] rather than a `SignalTab` of its own: the four tabs
+  /// the mockups draw *are* the four stages the app already addresses chains
+  /// by, in the same order, so a parallel enum would be a second name for one
+  /// thing — and the one that could drift.
+  ///
+  /// Starts on [FxStage.input], the head of the signal path.
+  final FxStage signalTab;
 
   /// Which tab the Network domain shows.
   ///
@@ -151,6 +177,7 @@ class SettingsTrayState extends Equatable {
     bool? isNavigating,
     double? brightness,
     SettingsTrayDestination? destination,
+    FxStage? signalTab,
     NetworkTab? networkTab,
     ControlTab? controlTab,
     LoopTab? loopTab,
@@ -162,6 +189,7 @@ class SettingsTrayState extends Equatable {
     isNavigating: isNavigating ?? this.isNavigating,
     brightness: brightness ?? this.brightness,
     destination: destination ?? this.destination,
+    signalTab: signalTab ?? this.signalTab,
     networkTab: networkTab ?? this.networkTab,
     controlTab: controlTab ?? this.controlTab,
     loopTab: loopTab ?? this.loopTab,
@@ -176,6 +204,7 @@ class SettingsTrayState extends Equatable {
     isNavigating,
     brightness,
     destination,
+    signalTab,
     networkTab,
     controlTab,
     loopTab,

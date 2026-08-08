@@ -6,7 +6,6 @@ import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/bluetooth/bluetooth_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
-import 'package:segno/looper/view/signal_graph/signal_graph.dart';
 import 'package:segno/looper/view/tray/tray_brightness_slider.dart';
 import 'package:segno/looper/view/tray/tray_tile.dart';
 import 'package:segno/wifi/wifi_cubit.dart';
@@ -15,16 +14,21 @@ import 'package:segno/wifi/wifi_cubit.dart';
 ///
 /// The cards that stay here are the ones the navigation rail deliberately
 /// does not carry: the two radio *toggles* (tap toggles, long-press opens the
-/// rail's own config face) and the two surfaces that still push a full-screen
-/// route (Settings, Signal).
+/// rail's own config face) and Settings, the last surface that still pushes a
+/// full-screen route.
+///
+/// Signal was the fourth, and is gone: #533 made it a rail destination, so a
+/// tile whose whole job was to navigate away from the tray had nothing left to
+/// do. Three cards remain.
 ///
 /// Sizing is a deliberate middle ground. The pre-rail 72px tiles were the
 /// smallest touch target on a console operated by hand while standing over
-/// it; letting cards expand to fill a 1080p pane instead turns four
-/// destinations into four billboards. So cards cap at [_maxCardExtent] and
-/// the grid centres as a block. With only four destinations the pane is
-/// simply larger than its content — that resolves as parts 4, 5 and 7 add
-/// their own, not by inflating what is here now.
+/// it; letting cards expand to fill a 1080p pane instead turns the
+/// destinations into billboards. So cards cap at [_maxCardExtent] and the
+/// grid centres as a block — the pane is simply larger than its content, and
+/// what resolves that is the parent plan's own remaining item (what the home
+/// face is FOR once the rail carries every domain), not inflating what is
+/// here now.
 class TrayHome extends StatelessWidget {
   /// Creates a [TrayHome].
   const TrayHome({super.key});
@@ -63,17 +67,6 @@ class TrayHome extends StatelessWidget {
         onTap: state.isNavigating
             ? null
             : () => unawaited(_navigate(context, openSegnoSettings)),
-      ),
-      TrayTile(
-        key: const Key('settingsTray_signal'),
-        icon: Icons.account_tree_outlined,
-        label: l10n.signalTooltip,
-        isOn: false,
-        onTap: state.isNavigating
-            ? null
-            : () => unawaited(
-                _navigate(context, () => showSignalPage(context)),
-              ),
       ),
       TrayTile(
         key: const Key('settingsTray_wifi'),
@@ -229,10 +222,12 @@ class _CardGrid extends StatelessWidget {
   }
 }
 
-/// Runs a tray nav-button push (`openSegnoSettings` or `showSignalPage`,
-/// unchanged from the `S`/`G` keyboard shortcuts and desktop toolbar — both
-/// pick up the app-wide fade + scale-up transition from
-/// `AppTheme`'s `pageTransitionsTheme`). Closes the tray synchronously —
+/// Runs a tray nav-button push (`openSegnoSettings`, unchanged from the `S`
+/// keyboard shortcut and the desktop toolbar — both pick up the app-wide fade
+/// + scale-up transition from `AppTheme`'s `pageTransitionsTheme`). Kept
+/// generic over [push] rather than inlined: the guard below is about a route
+/// leaving the tray, not about which route.
+/// Closes the tray synchronously —
 /// before [push] resolves — and holds the `isNavigating` guard for the
 /// push's duration even if it throws, so a failed navigation can never leave
 /// both nav cards stuck disabled.
