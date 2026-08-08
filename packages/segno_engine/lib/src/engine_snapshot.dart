@@ -716,7 +716,6 @@ class EngineSnapshot {
   /// xrun signal, so this stays `0` there. Monotonic; resets on each start.
   final int xrunCount;
 
-  /// Input RMS level for the most recent block, in `0..1`.
   /// The chromatic tuner's detected fundamental in Hz, or `0` when the armed
   /// input carries no pitch this frame. Always `0` while [tunerInput] is `-1`.
   final double tunerHz;

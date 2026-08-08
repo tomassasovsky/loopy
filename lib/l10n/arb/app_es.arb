@@ -1138,7 +1138,7 @@
     "@readoutStateEmpty": {
         "description": "Track cell state on the 7-inch readout: nothing captured yet."
     },
-    "tunerCentsAndHz": "{cents} cents · {hz} Hz",
+    "tunerCentsAndHz": "{cents} centésimas · {hz} Hz",
     "@tunerCentsAndHz": {
       "description": "The tuner's readout under the note: how far off, and the measured frequency. The separator is a middle dot; the sign on cents is a real minus (U+2212), not a hyphen.",
       "placeholders": {
@@ -1149,6 +1149,10 @@
     "tunerListening": "Toca una nota",
     "@tunerListening": {
       "description": "Shown on the tuner face while it is armed but hearing nothing — distinct from the engine not running at all."
+    },
+    "tunerNoTunableInput": "Sin entrada para afinar",
+    "@tunerNoTunableInput": {
+      "description": "Shown on the tuner face when a device IS open but every one of its captures is a loopback of the console's own output, so there is nothing an instrument could be plugged into."
     },
     "tunerNoDevice": "Sin dispositivo de audio",
     "@tunerNoDevice": {
