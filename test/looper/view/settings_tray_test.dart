@@ -713,7 +713,6 @@ void main() {
         expect(cubit.state.isNavigating, isFalse);
       },
     );
-
   });
 
   group('brightness slider tile', () {
