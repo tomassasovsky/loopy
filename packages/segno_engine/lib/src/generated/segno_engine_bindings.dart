@@ -1592,7 +1592,13 @@ class SegnoEngineBindings {
 
   /// Cancels track [channel]'s pending record arm, whatever armed it — the
   /// quantized loop-top arm, the signal-triggered (auto-record) arm, or a Band
-  /// section toggle. No-op when the track is not armed.
+  /// section toggle. No-op (LE_OK) when the track is not armed.
+  ///
+  /// Returns LE_OK only when the cancel actually reached the audio thread. The
+  /// disarm rides the command ring, so it can be refused (a full ring behind
+  /// stalled callbacks, or an engine that is not configured) — and a caller that
+  /// needs "nothing fires later" must treat that as the arm still being live,
+  /// not as a cancel.
   ///
   /// This is the UNCONDITIONAL cancel. le_engine_record also cancels an arm, but
   /// only as the second half of a press: it must first match the arm's trigger
@@ -2090,6 +2096,35 @@ class SegnoEngineBindings {
       >('le_engine_set_master_gain');
   late final _le_engine_set_master_gain = _le_engine_set_master_gainPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, double)>();
+
+  /// Arms the chromatic tuner on hardware input `input`, or disarms it with -1.
+  ///
+  /// The tuner taps the input BEFORE any lane or effect, which is what tuning
+  /// wants: the player is tuning the instrument, not the patch. It does not mute,
+  /// gate, or otherwise touch the signal — the console keeps playing while you
+  /// tune, and the face says so instead.
+  ///
+  /// Results ride the snapshot as `tuner_hz` / `tuner_confidence` /
+  /// `tuner_input`. Detection is gated on the arm, so disarming (or never arming)
+  /// costs nothing.
+  int le_engine_set_tuner_input(
+    ffi.Pointer<le_engine> engine,
+    int input,
+  ) {
+    return _le_engine_set_tuner_input(
+      engine,
+      input,
+    );
+  }
+
+  late final _le_engine_set_tuner_inputPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_tuner_input');
+  late final _le_engine_set_tuner_input = _le_engine_set_tuner_inputPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
   /// Enables/disables the master peak limiter and sets its ceiling (clamped to
   /// (0,1], default 0.99). The limiter is applied post master-gain so the summed
@@ -4203,6 +4238,12 @@ enum le_command_code {
   /// lane unused).
   LE_CMD_SET_MASTER_FX_COUNT(52),
 
+  /// Arm the chromatic tuner on one hardware input, or -1 to disarm. arg_i =
+  /// channel. Gating is the contract, not an optimization: detection runs only
+  /// while an input is armed, so a console that never opens the Tuner face
+  /// pays one atomic load per block.
+  LE_CMD_SET_TUNER_INPUT(53),
+
   /// a completed overdub-pass snapshot. evt arm:
   /// channel, slot, generation.
   LE_EVT_LAYER_RETIRED(100);
@@ -4264,6 +4305,7 @@ enum le_command_code {
     50 => LE_CMD_SET_TRACK_FX_COUNT,
     51 => LE_CMD_SET_MASTER_FX,
     52 => LE_CMD_SET_MASTER_FX_COUNT,
+    53 => LE_CMD_SET_TUNER_INPUT,
     100 => LE_EVT_LAYER_RETIRED,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
@@ -4287,11 +4329,15 @@ final class le_device_info extends ffi.Struct {
   @ffi.Int32()
   external int is_default;
 
-  /// 0 = unknown (miniaudio); an ASIO probe fills it
+  /// The device's channel count in the direction it was enumerated in: a
+  /// capture device fills input_channels, a playback device output_channels,
+  /// and the other stays 0 — a playback device reports what it can play and
+  /// never the other way round. An ASIO driver is duplex and fills both.
+  /// 0 = UNKNOWN, not "no channels": a device that cannot answer keeps it, and
+  /// a count is omitted rather than printed as a zero.
   @ffi.Int32()
   external int input_channels;
 
-  /// 0 = unknown
   @ffi.Int32()
   external int output_channels;
 
@@ -4622,6 +4668,20 @@ final class le_snapshot extends ffi.Struct {
   /// dropped capture frames (ring full) since arm
   @ffi.Uint32()
   external int perf_overruns;
+
+  /// detected fundamental; 0 = no pitch this frame
+  @ffi.Float()
+  external double tuner_hz;
+
+  /// 0..1, YIN's voicing score for that frame
+  @ffi.Float()
+  external double tuner_confidence;
+
+  /// Echo of the armed channel, -1 when disarmed. Earns its place: without it
+  /// the UI cannot tell "armed and silent" from "not armed yet", and those two
+  /// need different words on screen.
+  @ffi.Int32()
+  external int tuner_input;
 
   /// number of usable tracks (<= LE_MAX_TRACKS)
   @ffi.Int32()

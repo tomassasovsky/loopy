@@ -513,6 +513,11 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   atomic_store_explicit(&engine->a_output_enabled_mask, 0xFFFFFFFFu,
                         memory_order_relaxed);
 
+  /* Tuner: disarmed. -1 rather than 0 because 0 is a real channel, and a
+   * tuner that silently analyses input 1 on every boot is a CPU cost nobody
+   * asked for. */
+  atomic_store_explicit(&engine->a_tuner_input, -1, memory_order_relaxed);
+
   /* Per-input live monitors: all disabled by default (each defaults to full
    * stereo output, empty chain). Inputs are monitored only when explicitly
    * routed through the per-input monitor graph (le_engine_set_monitor_input). */

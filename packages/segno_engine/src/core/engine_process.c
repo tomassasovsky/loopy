@@ -2046,6 +2046,23 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       store_i32(&e->tracks[cmd->arg_i].a_length_preset_bars, bars);
       break;
     }
+    case LE_CMD_SET_TUNER_INPUT: {
+      /* Out-of-range disarms rather than clamping: clamping would silently
+       * tune a channel the caller did not ask for. */
+      int32_t in = cmd->arg_i;
+      if (in < 0 || in >= e->in_channels) in = -1;
+      store_i32(&e->a_tuner_input, in);
+      /* Reset the analysis state on every change, including a disarm: a
+       * window half-full of the previous input would otherwise produce one
+       * bogus reading on the new one. */
+      e->tuner_fill = 0;
+      e->tuner_acc = 0.0f;
+      e->tuner_acc_n = 0;
+      e->tuner_raw_fill = 0;
+      store_f32(&e->a_tuner_hz_bits, 0.0f);
+      store_f32(&e->a_tuner_conf_bits, 0.0f);
+      break;
+    }
     case LE_CMD_SET_MASTER_GAIN: {
       le_plog_push(e, frame, *cmd);
       float g = cmd->arg_f;
@@ -3253,6 +3270,117 @@ static inline void snapshot_lane_cache(
  * firing, and the loopback latency harness. Returns 1 when the latency harness
  * owns this frame (it has written `out`; the caller must skip the rest of the
  * frame), else 0. */
+/* Refines a coarse period (in DEVICE-rate samples) against the undecimated
+ * ring, by walking the plain difference function over a narrow window of lags
+ * around it and interpolating the minimum.
+ *
+ * Plain difference rather than YIN's normalized form: the octave decision has
+ * already been made by the coarse pass, and cumulative-mean normalization
+ * exists to make that decision. All this pass has to do is locate a minimum it
+ * is already sitting next to.
+ *
+ * Declines (returns the input) when the lag is too long for the ring to hold
+ * enough of it — which is the low end, where the coarse estimate is already
+ * sub-cent. */
+static float tuner_refine(const float* x, int n, float coarse) {
+  const int lo = (int)coarse - LE_TUNER_DECIM;
+  const int hi = (int)coarse + LE_TUNER_DECIM + 1;
+  if (lo < 2 || hi >= n / 2) return coarse;
+  const int integ = n - hi;
+  if (integ < hi) return coarse; /* fewer than two periods: not worth it */
+
+  float d[2 * LE_TUNER_DECIM + 2];
+  int best = 0;
+  for (int tau = lo; tau <= hi; ++tau) {
+    double sum = 0.0;
+    for (int i = 0; i < integ; ++i) {
+      const float df = x[i] - x[i + tau];
+      sum += (double)df * (double)df;
+    }
+    d[tau - lo] = (float)sum;
+    if (tau == lo || d[tau - lo] < d[best]) best = tau - lo;
+  }
+  if (best == 0 || best == hi - lo) return coarse; /* minimum on the edge */
+
+  const float s0 = d[best - 1];
+  const float s1 = d[best];
+  const float s2 = d[best + 1];
+  const float denom = s0 + s2 - 2.0f * s1;
+  float refined = (float)(lo + best);
+  if (fabsf(denom) > 1e-9f) refined += 0.5f * (s0 - s2) / denom;
+  return refined;
+}
+
+/* Chromatic tuner: boxcar-decimate the armed input and run YIN over the
+ * decimated window. Called once per block, and the first line is the whole
+ * cost when nothing is armed.
+ *
+ * A boxcar of exactly LE_TUNER_DECIM is both the decimator and its own
+ * anti-alias filter: its frequency response nulls at multiples of the
+ * decimated rate, which is precisely where aliasing would fold in from.
+ *
+ * Cost when armed: one YIN pass per LE_TUNER_HOP decimated samples (~43 ms at
+ * a 48 kHz device), over a 200-lag band. That is a fraction of what the PSOLA
+ * octaver already runs per grain on this same thread. */
+static void tuner_tap_block(le_engine* e, const float* in, uint32_t frames,
+                            int ch_in, int sr) {
+  const int32_t input = load_i32(&e->a_tuner_input);
+  if (input < 0 || input >= ch_in || in == NULL) return;
+  const int sr_d = sr / LE_TUNER_DECIM;
+  if (sr_d <= LE_TUNER_MIN_HZ) return;
+
+  for (uint32_t f = 0; f < frames; ++f) {
+    const float raw = in[f * (uint32_t)ch_in + (uint32_t)input];
+
+    /* Device-rate ring, kept in step with the decimated one so a detection
+     * always has the same audio available at both rates. */
+    if (e->tuner_raw_fill < LE_TUNER_RAW) {
+      e->tuner_raw[e->tuner_raw_fill++] = raw;
+    } else {
+      memmove(e->tuner_raw, e->tuner_raw + 1,
+              sizeof(float) * (size_t)(LE_TUNER_RAW - 1));
+      e->tuner_raw[LE_TUNER_RAW - 1] = raw;
+    }
+
+    e->tuner_acc += raw;
+    if (++e->tuner_acc_n < LE_TUNER_DECIM) continue;
+    const float s = e->tuner_acc / (float)LE_TUNER_DECIM;
+    e->tuner_acc = 0.0f;
+    e->tuner_acc_n = 0;
+
+    if (e->tuner_fill < LE_TUNER_WIN) e->tuner_win[e->tuner_fill++] = s;
+    if (e->tuner_fill < LE_TUNER_WIN) continue;
+
+    float period = 0.0f;
+    float conf = 0.0f;
+    le_psola_detect_band(e->tuner_win, LE_TUNER_WIN, sr_d, LE_TUNER_MIN_HZ,
+                         LE_TUNER_MAX_HZ, &period, &conf);
+    /* A zero period is "no pitch this frame", published as 0 Hz rather than
+     * held: the UI decides how long to keep showing the last good note, and
+     * it cannot make that call if the engine hides the gaps. */
+    float hz = 0.0f;
+    if (period > 0.0f) {
+      /* The coarse period is in decimated samples; the refinement works at the
+       * device rate, so scale before handing it over and divide by the device
+       * rate on the way out. */
+      const float full = period * (float)LE_TUNER_DECIM;
+      const float refined =
+          e->tuner_raw_fill >= LE_TUNER_RAW
+              ? tuner_refine(e->tuner_raw, LE_TUNER_RAW, full)
+              : full;
+      hz = (float)sr / refined;
+    }
+    store_f32(&e->a_tuner_hz_bits, hz);
+    store_f32(&e->a_tuner_conf_bits, conf);
+
+    /* Slide by one hop, so the next detect costs one memmove rather than one
+     * per decimated sample. */
+    memmove(e->tuner_win, e->tuner_win + LE_TUNER_HOP,
+            sizeof(float) * (size_t)(LE_TUNER_WIN - LE_TUNER_HOP));
+    e->tuner_fill = LE_TUNER_WIN - LE_TUNER_HOP;
+  }
+}
+
 static inline int process_input_frame(le_engine* e, const float* in, float* out,
                                       uint32_t f, int ch_in, int ch_out, int tc,
                                       int sr, uint32_t excluded, float* in_sumsq,
@@ -4066,6 +4194,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   store_f32(&e->a_in_peak_bits, in_peak);
   store_f32(&e->a_out_rms_bits,
             total_out ? sqrtf(out_sumsq / (float)total_out) : 0.0f);
+  tuner_tap_block(e, in, frames, ch_in, sr);
   for (int t = 0; t < tc; ++t) {
     /* Lane buffers are mono: one loop sample accumulated per frame. The shared
      * write head publishes the same growing length onto every active lane. */
