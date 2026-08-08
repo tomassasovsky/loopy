@@ -9,10 +9,10 @@ import 'package:segno/looper/view/tracks/tracks_tray_panel.dart';
 import 'package:segno/looper/view/tray/tray_home.dart';
 import 'package:segno/looper/view/tray/tray_metrics.dart';
 import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
-import 'package:segno/looper/view/tray/tuner_tray_panel.dart';
 import 'package:segno/network/network_tray_panel.dart';
 import 'package:segno/system/view/system_tray_panel.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/tuner/view/tuner_tray_panel.dart';
 
 /// The tray's contents once open — near-fullscreen frosted sheet, split into
 /// a persistent [TrayNavigationRail] and the face it selects.

@@ -552,6 +552,9 @@ class EngineSnapshot {
     this.recordOffsetFrames = 0,
     this.fxAddedLatencyFrames = 0,
     this.masterGain = 1,
+    this.tunerHz = 0,
+    this.tunerConfidence = 0,
+    this.tunerInput = -1,
     this.activeBackend = AudioBackend.miniaudio,
     this.outputEnabledMask = 0xFFFFFFFF,
     this.isPerfArmed = false,
@@ -588,6 +591,9 @@ class EngineSnapshot {
       framesProcessed = 0,
       xrunCount = 0,
       inputRms = 0,
+      tunerHz = 0,
+      tunerConfidence = 0,
+      tunerInput = -1,
       inputPeak = 0,
       outputRms = 0,
       latencyState = LatencyState.idle,
@@ -639,6 +645,9 @@ class EngineSnapshot {
     framesProcessed: native.frames_processed,
     xrunCount: native.xrun_count,
     inputRms: native.input_rms,
+    tunerHz: native.tuner_hz,
+    tunerConfidence: native.tuner_confidence,
+    tunerInput: native.tuner_input,
     inputPeak: native.input_peak,
     outputRms: native.output_rms,
     latencyState: LatencyState.fromCode(native.latency_state),
@@ -706,6 +715,20 @@ class EngineSnapshot {
   /// notifications; the miniaudio backends (macOS / Linux) expose no portable
   /// xrun signal, so this stays `0` there. Monotonic; resets on each start.
   final int xrunCount;
+
+  /// Input RMS level for the most recent block, in `0..1`.
+  /// The chromatic tuner's detected fundamental in Hz, or `0` when the armed
+  /// input carries no pitch this frame. Always `0` while [tunerInput] is `-1`.
+  final double tunerHz;
+
+  /// How periodic the analysed frame was, in `0..1`. Lets a reader hold the
+  /// last good note through the gaps between picks rather than flickering.
+  final double tunerConfidence;
+
+  /// The hardware input the tuner is armed on, or `-1` when disarmed. Distinct
+  /// from a zero [tunerHz]: armed-and-silent and not-armed need different
+  /// words on screen.
+  final int tunerInput;
 
   /// Input RMS level for the most recent block, in `0..1`.
   final double inputRms;
@@ -890,6 +913,9 @@ class EngineSnapshot {
           excludedInputMask == other.excludedInputMask &&
           framesProcessed == other.framesProcessed &&
           xrunCount == other.xrunCount &&
+          tunerHz == other.tunerHz &&
+          tunerConfidence == other.tunerConfidence &&
+          tunerInput == other.tunerInput &&
           inputRms == other.inputRms &&
           inputPeak == other.inputPeak &&
           outputRms == other.outputRms &&
@@ -935,6 +961,9 @@ class EngineSnapshot {
     framesProcessed,
     xrunCount,
     inputRms,
+    tunerHz,
+    tunerConfidence,
+    tunerInput,
     inputPeak,
     outputRms,
     latencyState,

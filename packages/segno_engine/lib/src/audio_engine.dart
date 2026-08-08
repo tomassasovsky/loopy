@@ -101,6 +101,17 @@ abstract interface class EngineMetering {
   /// Reads the current lock-free [EngineSnapshot] published by the engine.
   EngineSnapshot snapshot();
 
+  /// Arms the chromatic tuner on hardware [input], or disarms it with `-1`.
+  ///
+  /// The tuner taps the input BEFORE any lane or effect — the player is tuning
+  /// the instrument, not the patch — and does not mute, gate, or otherwise
+  /// touch the signal. Results ride the snapshot as [EngineSnapshot.tunerHz],
+  /// [EngineSnapshot.tunerConfidence] and [EngineSnapshot.tunerInput].
+  ///
+  /// Detection is gated on the arm, so a disarmed tuner costs nothing: arm it
+  /// when the tuner is on screen and disarm it when it leaves.
+  EngineResult setTunerInput({required int input});
+
   /// Detects a cable-free loopback capture path (PulseAudio monitor / virtual
   /// driver / backend built-in loopback) for auto-measuring latency. The result
   /// captures the digital round-trip only (see [LoopbackInfo]).

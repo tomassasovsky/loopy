@@ -518,6 +518,16 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult setMasterFxChainEnabled({required bool enabled}) =>
       EngineResult.ok;
 
+  /// The input the tuner is armed on, or `-1`. Mirrors the native gate, so a
+  /// test can assert that a closed face leaves nothing running.
+  int tunerInput = -1;
+
+  @override
+  EngineResult setTunerInput({required int input}) {
+    tunerInput = input;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setMonitorInputEnabled({
     required int input,

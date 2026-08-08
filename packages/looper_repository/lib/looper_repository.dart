@@ -75,6 +75,7 @@ export 'src/models/track_effect.dart'
         fxChainFingerprint,
         trackEffectsToEngine;
 export 'src/models/transport_state.dart';
+export 'src/models/tuner_reading.dart';
 // Plugin discovery: the async scan driver + its cache. PluginDescriptor itself
 // is exported above with the other domain models.
 export 'src/plugin_catalog.dart'
